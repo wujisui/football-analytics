@@ -1,0 +1,197 @@
+import argparse
+import asyncio
+import sys
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def _setup_cli_logging() -> None:
+    from app.core.config import get_settings
+    from app.core.logging import setup_logging
+
+    settings = get_settings()
+    setup_logging(settings.LOG_LEVEL, settings.LOG_DIR)
+
+
+async def run_init_db() -> None:
+    from app.core.database import init_db
+
+    await init_db()
+    print("Database initialized successfully.")
+
+
+async def run_fetch_leagues() -> None:
+    from app.core.config import get_settings
+    from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
+
+    settings = get_settings()
+    try:
+        async with FootballFetcher() as fetcher:
+            count = await fetcher.fetch_leagues(list(settings.LEAGUE_IDS.values()))
+            print(f"Fetched and saved {count} leagues.")
+            if fetcher.last_remaining_requests is not None:
+                print(f"Remaining API requests: {fetcher.last_remaining_requests}")
+    except ApiKeyNotConfiguredError as exc:
+        print(f"Skipped: {exc}")
+        sys.exit(1)
+
+
+async def run_fetch_today() -> None:
+    from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
+
+    try:
+        async with FootballFetcher() as fetcher:
+            count = await fetcher.fetch_today_fixtures()
+            print(f"Fetched and saved {count} fixtures for today.")
+            if fetcher.last_remaining_requests is not None:
+                print(f"Remaining API requests: {fetcher.last_remaining_requests}")
+    except ApiKeyNotConfiguredError as exc:
+        print(f"Skipped: {exc}")
+        sys.exit(1)
+
+
+async def run_check_quota() -> None:
+    from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
+
+    try:
+        async with FootballFetcher() as fetcher:
+            remaining = await fetcher.check_quota()
+            if remaining is None:
+                print("API call succeeded, but remaining quota header was not returned.")
+            else:
+                print(f"Remaining API requests: {remaining}")
+    except ApiKeyNotConfiguredError as exc:
+        print(f"Skipped: {exc}")
+        sys.exit(1)
+
+
+async def run_test_api() -> None:
+    from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
+
+    try:
+        async with FootballFetcher() as fetcher:
+            result = await fetcher.test_connection()
+            print("API connection test succeeded.")
+            print(f"Provider: {result['provider']}")
+            print(f"Host: {result['host']}")
+            print(f"Remaining requests: {result['remaining_requests']}")
+            print(f"Response keys: {result['sample_keys']}")
+            print(f"Cache stats: {result['cache_stats']}")
+    except ApiKeyNotConfiguredError as exc:
+        print(f"Skipped: {exc}")
+        sys.exit(1)
+
+
+async def run_clear_cache() -> None:
+    from app.services.cache import get_cache_service
+
+    cache = get_cache_service()
+    deleted = await cache.clear_pattern("api:football:*")
+    print(f"Cleared {deleted} cache entries.")
+
+
+async def run_cache_stats() -> None:
+    from app.services.cache import get_cache_service
+
+    cache = get_cache_service()
+    await cache.connect()
+    stats = cache.get_stats()
+    print(f"Cache enabled: {stats['cache_enabled']}")
+    print(f"Using fakeredis: {stats['using_fakeredis']}")
+    print(f"Cache hits: {stats['cache_hits']}")
+    print(f"Cache misses: {stats['cache_misses']}")
+    print(f"Cache hit rate: {stats['cache_hit_rate']}")
+    print(f"Last API remaining: {stats['api_remaining']}")
+
+
+async def run_list_tasks() -> None:
+    from app.tasks.scheduler import get_task_status, register_jobs, scheduler, start_scheduler
+
+    register_jobs()
+    if not scheduler.running:
+        start_scheduler()
+
+    status = get_task_status()
+    print(f"Scheduler running: {status['scheduler_running']}")
+    for job in status["jobs"]:
+        print(
+            f"- {job['id']}: trigger={job['trigger']} next_run={job['next_run_time']}"
+        )
+    if status["active_tasks"]:
+        print("Active task states:")
+        for name, info in status["active_tasks"].items():
+            print(f"  {name}: {info}")
+
+
+async def run_trigger_task(task_name: str) -> None:
+    from app.tasks.scheduler import get_task_status, trigger_task
+
+    print(f"Triggering task: {task_name}")
+    await trigger_task(task_name)
+    print("Task finished.")
+    print(get_task_status())
+
+
+async def run_scheduler_loop() -> None:
+    from app.tasks import shutdown_scheduler, start_scheduler
+
+    start_scheduler()
+    print("Scheduler started. Press Ctrl+C to stop.")
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    except KeyboardInterrupt:
+        print("Stopping scheduler...")
+    finally:
+        shutdown_scheduler()
+
+
+def main() -> None:
+    _setup_cli_logging()
+
+    parser = argparse.ArgumentParser(description="Football Analytics management CLI")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    subparsers.add_parser("init-db", help="Initialize database tables")
+    subparsers.add_parser("fetch-leagues", help="Fetch configured leagues from API-Football")
+    subparsers.add_parser("fetch-today", help="Fetch today's fixtures from API-Football")
+    subparsers.add_parser("check-quota", help="Check remaining API-Football request quota")
+    subparsers.add_parser("test-api", help="Test API connection and print response metadata")
+    subparsers.add_parser("clear-cache", help="Clear all football API cache entries")
+    subparsers.add_parser("cache-stats", help="Show cache hit/miss statistics")
+    subparsers.add_parser("list-tasks", help="List registered scheduler tasks")
+    subparsers.add_parser("run-scheduler", help="Run scheduler in foreground for debugging")
+
+    trigger_parser = subparsers.add_parser("trigger-task", help="Manually trigger a scheduler task")
+    trigger_parser.add_argument(
+        "--name",
+        required=True,
+        choices=["daily_init", "pre_match_update", "clean_old_data"],
+        help="Task name to trigger",
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "trigger-task":
+        asyncio.run(run_trigger_task(args.name))
+        return
+
+    commands = {
+        "init-db": run_init_db,
+        "fetch-leagues": run_fetch_leagues,
+        "fetch-today": run_fetch_today,
+        "check-quota": run_check_quota,
+        "test-api": run_test_api,
+        "clear-cache": run_clear_cache,
+        "cache-stats": run_cache_stats,
+        "list-tasks": run_list_tasks,
+        "run-scheduler": run_scheduler_loop,
+    }
+
+    asyncio.run(commands[args.command]())
+
+
+if __name__ == "__main__":
+    main()
