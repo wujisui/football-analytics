@@ -4,6 +4,95 @@ export interface ProbabilitiesResponse {
   away_win_prob: number
 }
 
+export interface MatchWinnerOdds {
+  bookmaker?: string | null
+  home?: string | number | null
+  draw?: string | number | null
+  away?: string | number | null
+  values?: Array<{ label?: string; odd?: string | number | null }>
+}
+
+export interface OddsPackage {
+  available: boolean
+  match_winner?: MatchWinnerOdds | null
+  bookmakers?: Array<Record<string, unknown>>
+}
+
+export interface LineupPlayer {
+  id?: number | null
+  name: string
+  number?: number | string | null
+  pos?: string | null
+  grid?: string | null
+}
+
+export interface TeamLineup {
+  team_id?: number | null
+  team_name: string
+  formation?: string | null
+  coach?: string | null
+  start_xi: LineupPlayer[]
+  substitutes: LineupPlayer[]
+}
+
+export interface LineupsPackage {
+  available: boolean
+  home?: TeamLineup | null
+  away?: TeamLineup | null
+}
+
+export interface InjuryItem {
+  player_id?: number | null
+  player_name: string
+  type?: string | null
+  reason?: string | null
+}
+
+export interface InjuriesPackage {
+  available: boolean
+  home: InjuryItem[]
+  away: InjuryItem[]
+}
+
+export interface FormMatch {
+  fixture_id?: number | null
+  date?: string | null
+  home: string
+  away: string
+  score: string
+  result?: string | null
+  outcome_for_current_home?: string | null
+}
+
+export interface FormPackage {
+  team_id?: number | null
+  played: number
+  wins: number
+  draws: number
+  losses: number
+  form?: string
+  matches: FormMatch[]
+}
+
+export interface H2HPackage {
+  played: number
+  home_wins: number
+  draws: number
+  away_wins: number
+  matches: FormMatch[]
+}
+
+export interface PrematchPackage {
+  odds: OddsPackage
+  lineups: LineupsPackage
+  injuries: InjuriesPackage
+  head_to_head: H2HPackage
+  home_form: FormPackage
+  away_form: FormPackage
+  home_formation?: string | null
+  away_formation?: string | null
+}
+
 export interface AnalysisResponse {
   fixture_id: number
   home_team_name: string
@@ -17,6 +106,7 @@ export interface AnalysisResponse {
   data_source: string
   analyzed_at: string
   cache_status: string
+  package?: PrematchPackage | null
 }
 
 export interface FixtureResponse {
