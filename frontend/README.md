@@ -32,10 +32,10 @@ npm run preview   # 预览构建产物
 
 ## 页面路由
 
-| 路径 | 组件 | 说明 |
-|------|------|------|
-| `/` | `LeaguesView` | 联赛列表 |
-| `/leagues/:leagueId` | `FixturesView` | 指定联赛的今日赛程 |
+| 路径                     | 组件             | 说明         |
+|------------------------|----------------|------------|
+| `/`                    | `LeaguesView`  | 联赛列表       |
+| `/leagues/:leagueId`   | `FixturesView` | 指定联赛的今日赛程  |
 | `/fixtures/:fixtureId` | `AnalysisView` | 单场比赛分析与概率图 |
 
 ## 目录结构
@@ -63,12 +63,14 @@ frontend/
 开发环境默认请求 `/api/v1/...`，由 Vite 代理到后端：
 
 ```ts
-// vite.config.ts
-server: {
-  proxy: {
-    '/api': {
-      target: 'http://127.0.0.1:8000',
-      changeOrigin: true,
+// vite.config.ts（节选）
+export default {
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
     },
   },
 }
