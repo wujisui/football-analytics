@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any
 
@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.models.fixture import Fixture
 from app.models.league import League
 from app.models.pre_match_data import PreMatchData
@@ -14,6 +15,11 @@ from app.models.team import Team
 from app.services.api_utils import extract_items, first_value
 from app.services.cache import TTL_ANALYSIS, analysis_cache_key, get_cache_service
 from app.services.fetcher import FootballFetcher
+from app.services.ttl_policy import (
+    is_finished_status,
+    refresh_ttl_seconds,
+    should_stop_api_refresh,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +183,94 @@ class AnalyzerService:
 
         await self.session.commit()
 
+    def _result_from_pre_match(
+        self,
+        fixture: Fixture,
+        home_name: str,
+        away_name: str,
+        league_name: str,
+        stored: PreMatchData,
+        confidence: str = "中",
+    ) -> AnalysisResult:
+        probs = {
+            "home": stored.home_win_prob or DEFAULT_PROB,
+            "draw": stored.draw_prob or DEFAULT_PROB,
+            "away": stored.away_win_prob or DEFAULT_PROB,
+        }
+        analyzed_at = stored.updated_at
+        if analyzed_at.tzinfo is None:
+            analyzed_at = analyzed_at.replace(tzinfo=timezone.utc)
+
+        return AnalysisResult(
+            fixture_id=fixture.id,
+            home_team_name=home_name,
+            away_team_name=away_name,
+            league_name=league_name,
+            fixture_date=fixture.date,
+            status=fixture.status,
+            home_win_prob=probs["home"],
+            draw_prob=probs["draw"],
+            away_win_prob=probs["away"],
+            confidence=confidence,
+            recommendation=get_recommendation(probs),
+            data_source="database",
+            analyzed_at=analyzed_at,
+            cache_status="miss",
+        )
+
+    def _analysis_refresh_ttl(self, fixture: Fixture) -> int | None:
+        """How long stored analysis stays fresh before re-calling API-Sports.
+
+        Finished matches: never refresh for prediction.
+        Otherwise: kickoff-relative policy (far/mid/matchday/near).
+        """
+        settings = get_settings()
+        if settings.ANALYSIS_REFRESH_TTL_SECONDS > 0:
+            if is_finished_status(fixture.status):
+                return None
+            return settings.ANALYSIS_REFRESH_TTL_SECONDS
+        return refresh_ttl_seconds(
+            fixture.date,
+            status=fixture.status,
+            kind="analysis",
+        )
+
+    async def _get_fresh_pre_match(
+        self,
+        fixture_id: int,
+        fixture: Fixture,
+    ) -> PreMatchData | None:
+        result = await self.session.execute(
+            select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
+        )
+        stored = result.scalar_one_or_none()
+        if stored is None:
+            return None
+        if None in (stored.home_win_prob, stored.draw_prob, stored.away_win_prob):
+            return None
+
+        # Kickoff passed / finished: freeze — never re-hit API for this fixture.
+        if should_stop_api_refresh(fixture.date, fixture.status):
+            return stored
+
+        ttl = self._analysis_refresh_ttl(fixture)
+        if ttl is None:
+            return stored
+
+        updated = stored.updated_at
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - updated
+        if age <= timedelta(seconds=ttl):
+            return stored
+        logger.info(
+            "Stored analysis for fixture %s is stale (age=%ss, refresh_ttl=%ss)",
+            fixture_id,
+            int(age.total_seconds()),
+            ttl,
+        )
+        return None
+
     async def analyze_fixture(self, fixture_id: int) -> AnalysisResult:
         cache_key = analysis_cache_key(fixture_id)
         cached = await self.cache.get(cache_key)
@@ -211,6 +305,41 @@ class AnalyzerService:
         away_name = away_team.name if away_team else f"Team {fixture.away_team_id}"
         league_name = league.name if league else f"League {fixture.league_id}"
         season = league.season if league and league.season else str(datetime.now().year)
+
+        # Local-first: reuse stored analysis until kickoff-based refresh is due.
+        settings = get_settings()
+        if settings.LOCAL_FIRST:
+            stored = await self._get_fresh_pre_match(fixture_id, fixture)
+            if stored is not None:
+                result = self._result_from_pre_match(
+                    fixture, home_name, away_name, league_name, stored, confidence="中"
+                )
+                await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
+                logger.info(
+                    "Analysis served from pre_match_data for fixture %s (status=%s)",
+                    fixture_id,
+                    fixture.status,
+                )
+                return result
+
+        # After kickoff: if we somehow have no stored analysis, still do not call API.
+        if should_stop_api_refresh(fixture.date, fixture.status):
+            pre_match = await self.session.execute(
+                select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
+            )
+            stored = pre_match.scalar_one_or_none()
+            if stored and None not in (
+                stored.home_win_prob,
+                stored.draw_prob,
+                stored.away_win_prob,
+            ):
+                return self._result_from_pre_match(
+                    fixture, home_name, away_name, league_name, stored, confidence="低"
+                )
+            raise ValueError(
+                f"Fixture {fixture_id} has kicked off/finished and has no local analysis. "
+                "Prepare data before kickoff next time."
+            )
 
         sources_ok = 0
         total_sources = 4
@@ -266,27 +395,8 @@ class AnalyzerService:
                 stored.draw_prob,
                 stored.away_win_prob,
             ):
-                return AnalysisResult(
-                    fixture_id=fixture_id,
-                    home_team_name=home_name,
-                    away_team_name=away_name,
-                    league_name=league_name,
-                    fixture_date=fixture.date,
-                    status=fixture.status,
-                    home_win_prob=stored.home_win_prob,
-                    draw_prob=stored.draw_prob,
-                    away_win_prob=stored.away_win_prob,
-                    confidence="低",
-                    recommendation=get_recommendation(
-                        {
-                            "home": stored.home_win_prob,
-                            "draw": stored.draw_prob,
-                            "away": stored.away_win_prob,
-                        }
-                    ),
-                    data_source="database",
-                    analyzed_at=datetime.now(timezone.utc),
-                    cache_status="miss",
+                return self._result_from_pre_match(
+                    fixture, home_name, away_name, league_name, stored, confidence="低"
                 )
 
         raw_probs = {

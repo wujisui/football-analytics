@@ -4,16 +4,24 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.core.config import get_settings
+from app.services.ttl_policy import (
+    TTL_ANALYSIS_REDIS,
+    TTL_FIXTURES_TODAY,
+    TTL_LEAGUES,
+    TTL_TEAMS,
+    fixture_detail_ttl,
+    refresh_ttl_seconds,
+)
 
 logger = logging.getLogger(__name__)
 
-# TTL constants (seconds)
-TTL_FIXTURES_TODAY = 300
+# Backward-compatible aliases used across the codebase
+TTL_ANALYSIS = TTL_ANALYSIS_REDIS
+TTL_HEADTOHEAD = 24 * 3600
+TTL_TEAM_FORM = 24 * 3600
+TTL_TEAM_STATISTICS = 24 * 3600
 TTL_FIXTURE_DETAIL_NEAR = 120
 TTL_FIXTURE_DETAIL_FAR = 3600
-TTL_LEAGUES = 86400
-TTL_TEAMS = 86400
-TTL_ANALYSIS = 300
 
 _cache_service: "CacheService | None" = None
 
@@ -49,21 +57,6 @@ def team_form_cache_key(team_id: int, last: int) -> str:
 
 def team_statistics_cache_key(team_id: int, league_id: int, season: str) -> str:
     return f"api:football:stats:team:{team_id}:league:{league_id}:season:{season}"
-
-
-def fixture_detail_ttl(fixture_date: datetime | None) -> int:
-    if fixture_date is None:
-        return TTL_FIXTURE_DETAIL_FAR
-
-    now = datetime.now(timezone.utc)
-    kickoff = fixture_date
-    if kickoff.tzinfo is None:
-        kickoff = kickoff.replace(tzinfo=timezone.utc)
-
-    hours_until = (kickoff - now).total_seconds() / 3600
-    if 0 <= hours_until <= 2:
-        return TTL_FIXTURE_DETAIL_NEAR
-    return TTL_FIXTURE_DETAIL_FAR
 
 
 class CacheService:
@@ -156,7 +149,7 @@ class CacheService:
             "_cached_at": datetime.now(timezone.utc).isoformat(),
         }
         try:
-            await self._redis.set(key, json.dumps(payload), ex=ttl)
+            await self._redis.set(key, json.dumps(payload), ex=max(ttl, 1))
         except Exception as exc:
             logger.warning("Cache set failed for %s: %s", key, exc)
 
@@ -223,3 +216,26 @@ def get_cache_service() -> CacheService:
     if _cache_service is None:
         _cache_service = CacheService()
     return _cache_service
+
+
+__all__ = [
+    "TTL_ANALYSIS",
+    "TTL_FIXTURES_TODAY",
+    "TTL_HEADTOHEAD",
+    "TTL_LEAGUES",
+    "TTL_TEAM_FORM",
+    "TTL_TEAM_STATISTICS",
+    "TTL_TEAMS",
+    "CacheService",
+    "analysis_cache_key",
+    "fixture_cache_key",
+    "fixture_detail_ttl",
+    "fixtures_cache_key",
+    "get_cache_service",
+    "headtohead_cache_key",
+    "leagues_cache_key",
+    "refresh_ttl_seconds",
+    "team_form_cache_key",
+    "team_statistics_cache_key",
+    "teams_cache_key",
+]
