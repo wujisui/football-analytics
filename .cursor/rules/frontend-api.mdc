@@ -1,0 +1,14 @@
+---
+description: 前端对接后端 API 约定
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# 前端约定
+
+- 只请求本项目后端（开发时 Vite 代理 `/api` → `http://127.0.0.1:8000`）
+- 基址：`VITE_API_BASE_URL` 或默认 `/api/v1`
+- 调用顺序：`/leagues` → `/fixtures/today?league_id=` → `/fixtures/{fixture_id}/analysis`
+- `league_id`（联赛）与 `fixture_id`（比赛）不要混用
+- 不在前端存放或请求 API-Sports / RapidAPI Key
+- UI 栈：Vue 3 + TS + Vite + Naive UI + ECharts；详情页后续展示赔率/阵容/伤病等赛前包

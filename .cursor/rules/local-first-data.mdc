@@ -1,0 +1,27 @@
+---
+description: 本地优先落库与赛前刷新策略
+globs: backend/**/*
+alwaysApply: false
+---
+
+# 本地优先与配额
+
+## 读取顺序
+
+```
+Redis → SQLite（api_snapshots / pre_match_data）→ API-Sports
+```
+
+命中官方后写回 Redis + SQLite。`LOCAL_FIRST=true` 为默认。
+
+## 刷新策略（赛前分析）
+
+- 距开赛越近，允许刷新越勤（远期约 24h，临场约 1h）
+- **已开赛或已结束：`refresh_ttl = None`，禁止再打官方**
+- 分析结果复用 `pre_match_data`；TTL 逻辑在 `app/services/ttl_policy.py`
+- 不要改回「固定 1 小时过期」或「开赛后仍轮询比分」
+
+## 赛前数据包（未完成能力）
+
+优先补齐并落库：`/odds`、lineups（首发+替补）、injuries；再暴露 API / 前端。  
+H2H、近况、球队统计已有拉取的，应尽量展示并逐步入模，避免只拉不用。
