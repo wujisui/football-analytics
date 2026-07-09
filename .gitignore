@@ -1,0 +1,9 @@
+# Local IDE
+.idea/
+
+# Local secrets (belt-and-suspenders; also ignored under backend/)
+**/.env
+**/secrets.local.env
+**/*.local.env
+!**/.env.example
+!**/secrets.local.env.example

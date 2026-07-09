@@ -11,6 +11,14 @@ env/
 # Local phase planning docs (not part of runtime)
 PHASE/
 
+# Local secrets and env (never commit real keys)
+.env
+.env.*
+!.env.example
+secrets.local.env
+*.local.env
+!secrets.local.env.example
+
 # Database files
 data/*.db
 
