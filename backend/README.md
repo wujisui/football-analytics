@@ -34,10 +34,10 @@ Redis 热缓存 → SQLite api_snapshots / pre_match_data → API-Sports 官方
 
 | 数据        |  状态                  |
 |-----------|----------------------|
-| 历史交锋 / 近况 | 已接（分析用）              |
+| 历史交锋 / 近况 | 已接；详情 `package` 展示 |
 | 赛前概率结果    | 已写入 `pre_match_data` |
-| 阵容 / 伤病字段 | 表结构已有，拉取逻辑待接         |
-| 赛前赔率      | 待接官方 `/odds`         |
+| 阵容 / 替补 / 伤病 | 已接 lineups / injuries 并展示 |
+| 赛前赔率      | 已接 `/odds`（无开盘则为空） |
 | 实时比分 / 滚球 | **不做**               |
 
 可用 `ANALYSIS_REFRESH_TTL_SECONDS` 强制覆盖刷新间隔（`0` = 上表策略）。
