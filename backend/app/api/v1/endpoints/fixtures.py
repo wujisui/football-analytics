@@ -55,7 +55,7 @@ async def get_today_fixtures(
 
     for fixture in fixtures:
         try:
-            analysis = await analyzer.analyze_fixture(fixture.id)
+            analysis = await analyzer.analyze_fixture(fixture.id, include_package=False)
             if analysis.data_source == "api":
                 dominant_source = "api"
             elif analysis.data_source == "cache" and dominant_source != "api":

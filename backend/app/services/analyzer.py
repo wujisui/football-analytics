@@ -15,6 +15,15 @@ from app.models.team import Team
 from app.services.api_utils import extract_items, first_value
 from app.services.cache import TTL_ANALYSIS, analysis_cache_key, get_cache_service
 from app.services.fetcher import FootballFetcher
+from app.services.prematch_package import (
+    dumps_json,
+    package_from_record,
+    parse_injuries_payload,
+    parse_lineups_payload,
+    parse_odds_payload,
+    summarize_form_payload,
+    summarize_h2h_payload,
+)
 from app.services.ttl_policy import (
     is_finished_status,
     refresh_ttl_seconds,
@@ -63,6 +72,7 @@ class AnalysisResult:
     data_source: str
     analyzed_at: datetime
     cache_status: str = "miss"
+    package: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -162,24 +172,42 @@ class AnalyzerService:
         home_win_prob: float,
         draw_prob: float,
         away_win_prob: float,
+        package: dict[str, Any] | None = None,
     ) -> None:
         result = await self.session.execute(
             select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
         )
         record = result.scalar_one_or_none()
+        package = package or {}
+
+        lineups = package.get("lineups") or {}
+        home_lineup = lineups.get("home") or {}
+        away_lineup = lineups.get("away") or {}
+        injuries = package.get("injuries") or {}
+
+        fields = {
+            "home_win_prob": home_win_prob,
+            "draw_prob": draw_prob,
+            "away_win_prob": away_win_prob,
+            "home_formation": home_lineup.get("formation"),
+            "away_formation": away_lineup.get("formation"),
+            "injuries_home": dumps_json(injuries.get("home")),
+            "injuries_away": dumps_json(injuries.get("away")),
+            "odds_json": dumps_json(package.get("odds")),
+            "lineups_json": dumps_json(package.get("lineups")),
+            "injuries_json": dumps_json(package.get("injuries")),
+            "h2h_json": dumps_json(package.get("head_to_head")),
+            "home_form_json": dumps_json(package.get("home_form")),
+            "away_form_json": dumps_json(package.get("away_form")),
+        }
 
         if record is None:
-            record = PreMatchData(
-                fixture_id=fixture_id,
-                home_win_prob=home_win_prob,
-                draw_prob=draw_prob,
-                away_win_prob=away_win_prob,
-            )
+            record = PreMatchData(fixture_id=fixture_id, **fields)
             self.session.add(record)
         else:
-            record.home_win_prob = home_win_prob
-            record.draw_prob = draw_prob
-            record.away_win_prob = away_win_prob
+            for key, value in fields.items():
+                if value is not None:
+                    setattr(record, key, value)
 
         await self.session.commit()
 
@@ -216,7 +244,71 @@ class AnalyzerService:
             data_source="database",
             analyzed_at=analyzed_at,
             cache_status="miss",
+            package=package_from_record(stored),
         )
+
+    async def _collect_prematch_package(
+        self,
+        fetcher: FootballFetcher,
+        fixture: Fixture,
+        ttl: int,
+    ) -> dict[str, Any]:
+        package: dict[str, Any] = {
+            "odds": {"available": False},
+            "lineups": {"available": False, "home": None, "away": None},
+            "injuries": {"available": False, "home": [], "away": []},
+            "head_to_head": {"played": 0, "matches": []},
+            "home_form": {"played": 0, "matches": []},
+            "away_form": {"played": 0, "matches": []},
+        }
+
+        try:
+            h2h_payload = await fetcher.fetch_headtohead(
+                fixture.home_team_id, fixture.away_team_id
+            )
+            package["head_to_head"] = summarize_h2h_payload(
+                h2h_payload, fixture.home_team_id
+            )
+        except Exception as exc:
+            logger.warning("H2H package fetch failed for %s: %s", fixture.id, exc)
+
+        try:
+            home_form_payload = await fetcher.fetch_team_form_payload(fixture.home_team_id)
+            package["home_form"] = summarize_form_payload(
+                home_form_payload, fixture.home_team_id
+            )
+        except Exception as exc:
+            logger.warning("Home form package fetch failed for %s: %s", fixture.id, exc)
+
+        try:
+            away_form_payload = await fetcher.fetch_team_form_payload(fixture.away_team_id)
+            package["away_form"] = summarize_form_payload(
+                away_form_payload, fixture.away_team_id
+            )
+        except Exception as exc:
+            logger.warning("Away form package fetch failed for %s: %s", fixture.id, exc)
+
+        try:
+            odds_payload = await fetcher.fetch_odds(fixture.id, ttl=ttl)
+            package["odds"] = parse_odds_payload(odds_payload)
+        except Exception as exc:
+            logger.warning("Odds fetch failed for %s: %s", fixture.id, exc)
+
+        try:
+            lineups_payload = await fetcher.fetch_lineups(fixture.id, ttl=ttl)
+            package["lineups"] = parse_lineups_payload(lineups_payload)
+        except Exception as exc:
+            logger.warning("Lineups fetch failed for %s: %s", fixture.id, exc)
+
+        try:
+            injuries_payload = await fetcher.fetch_injuries(fixture.id, ttl=ttl)
+            package["injuries"] = parse_injuries_payload(
+                injuries_payload, fixture.home_team_id, fixture.away_team_id
+            )
+        except Exception as exc:
+            logger.warning("Injuries fetch failed for %s: %s", fixture.id, exc)
+
+        return package
 
     def _analysis_refresh_ttl(self, fixture: Fixture) -> int | None:
         """How long stored analysis stays fresh before re-calling API-Sports.
@@ -271,27 +363,38 @@ class AnalyzerService:
         )
         return None
 
-    async def analyze_fixture(self, fixture_id: int) -> AnalysisResult:
+    async def analyze_fixture(
+        self,
+        fixture_id: int,
+        *,
+        include_package: bool = True,
+    ) -> AnalysisResult:
         cache_key = analysis_cache_key(fixture_id)
         cached = await self.cache.get(cache_key)
         if cached is not None and "payload" in cached:
             payload = cached["payload"]
-            return AnalysisResult(
-                fixture_id=payload["fixture_id"],
-                home_team_name=payload["home_team_name"],
-                away_team_name=payload["away_team_name"],
-                league_name=payload["league_name"],
-                fixture_date=datetime.fromisoformat(payload["fixture_date"]),
-                status=payload["status"],
-                home_win_prob=payload["home_win_prob"],
-                draw_prob=payload["draw_prob"],
-                away_win_prob=payload["away_win_prob"],
-                confidence=payload["confidence"],
-                recommendation=payload["recommendation"],
-                data_source="cache",
-                analyzed_at=datetime.fromisoformat(payload["analyzed_at"]),
-                cache_status="hit",
-            )
+            package = payload.get("package") if include_package else None
+            # Detail view needs package; if cache has probs only, fall through to rebuild.
+            if include_package and not package:
+                pass
+            else:
+                return AnalysisResult(
+                    fixture_id=payload["fixture_id"],
+                    home_team_name=payload["home_team_name"],
+                    away_team_name=payload["away_team_name"],
+                    league_name=payload["league_name"],
+                    fixture_date=datetime.fromisoformat(payload["fixture_date"]),
+                    status=payload["status"],
+                    home_win_prob=payload["home_win_prob"],
+                    draw_prob=payload["draw_prob"],
+                    away_win_prob=payload["away_win_prob"],
+                    confidence=payload["confidence"],
+                    recommendation=payload["recommendation"],
+                    data_source="cache",
+                    analyzed_at=datetime.fromisoformat(payload["analyzed_at"]),
+                    cache_status="hit",
+                    package=package,
+                )
 
         fixture = await self._load_fixture(fixture_id)
         if fixture is None:
@@ -311,16 +414,27 @@ class AnalyzerService:
         if settings.LOCAL_FIRST:
             stored = await self._get_fresh_pre_match(fixture_id, fixture)
             if stored is not None:
-                result = self._result_from_pre_match(
-                    fixture, home_name, away_name, league_name, stored, confidence="中"
+                # Detail page may need package fields that older rows lack.
+                has_package = bool(
+                    stored.h2h_json or stored.odds_json or stored.lineups_json
                 )
-                await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
-                logger.info(
-                    "Analysis served from pre_match_data for fixture %s (status=%s)",
-                    fixture_id,
-                    fixture.status,
-                )
-                return result
+                if include_package and not has_package and not should_stop_api_refresh(
+                    fixture.date, fixture.status
+                ):
+                    pass  # fall through to refresh package before kickoff
+                else:
+                    result = self._result_from_pre_match(
+                        fixture, home_name, away_name, league_name, stored, confidence="中"
+                    )
+                    if not include_package:
+                        result.package = None
+                    await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
+                    logger.info(
+                        "Analysis served from pre_match_data for fixture %s (status=%s)",
+                        fixture_id,
+                        fixture.status,
+                    )
+                    return result
 
         # After kickoff: if we somehow have no stored analysis, still do not call API.
         if should_stop_api_refresh(fixture.date, fixture.status):
@@ -342,30 +456,56 @@ class AnalyzerService:
             )
 
         sources_ok = 0
-        total_sources = 4
+        total_sources = 7
         data_source = "api"
+        package: dict[str, Any] = {}
 
         home_form = TeamFormStats()
         away_form = TeamFormStats()
+        refresh_ttl = self._analysis_refresh_ttl(fixture) or TTL_ANALYSIS
 
         try:
             async with FootballFetcher(session=self.session, cache=self.cache) as fetcher:
-                try:
-                    await fetcher.fetch_headtohead(
-                        fixture.home_team_id,
-                        fixture.away_team_id,
+                if include_package:
+                    package = await self._collect_prematch_package(
+                        fetcher, fixture, ttl=refresh_ttl
                     )
-                    sources_ok += 1
-                except Exception as exc:
-                    logger.warning("Head-to-head fetch failed for %s: %s", fixture_id, exc)
-
-                home_form = await self.get_team_form(fetcher, fixture.home_team_id)
-                if home_form.played > 0:
-                    sources_ok += 1
-
-                away_form = await self.get_team_form(fetcher, fixture.away_team_id)
-                if away_form.played > 0:
-                    sources_ok += 1
+                    if package.get("head_to_head", {}).get("played", 0) > 0:
+                        sources_ok += 1
+                    if package.get("home_form", {}).get("played", 0) > 0:
+                        sources_ok += 1
+                        home_form = TeamFormStats(
+                            wins=package["home_form"].get("wins", 0),
+                            draws=package["home_form"].get("draws", 0),
+                            losses=package["home_form"].get("losses", 0),
+                        )
+                    if package.get("away_form", {}).get("played", 0) > 0:
+                        sources_ok += 1
+                        away_form = TeamFormStats(
+                            wins=package["away_form"].get("wins", 0),
+                            draws=package["away_form"].get("draws", 0),
+                            losses=package["away_form"].get("losses", 0),
+                        )
+                    if package.get("odds", {}).get("available"):
+                        sources_ok += 1
+                    if package.get("lineups", {}).get("available"):
+                        sources_ok += 1
+                    if package.get("injuries", {}).get("available"):
+                        sources_ok += 1
+                else:
+                    home_form = await self.get_team_form(fetcher, fixture.home_team_id)
+                    if home_form.played > 0:
+                        sources_ok += 1
+                    away_form = await self.get_team_form(fetcher, fixture.away_team_id)
+                    if away_form.played > 0:
+                        sources_ok += 1
+                    try:
+                        await fetcher.fetch_headtohead(
+                            fixture.home_team_id, fixture.away_team_id
+                        )
+                        sources_ok += 1
+                    except Exception as exc:
+                        logger.warning("H2H fetch failed for %s: %s", fixture_id, exc)
 
                 try:
                     await fetcher.fetch_team_statistics(
@@ -423,6 +563,7 @@ class AnalyzerService:
             data_source=data_source,
             analyzed_at=datetime.now(timezone.utc),
             cache_status="miss",
+            package=package if include_package else None,
         )
 
         await self._save_pre_match_data(
@@ -430,6 +571,7 @@ class AnalyzerService:
             result.home_win_prob,
             result.draw_prob,
             result.away_win_prob,
+            package=package if include_package else None,
         )
 
         await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
