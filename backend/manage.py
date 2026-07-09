@@ -2,9 +2,9 @@ import argparse
 import asyncio
 import sys
 
-from dotenv import load_dotenv
+from app.core.config import load_local_env
 
-load_dotenv()
+load_local_env()
 
 
 def _setup_cli_logging() -> None:

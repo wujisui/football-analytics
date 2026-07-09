@@ -15,7 +15,10 @@ from app.models.team import Team
 from app.services.api_utils import parse_remaining_requests
 from app.services.cache import (
     TTL_FIXTURES_TODAY,
+    TTL_HEADTOHEAD,
     TTL_LEAGUES,
+    TTL_TEAM_FORM,
+    TTL_TEAM_STATISTICS,
     TTL_TEAMS,
     CacheService,
     fixture_cache_key,
@@ -29,6 +32,7 @@ from app.services.cache import (
     teams_cache_key,
 )
 from app.services.providers import get_api_provider
+from app.services.snapshot_store import SnapshotStore
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +40,25 @@ RETRY_DELAYS = [1, 3, 5]
 
 
 class ApiKeyNotConfiguredError(RuntimeError):
-    """Raised when RAPIDAPI_KEY is missing or still set to the placeholder."""
+    """Raised when no football API key is configured."""
 
 
 def ensure_api_key_configured(settings: Settings | None = None) -> str:
     settings = settings or get_settings()
-    key = settings.RAPIDAPI_KEY.strip()
-    placeholders = {"", "your_api_key_here", "your-api-key-here"}
+    key = settings.football_api_key
+    placeholders = {
+        "",
+        "your_api_key_here",
+        "your-api-key-here",
+        "your_api_sports_key_here",
+        "your_rapidapi_key_here",
+    }
 
     if key in placeholders:
         raise ApiKeyNotConfiguredError(
-            "RAPIDAPI_KEY is not configured. "
-            "Copy .env.example to .env and set your RapidAPI key, then retry."
+            "Football API key is not configured. "
+            "Copy secrets.local.env.example to secrets.local.env, "
+            "set API_SPORTS_KEY (recommended) or RAPIDAPI_KEY, then retry."
         )
     return key
 
@@ -73,11 +84,7 @@ class FootballFetcher:
         await self.cache.connect()
         self._client = httpx.AsyncClient(
             base_url=self.settings.api_base_url,
-            headers={
-                "X-RapidAPI-Key": self.settings.RAPIDAPI_KEY,
-                "X-RapidAPI-Host": self.settings.RAPIDAPI_HOST,
-                "Content-Type": "application/json",
-            },
+            headers=self.settings.football_api_headers(),
             timeout=30.0,
             verify=self.settings.HTTP_VERIFY_SSL,
         )
@@ -130,16 +137,30 @@ class FootballFetcher:
         operation: str,
         fetch_callback: Callable[[httpx.AsyncClient], Awaitable[dict[str, Any]]],
     ) -> dict[str, Any]:
+        """Local-first: Redis → SQLite snapshot → official API."""
         cached = await self.cache.get(cache_key)
         if cached is not None and "payload" in cached:
             self.cache.record_hit()
             logger.info("Cache hit for %s (cached at %s)", cache_key, cached.get("_cached_at"))
             return cached["payload"]
 
+        if self.settings.LOCAL_FIRST and self.session is not None:
+            store = SnapshotStore(self.session)
+            db_payload = await store.get_valid(cache_key)
+            if db_payload is not None:
+                self.cache.record_hit()
+                await self.cache.set(cache_key, db_payload, ttl)
+                return db_payload
+
         self.cache.record_miss()
-        logger.info("Cache miss for %s", cache_key)
+        logger.info("Cache/DB miss for %s — calling official API", cache_key)
         payload = await self._run_with_retry(operation, fetch_callback)
         await self.cache.set(cache_key, payload, ttl)
+
+        if self.session is not None:
+            store = SnapshotStore(self.session)
+            await store.save(cache_key, payload, ttl)
+
         return payload
 
     async def _commit(self) -> None:
@@ -365,7 +386,7 @@ class FootballFetcher:
         cache_key = headtohead_cache_key(home_team_id, away_team_id, last)
         return await self._get_or_fetch(
             cache_key,
-            TTL_TEAMS,
+            TTL_HEADTOHEAD,
             "fetch_headtohead",
             lambda client: self.provider.fetch_headtohead_payload(
                 client, home_team_id, away_team_id, last
@@ -381,7 +402,7 @@ class FootballFetcher:
         cache_key = team_statistics_cache_key(team_id, league_id, season)
         return await self._get_or_fetch(
             cache_key,
-            TTL_TEAMS,
+            TTL_TEAM_STATISTICS,
             "fetch_team_statistics",
             lambda client: self.provider.fetch_team_statistics_payload(
                 client, team_id, league_id, season
@@ -392,20 +413,22 @@ class FootballFetcher:
         cache_key = team_form_cache_key(team_id, last)
         return await self._get_or_fetch(
             cache_key,
-            TTL_TEAMS,
+            TTL_TEAM_FORM,
             "fetch_team_form",
             lambda client: self.provider.fetch_team_form_payload(client, team_id, last),
         )
 
     async def fetch_fixture_details(self, fixture_id: int) -> dict[str, Any]:
         fixture_date: datetime | None = None
+        status: str | None = None
         if self.session is not None:
             fixture = await self.session.get(Fixture, fixture_id)
             if fixture is not None:
                 fixture_date = fixture.date
+                status = fixture.status
 
         cache_key = fixture_cache_key(fixture_id)
-        ttl = fixture_detail_ttl(fixture_date)
+        ttl = fixture_detail_ttl(fixture_date, status)
         return await self._get_or_fetch(
             cache_key,
             ttl,
@@ -427,7 +450,8 @@ class FootballFetcher:
         )
         return {
             "provider": self.provider.provider_name,
-            "host": self.settings.RAPIDAPI_HOST,
+            "auth_mode": "api_sports" if self.settings.uses_api_sports_direct else "rapidapi",
+            "host": self.settings.api_host,
             "remaining_requests": self.last_remaining_requests,
             "sample_keys": list(payload.keys()) if isinstance(payload, dict) else [],
             "cache_stats": self.cache.get_stats(),

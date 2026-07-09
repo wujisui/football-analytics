@@ -1,17 +1,16 @@
 import logging
 from contextlib import asynccontextmanager
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
 from app.api.v1.router import api_router
-from app.core.config import get_settings
+from app.core.config import get_settings, load_local_env
 from app.core.logging import setup_logging
 from app.tasks import shutdown_scheduler, start_scheduler
 
-load_dotenv()
+load_local_env()
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
