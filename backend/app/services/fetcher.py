@@ -26,7 +26,10 @@ from app.services.cache import (
     fixtures_cache_key,
     get_cache_service,
     headtohead_cache_key,
+    injuries_cache_key,
     leagues_cache_key,
+    lineups_cache_key,
+    odds_cache_key,
     team_form_cache_key,
     team_statistics_cache_key,
     teams_cache_key,
@@ -416,6 +419,33 @@ class FootballFetcher:
             TTL_TEAM_FORM,
             "fetch_team_form",
             lambda client: self.provider.fetch_team_form_payload(client, team_id, last),
+        )
+
+    async def fetch_odds(self, fixture_id: int, ttl: int | None = None) -> dict[str, Any]:
+        cache_key = odds_cache_key(fixture_id)
+        return await self._get_or_fetch(
+            cache_key,
+            ttl or TTL_HEADTOHEAD,
+            "fetch_odds",
+            lambda client: self.provider.fetch_odds_payload(client, fixture_id),
+        )
+
+    async def fetch_lineups(self, fixture_id: int, ttl: int | None = None) -> dict[str, Any]:
+        cache_key = lineups_cache_key(fixture_id)
+        return await self._get_or_fetch(
+            cache_key,
+            ttl or TTL_TEAM_FORM,
+            "fetch_lineups",
+            lambda client: self.provider.fetch_lineups_payload(client, fixture_id),
+        )
+
+    async def fetch_injuries(self, fixture_id: int, ttl: int | None = None) -> dict[str, Any]:
+        cache_key = injuries_cache_key(fixture_id)
+        return await self._get_or_fetch(
+            cache_key,
+            ttl or TTL_TEAM_FORM,
+            "fetch_injuries",
+            lambda client: self.provider.fetch_injuries_payload(client, fixture_id),
         )
 
     async def fetch_fixture_details(self, fixture_id: int) -> dict[str, Any]:

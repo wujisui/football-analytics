@@ -24,6 +24,13 @@ class PreMatchData(Base):
     home_win_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
     draw_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
     away_win_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Structured pre-match package (JSON text)
+    odds_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lineups_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    injuries_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    h2h_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    home_form_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    away_form_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),

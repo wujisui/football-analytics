@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     API_ENDPOINT_QUOTA: str = "/status"
     API_ENDPOINT_HEADTOHEAD: str = "/fixtures/headtohead"
     API_ENDPOINT_TEAM_STATISTICS: str = "/teams/statistics"
+    API_ENDPOINT_ODDS: str = "/odds"
+    API_ENDPOINT_LINEUPS: str = "/fixtures/lineups"
+    API_ENDPOINT_INJURIES: str = "/injuries"
     HTTP_VERIFY_SSL: bool = True
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/football.db"
     REDIS_URL: str = "redis://localhost:6379"

@@ -75,6 +75,27 @@ class BaseApiProvider:
     ) -> dict[str, Any]:
         raise NotImplementedError
 
+    async def fetch_odds_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def fetch_lineups_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def fetch_injuries_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
     def parse_leagues(self, payload: dict[str, Any], league_ids: list[int]) -> list[dict[str, Any]]:
         raise NotImplementedError
 
@@ -186,6 +207,42 @@ class ApiFootballProvider(BaseApiProvider):
         response = await client.get(
             self.settings.API_ENDPOINT_FIXTURES,
             params={"team": team_id, "last": last},
+        )
+        response.raise_for_status()
+        return self._json_from_response(response)
+
+    async def fetch_odds_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        response = await client.get(
+            self.settings.API_ENDPOINT_ODDS,
+            params={"fixture": fixture_id},
+        )
+        response.raise_for_status()
+        return self._json_from_response(response)
+
+    async def fetch_lineups_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        response = await client.get(
+            self.settings.API_ENDPOINT_LINEUPS,
+            params={"fixture": fixture_id},
+        )
+        response.raise_for_status()
+        return self._json_from_response(response)
+
+    async def fetch_injuries_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        response = await client.get(
+            self.settings.API_ENDPOINT_INJURIES,
+            params={"fixture": fixture_id},
         )
         response.raise_for_status()
         return self._json_from_response(response)
@@ -416,6 +473,27 @@ class LiveFootballDataProvider(BaseApiProvider):
         return await ApiFootballProvider(self.settings).fetch_team_form_payload(
             client, team_id, last
         )
+
+    async def fetch_odds_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        return {"response": []}
+
+    async def fetch_lineups_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        return {"response": []}
+
+    async def fetch_injuries_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        return {"response": []}
 
     def parse_leagues(self, payload: dict[str, Any], league_ids: list[int]) -> list[dict[str, Any]]:
         parsed: list[dict[str, Any]] = []
