@@ -161,6 +161,24 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
     }
 
 
+def _line_token(label: str) -> str | None:
+    parts = label.split()
+    if len(parts) < 2:
+        return None
+    maybe = parts[-1]
+    if any(ch.isdigit() for ch in maybe):
+        return maybe
+    return None
+
+
+def _odd_float(odd: Any) -> float | None:
+    try:
+        value = float(odd)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
 def _parse_line_market(
     bet_name: str,
     book_name: str,
@@ -169,34 +187,55 @@ def _parse_line_market(
     home_labels: set[str],
     away_labels: set[str],
 ) -> dict[str, Any] | None:
-    """Pick a representative handicap / O-U line from bet values."""
-    home_odd = None
-    away_odd = None
-    line: str | None = None
+    """Pick the main handicap / O-U line (most balanced over/under or home/away odds).
+
+    Bookmakers return many lines (0.5…5.5). Taking the last row wrongly showed
+    exotic lines like 4.5; the main market is usually closest to even money.
+    """
+    by_line: dict[str, dict[str, Any]] = {}
     for v in parsed_values:
         label = str(v.get("label") or "").strip()
         label_l = label.lower()
         odd = v.get("odd")
-        # API-Football often uses "Home -0.5" / "Over 2.5"
-        parts = label.split()
-        maybe_line = parts[-1] if len(parts) >= 2 else None
+        line = _line_token(label)
+        if not line:
+            continue
+        bucket = by_line.setdefault(line, {})
         if any(k in label_l for k in home_labels) or label_l in home_labels:
-            home_odd = odd
-            if maybe_line and any(ch.isdigit() for ch in maybe_line):
-                line = maybe_line
+            bucket["home"] = odd
         elif any(k in label_l for k in away_labels) or label_l in away_labels:
-            away_odd = odd
-            if maybe_line and any(ch.isdigit() for ch in maybe_line) and line is None:
-                line = maybe_line
-    if home_odd is None and away_odd is None:
+            bucket["away"] = odd
+
+    best_line: str | None = None
+    best_home = None
+    best_away = None
+    best_score: float | None = None
+    for line, sides in by_line.items():
+        home_odd = sides.get("home")
+        away_odd = sides.get("away")
+        home_f = _odd_float(home_odd)
+        away_f = _odd_float(away_odd)
+        if home_f is None or away_f is None:
+            continue
+        # Prefer the line closest to even; tiny bias toward common 2.5 when tied.
+        score = abs(home_f - away_f)
+        if line in {"2.5", "2,5"}:
+            score -= 0.01
+        if best_score is None or score < best_score:
+            best_score = score
+            best_line = line
+            best_home = home_odd
+            best_away = away_odd
+
+    if best_line is None:
         return None
     return {
         "bookmaker": book_name,
         "bet": bet_name,
-        "line": line,
-        "home": home_odd,
-        "away": away_odd,
-        "values": parsed_values[:12],
+        "line": best_line,
+        "home": best_home,
+        "away": best_away,
+        "values": parsed_values[:20],
     }
 
 
@@ -422,31 +461,44 @@ def parse_injuries_payload(
 
 
 def rehydrate_odds_markets(odds: dict[str, Any] | None) -> dict[str, Any]:
-    """Fill asian_handicap / goals_ou from stored bookmakers when older rows lack them."""
+    """Normalize odds; re-pick main AH / O-U lines from stored bookmaker values.
+
+    Older rows may have stored the last exotic line (e.g. 4.5). Re-parsing from
+    ``bookmakers`` values applies the balanced-line selection on every read.
+    """
     if not isinstance(odds, dict):
         return {"available": False}
-    if odds.get("asian_handicap") is not None and odds.get("goals_ou") is not None:
-        return odds
     books = odds.get("bookmakers") or []
     if not books:
         return odds
-    # Rebuild via the same parser using a synthetic payload.
-    synthetic = {"response": [{"bookmakers": [
-        {
-            "name": b.get("bookmaker"),
-            "bets": [{"name": b.get("bet"), "values": [
-                {"value": v.get("label"), "odd": v.get("odd")}
-                for v in (b.get("values") or [])
-            ]}],
-        }
-        for b in books
-        if isinstance(b, dict)
-    ]}]}
+
+    synthetic = {
+        "response": [
+            {
+                "bookmakers": [
+                    {
+                        "name": b.get("bookmaker"),
+                        "bets": [
+                            {
+                                "name": b.get("bet"),
+                                "values": [
+                                    {"value": v.get("label"), "odd": v.get("odd")}
+                                    for v in (b.get("values") or [])
+                                ],
+                            }
+                        ],
+                    }
+                    for b in books
+                    if isinstance(b, dict)
+                ]
+            }
+        ]
+    }
     parsed = parse_odds_payload(synthetic)
     merged = {**odds}
-    if merged.get("asian_handicap") is None and parsed.get("asian_handicap"):
+    if parsed.get("asian_handicap"):
         merged["asian_handicap"] = parsed["asian_handicap"]
-    if merged.get("goals_ou") is None and parsed.get("goals_ou"):
+    if parsed.get("goals_ou"):
         merged["goals_ou"] = parsed["goals_ou"]
     if merged.get("match_winner") is None and parsed.get("match_winner"):
         merged["match_winner"] = parsed["match_winner"]
