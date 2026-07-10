@@ -100,9 +100,9 @@ def get_confidence_level(data_completeness: float) -> str:
 
 
 def get_recommendation(probs: dict[str, float]) -> str:
-    mapping = {"home": "主胜", "draw": "平局", "away": "客胜"}
-    best = max(probs, key=probs.get)
-    return mapping[best]
+    from app.services.prediction import get_recommendation as _rec
+
+    return _rec(probs)
 
 
 def parse_team_form(payload: dict[str, Any], team_id: int) -> TeamFormStats:

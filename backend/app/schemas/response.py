@@ -148,7 +148,14 @@ class AnalysisResponse(BaseModel):
     status: str = Field(..., description="比赛状态")
     probabilities: ProbabilitiesResponse = Field(..., description="胜平负概率")
     confidence: str = Field(..., description="置信度：高/中/低")
-    recommendation: str = Field(..., description="推荐方向：主胜/平局/客胜")
+    recommendation: str = Field(
+        ...,
+        description="推荐：主胜/平局/客胜，或双选主胜/平等；待分析表示尚无模型输出",
+    )
+    goal_lean: str = Field(default="", description="大小球倾向（相对主盘）")
+    both_score_lean: str = Field(default="", description="双方进球倾向")
+    score_hint: str = Field(default="", description="参考比分")
+    handicap_lean: str = Field(default="", description="让球倾向（竞彩风格，相对亚盘）")
     data_source: str = Field(..., description="数据来源：cache/api/database")
     analyzed_at: datetime = Field(..., description="分析时间（UTC）")
     cache_status: str = Field(default="miss", description="分析缓存状态：hit/miss")
@@ -159,6 +166,32 @@ class AnalysisResponse(BaseModel):
     @field_serializer("fixture_date", "analyzed_at")
     def serialize_analysis_datetimes(self, value: datetime) -> str:
         return _utc_iso(value)
+
+
+class OpinionFactorResponse(BaseModel):
+    id: str
+    label: str
+    group: str
+
+
+class OpinionFactorsResponse(BaseModel):
+    factors: list[OpinionFactorResponse] = Field(default_factory=list)
+
+
+class AdjustPredictionRequest(BaseModel):
+    factors: list[str] = Field(default_factory=list, description="勾选的主观因素 ID")
+
+
+class PredictionSnapshotResponse(BaseModel):
+    home_win_prob: float
+    draw_prob: float
+    away_win_prob: float
+    recommendation: str
+    goal_lean: str = ""
+    both_score_lean: str = ""
+    score_hint: str = ""
+    handicap_lean: str = ""
+    factors: list[str] = Field(default_factory=list)
 
 
 class FixtureOddsSnippetResponse(BaseModel):
@@ -215,9 +248,24 @@ class LeaguesListResponse(BaseModel):
 
 
 def analysis_to_response(analysis) -> AnalysisResponse:
+    from app.services.prediction import derive_prediction_leans, get_recommendation
+
     package = None
+    odds = None
     if getattr(analysis, "package", None):
         package = PrematchPackageResponse.model_validate(analysis.package)
+        if isinstance(analysis.package, dict):
+            odds = analysis.package.get("odds")
+
+    probs = {
+        "home": analysis.home_win_prob,
+        "draw": analysis.draw_prob,
+        "away": analysis.away_win_prob,
+    }
+    leans = derive_prediction_leans(
+        probs,
+        odds if isinstance(odds, dict) else None,
+    )
 
     return AnalysisResponse(
         fixture_id=analysis.fixture_id,
@@ -232,7 +280,12 @@ def analysis_to_response(analysis) -> AnalysisResponse:
             away_win_prob=analysis.away_win_prob,
         ),
         confidence=analysis.confidence,
-        recommendation=analysis.recommendation,
+        # Always recompute — do not reuse stale DB recommendation strings.
+        recommendation=get_recommendation(probs),
+        goal_lean=leans["goal_lean"],
+        both_score_lean=leans["both_score_lean"],
+        score_hint=leans["score_hint"],
+        handicap_lean=leans["handicap_lean"],
         data_source=analysis.data_source,
         analyzed_at=analysis.analyzed_at,
         cache_status=analysis.cache_status,

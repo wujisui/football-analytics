@@ -10,9 +10,13 @@ from app.core.database import get_db
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.schemas.response import (
+    AdjustPredictionRequest,
     AnalysisResponse,
     FixtureOddsSnippetResponse,
     FixtureResponse,
+    OpinionFactorResponse,
+    OpinionFactorsResponse,
+    PredictionSnapshotResponse,
     ProbabilitiesResponse,
     TodayFixturesResponse,
     analysis_to_response,
@@ -21,6 +25,12 @@ from app.services.analyzer import (
     DEFAULT_PROB,
     AnalyzerService,
     get_recommendation,
+)
+from app.services.prediction import (
+    OPINION_FACTORS,
+    adjust_probabilities_with_factors,
+    build_prediction_snapshot,
+    derive_prediction_leans,
 )
 from app.services.prematch_package import loads_json, rehydrate_odds_markets
 
@@ -32,6 +42,12 @@ def _set_response_headers(response: Response, data_source: str, max_age: int = 1
     response.headers["X-Data-Source"] = data_source
 
 
+def _league_name(fixture: Fixture) -> str:
+    settings = get_settings()
+    fallback = fixture.league.name if fixture.league else ""
+    return settings.league_display_name(fixture.league_id, fallback)
+
+
 def _list_analysis_from_fixture(
     fixture: Fixture,
     stored: PreMatchData | None,
@@ -39,8 +55,9 @@ def _list_analysis_from_fixture(
     """Build list-row analysis without Redis/API — pure in-memory from ORM rows."""
     home_name = fixture.home_team.name if fixture.home_team else f"Team {fixture.home_team_id}"
     away_name = fixture.away_team.name if fixture.away_team else f"Team {fixture.away_team_id}"
-    league_name = fixture.league.name if fixture.league else f"League {fixture.league_id}"
+    league_name = _league_name(fixture)
 
+    odds: dict | None = None
     if stored is not None and None not in (
         stored.home_win_prob,
         stored.draw_prob,
@@ -55,10 +72,13 @@ def _list_analysis_from_fixture(
         analyzed_at = stored.updated_at
         if analyzed_at.tzinfo is None:
             analyzed_at = analyzed_at.replace(tzinfo=timezone.utc)
+        odds = rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
     else:
         probs = {"home": DEFAULT_PROB, "draw": DEFAULT_PROB, "away": DEFAULT_PROB}
         confidence = "低"
         analyzed_at = datetime.now(timezone.utc)
+
+    leans = derive_prediction_leans(probs, odds if isinstance(odds, dict) else None)
 
     return AnalysisResponse(
         fixture_id=fixture.id,
@@ -74,6 +94,10 @@ def _list_analysis_from_fixture(
         ),
         confidence=confidence,
         recommendation=get_recommendation(probs),
+        goal_lean=leans["goal_lean"],
+        both_score_lean=leans["both_score_lean"],
+        score_hint=leans["score_hint"],
+        handicap_lean=leans["handicap_lean"],
         data_source="database",
         analyzed_at=analyzed_at,
         cache_status="miss",
@@ -170,7 +194,7 @@ async def get_today_fixtures(
             FixtureResponse(
                 fixture_id=fixture.id,
                 league_id=fixture.league_id,
-                league_name=fixture.league.name if fixture.league else "",
+                league_name=_league_name(fixture),
                 home_team_id=fixture.home_team_id,
                 away_team_id=fixture.away_team_id,
                 home_team_name=fixture.home_team.name if fixture.home_team else "",
@@ -191,6 +215,47 @@ async def get_today_fixtures(
         total=len(fixture_responses),
         fixtures=fixture_responses,
     )
+
+
+@router.get("/opinion-factors", response_model=OpinionFactorsResponse)
+async def list_opinion_factors() -> OpinionFactorsResponse:
+    """Catalog of subjective factors users can toggle (not free-text NLP)."""
+    return OpinionFactorsResponse(
+        factors=[OpinionFactorResponse.model_validate(f) for f in OPINION_FACTORS]
+    )
+
+
+@router.post("/{fixture_id}/adjust", response_model=PredictionSnapshotResponse)
+async def adjust_fixture_prediction(
+    fixture_id: int,
+    body: AdjustPredictionRequest,
+    db: AsyncSession = Depends(get_db),
+) -> PredictionSnapshotResponse:
+    """Fuse selected opinion tags with stored algorithm probabilities."""
+    stored = (
+        await db.execute(select(PreMatchData).where(PreMatchData.fixture_id == fixture_id))
+    ).scalar_one_or_none()
+    if stored is None or None in (
+        stored.home_win_prob,
+        stored.draw_prob,
+        stored.away_win_prob,
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="暂无算法预测，请先打开详情完成分析",
+        )
+
+    base = {
+        "home": stored.home_win_prob,
+        "draw": stored.draw_prob,
+        "away": stored.away_win_prob,
+    }
+    odds = rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
+    known = {f["id"] for f in OPINION_FACTORS}
+    factors = [f for f in body.factors if f in known]
+    adjusted = adjust_probabilities_with_factors(base, factors)
+    snap = build_prediction_snapshot(adjusted, odds if isinstance(odds, dict) else None)
+    return PredictionSnapshotResponse(**snap, factors=factors)
 
 
 @router.get("/{fixture_id}/analysis", response_model=FixtureResponse)
@@ -240,7 +305,7 @@ async def get_fixture_analysis(
     return FixtureResponse(
         fixture_id=fixture.id,
         league_id=fixture.league_id,
-        league_name=fixture.league.name if fixture.league else "",
+        league_name=_league_name(fixture),
         home_team_id=fixture.home_team_id,
         away_team_id=fixture.away_team_id,
         home_team_name=fixture.home_team.name if fixture.home_team else "",
