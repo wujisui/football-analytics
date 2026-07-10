@@ -85,7 +85,8 @@ async def list_leagues(
         leagues.append(
             LeagueSummaryResponse(
                 league_id=league_id,
-                league_name=league.name if league else league_name,
+                # Prefer configured 中文 display name over DB/API English name.
+                league_name=league_name,
                 country=country,
                 today_fixtures_count=today_count,
                 upcoming_fixtures_count=upcoming_count,

@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     # Optional override for analysis refresh TTL (seconds). Empty/0 = kickoff-based policy.
     ANALYSIS_REFRESH_TTL_SECONDS: int = 0
 
+    # Display name (中文) → API-Sports league id. Menu order follows this dict.
     LEAGUE_IDS: dict[str, int] = {
         "英超": 39,
         "西甲": 140,
@@ -73,9 +74,12 @@ class Settings(BaseSettings):
         "欧罗巴": 3,
         "欧协联": 848,
         "亚冠": 10,
+        "中超": 169,
         "世界杯": 1,
-        "MLS": 253,
-        "Brazil Serie A": 71,
+        "美职联": 253,
+        "巴甲": 71,
+        "日职联": 98,
+        "韩K联": 292,
     }
     # Fallback country labels when API enrich is unavailable.
     LEAGUE_COUNTRIES: dict[int, str] = {
@@ -88,9 +92,12 @@ class Settings(BaseSettings):
         3: "World",
         848: "World",
         10: "World",
+        169: "China",
         1: "World",
         253: "USA",
         71: "Brazil",
+        98: "Japan",
+        292: "South Korea",
     }
     # Default window (days, including today) used by leagues summary / upcoming fetch.
     FIXTURES_LOOKAHEAD_DAYS: int = 7
@@ -102,6 +109,14 @@ class Settings(BaseSettings):
     @property
     def api_base_url(self) -> str:
         return f"https://{self.api_host}"
+
+    @property
+    def league_display_names(self) -> dict[int, str]:
+        """league_id → configured 中文 display name."""
+        return {league_id: name for name, league_id in self.LEAGUE_IDS.items()}
+
+    def league_display_name(self, league_id: int, fallback: str = "") -> str:
+        return self.league_display_names.get(league_id) or fallback or f"League {league_id}"
 
     @property
     def uses_api_sports_direct(self) -> bool:

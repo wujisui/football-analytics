@@ -90,7 +90,7 @@
 ### 3.2 数据与联赛覆盖
 
 - [x] 模型：`League` / `Team` / `Fixture` / `PreMatchData` / `ApiSnapshot`
-- [x] 配置联赛：英超、西甲、德甲、意甲、法甲、欧冠、欧罗巴、亚冠、MLS、巴甲
+- [x] 配置联赛：英超、西甲、德甲、意甲、法甲、欧冠、欧罗巴、亚冠、中超、美职联、巴甲、日职联(J1)、韩K联(K1)
 - [x] CLI：`init-db`、`fetch-leagues`、`fetch-today`、`check-quota`、`test-api`、缓存与任务相关命令
 
 ### 3.3 本地优先与赛前冻结策略

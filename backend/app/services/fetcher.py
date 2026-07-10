@@ -375,9 +375,13 @@ class FootballFetcher:
             if allowed_league_ids is not None and league_id not in allowed_league_ids:
                 continue
             try:
+                display_name = self.settings.league_display_name(
+                    league_id,
+                    str(fixture.get("league_name") or f"League {league_id}"),
+                )
                 await self._upsert_league(
                     league_id,
-                    fixture["league_name"],
+                    display_name,
                     fixture["country"],
                     fixture["season"],
                 )
