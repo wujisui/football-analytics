@@ -1,30 +1,41 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import AnalysisView from '@/views/AnalysisView.vue'
-import FixturesView from '@/views/FixturesView.vue'
-import LeaguesView from '@/views/LeaguesView.vue'
+import Detail from '@/views/Detail.vue'
+import Home from '@/views/Home.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
       path: '/',
-      name: 'leagues',
-      component: LeaguesView,
+      name: 'home',
+      component: Home,
     },
     {
-      path: '/leagues/:leagueId',
-      name: 'fixtures',
-      component: FixturesView,
+      path: '/fixture/:fixtureId',
+      name: 'fixture-detail',
+      component: Detail,
       props: true,
+    },
+    // Backward-compatible redirects from previous MVP routes
+    {
+      path: '/leagues/:leagueId',
+      redirect: (to) => ({
+        name: 'home',
+        query: { league: String(to.params.leagueId) },
+      }),
     },
     {
       path: '/fixtures/:fixtureId',
-      name: 'analysis',
-      component: AnalysisView,
-      props: true,
+      redirect: (to) => ({
+        name: 'fixture-detail',
+        params: { fixtureId: to.params.fixtureId },
+      }),
     },
   ],
+  scrollBehavior() {
+    return { top: 0 }
+  },
 })
 
 export default router

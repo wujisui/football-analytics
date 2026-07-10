@@ -12,10 +12,32 @@ export interface MatchWinnerOdds {
   values?: Array<{ label?: string; odd?: string | number | null }>
 }
 
+export interface LineOdds {
+  bookmaker?: string | null
+  bet?: string | null
+  line?: string | null
+  home?: string | number | null
+  away?: string | number | null
+  values?: Array<{ label?: string; odd?: string | number | null }>
+}
+
 export interface OddsPackage {
   available: boolean
   match_winner?: MatchWinnerOdds | null
+  asian_handicap?: LineOdds | null
+  goals_ou?: LineOdds | null
   bookmakers?: Array<Record<string, unknown>>
+}
+
+export interface StandingsSnippet {
+  available: boolean
+  league_id?: number | null
+  league_name?: string
+  group?: string | null
+  home_rank?: number | null
+  away_rank?: number | null
+  scope?: string
+  fetched?: boolean | null
 }
 
 export interface LineupPlayer {
@@ -60,6 +82,9 @@ export interface FormMatch {
   home: string
   away: string
   score: string
+  league_id?: number | null
+  league_name?: string | null
+  league_country?: string | null
   result?: string | null
   outcome_for_current_home?: string | null
 }
@@ -72,6 +97,7 @@ export interface FormPackage {
   losses: number
   form?: string
   matches: FormMatch[]
+  source?: string | null
 }
 
 export interface H2HPackage {
@@ -80,6 +106,9 @@ export interface H2HPackage {
   draws: number
   away_wins: number
   matches: FormMatch[]
+  /** Present after successful H2H summarize; missing means stale/failed row. */
+  fetched?: boolean | null
+  source?: string | null
 }
 
 export interface PrematchPackage {
@@ -89,6 +118,7 @@ export interface PrematchPackage {
   head_to_head: H2HPackage
   home_form: FormPackage
   away_form: FormPackage
+  standings?: StandingsSnippet | null
   home_formation?: string | null
   away_formation?: string | null
 }
@@ -109,6 +139,13 @@ export interface AnalysisResponse {
   package?: PrematchPackage | null
 }
 
+export interface FixtureOddsSnippet {
+  available: boolean
+  match_winner?: MatchWinnerOdds | null
+  asian_handicap?: LineOdds | null
+  goals_ou?: LineOdds | null
+}
+
 export interface FixtureResponse {
   fixture_id: number
   league_id: number
@@ -120,10 +157,14 @@ export interface FixtureResponse {
   fixture_date: string
   status: string
   analysis: AnalysisResponse
+  home_rank?: number | null
+  away_rank?: number | null
+  odds_snippet?: FixtureOddsSnippet | null
 }
 
 export interface TodayFixturesResponse {
   date: string
+  days: number
   total: number
   fixtures: FixtureResponse[]
 }
@@ -133,8 +174,11 @@ export interface LeagueSummaryResponse {
   league_name: string
   country: string | null
   today_fixtures_count: number
+  upcoming_fixtures_count: number
 }
 
 export interface LeaguesListResponse {
+  date: string
+  days: number
   leagues: LeagueSummaryResponse[]
 }

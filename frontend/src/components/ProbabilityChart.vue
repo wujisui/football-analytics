@@ -10,9 +10,13 @@ import type { ProbabilitiesResponse } from '@/api/types'
 
 use([CanvasRenderer, PieChart, TooltipComponent, LegendComponent])
 
-const props = defineProps<{
-  probabilities: ProbabilitiesResponse
-}>()
+const props = withDefaults(
+  defineProps<{
+    probabilities: ProbabilitiesResponse
+    compact?: boolean
+  }>(),
+  { compact: false },
+)
 
 const option = computed(() => ({
   tooltip: {
@@ -21,11 +25,12 @@ const option = computed(() => ({
   },
   legend: {
     bottom: 0,
+    show: !props.compact,
   },
   series: [
     {
       type: 'pie',
-      radius: ['40%', '70%'],
+      radius: props.compact ? ['35%', '62%'] : ['40%', '70%'],
       avoidLabelOverlap: true,
       itemStyle: {
         borderRadius: 6,
@@ -33,7 +38,8 @@ const option = computed(() => ({
         borderWidth: 2,
       },
       label: {
-        formatter: '{b}\n{d}%',
+        formatter: props.compact ? '{d}%' : '{b}\n{d}%',
+        fontSize: props.compact ? 11 : 12,
       },
       data: [
         {
@@ -55,12 +61,16 @@ const option = computed(() => ({
 </script>
 
 <template>
-  <VChart class="chart" :option="option" autoresize />
+  <VChart class="chart" :class="{ compact }" :option="option" autoresize />
 </template>
 
 <style scoped>
 .chart {
   width: 100%;
   height: 360px;
+}
+
+.chart.compact {
+  height: 200px;
 }
 </style>

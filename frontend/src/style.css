@@ -1,9 +1,46 @@
+:root,
+html[data-theme='light'] {
+  --fa-bg: #f5f6f8;
+  --fa-bg-elevated: #ffffff;
+  --fa-bg-soft: #fafafa;
+  --fa-border: #e8e8e8;
+  --fa-border-soft: #f0f0f0;
+  --fa-text: #213547;
+  --fa-text-strong: #1a1a1a;
+  --fa-text-secondary: #666666;
+  --fa-text-muted: #888888;
+  --fa-text-faint: #999999;
+  --fa-hover-border: #b8d4f8;
+  --fa-hover-shadow: rgba(32, 128, 240, 0.08);
+  --fa-highlight-bg: #fff7e6;
+  --fa-highlight-border: #f0c78a;
+  --fa-highlight-text: #c2410c;
+}
+
+html[data-theme='dark'] {
+  --fa-bg: #101014;
+  --fa-bg-elevated: #18181c;
+  --fa-bg-soft: #1f1f24;
+  --fa-border: #2e2e36;
+  --fa-border-soft: #2a2a30;
+  --fa-text: #e5e5e5;
+  --fa-text-strong: #f5f5f5;
+  --fa-text-secondary: #a3a3a3;
+  --fa-text-muted: #8b8b8b;
+  --fa-text-faint: #737373;
+  --fa-hover-border: #3b6ea8;
+  --fa-hover-shadow: rgba(0, 0, 0, 0.35);
+  --fa-highlight-bg: rgba(240, 160, 32, 0.12);
+  --fa-highlight-border: #8a6a2b;
+  --fa-highlight-text: #f0c78a;
+}
+
 :root {
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #213547;
-  background-color: #f7f8fa;
+  color: var(--fa-text);
+  background-color: var(--fa-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -14,17 +51,23 @@
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
+html,
+body,
 #app {
-  min-height: 100vh;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 320px;
+  overflow: hidden;
+  background-color: var(--fa-bg);
+  color: var(--fa-text);
 }
 
 a {
   color: inherit;
   text-decoration: none;
+}
+
+button {
+  font-family: inherit;
 }
