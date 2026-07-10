@@ -21,6 +21,7 @@ alwaysApply: false
 | 层级导航 | `n-breadcrumb` / `n-breadcrumb-item` | 纯文本「返回」代替路径 |
 | 加载 / 空 / 错 | `n-spin`、`n-empty`、`n-alert` + `n-button` 重试 | 自定义转圈或裸文字 |
 | 标签 / 按钮 / 卡片 / Tabs | `n-tag`、`n-button`、`n-card`、`n-tabs` | 重复造轮子 |
+| 区域滚动 | `n-scrollbar`，或 Layout 设 `:native-scrollbar="false"` | 手写 `overflow` + 自定义 `::-webkit-scrollbar` |
 | 表单输入 | `n-input`、`n-form`（需要时） | 原生 textarea 无统一样式 |
 | 数据展示 | `n-descriptions`、`n-progress`、`n-table`（适合时） | 无必要的纯 HTML 表格堆砌 |
 | 全局配置 | 根节点 `n-config-provider`（中文 locale + `theme`） | 各页各自套主题 |
@@ -54,6 +55,7 @@ Naive UI **只内置两套全局主题**：默认浅色（`theme=null`）与 `da
 - 开赛时间：API 为 UTC；前端用 `parseApiDate` + 浏览器本地时区格式化（`utils/format.ts`）
 - 赛果：W/D/L 显示为 胜/平/负（`resultToZh` / `formCharsZh`）
 - 队名：优先中文映射（`utils/teamNames.ts`，按 team_id / 英文名）；未收录则回退原文
+- 联赛名：优先按 league_id / 国家消歧（`utils/leagueNames.ts`）；同名如 League One 在中国为中甲、英格兰为英甲。侧栏顺序由后端 `LEAGUE_IDS` 决定，暂不支持拖拽排序
 
 ## 面包屑约定
 

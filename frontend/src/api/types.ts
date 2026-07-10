@@ -133,10 +133,32 @@ export interface AnalysisResponse {
   probabilities: ProbabilitiesResponse
   confidence: string
   recommendation: string
+  goal_lean?: string
+  both_score_lean?: string
+  score_hint?: string
+  handicap_lean?: string
   data_source: string
   analyzed_at: string
   cache_status: string
   package?: PrematchPackage | null
+}
+
+export interface OpinionFactor {
+  id: string
+  label: string
+  group: string
+}
+
+export interface PredictionSnapshot {
+  home_win_prob: number
+  draw_prob: number
+  away_win_prob: number
+  recommendation: string
+  goal_lean: string
+  both_score_lean: string
+  score_hint: string
+  handicap_lean: string
+  factors?: string[]
 }
 
 export interface FixtureOddsSnippet {

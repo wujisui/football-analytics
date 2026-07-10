@@ -30,8 +30,8 @@ watch(
   <n-layout class="detail-layout" position="absolute">
     <n-layout-content
       class="detail-content"
-      :native-scrollbar="true"
-      content-style="min-height: 100%; height: 100%; box-sizing: border-box; padding: 16px 20px 24px; display: flex; flex-direction: column;"
+      :native-scrollbar="false"
+      content-style="height: 100%; box-sizing: border-box; padding: 16px 20px 24px; display: flex; flex-direction: column; overflow: hidden;"
     >
       <n-spin class="detail-spin" :show="loading && !data">
         <div class="spin-body">
@@ -71,28 +71,40 @@ watch(
 
 .detail-spin {
   flex: 1;
-  min-height: 100%;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
+.detail-spin :deep(.n-spin-container),
+.detail-spin :deep(.n-spin-body),
 .detail-spin :deep(.n-spin-content) {
   flex: 1;
-  min-height: 100%;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .spin-body {
   flex: 1;
-  min-height: 100%;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 16px;
   width: 100%;
-  max-width: 1280px;
+  max-width: 1520px;
   margin: 0 auto;
   box-sizing: border-box;
+  overflow: hidden;
+}
+
+.spin-body :deep(.basic-info) {
+  flex-shrink: 0;
 }
 
 .tabs-fill {
@@ -100,5 +112,6 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 </style>

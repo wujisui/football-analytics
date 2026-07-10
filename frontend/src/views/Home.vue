@@ -6,6 +6,7 @@ import FixtureList from '@/components/FixtureList.vue'
 import LeagueMenu from '@/components/LeagueMenu.vue'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { parseApiDate } from '@/utils/format'
+import { leagueNameZh } from '@/utils/leagueNames'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,7 @@ const {
 
 /** null = 全部联赛 */
 const selectedLeagueId = ref<number | null>(null)
+const siderCollapsed = ref(false)
 
 const selectedLeague = computed(() =>
   selectedLeagueId.value == null
@@ -60,14 +62,16 @@ const emptyText = computed(() => {
   if (selectedLeagueId.value == null) {
     return `近 ${LOOKAHEAD_DAYS} 日暂无未开赛赛事`
   }
-  const name = selectedLeague.value?.league_name || '该联赛'
+  const name = leagueNameZh(selectedLeague.value?.league_name) || '该联赛'
   return `近 ${LOOKAHEAD_DAYS} 日暂无${name}未开赛赛事`
 })
 
-const listTitle = computed(() => selectedLeague.value?.league_name ?? '全部比赛')
+const listTitle = computed(() =>
+  selectedLeague.value ? leagueNameZh(selectedLeague.value.league_name) : '全部比赛',
+)
 
 const breadcrumbFilter = computed(() =>
-  selectedLeague.value?.league_name ?? '全部',
+  selectedLeague.value ? leagueNameZh(selectedLeague.value.league_name) : '全部',
 )
 
 function syncLeagueFromRoute() {
@@ -99,18 +103,20 @@ function selectLeague(leagueId: number | null) {
 }
 
 onMounted(() => {
-  void loadAll(false)
+  // Full browser refresh should not reuse the 5‑min in-memory list (stale picks).
+  void loadAll(true)
 })
 </script>
 
 <template>
   <n-layout has-sider class="home-layout" position="absolute">
     <n-layout-sider
+      v-model:collapsed="siderCollapsed"
       bordered
       collapse-mode="width"
       :collapsed-width="64"
       :width="232"
-      :native-scrollbar="true"
+      :native-scrollbar="false"
       show-trigger="bar"
       content-style="height: 100%;"
     >
@@ -120,6 +126,7 @@ onMounted(() => {
         :pending-count-by-league="pendingCountByLeague"
         :total-pending="totalPending"
         :loading="loading"
+        :collapsed="siderCollapsed"
         @select="selectLeague"
       />
     </n-layout-sider>
@@ -147,7 +154,7 @@ onMounted(() => {
 
       <n-layout-content
         class="home-content"
-        :native-scrollbar="true"
+        :native-scrollbar="false"
         content-style="padding: 16px 20px 24px;"
       >
         <n-alert v-if="error" type="error" :title="error" class="state">

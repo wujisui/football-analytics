@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import ProbabilityChart from '@/components/ProbabilityChart.vue'
-import type { PredictionSnapshot } from '@/utils/opinionAdjust'
+import type { PredictionSnapshot } from '@/api/types'
 import { predictionDiffKeys } from '@/utils/opinionAdjust'
 import { confidenceType, toPercent } from '@/utils/format'
 
@@ -32,7 +32,7 @@ function rowClass(key: string): string {
       <h2 class="section-title">预测对比</h2>
       <div class="meta">
         <n-tag size="small" :type="confidenceType(confidence)" :bordered="false">
-          置信度 {{ confidence }}
+          数据完整度 {{ confidence }}
         </n-tag>
         <span class="muted">来源 {{ dataSource }} · {{ analyzedAt }}</span>
       </div>
@@ -43,7 +43,12 @@ function rowClass(key: string): string {
         <n-card size="small" title="算法原始预测" class="panel">
           <div class="rec">
             推荐
-            <n-tag type="primary" size="small">{{ original.recommendation }}</n-tag>
+            <n-tag
+              :type="original.recommendation === '待分析' ? 'default' : 'primary'"
+              size="small"
+            >
+              {{ original.recommendation }}
+            </n-tag>
           </div>
           <ul class="rows">
             <li>主胜 {{ toPercent(original.home_win_prob) }}</li>
@@ -51,7 +56,8 @@ function rowClass(key: string): string {
             <li>客胜 {{ toPercent(original.away_win_prob) }}</li>
             <li class="soft">{{ original.goal_lean }}</li>
             <li class="soft">{{ original.both_score_lean }}</li>
-            <li class="soft">比分参考 {{ original.score_hint }}</li>
+            <li class="soft">{{ original.handicap_lean }}</li>
+            <li class="soft">参考比分 {{ original.score_hint }}</li>
           </ul>
           <ProbabilityChart
             :probabilities="{
@@ -79,7 +85,8 @@ function rowClass(key: string): string {
               <li :class="rowClass('away')">客胜 {{ toPercent(adjusted.away_win_prob) }}</li>
               <li class="soft" :class="rowClass('goal_lean')">{{ adjusted.goal_lean }}</li>
               <li class="soft" :class="rowClass('both_score')">{{ adjusted.both_score_lean }}</li>
-              <li class="soft" :class="rowClass('score')">比分参考 {{ adjusted.score_hint }}</li>
+              <li class="soft" :class="rowClass('handicap')">{{ adjusted.handicap_lean }}</li>
+              <li class="soft" :class="rowClass('score')">参考比分 {{ adjusted.score_hint }}</li>
             </ul>
             <ProbabilityChart
               :probabilities="{
@@ -94,7 +101,7 @@ function rowClass(key: string): string {
           </template>
           <n-empty
             v-else
-            description="在上方输入主观意见并提交后，此处显示融合结果"
+            description="在上方勾选主观因素并提交后，此处显示融合结果"
             size="small"
             class="empty"
           />
@@ -146,7 +153,7 @@ function rowClass(key: string): string {
 
 .panel {
   background: var(--fa-bg-elevated);
-  min-height: 280px;
+  min-height: 0;
 }
 
 .panel.highlight {

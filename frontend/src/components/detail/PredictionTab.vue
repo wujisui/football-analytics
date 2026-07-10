@@ -3,51 +3,51 @@ import { computed, ref } from 'vue'
 
 import OpinionInput from '@/components/detail/OpinionInput.vue'
 import PredictionResult from '@/components/detail/PredictionResult.vue'
-import type { FixtureResponse } from '@/api/types'
-import {
-  adjustWithOpinion,
-  toPredictionSnapshot,
-  type PredictionSnapshot,
-} from '@/utils/opinionAdjust'
+import { adjustFixturePrediction } from '@/api/fixtures'
+import type { FixtureResponse, PredictionSnapshot } from '@/api/types'
+import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{
   fixture: FixtureResponse
 }>()
 
-const opinion = ref('')
-const submittedOpinion = ref('')
+const selectedFactors = ref<string[]>([])
+const submittedFactors = ref<string[]>([])
 const submitting = ref(false)
+const adjustError = ref('')
 const adjusted = ref<PredictionSnapshot | null>(null)
 
-const original = computed(() =>
-  toPredictionSnapshot(
-    props.fixture.analysis.probabilities,
-    props.fixture.analysis.recommendation,
-  ),
-)
+const original = computed(() => snapshotFromAnalysis(props.fixture.analysis))
 
-function submitOpinion() {
-  if (!opinion.value.trim()) return
+async function submitOpinion() {
+  if (!selectedFactors.value.length) return
   submitting.value = true
-  window.setTimeout(() => {
-    adjusted.value = adjustWithOpinion(
-      props.fixture.analysis.probabilities,
-      opinion.value,
+  adjustError.value = ''
+  try {
+    adjusted.value = await adjustFixturePrediction(
+      props.fixture.fixture_id,
+      selectedFactors.value,
     )
-    submittedOpinion.value = opinion.value.trim()
+    submittedFactors.value = [...selectedFactors.value]
+  } catch (e) {
+    adjustError.value = e instanceof Error ? e.message : '融合预测失败'
+    adjusted.value = null
+    submittedFactors.value = []
+  } finally {
     submitting.value = false
-  }, 280)
+  }
 }
 </script>
 
 <template>
   <div class="prediction-tab">
     <OpinionInput
-      v-model="opinion"
+      v-model="selectedFactors"
       :submitting="submitting"
       @submit="submitOpinion"
     />
+    <n-alert v-if="adjustError" type="error" :title="adjustError" />
     <PredictionResult
       :original="original"
       :adjusted="adjusted"
@@ -55,7 +55,7 @@ function submitOpinion() {
       :data-source="fixture.analysis.data_source"
       :analyzed-at="formatDateTime(fixture.analysis.analyzed_at)"
       :comparing="submitting"
-      :has-opinion="!!submittedOpinion"
+      :has-opinion="submittedFactors.length > 0"
     />
   </div>
 </template>
