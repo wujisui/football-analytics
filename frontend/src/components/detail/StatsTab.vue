@@ -128,52 +128,13 @@ function pctLabel(n: number | null): string {
         </n-card>
       </div>
 
-      <n-card v-if="pkg?.odds.available" size="small" title="赛前盘口参考">
-        <n-descriptions v-if="pkg.odds.match_winner" :column="3" size="small">
-          <n-descriptions-item label="主胜">
-            {{ pkg.odds.match_winner.home ?? '—' }}
-          </n-descriptions-item>
-          <n-descriptions-item label="平局">
-            {{ pkg.odds.match_winner.draw ?? '—' }}
-          </n-descriptions-item>
-          <n-descriptions-item label="客胜">
-            {{ pkg.odds.match_winner.away ?? '—' }}
-          </n-descriptions-item>
-        </n-descriptions>
-        <n-descriptions
-          v-if="pkg.odds.asian_handicap"
-          :column="3"
-          size="small"
-          style="margin-top: 10px"
-        >
-          <n-descriptions-item label="让球盘">
-            {{ pkg.odds.asian_handicap.line ?? '—' }}
-          </n-descriptions-item>
-          <n-descriptions-item label="主队水位">
-            {{ pkg.odds.asian_handicap.home ?? '—' }}
-          </n-descriptions-item>
-          <n-descriptions-item label="客队水位">
-            {{ pkg.odds.asian_handicap.away ?? '—' }}
-          </n-descriptions-item>
-        </n-descriptions>
-        <n-descriptions
-          v-if="pkg.odds.goals_ou"
-          :column="3"
-          size="small"
-          style="margin-top: 10px"
-        >
-          <n-descriptions-item label="大小球">
-            {{ pkg.odds.goals_ou.line ?? '—' }}
-          </n-descriptions-item>
-          <n-descriptions-item label="大球">
-            {{ pkg.odds.goals_ou.home ?? '—' }}
-          </n-descriptions-item>
-          <n-descriptions-item label="小球">
-            {{ pkg.odds.goals_ou.away ?? '—' }}
-          </n-descriptions-item>
-        </n-descriptions>
-        <p v-if="pkg.standings?.available" class="hint" style="margin-top: 10px">
-          本赛事排名：主 {{ pkg.standings.home_rank ?? '—' }} /
+      <n-card
+        v-if="pkg?.standings?.available"
+        size="small"
+        title="本赛事排名"
+      >
+        <p class="hint" style="margin: 0">
+          主 {{ pkg.standings.home_rank ?? '—' }} /
           客 {{ pkg.standings.away_rank ?? '—' }}
           <template v-if="pkg.standings.group">（{{ pkg.standings.group }}）</template>
         </p>

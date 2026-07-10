@@ -50,7 +50,12 @@ watch(
 
 <template>
   <div class="tabs-container">
-    <n-tabs :value="activeTab" type="line" animated @update:value="onTabChange">
+    <n-tabs
+      :value="activeTab"
+      type="line"
+      :animated="false"
+      @update:value="onTabChange"
+    >
       <n-tab-pane
         v-for="tab in tabs"
         :key="tab.name"
@@ -60,36 +65,38 @@ watch(
       >
         <div class="pane">
           <n-spin :show="!!loading">
-            <div class="pane-body">
-              <n-alert v-if="error" type="error" :title="error">
-                <n-button size="small" type="primary" @click="$emit('retry')">重试</n-button>
-              </n-alert>
+            <n-scrollbar class="pane-scroll" trigger="hover">
+              <div class="pane-body">
+                <n-alert v-if="error" type="error" :title="error">
+                  <n-button size="small" type="primary" @click="$emit('retry')">重试</n-button>
+                </n-alert>
 
-              <template v-else-if="visited.has(tab.name)">
-                <H2HTab
-                  v-if="tab.name === 'record'"
-                  :home-team-name="fixture.home_team_name"
-                  :away-team-name="fixture.away_team_name"
-                  :home-team-id="fixture.home_team_id"
-                  :away-team-id="fixture.away_team_id"
-                  :pkg="pkg"
-                />
-                <StatsTab
-                  v-else-if="tab.name === 'stats'"
-                  :fixture="fixture"
-                  :pkg="pkg"
-                />
-                <LineupTab
-                  v-else-if="tab.name === 'lineup'"
-                  :fixture="fixture"
-                  :pkg="pkg"
-                />
-                <PredictionTab
-                  v-else-if="tab.name === 'prediction'"
-                  :fixture="fixture"
-                />
-              </template>
-            </div>
+                <template v-else-if="visited.has(tab.name)">
+                  <H2HTab
+                    v-if="tab.name === 'record'"
+                    :home-team-name="fixture.home_team_name"
+                    :away-team-name="fixture.away_team_name"
+                    :home-team-id="fixture.home_team_id"
+                    :away-team-id="fixture.away_team_id"
+                    :pkg="pkg"
+                  />
+                  <StatsTab
+                    v-else-if="tab.name === 'stats'"
+                    :fixture="fixture"
+                    :pkg="pkg"
+                  />
+                  <LineupTab
+                    v-else-if="tab.name === 'lineup'"
+                    :fixture="fixture"
+                    :pkg="pkg"
+                  />
+                  <PredictionTab
+                    v-else-if="tab.name === 'prediction'"
+                    :fixture="fixture"
+                  />
+                </template>
+              </div>
+            </n-scrollbar>
           </n-spin>
         </div>
       </n-tab-pane>
@@ -102,11 +109,12 @@ watch(
   background: var(--fa-bg-elevated);
   border: 1px solid var(--fa-border);
   border-radius: 8px;
-  padding: 8px 16px 20px;
+  padding: 8px 16px 12px;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .tabs-container :deep(.n-tabs) {
@@ -114,26 +122,53 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
+.tabs-container :deep(.n-tabs-nav) {
+  flex-shrink: 0;
+}
+
+.tabs-container :deep(.n-tabs-content),
+.tabs-container :deep(.n-tab-pane),
 .tabs-container :deep(.n-tabs-pane-wrapper),
-.tabs-container :deep(.n-tab-pane) {
+.tabs-container :deep(.n-tabs-pane-wrapper > div) {
   flex: 1;
   min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .pane {
   flex: 1;
-  min-height: 280px;
+  min-height: 0;
   padding-top: 8px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.pane :deep(.n-spin-container),
+.pane :deep(.n-spin-body),
+.pane :deep(.n-spin-content) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pane-scroll {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 
 .pane-body {
-  flex: 1;
-  min-height: 220px;
+  padding-right: 8px;
+  padding-bottom: 12px;
 }
 </style>
