@@ -43,6 +43,7 @@ async def _ensure_sqlite_columns(conn) -> None:
         "h2h_json": "TEXT",
         "home_form_json": "TEXT",
         "away_form_json": "TEXT",
+        "standings_json": "TEXT",
     }
     for column, col_type in additions.items():
         if column not in existing:

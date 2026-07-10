@@ -51,7 +51,7 @@ def parse_match_result_for_team(item: dict[str, Any], team_id: int) -> str | Non
     return None
 
 
-def summarize_form_payload(payload: dict[str, Any], team_id: int, limit: int = 5) -> dict[str, Any]:
+def summarize_form_payload(payload: dict[str, Any], team_id: int, limit: int = 20) -> dict[str, Any]:
     matches: list[dict[str, Any]] = []
     finished = {"FT", "AET", "PEN"}
     for item in extract_items(payload):
@@ -71,11 +71,16 @@ def summarize_form_payload(payload: dict[str, Any], team_id: int, limit: int = 5
                     f"{first_value(item, [['goals', 'home'], ['score', 'home']], '-')}"
                     f"-{first_value(item, [['goals', 'away'], ['score', 'away']], '-')}"
                 ),
+                "league_id": first_value(item, [["league", "id"]]),
+                "league_name": first_value(item, [["league", "name"]], "") or "",
+                "league_country": first_value(item, [["league", "country"]], "") or "",
                 "result": result,
             }
         )
-        if len(matches) >= limit:
-            break
+
+    # Season payloads are chronological; keep the most recent finished matches.
+    matches.sort(key=lambda m: str(m.get("date") or ""), reverse=True)
+    matches = matches[:limit]
 
     wins = sum(1 for m in matches if m["result"] == "W")
     draws = sum(1 for m in matches if m["result"] == "D")
@@ -88,13 +93,13 @@ def summarize_form_payload(payload: dict[str, Any], team_id: int, limit: int = 5
         "losses": losses,
         "form": "".join(m["result"] for m in matches),
         "matches": matches,
+        "source": "free-2022-2024-v3",
     }
 
 
-def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int = 5) -> dict[str, Any]:
+def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int = 20) -> dict[str, Any]:
     matches: list[dict[str, Any]] = []
     finished = {"FT", "AET", "PEN"}
-    home_wins = draws = away_wins = 0
 
     for item in extract_items(payload):
         status = first_value(item, [["fixture", "status", "short"], ["status", "short"], ["status"]])
@@ -106,26 +111,15 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
             continue
         home_goals = int(home_goals)
         away_goals = int(away_goals)
+        # Outcome relative to *current fixture* home team, not the H2H match's home side.
+        fixture_home_id = first_value(item, [["teams", "home", "id"]])
+        current_was_home = fixture_home_id is not None and int(fixture_home_id) == home_team_id
         if home_goals > away_goals:
-            # relative to fixture home team in that match, not our fixture home
-            fixture_home_id = first_value(item, [["teams", "home", "id"]])
-            if fixture_home_id is not None and int(fixture_home_id) == home_team_id:
-                home_wins += 1
-                outcome = "home"
-            else:
-                away_wins += 1
-                outcome = "away"
+            outcome = "home" if current_was_home else "away"
         elif home_goals == away_goals:
-            draws += 1
             outcome = "draw"
         else:
-            fixture_home_id = first_value(item, [["teams", "home", "id"]])
-            if fixture_home_id is not None and int(fixture_home_id) == home_team_id:
-                away_wins += 1
-                outcome = "away"
-            else:
-                home_wins += 1
-                outcome = "home"
+            outcome = "away" if current_was_home else "home"
 
         matches.append(
             {
@@ -134,11 +128,25 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
                 "home": first_value(item, [["teams", "home", "name"]], ""),
                 "away": first_value(item, [["teams", "away", "name"]], ""),
                 "score": f"{home_goals}-{away_goals}",
+                "league_id": first_value(item, [["league", "id"]]),
+                "league_name": first_value(item, [["league", "name"]], "") or "",
+                "league_country": first_value(item, [["league", "country"]], "") or "",
                 "outcome_for_current_home": outcome,
+                "result": (
+                    "W"
+                    if outcome == "home"
+                    else "L"
+                    if outcome == "away"
+                    else "D"
+                ),
             }
         )
-        if len(matches) >= limit:
-            break
+
+    matches.sort(key=lambda m: str(m.get("date") or ""), reverse=True)
+    matches = matches[:limit]
+    home_wins = sum(1 for m in matches if m.get("outcome_for_current_home") == "home")
+    draws = sum(1 for m in matches if m.get("outcome_for_current_home") == "draw")
+    away_wins = sum(1 for m in matches if m.get("outcome_for_current_home") == "away")
 
     return {
         "played": len(matches),
@@ -146,13 +154,58 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
         "draws": draws,
         "away_wins": away_wins,
         "matches": matches,
+        # Distinguishes "API returned zero H2H" from "fetch/summarize never succeeded".
+        "fetched": True,
+        # Bump when H2H fetch strategy changes so stale empty rows are refreshed.
+        "source": "free-2022-2024-v3",
+    }
+
+
+def _parse_line_market(
+    bet_name: str,
+    book_name: str,
+    parsed_values: list[dict[str, Any]],
+    *,
+    home_labels: set[str],
+    away_labels: set[str],
+) -> dict[str, Any] | None:
+    """Pick a representative handicap / O-U line from bet values."""
+    home_odd = None
+    away_odd = None
+    line: str | None = None
+    for v in parsed_values:
+        label = str(v.get("label") or "").strip()
+        label_l = label.lower()
+        odd = v.get("odd")
+        # API-Football often uses "Home -0.5" / "Over 2.5"
+        parts = label.split()
+        maybe_line = parts[-1] if len(parts) >= 2 else None
+        if any(k in label_l for k in home_labels) or label_l in home_labels:
+            home_odd = odd
+            if maybe_line and any(ch.isdigit() for ch in maybe_line):
+                line = maybe_line
+        elif any(k in label_l for k in away_labels) or label_l in away_labels:
+            away_odd = odd
+            if maybe_line and any(ch.isdigit() for ch in maybe_line) and line is None:
+                line = maybe_line
+    if home_odd is None and away_odd is None:
+        return None
+    return {
+        "bookmaker": book_name,
+        "bet": bet_name,
+        "line": line,
+        "home": home_odd,
+        "away": away_odd,
+        "values": parsed_values[:12],
     }
 
 
 def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Extract Match Winner (1X2) odds from first bookmaker when available."""
+    """Extract 1X2 + Asian handicap + Goals O/U from first useful bookmaker."""
     bookmakers_out: list[dict[str, Any]] = []
     match_winner: dict[str, Any] | None = None
+    asian_handicap: dict[str, Any] | None = None
+    goals_ou: dict[str, Any] | None = None
 
     for item in extract_items(payload):
         bookmakers = item.get("bookmakers") or []
@@ -160,7 +213,8 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
             book_name = first_value(book, [["name"], ["bookmaker", "name"]], "unknown")
             bets = book.get("bets") or []
             for bet in bets:
-                bet_name = str(first_value(bet, [["name"], ["label"]], "")).lower()
+                bet_label = first_value(bet, [["name"], ["label"]], "") or ""
+                bet_name = str(bet_label).lower()
                 values = bet.get("values") or []
                 parsed_values = [
                     {
@@ -171,37 +225,132 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 ]
                 entry = {
                     "bookmaker": book_name,
-                    "bet": first_value(bet, [["name"], ["label"]], ""),
+                    "bet": bet_label,
                     "values": parsed_values,
                 }
-                if "match winner" in bet_name or bet_name in {"1x2", "winner", "full time result"}:
-                    if match_winner is None:
-                        match_winner = {
-                            "bookmaker": book_name,
-                            "home": None,
-                            "draw": None,
-                            "away": None,
-                            "values": parsed_values,
-                        }
-                        for v in parsed_values:
-                            label = str(v.get("label", "")).lower()
-                            odd = v.get("odd")
-                            if label in {"home", "1"}:
-                                match_winner["home"] = odd
-                            elif label in {"draw", "x"}:
-                                match_winner["draw"] = odd
-                            elif label in {"away", "2"}:
-                                match_winner["away"] = odd
                 bookmakers_out.append(entry)
-            if match_winner is not None:
+
+                if match_winner is None and (
+                    "match winner" in bet_name
+                    or bet_name in {"1x2", "winner", "full time result"}
+                ):
+                    match_winner = {
+                        "bookmaker": book_name,
+                        "home": None,
+                        "draw": None,
+                        "away": None,
+                        "values": parsed_values,
+                    }
+                    for v in parsed_values:
+                        label = str(v.get("label", "")).lower()
+                        odd = v.get("odd")
+                        if label in {"home", "1"}:
+                            match_winner["home"] = odd
+                        elif label in {"draw", "x"}:
+                            match_winner["draw"] = odd
+                        elif label in {"away", "2"}:
+                            match_winner["away"] = odd
+
+                if asian_handicap is None and (
+                    "asian handicap" in bet_name
+                    or bet_name in {"handicap", "asian handi", "ah"}
+                ):
+                    asian_handicap = _parse_line_market(
+                        bet_label,
+                        book_name,
+                        parsed_values,
+                        home_labels={"home", "1"},
+                        away_labels={"away", "2"},
+                    )
+
+                if goals_ou is None and (
+                    "goals over/under" in bet_name
+                    or "over/under" in bet_name
+                    or bet_name in {"total goals", "totals", "ou"}
+                ):
+                    goals_ou = _parse_line_market(
+                        bet_label,
+                        book_name,
+                        parsed_values,
+                        home_labels={"over", "o"},
+                        away_labels={"under", "u"},
+                    )
+            if match_winner and asian_handicap and goals_ou:
                 break
-        if match_winner is not None:
+        if match_winner and asian_handicap and goals_ou:
             break
 
     return {
         "match_winner": match_winner,
-        "bookmakers": bookmakers_out[:5],
-        "available": match_winner is not None or bool(bookmakers_out),
+        "asian_handicap": asian_handicap,
+        "goals_ou": goals_ou,
+        "bookmakers": bookmakers_out[:8],
+        "available": any(
+            x is not None for x in (match_winner, asian_handicap, goals_ou)
+        )
+        or bool(bookmakers_out),
+    }
+
+
+def parse_standings_for_teams(
+    payload: dict[str, Any],
+    home_team_id: int,
+    away_team_id: int,
+    *,
+    league_id: int | None = None,
+    league_name: str | None = None,
+) -> dict[str, Any]:
+    """Extract home/away ranks from /standings payload (competition table)."""
+    home_rank: int | None = None
+    away_rank: int | None = None
+    resolved_league_id = league_id
+    resolved_league_name = league_name or ""
+    group_name: str | None = None
+
+    for item in extract_items(payload):
+        league = item.get("league") if isinstance(item.get("league"), dict) else item
+        if not isinstance(league, dict):
+            continue
+        if resolved_league_id is None:
+            lid = first_value(league, [["id"]])
+            if lid is not None:
+                resolved_league_id = int(lid)
+        if not resolved_league_name:
+            resolved_league_name = str(first_value(league, [["name"]], "") or "")
+        tables = league.get("standings") or item.get("standings") or []
+        # API shape: standings = [[{rank,team,...}, ...]] or [[groupA],[groupB]]
+        groups = tables if isinstance(tables, list) else []
+        for group in groups:
+            rows = group if isinstance(group, list) else [group]
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                tid = first_value(row, [["team", "id"]])
+                if tid is None:
+                    continue
+                tid_i = int(tid)
+                rank = first_value(row, [["rank"], ["position"]])
+                rank_i = int(rank) if rank is not None else None
+                gname = first_value(row, [["group"], ["description"]])
+                if tid_i == home_team_id and home_rank is None:
+                    home_rank = rank_i
+                    if gname:
+                        group_name = str(gname)
+                elif tid_i == away_team_id and away_rank is None:
+                    away_rank = rank_i
+                    if gname and group_name is None:
+                        group_name = str(gname)
+
+    return {
+        "available": home_rank is not None or away_rank is not None,
+        "league_id": resolved_league_id,
+        "league_name": resolved_league_name,
+        "group": group_name,
+        "home_rank": home_rank,
+        "away_rank": away_rank,
+        # Competition table for this fixture's league (UECL/UCL/etc.), not domestic.
+        "scope": "competition",
+        "fetched": True,
     }
 
 
@@ -272,17 +421,62 @@ def parse_injuries_payload(
     }
 
 
+def rehydrate_odds_markets(odds: dict[str, Any] | None) -> dict[str, Any]:
+    """Fill asian_handicap / goals_ou from stored bookmakers when older rows lack them."""
+    if not isinstance(odds, dict):
+        return {"available": False}
+    if odds.get("asian_handicap") is not None and odds.get("goals_ou") is not None:
+        return odds
+    books = odds.get("bookmakers") or []
+    if not books:
+        return odds
+    # Rebuild via the same parser using a synthetic payload.
+    synthetic = {"response": [{"bookmakers": [
+        {
+            "name": b.get("bookmaker"),
+            "bets": [{"name": b.get("bet"), "values": [
+                {"value": v.get("label"), "odd": v.get("odd")}
+                for v in (b.get("values") or [])
+            ]}],
+        }
+        for b in books
+        if isinstance(b, dict)
+    ]}]}
+    parsed = parse_odds_payload(synthetic)
+    merged = {**odds}
+    if merged.get("asian_handicap") is None and parsed.get("asian_handicap"):
+        merged["asian_handicap"] = parsed["asian_handicap"]
+    if merged.get("goals_ou") is None and parsed.get("goals_ou"):
+        merged["goals_ou"] = parsed["goals_ou"]
+    if merged.get("match_winner") is None and parsed.get("match_winner"):
+        merged["match_winner"] = parsed["match_winner"]
+    merged["available"] = bool(
+        merged.get("match_winner")
+        or merged.get("asian_handicap")
+        or merged.get("goals_ou")
+        or merged.get("bookmakers")
+    )
+    return merged
+
+
 def package_from_record(record: Any) -> dict[str, Any]:
     """Build API package dict from PreMatchData ORM row."""
     lineups = loads_json(getattr(record, "lineups_json", None), {})
     injuries = loads_json(getattr(record, "injuries_json", None), {})
+    odds = rehydrate_odds_markets(
+        loads_json(getattr(record, "odds_json", None), {"available": False})
+    )
     return {
-        "odds": loads_json(getattr(record, "odds_json", None), {"available": False}),
+        "odds": odds,
         "lineups": lineups if lineups else {"available": False, "home": None, "away": None},
         "injuries": injuries if injuries else {"available": False, "home": [], "away": []},
         "head_to_head": loads_json(getattr(record, "h2h_json", None), {"played": 0, "matches": []}),
         "home_form": loads_json(getattr(record, "home_form_json", None), {"played": 0, "matches": []}),
         "away_form": loads_json(getattr(record, "away_form_json", None), {"played": 0, "matches": []}),
+        "standings": loads_json(
+            getattr(record, "standings_json", None),
+            {"available": False},
+        ),
         "home_formation": getattr(record, "home_formation", None)
         or (lineups.get("home") or {}).get("formation"),
         "away_formation": getattr(record, "away_formation", None)

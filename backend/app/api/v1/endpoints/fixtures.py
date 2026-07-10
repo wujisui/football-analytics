@@ -1,22 +1,28 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.fixture import Fixture
-from app.models.league import League
+from app.models.pre_match_data import PreMatchData
 from app.schemas.response import (
+    AnalysisResponse,
+    FixtureOddsSnippetResponse,
     FixtureResponse,
-    LeaguesListResponse,
-    LeagueSummaryResponse,
+    ProbabilitiesResponse,
     TodayFixturesResponse,
     analysis_to_response,
 )
-from app.services.analyzer import AnalyzerService
+from app.services.analyzer import (
+    DEFAULT_PROB,
+    AnalyzerService,
+    get_recommendation,
+)
+from app.services.prematch_package import loads_json, rehydrate_odds_markets
 
 router = APIRouter(prefix="/fixtures", tags=["fixtures"])
 
@@ -26,16 +32,113 @@ def _set_response_headers(response: Response, data_source: str, max_age: int = 1
     response.headers["X-Data-Source"] = data_source
 
 
+def _list_analysis_from_fixture(
+    fixture: Fixture,
+    stored: PreMatchData | None,
+) -> AnalysisResponse:
+    """Build list-row analysis without Redis/API — pure in-memory from ORM rows."""
+    home_name = fixture.home_team.name if fixture.home_team else f"Team {fixture.home_team_id}"
+    away_name = fixture.away_team.name if fixture.away_team else f"Team {fixture.away_team_id}"
+    league_name = fixture.league.name if fixture.league else f"League {fixture.league_id}"
+
+    if stored is not None and None not in (
+        stored.home_win_prob,
+        stored.draw_prob,
+        stored.away_win_prob,
+    ):
+        probs = {
+            "home": stored.home_win_prob,
+            "draw": stored.draw_prob,
+            "away": stored.away_win_prob,
+        }
+        confidence = "中"
+        analyzed_at = stored.updated_at
+        if analyzed_at.tzinfo is None:
+            analyzed_at = analyzed_at.replace(tzinfo=timezone.utc)
+    else:
+        probs = {"home": DEFAULT_PROB, "draw": DEFAULT_PROB, "away": DEFAULT_PROB}
+        confidence = "低"
+        analyzed_at = datetime.now(timezone.utc)
+
+    return AnalysisResponse(
+        fixture_id=fixture.id,
+        home_team_name=home_name,
+        away_team_name=away_name,
+        league_name=league_name,
+        fixture_date=fixture.date,
+        status=fixture.status,
+        probabilities=ProbabilitiesResponse(
+            home_win_prob=probs["home"],
+            draw_prob=probs["draw"],
+            away_win_prob=probs["away"],
+        ),
+        confidence=confidence,
+        recommendation=get_recommendation(probs),
+        data_source="database",
+        analyzed_at=analyzed_at,
+        cache_status="miss",
+        package=None,
+    )
+
+
+def _list_extras_from_stored(stored: PreMatchData | None) -> tuple[
+    int | None,
+    int | None,
+    FixtureOddsSnippetResponse | None,
+]:
+    """Ranks + odds snippet for list cards — local JSON only."""
+    if stored is None:
+        return None, None, None
+    standings = loads_json(getattr(stored, "standings_json", None), {}) or {}
+    home_rank = standings.get("home_rank")
+    away_rank = standings.get("away_rank")
+    odds = rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
+    snippet = None
+    if isinstance(odds, dict) and odds.get("available"):
+        snippet = FixtureOddsSnippetResponse(
+            available=True,
+            match_winner=odds.get("match_winner"),
+            asian_handicap=odds.get("asian_handicap"),
+            goals_ou=odds.get("goals_ou"),
+        )
+    return home_rank, away_rank, snippet
+
+
 @router.get("/today", response_model=TodayFixturesResponse)
 async def get_today_fixtures(
     response: Response,
     league_id: int | None = Query(default=None, description="按联赛 ID 过滤"),
+    date_str: str | None = Query(
+        default=None,
+        alias="date",
+        description="起始日期 YYYY-MM-DD，默认今天",
+    ),
+    days: int | None = Query(
+        default=None,
+        ge=1,
+        le=60,
+        description="从起始日起未来几天（含当天），默认 1（仅当天）；联赛页可用 7",
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> TodayFixturesResponse:
-    today = date.today()
+    """赛程列表（只读本地库，不对每场打官方 API）。"""
+    settings = get_settings()
+    if date_str:
+        try:
+            base_date = date.fromisoformat(date_str)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+    else:
+        base_date = date.today()
+
+    window_days = days if days is not None else 1
+    end_date = base_date + timedelta(days=window_days - 1)
+    start_dt = datetime.combine(base_date, datetime.min.time())
+    end_dt = datetime.combine(end_date, datetime.max.time())
+
     stmt = (
         select(Fixture)
-        .where(func.date(Fixture.date) == today)
+        .where(Fixture.date >= start_dt, Fixture.date <= end_dt)
         .options(
             selectinload(Fixture.home_team),
             selectinload(Fixture.away_team),
@@ -45,42 +148,46 @@ async def get_today_fixtures(
     )
     if league_id is not None:
         stmt = stmt.where(Fixture.league_id == league_id)
+    else:
+        stmt = stmt.where(Fixture.league_id.in_(list(settings.LEAGUE_IDS.values())))
 
     result = await db.execute(stmt)
-    fixtures = result.scalars().all()
-    analyzer = AnalyzerService(db)
+    fixtures = list(result.scalars().all())
+
+    stored_by_id: dict[int, PreMatchData] = {}
+    if fixtures:
+        pre_stmt = select(PreMatchData).where(
+            PreMatchData.fixture_id.in_([f.id for f in fixtures])
+        )
+        pre_rows = (await db.execute(pre_stmt)).scalars().all()
+        stored_by_id = {row.fixture_id: row for row in pre_rows}
 
     fixture_responses: list[FixtureResponse] = []
-    dominant_source = "database"
-
     for fixture in fixtures:
-        try:
-            analysis = await analyzer.analyze_fixture(fixture.id, include_package=False)
-            if analysis.data_source == "api":
-                dominant_source = "api"
-            elif analysis.data_source == "cache" and dominant_source != "api":
-                dominant_source = "cache"
-
-            fixture_responses.append(
-                FixtureResponse(
-                    fixture_id=fixture.id,
-                    league_id=fixture.league_id,
-                    league_name=fixture.league.name if fixture.league else "",
-                    home_team_id=fixture.home_team_id,
-                    away_team_id=fixture.away_team_id,
-                    home_team_name=fixture.home_team.name if fixture.home_team else "",
-                    away_team_name=fixture.away_team.name if fixture.away_team else "",
-                    fixture_date=fixture.date,
-                    status=fixture.status,
-                    analysis=analysis_to_response(analysis),
-                )
+        stored = stored_by_id.get(fixture.id)
+        home_rank, away_rank, odds_snippet = _list_extras_from_stored(stored)
+        fixture_responses.append(
+            FixtureResponse(
+                fixture_id=fixture.id,
+                league_id=fixture.league_id,
+                league_name=fixture.league.name if fixture.league else "",
+                home_team_id=fixture.home_team_id,
+                away_team_id=fixture.away_team_id,
+                home_team_name=fixture.home_team.name if fixture.home_team else "",
+                away_team_name=fixture.away_team.name if fixture.away_team else "",
+                fixture_date=fixture.date,
+                status=fixture.status,
+                analysis=_list_analysis_from_fixture(fixture, stored),
+                home_rank=home_rank,
+                away_rank=away_rank,
+                odds_snippet=odds_snippet,
             )
-        except Exception:
-            continue
+        )
 
-    _set_response_headers(response, dominant_source)
+    _set_response_headers(response, "database")
     return TodayFixturesResponse(
-        date=today.isoformat(),
+        date=base_date.isoformat(),
+        days=window_days,
         total=len(fixture_responses),
         fixtures=fixture_responses,
     )
@@ -111,8 +218,25 @@ async def get_fixture_analysis(
         analysis = await analyzer.analyze_fixture(fixture_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        # Avoid opaque 500s on first-hit enrichment races; client can retry.
+        raise HTTPException(
+            status_code=503,
+            detail=f"分析暂时失败，请重试：{exc}",
+        ) from exc
 
     _set_response_headers(response, analysis.data_source)
+    package = analysis.package if isinstance(analysis.package, dict) else {}
+    standings = package.get("standings") or {}
+    odds = package.get("odds") or {}
+    odds_snippet = None
+    if odds.get("available"):
+        odds_snippet = FixtureOddsSnippetResponse(
+            available=True,
+            match_winner=odds.get("match_winner"),
+            asian_handicap=odds.get("asian_handicap"),
+            goals_ou=odds.get("goals_ou"),
+        )
     return FixtureResponse(
         fixture_id=fixture.id,
         league_id=fixture.league_id,
@@ -124,4 +248,7 @@ async def get_fixture_analysis(
         fixture_date=fixture.date,
         status=fixture.status,
         analysis=analysis_to_response(analysis),
+        home_rank=standings.get("home_rank"),
+        away_rank=standings.get("away_rank"),
+        odds_snippet=odds_snippet,
     )

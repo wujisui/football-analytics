@@ -20,6 +20,7 @@ TTL_ANALYSIS = TTL_ANALYSIS_REDIS
 TTL_HEADTOHEAD = 24 * 3600
 TTL_TEAM_FORM = 24 * 3600
 TTL_TEAM_STATISTICS = 24 * 3600
+TTL_STANDINGS = 12 * 3600
 TTL_FIXTURE_DETAIL_NEAR = 120
 TTL_FIXTURE_DETAIL_FAR = 3600
 
@@ -47,16 +48,29 @@ def analysis_cache_key(fixture_id: int) -> str:
     return f"analysis:fixture:{fixture_id}"
 
 
-def headtohead_cache_key(home_team_id: int, away_team_id: int, last: int) -> str:
-    return f"api:football:h2h:{home_team_id}:{away_team_id}:{last}"
+def headtohead_cache_key(
+    home_team_id: int,
+    away_team_id: int,
+    last: int = 5,
+    *,
+    window: str = "free",
+) -> str:
+    # window distinguishes free-plan date-range fetches from legacy last=N keys
+    return f"api:football:h2h:{home_team_id}:{away_team_id}:{window}:{last}"
 
 
-def team_form_cache_key(team_id: int, last: int) -> str:
-    return f"api:football:form:team:{team_id}:last:{last}"
+def team_form_cache_key(team_id: int, last: int = 5, *, season: str | int | None = None) -> str:
+    # Include season so free-plan season-based fetches don't collide with empty last=N cache
+    season_part = str(season) if season is not None else "auto"
+    return f"api:football:form:team:{team_id}:season:{season_part}:n:{last}"
 
 
 def team_statistics_cache_key(team_id: int, league_id: int, season: str) -> str:
     return f"api:football:stats:team:{team_id}:league:{league_id}:season:{season}"
+
+
+def standings_cache_key(league_id: int, season: str) -> str:
+    return f"api:football:standings:league:{league_id}:season:{season}"
 
 
 def odds_cache_key(fixture_id: int) -> str:
@@ -82,18 +96,38 @@ class CacheService:
         self.last_api_remaining: int | None = None
         self.last_data_update: datetime | None = None
 
+    async def _use_fakeredis(self, reason: str) -> None:
+        try:
+            from fakeredis import aioredis as fakeredis_aioredis
+
+            self._redis = fakeredis_aioredis.FakeRedis(decode_responses=True)
+            self.using_fakeredis = True
+            logger.info("Using fakeredis in-memory cache (%s).", reason)
+        except Exception as fallback_exc:
+            logger.error("Cache disabled: %s", fallback_exc)
+            self.enabled = False
+            self._redis = None
+
     async def connect(self) -> None:
         if self._redis is not None:
             return
 
+        if not self.settings.REDIS_ENABLED:
+            await self._use_fakeredis("REDIS_ENABLED=false")
+            return
+
         try:
+            import asyncio
+
             import redis.asyncio as redis
 
             client = redis.from_url(
                 self.settings.REDIS_URL,
                 decode_responses=True,
+                socket_connect_timeout=0.3,
+                socket_timeout=0.3,
             )
-            await client.ping()
+            await asyncio.wait_for(client.ping(), timeout=0.4)
             self._redis = client
             self.using_fakeredis = False
             logger.info("Connected to Redis at %s", self.settings.REDIS_URL)
@@ -102,16 +136,7 @@ class CacheService:
                 "Redis unavailable (%s), falling back to fakeredis in-memory cache.",
                 exc,
             )
-            try:
-                from fakeredis import aioredis as fakeredis_aioredis
-
-                self._redis = fakeredis_aioredis.FakeRedis(decode_responses=True)
-                self.using_fakeredis = True
-                logger.info("Using fakeredis in-memory cache.")
-            except Exception as fallback_exc:
-                logger.error("Cache disabled: %s", fallback_exc)
-                self.enabled = False
-                self._redis = None
+            await self._use_fakeredis(str(exc))
 
     async def close(self) -> None:
         if self._redis is not None and hasattr(self._redis, "aclose"):
@@ -223,7 +248,7 @@ class CacheService:
         }
 
 
-def get_cache_service() -> CacheService:
+def get_cache_service() -> CacheService | None:
     global _cache_service
     if _cache_service is None:
         _cache_service = CacheService()
@@ -236,6 +261,7 @@ __all__ = [
     "TTL_HEADTOHEAD",
     "TTL_LEAGUES",
     "TTL_TEAM_FORM",
+    "TTL_STANDINGS",
     "TTL_TEAM_STATISTICS",
     "TTL_TEAMS",
     "CacheService",
@@ -250,6 +276,7 @@ __all__ = [
     "lineups_cache_key",
     "odds_cache_key",
     "refresh_ttl_seconds",
+    "standings_cache_key",
     "team_form_cache_key",
     "team_statistics_cache_key",
     "teams_cache_key",

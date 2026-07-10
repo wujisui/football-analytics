@@ -85,7 +85,7 @@ async def daily_init() -> None:
                         exc_info=True,
                     )
 
-            saved = await fetcher.fetch_today_fixtures()
+            saved = await fetcher.fetch_upcoming_fixtures()
             _set_task_status(
                 task_name,
                 "completed",

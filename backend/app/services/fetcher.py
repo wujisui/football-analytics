@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -17,6 +17,7 @@ from app.services.cache import (
     TTL_FIXTURES_TODAY,
     TTL_HEADTOHEAD,
     TTL_LEAGUES,
+    TTL_STANDINGS,
     TTL_TEAM_FORM,
     TTL_TEAM_STATISTICS,
     TTL_TEAMS,
@@ -30,6 +31,7 @@ from app.services.cache import (
     leagues_cache_key,
     lineups_cache_key,
     odds_cache_key,
+    standings_cache_key,
     team_form_cache_key,
     team_statistics_cache_key,
     teams_cache_key,
@@ -39,7 +41,8 @@ from app.services.snapshot_store import SnapshotStore
 
 logger = logging.getLogger(__name__)
 
-RETRY_DELAYS = [1, 3, 5]
+# Keep retries short so a single slow/429 endpoint cannot burn the analysis budget.
+RETRY_DELAYS = [0.5, 1.5]
 
 
 class ApiKeyNotConfiguredError(RuntimeError):
@@ -79,6 +82,8 @@ class FootballFetcher:
         self._owns_session = session is None
         self._client: httpx.AsyncClient | None = None
         self.last_remaining_requests: int | None = None
+        # AsyncSession is not safe for concurrent awaitables; package gather must serialize DB I/O.
+        self._db_lock = asyncio.Lock()
 
     async def __aenter__(self) -> "FootballFetcher":
         ensure_api_key_configured(self.settings)
@@ -88,7 +93,7 @@ class FootballFetcher:
         self._client = httpx.AsyncClient(
             base_url=self.settings.api_base_url,
             headers=self.settings.football_api_headers(),
-            timeout=30.0,
+            timeout=httpx.Timeout(8.0, connect=3.0),
             verify=self.settings.HTTP_VERIFY_SSL,
         )
         return self
@@ -148,8 +153,9 @@ class FootballFetcher:
             return cached["payload"]
 
         if self.settings.LOCAL_FIRST and self.session is not None:
-            store = SnapshotStore(self.session)
-            db_payload = await store.get_valid(cache_key)
+            async with self._db_lock:
+                store = SnapshotStore(self.session)
+                db_payload = await store.get_valid(cache_key)
             if db_payload is not None:
                 self.cache.record_hit()
                 await self.cache.set(cache_key, db_payload, ttl)
@@ -161,30 +167,35 @@ class FootballFetcher:
         await self.cache.set(cache_key, payload, ttl)
 
         if self.session is not None:
-            store = SnapshotStore(self.session)
-            await store.save(cache_key, payload, ttl)
+            async with self._db_lock:
+                store = SnapshotStore(self.session)
+                await store.save(cache_key, payload, ttl)
 
         return payload
 
     async def _commit(self) -> None:
         if self.session is not None:
-            await self.session.commit()
+            async with self._db_lock:
+                await self.session.commit()
 
     async def _upsert_league(
         self,
         league_id: int,
         name: str,
-        country: str,
+        country: str | None,
         season: str,
     ) -> League:
         assert self.session is not None
+        country_value = (country or "").strip() or "Unknown"
         league = await self.session.get(League, league_id)
         if league is None:
-            league = League(id=league_id, name=name, country=country, season=season)
+            league = League(id=league_id, name=name, country=country_value, season=season)
             self.session.add(league)
         else:
             league.name = name
-            league.country = country
+            # Don't clobber a real country with placeholder when re-seeding.
+            if country_value != "Unknown" or not league.country or league.country == "Unknown":
+                league.country = country_value
             league.season = season
         return league
 
@@ -257,36 +268,65 @@ class FootballFetcher:
 
     async def fetch_leagues(self, league_ids: list[int] | None = None) -> int:
         assert self.session is not None
-        league_ids = league_ids or list(self.settings.LEAGUE_IDS.values())
+        configured = self.settings.LEAGUE_IDS
+        league_ids = league_ids or list(configured.values())
         if not league_ids:
             logger.warning("No league IDs configured for fetch_leagues.")
             return 0
 
-        cache_key = leagues_cache_key(league_ids)
-        payload = await self._get_or_fetch(
-            cache_key,
-            TTL_LEAGUES,
-            "fetch_leagues",
-            lambda client: self.provider.fetch_leagues_payload(client, league_ids),
-        )
-        leagues = self.provider.parse_leagues(payload, league_ids)
+        # Always seed from config so /leagues works even if API is rate-limited.
+        id_to_name = {league_id: name for name, league_id in configured.items()}
+        countries = self.settings.LEAGUE_COUNTRIES
+        season_default = str(datetime.now().year)
         saved = 0
-
-        for league in leagues:
+        for league_id in league_ids:
             try:
                 await self._upsert_league(
-                    league["id"],
-                    league["name"],
-                    league["country"],
-                    league["season"],
+                    league_id,
+                    id_to_name.get(league_id, f"League {league_id}"),
+                    countries.get(league_id),
+                    season_default,
                 )
                 saved += 1
             except Exception as exc:
-                logger.error("Failed to save league %s: %s", league, exc, exc_info=True)
-
+                logger.error("Failed to seed league %s: %s", league_id, exc, exc_info=True)
         await self._commit()
+
+        cache_key = leagues_cache_key(league_ids)
+        try:
+            payload = await self._get_or_fetch(
+                cache_key,
+                TTL_LEAGUES,
+                "fetch_leagues",
+                lambda client: self.provider.fetch_leagues_payload(client, league_ids),
+            )
+            leagues = self.provider.parse_leagues(payload, league_ids)
+            for league in leagues:
+                try:
+                    # Keep configured display name when present; enrich country/season.
+                    display_name = id_to_name.get(league["id"], league["name"])
+                    await self._upsert_league(
+                        league["id"],
+                        display_name,
+                        league["country"] or countries.get(league["id"]),
+                        league["season"],
+                    )
+                except Exception as exc:
+                    logger.error("Failed to save league %s: %s", league, exc, exc_info=True)
+            await self._commit()
+        except Exception as exc:
+            logger.warning(
+                "API enrich for leagues failed (seeded %s from config): %s",
+                saved,
+                exc,
+            )
+
         self.cache.last_data_update = datetime.now()
-        logger.info("Saved %s leagues using provider %s.", saved, self.provider.provider_name)
+        logger.info(
+            "Saved %s leagues (config seed + optional API enrich via %s).",
+            saved,
+            self.provider.provider_name,
+        )
         return saved
 
     async def fetch_teams_by_league(self, league_id: int, season: str | None = None) -> int:
@@ -318,24 +358,25 @@ class FootballFetcher:
         logger.info("Saved %s teams for league %s (season %s).", saved, league_id, season)
         return saved
 
-    async def fetch_today_fixtures(self) -> int:
+    async def _persist_fixtures(
+        self,
+        fixtures: list[dict[str, Any]],
+        *,
+        allowed_league_ids: set[int] | None = None,
+        fetch_teams: bool = True,
+    ) -> int:
+        """Upsert parsed fixtures. If allowed_league_ids is set, skip others."""
         assert self.session is not None
-        today = datetime.now().strftime("%Y-%m-%d")
-        cache_key = fixtures_cache_key(today)
-        payload = await self._get_or_fetch(
-            cache_key,
-            TTL_FIXTURES_TODAY,
-            "fetch_today_fixtures",
-            lambda client: self.provider.fetch_fixtures_payload(client, today),
-        )
-        fixtures = self.provider.parse_fixtures(payload)
         league_ids: set[int] = set()
         saved = 0
 
         for fixture in fixtures:
+            league_id = int(fixture["league_id"])
+            if allowed_league_ids is not None and league_id not in allowed_league_ids:
+                continue
             try:
                 await self._upsert_league(
-                    fixture["league_id"],
+                    league_id,
                     fixture["league_name"],
                     fixture["country"],
                     fixture["season"],
@@ -352,33 +393,86 @@ class FootballFetcher:
                 )
                 await self._upsert_fixture(
                     fixture["id"],
-                    fixture["league_id"],
+                    league_id,
                     fixture["home_team_id"],
                     fixture["away_team_id"],
                     fixture["date"],
                     fixture["status"],
                 )
-                league_ids.add(fixture["league_id"])
+                league_ids.add(league_id)
                 saved += 1
             except Exception as exc:
                 logger.error("Failed to save fixture %s: %s", fixture, exc, exc_info=True)
 
         await self._commit()
 
-        for league_id in league_ids:
-            try:
-                await self.fetch_teams_by_league(league_id)
-            except Exception as exc:
-                logger.error(
-                    "Failed to fetch teams for league %s: %s",
-                    league_id,
-                    exc,
-                    exc_info=True,
-                )
+        if fetch_teams:
+            for league_id in league_ids:
+                try:
+                    await self.fetch_teams_by_league(league_id)
+                except Exception as exc:
+                    logger.error(
+                        "Failed to fetch teams for league %s: %s",
+                        league_id,
+                        exc,
+                        exc_info=True,
+                    )
 
-        logger.info("Saved %s fixtures for %s.", saved, today)
         self.cache.last_data_update = datetime.now()
         return saved
+
+    async def fetch_fixtures_for_date(self, target_date: date | str) -> int:
+        """Fetch and persist fixtures for one calendar day (configured leagues only)."""
+        assert self.session is not None
+        date_str = (
+            target_date.isoformat() if isinstance(target_date, date) else str(target_date)
+        )
+        allowed = set(self.settings.LEAGUE_IDS.values())
+        cache_key = fixtures_cache_key(date_str)
+        payload = await self._get_or_fetch(
+            cache_key,
+            TTL_FIXTURES_TODAY,
+            "fetch_fixtures_for_date",
+            lambda client: self.provider.fetch_fixtures_payload(client, date_str),
+        )
+        fixtures = self.provider.parse_fixtures(payload)
+        saved = await self._persist_fixtures(fixtures, allowed_league_ids=allowed)
+        logger.info("Saved %s fixtures for %s.", saved, date_str)
+        return saved
+
+    async def fetch_today_fixtures(self) -> int:
+        return await self.fetch_fixtures_for_date(date.today())
+
+    async def fetch_upcoming_fixtures(self, days: int | None = None) -> int:
+        """Fetch fixtures for today and the next (days-1) days. Uses 1 API call per day."""
+        window = days if days is not None else self.settings.FIXTURES_LOOKAHEAD_DAYS
+        window = max(1, min(window, 60))
+        total = 0
+        start = date.today()
+        for offset in range(window):
+            day = start + timedelta(days=offset)
+            try:
+                # Avoid re-fetching teams for every day in the window.
+                date_str = day.isoformat()
+                allowed = set(self.settings.LEAGUE_IDS.values())
+                cache_key = fixtures_cache_key(date_str)
+                payload = await self._get_or_fetch(
+                    cache_key,
+                    TTL_FIXTURES_TODAY,
+                    "fetch_upcoming_fixtures",
+                    lambda client, d=date_str: self.provider.fetch_fixtures_payload(client, d),
+                )
+                fixtures = self.provider.parse_fixtures(payload)
+                saved = await self._persist_fixtures(
+                    fixtures,
+                    allowed_league_ids=allowed,
+                    fetch_teams=(offset == 0),
+                )
+                total += saved
+            except Exception as exc:
+                logger.error("Failed to fetch fixtures for %s: %s", day, exc, exc_info=True)
+        logger.info("Saved %s fixtures across %s day(s).", total, window)
+        return total
 
     async def fetch_headtohead(
         self,
@@ -386,7 +480,9 @@ class FootballFetcher:
         away_team_id: int,
         last: int = 5,
     ) -> dict[str, Any]:
-        cache_key = headtohead_cache_key(home_team_id, away_team_id, last)
+        cache_key = headtohead_cache_key(
+            home_team_id, away_team_id, last, window="free-2022-2024-v3"
+        )
         return await self._get_or_fetch(
             cache_key,
             TTL_HEADTOHEAD,
@@ -412,8 +508,19 @@ class FootballFetcher:
             ),
         )
 
+    async def fetch_standings(self, league_id: int, season: str) -> dict[str, Any]:
+        cache_key = standings_cache_key(league_id, season)
+        return await self._get_or_fetch(
+            cache_key,
+            TTL_STANDINGS,
+            "fetch_standings",
+            lambda client: self.provider.fetch_standings_payload(
+                client, league_id, season
+            ),
+        )
+
     async def fetch_team_form_payload(self, team_id: int, last: int = 5) -> dict[str, Any]:
-        cache_key = team_form_cache_key(team_id, last)
+        cache_key = team_form_cache_key(team_id, last, season="free-2022-2024-v3")
         return await self._get_or_fetch(
             cache_key,
             TTL_TEAM_FORM,

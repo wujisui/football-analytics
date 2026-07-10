@@ -132,6 +132,7 @@ uvicorn main:app --reload
 python manage.py init-db          # 初始化数据库表
 python manage.py fetch-leagues    # 拉取配置的联赛数据
 python manage.py fetch-today      # 拉取今日赛程
+python manage.py fetch-upcoming   # 拉取未来 N 天赛程（默认 7，含今天）
 python manage.py check-quota      # 查看 API 剩余配额
 python manage.py test-api         # 测试 API 连通性
 python manage.py clear-cache      # 清空足球 API 缓存
@@ -152,8 +153,8 @@ python manage.py run-scheduler    # 前台运行调度器（调试用）
 | 方法  | 路径                                | 说明                           |
 |-----|-----------------------------------|------------------------------|
 | GET | `/health`                         | 服务状态与缓存统计                    |
-| GET | `/leagues`                        | 已配置联赛列表及今日场次数                |
-| GET | `/fixtures/today`                 | 今日赛程（含分析），可选 `?league_id=39` |
+| GET | `/leagues`                        | 已配置联赛列表；可选 `date`、`days`；含今日/近期场次数 |
+| GET | `/fixtures/today`                 | 赛程列表；可选 `league_id`、`date`、`days`（默认仅当天） |
 | GET | `/fixtures/{fixture_id}/analysis` | 单场比赛详细分析                     |
 
 **注意**：`league_id` 是联赛 ID（如英超 `39`），`fixture_id` 是具体比赛 ID，二者不同。查英超今日比赛应使用：
@@ -200,9 +201,16 @@ GET /api/v1/fixtures/today?league_id=39
 
 ## 前端对接提示
 
-1. 先调 `/api/v1/leagues` 展示联赛入口
-2. 按 `league_id` 调 `/api/v1/fixtures/today?league_id=39` 获取今日比赛列表
+1. 先调 `/api/v1/leagues`（可选 `?days=7`）展示联赛入口与近期场次数
+2. 按 `league_id` 调 `/api/v1/fixtures/today?league_id=39&days=7` 获取近期比赛列表
 3. 用户点击某场后，用返回的 `fixture_id` 调 `/api/v1/fixtures/{fixture_id}/analysis`
+
+本地无数据时先执行：
+
+```powershell
+python manage.py fetch-leagues
+python manage.py fetch-upcoming
+```
 4. 响应头 `X-Data-Source` 表示数据来源（`database` / `cache` / `api`）
 5. 开发阶段可直接用 Swagger UI（`/docs`）试调接口
 

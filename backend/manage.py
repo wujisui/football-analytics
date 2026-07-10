@@ -52,6 +52,23 @@ async def run_fetch_today() -> None:
         sys.exit(1)
 
 
+async def run_fetch_upcoming(days: int | None) -> None:
+    from app.core.config import get_settings
+    from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
+
+    settings = get_settings()
+    window = days if days is not None else settings.FIXTURES_LOOKAHEAD_DAYS
+    try:
+        async with FootballFetcher() as fetcher:
+            count = await fetcher.fetch_upcoming_fixtures(window)
+            print(f"Fetched and saved {count} fixtures for the next {window} day(s).")
+            if fetcher.last_remaining_requests is not None:
+                print(f"Remaining API requests: {fetcher.last_remaining_requests}")
+    except ApiKeyNotConfiguredError as exc:
+        print(f"Skipped: {exc}")
+        sys.exit(1)
+
+
 async def run_check_quota() -> None:
     from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
 
@@ -157,6 +174,16 @@ def main() -> None:
     subparsers.add_parser("init-db", help="Initialize database tables")
     subparsers.add_parser("fetch-leagues", help="Fetch configured leagues from API-Football")
     subparsers.add_parser("fetch-today", help="Fetch today's fixtures from API-Football")
+    upcoming_parser = subparsers.add_parser(
+        "fetch-upcoming",
+        help="Fetch fixtures for today + next N-1 days (default FIXTURES_LOOKAHEAD_DAYS)",
+    )
+    upcoming_parser.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="Window size in days including today (default from settings)",
+    )
     subparsers.add_parser("check-quota", help="Check remaining API-Football request quota")
     subparsers.add_parser("test-api", help="Test API connection and print response metadata")
     subparsers.add_parser("clear-cache", help="Clear all football API cache entries")
@@ -176,6 +203,10 @@ def main() -> None:
 
     if args.command == "trigger-task":
         asyncio.run(run_trigger_task(args.name))
+        return
+
+    if args.command == "fetch-upcoming":
+        asyncio.run(run_fetch_upcoming(args.days))
         return
 
     commands = {

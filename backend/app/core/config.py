@@ -41,12 +41,17 @@ class Settings(BaseSettings):
     API_ENDPOINT_QUOTA: str = "/status"
     API_ENDPOINT_HEADTOHEAD: str = "/fixtures/headtohead"
     API_ENDPOINT_TEAM_STATISTICS: str = "/teams/statistics"
+    API_ENDPOINT_STANDINGS: str = "/standings"
     API_ENDPOINT_ODDS: str = "/odds"
     API_ENDPOINT_LINEUPS: str = "/fixtures/lineups"
     API_ENDPOINT_INJURIES: str = "/injuries"
     HTTP_VERIFY_SSL: bool = True
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/football.db"
     REDIS_URL: str = "redis://localhost:6379"
+    # When false, skip Redis and use in-memory fakeredis (recommended for local without Redis).
+    REDIS_ENABLED: bool = False
+    # Max seconds the analysis endpoint may spend on official API enrichment.
+    ANALYSIS_API_BUDGET_SECONDS: float = 12.0
     LOG_LEVEL: str = "INFO"
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
     PRE_MATCH_WINDOW_HOURS: int = 2
@@ -66,10 +71,29 @@ class Settings(BaseSettings):
         "法甲": 61,
         "欧冠": 2,
         "欧罗巴": 3,
+        "欧协联": 848,
         "亚冠": 10,
+        "世界杯": 1,
         "MLS": 253,
         "Brazil Serie A": 71,
     }
+    # Fallback country labels when API enrich is unavailable.
+    LEAGUE_COUNTRIES: dict[int, str] = {
+        39: "England",
+        140: "Spain",
+        78: "Germany",
+        135: "Italy",
+        61: "France",
+        2: "World",
+        3: "World",
+        848: "World",
+        10: "World",
+        1: "World",
+        253: "USA",
+        71: "Brazil",
+    }
+    # Default window (days, including today) used by leagues summary / upcoming fetch.
+    FIXTURES_LOOKAHEAD_DAYS: int = 7
 
     @property
     def api_host(self) -> str:

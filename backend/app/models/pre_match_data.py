@@ -31,6 +31,7 @@ class PreMatchData(Base):
     h2h_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     home_form_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     away_form_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    standings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),

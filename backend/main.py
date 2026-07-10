@@ -20,9 +20,14 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     setup_logging(settings.LOG_LEVEL, settings.LOG_DIR)
     logger.info("Application startup")
+    # Warm cache once so the first API request does not pay Redis connect latency.
+    from app.services.cache import get_cache_service
+
+    await get_cache_service().connect()
     start_scheduler()
     yield
     shutdown_scheduler()
+    await get_cache_service().close()
     logger.info("Application shutdown")
 
 
