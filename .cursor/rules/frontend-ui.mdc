@@ -1,0 +1,76 @@
+---
+description: 前端 Naive UI 组件优先与全屏布局约定
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# 前端 UI 组件约定（Naive UI）
+
+本项目已依赖 Naive UI。**能用组件库解决的布局与交互，禁止手写一套平行实现**，否则既浪费包体积，又容易出现侧栏随页滚动、样式不一致等问题。
+
+页面交互规格见 `frontend/FRONTEND_UI_SPEC.md`；API 约定见 `frontend-api.mdc`。
+
+## 必须优先使用的组件
+
+| 场景 | 使用 | 不要做 |
+|------|------|--------|
+| 应用壳 / 全屏分区 | `n-layout`、`n-layout-header`、`n-layout-sider`、`n-layout-content` | 用 `div` + `flex` 再造整页骨架 |
+| 首页左右栏 | `has-sider` + `n-layout-sider`（固定）+ 右侧 `n-layout-content` 滚动 | `position: sticky` 伪固定侧栏 |
+| 侧栏导航 / 联赛筛选 | `n-menu`（可配 `NBadge`） | 手写一排 `<button>` 菜单 |
+| 页面标题区 | `n-page-header` | 自绘 h1 + 返回链接当主标题栏 |
+| 层级导航 | `n-breadcrumb` / `n-breadcrumb-item` | 纯文本「返回」代替路径 |
+| 加载 / 空 / 错 | `n-spin`、`n-empty`、`n-alert` + `n-button` 重试 | 自定义转圈或裸文字 |
+| 标签 / 按钮 / 卡片 / Tabs | `n-tag`、`n-button`、`n-card`、`n-tabs` | 重复造轮子 |
+| 表单输入 | `n-input`、`n-form`（需要时） | 原生 textarea 无统一样式 |
+| 数据展示 | `n-descriptions`、`n-progress`、`n-table`（适合时） | 无必要的纯 HTML 表格堆砌 |
+| 全局配置 | 根节点 `n-config-provider`（中文 locale + `theme`） | 各页各自套主题 |
+| 明暗主题 | `darkTheme` + 顶栏切换，偏好写入 `localStorage` | 手写整站 CSS 变量换肤 |
+
+按需自动引入已配置 `unplugin-vue-components` + `NaiveUiResolver`；根布局等需显式 import 的除外。
+
+## 全屏布局规则
+
+1. **应用占满视口**：根 `n-layout` 使用 `position="absolute"` + `inset: 0`（或等价 100vh），不要用 `max-width` 把整站收成居中窄栏。
+2. **滚动落在内容区**：侧栏 / 顶栏不随整页 `body` 滚动；列表、详情正文在对应 `n-layout-content` 内滚动（`native-scrollbar` 或组件滚动条）。
+3. **首页**：`n-layout has-sider` → 左侧联赛 `n-layout-sider` + `n-menu`；右侧仅比赛列表区域滚动。
+4. **详情**：顶栏面包屑 + `n-page-header`；下方 Tabs 卡片 `flex: 1` 铺满剩余视口；正文在 content 内滚动。
+5. 内容区可设合理 `max-width` 提升阅读（如详情正文），但**外壳仍全屏**（白卡片区域应纵向撑满，勿只占上半屏）。
+
+## 主题
+
+Naive UI **只内置两套全局主题**：默认浅色（`theme=null`）与 `darkTheme`。没有更多官方命名主题。
+
+本项目做法：
+
+1. 下拉首两项为 Naive 内置：**浅色（Naive 默认）** / **深色（Naive 默认）**（无 `theme-overrides`）
+2. 其余项为同基调 + `theme-overrides` 换主色（蓝/橙等），见 `frontend/src/theme/presets.ts`
+3. 自定义页面壳用 `--fa-*`（非 Naive 变量），由预设同步；**禁止**写死 `#fff` / `#f5f6f8`
+4. 偏好键：`fa-theme-preset`（`localStorage`）
+
+**禁止**在页面/卡片上写死 `#fff` / `#f5f6f8`；自定义区域用 `--fa-*`。
+
+## 展示约定
+
+- 开赛时间：API 为 UTC；前端用 `parseApiDate` + 浏览器本地时区格式化（`utils/format.ts`）
+- 赛果：W/D/L 显示为 胜/平/负（`resultToZh` / `formCharsZh`）
+- 队名：优先中文映射（`utils/teamNames.ts`，按 team_id / 英文名）；未收录则回退原文
+
+## 面包屑约定
+
+- 首页：`赛前赛事` / `全部` 或当前联赛名
+- 详情：`赛前赛事` / `{联赛}` / `{主队 VS 客队}`
+- 可点击项用路由跳转（回列表、按联赛筛选），最后一级不可点
+
+## 何时可以不用组件库
+
+- 业务特有可视化（如 ECharts 概率图、W/D/L 色块）
+- 组件库没有对应能力、或包装成本明显高于收益的极小组件
+- 此时仍应嵌在 Naive 的 Card / Layout / Space 等容器内，保持视觉一致
+
+## 反例（已踩过的坑）
+
+- 侧栏 `sticky` + 整页滚动 → 侧栏跟着滚；应改为 `n-layout-sider` 固定、content 滚动
+- 整站 `max-width: 1100px; margin: 0 auto` → 两侧大片空白，不像后台/工具全屏
+- 手写联赛菜单按钮 → 与 `n-menu` 选中态、键盘与主题不一致
+
+新增页面或改布局时：先查 [Naive UI 文档](https://www.naiveui.com/) 是否已有 Layout / Navigation / Data Display 组件，再写自定义结构。
