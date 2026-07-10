@@ -5,13 +5,13 @@ import { useRouter } from 'vue-router'
 import type { FixtureResponse } from '@/api/types'
 import {
   formatDateTime,
-  formatOdd,
   leagueTagColor,
   rankBracket,
   statusLabel,
   statusTagType,
 } from '@/utils/format'
 import { teamNameZh } from '@/utils/teamNames'
+import { leagueNameZh } from '@/utils/leagueNames'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -34,11 +34,6 @@ const matchTitle = computed(() => {
   return `${home} VS ${away}`
 })
 
-const odds = computed(() => props.fixture.odds_snippet)
-const ah = computed(() => odds.value?.asian_handicap ?? null)
-const ou = computed(() => odds.value?.goals_ou ?? null)
-const mw = computed(() => odds.value?.match_winner ?? null)
-
 function goHome() {
   router.push({ name: 'home' })
 }
@@ -55,7 +50,7 @@ function goLeague() {
   <div class="basic-info">
     <n-breadcrumb>
       <n-breadcrumb-item @click="goHome">赛前赛事</n-breadcrumb-item>
-      <n-breadcrumb-item @click="goLeague">{{ fixture.league_name }}</n-breadcrumb-item>
+      <n-breadcrumb-item @click="goLeague">{{ leagueNameZh(fixture.league_name) }}</n-breadcrumb-item>
       <n-breadcrumb-item>{{ matchTitle }}</n-breadcrumb-item>
     </n-breadcrumb>
 
@@ -70,7 +65,7 @@ function goLeague() {
               textColor: leagueTagColor(fixture.league_id),
             }"
           >
-            {{ fixture.league_name }}
+            {{ leagueNameZh(fixture.league_name) }}
           </n-tag>
           <n-tag size="small" :type="statusTagType(fixture.status)" :bordered="false">
             {{ statusLabel(fixture.status) }}
@@ -80,19 +75,6 @@ function goLeague() {
         <p v-if="fixture.home_rank != null || fixture.away_rank != null" class="rank-hint">
           排名为本赛事积分榜位置（如欧协联小组/联赛阶段），不是各自国内联赛排名
         </p>
-        <div v-if="mw || ah || ou" class="odds-strip">
-          <span v-if="mw" class="odds-item">
-            胜平负 {{ formatOdd(mw.home) }} / {{ formatOdd(mw.draw) }} / {{ formatOdd(mw.away) }}
-          </span>
-          <span v-if="ah" class="odds-item">
-            让球 <em>{{ ah.line || '—' }}</em>
-            {{ formatOdd(ah.home) }} / {{ formatOdd(ah.away) }}
-          </span>
-          <span v-if="ou" class="odds-item">
-            大小 <em>{{ ou.line || '—' }}</em>
-            {{ formatOdd(ou.home) }} / {{ formatOdd(ou.away) }}
-          </span>
-        </div>
       </template>
     </n-page-header>
   </div>
@@ -126,22 +108,6 @@ function goLeague() {
   margin: 6px 0 0;
   font-size: 12px;
   color: var(--fa-text-faint);
-}
-
-.odds-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 18px;
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-}
-
-.odds-item em {
-  font-style: normal;
-  font-weight: 700;
-  color: var(--fa-accent, #2080f0);
-  margin: 0 4px;
 }
 
 :deep(.n-breadcrumb-item .n-breadcrumb-item__link) {

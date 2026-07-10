@@ -21,7 +21,7 @@ const props = defineProps<{
 }>()
 
 /** Display count only — backend stores up to 20; free plan may return fewer. */
-const displayLimit = ref(5)
+const displayLimit = ref(10)
 const limitOptions = [
   { label: '近 5 场', value: 5 },
   { label: '近 8 场', value: 8 },
@@ -74,7 +74,10 @@ const hasAny = computed(
 )
 
 function competitionLabel(m: FormMatch): string {
-  return leagueNameZh(m.league_name)
+  return leagueNameZh(m.league_name, {
+    leagueId: m.league_id,
+    country: m.league_country,
+  })
 }
 
 function h2hResultLabel(m: FormMatch): string {
@@ -283,14 +286,18 @@ function h2hResultType(m: FormMatch): 'success' | 'warning' | 'error' | 'default
 .badges {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   margin-bottom: 8px;
+  padding-bottom: 2px;
 }
 
 .badge {
   min-width: 26px;
+  width: 26px;
   height: 26px;
-  padding: 0 6px;
+  padding: 0;
+  flex-shrink: 0;
   border-radius: 4px;
   display: inline-flex;
   align-items: center;
