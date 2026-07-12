@@ -23,7 +23,7 @@ alwaysApply: false
 | 标签 / 按钮 / 卡片 / Tabs | `n-tag`、`n-button`、`n-card`、`n-tabs` | 重复造轮子 |
 | 区域滚动 | `n-scrollbar`，或 Layout 设 `:native-scrollbar="false"` | 手写 `overflow` + 自定义 `::-webkit-scrollbar` |
 | 表单输入 | `n-input`、`n-form`（需要时） | 原生 textarea 无统一样式 |
-| 数据展示 | `n-descriptions`、`n-progress`、`n-table`（适合时） | 无必要的纯 HTML 表格堆砌 |
+| 数据展示 | `n-descriptions`、`n-progress`、`n-list`、`n-table`（适合时） | 无必要的纯 HTML 表格 / 手写卡片列表堆砌 |
 | 全局配置 | 根节点 `n-config-provider`（中文 locale + `theme`） | 各页各自套主题 |
 | 明暗主题 | `darkTheme` + 顶栏切换，偏好写入 `localStorage` | 手写整站 CSS 变量换肤 |
 
@@ -36,6 +36,18 @@ alwaysApply: false
 3. **首页**：`n-layout has-sider` → 左侧联赛 `n-layout-sider` + `n-menu`；右侧仅比赛列表区域滚动。
 4. **详情**：顶栏面包屑 + `n-page-header`；下方 Tabs 卡片 `flex: 1` 铺满剩余视口；正文在 content 内滚动。
 5. 内容区可设合理 `max-width` 提升阅读（如详情正文），但**外壳仍全屏**（白卡片区域应纵向撑满，勿只占上半屏）。
+
+### 滚动条（必读）
+
+Naive Layout **默认 `nativeScrollbar: true`**（浏览器原生条）。要统一成 Naive 滚动条：
+
+1. 外层 `n-layout` 用 `content-style="display:flex;flex-direction:column;height:100%;"` 把高度锁死（否则子内容撑开，外层仍会冒原生条）
+2. 顶栏 `flex-shrink: 0`；可滚区域用 `n-layout-content`：`style="flex:1;min-height:0"` + **`:native-scrollbar="false"`**（可加 `:scrollbar-props="{ trigger: 'hover' }"`）
+3. 不要手写 `::-webkit-scrollbar`；不要指望只写 `native-scrollbar=false` 却不约束高度
+
+### 少写 CSS
+
+优先用组件 props / 插槽完成布局：`content-style`、`n-space`、`n-thing`、`n-grid`、`n-list`。自定义样式只留给业务特有视觉（如 VS 按钮），壳层颜色用 `--fa-*`。
 
 ## 主题
 

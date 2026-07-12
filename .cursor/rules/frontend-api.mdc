@@ -10,8 +10,9 @@ alwaysApply: false
 - 基址：`VITE_API_BASE_URL` 或默认 `/api/v1`
 - 调用顺序：`/leagues?days=7` → `/fixtures/today?days=7`（首页全量，联赛筛选在前端）→ `/fixtures/{fixture_id}/analysis`；主观因素：`GET /fixtures/opinion-factors` + `POST /fixtures/{id}/adjust`
 - `/leagues` 与 `/fixtures/today` 只读本地库（列表不做官方 API 分析）；可选 `date`、`days`、`league_id`
-- 首页列表用模块级缓存（`useHomeFixtures`）：详情返回 5 分钟内不重复请求；点「刷新」才强制重拉。切换联赛只做前端过滤，不打接口
-- 完整赛前分析仅在详情 `/fixtures/{id}/analysis`；空数据时先跑 `fetch-leagues` / `fetch-upcoming`
+- 首页列表用模块级缓存（`useHomeFixtures`）：详情返回 5 分钟内不重复请求；点「强制刷新」先 `POST /fixtures/sync`（绕过日缓存打官方）再重拉列表。切换联赛只做前端过滤，不打接口
+- 赛果：`GET /fixtures/results?date=`（当日列表 + 准确率）；`GET /fixtures/results/history?days=30`（历史总准确率 + 按日序列）；「同步赛果」→ `POST /fixtures/sync?date=...`
+- 完整赛前分析仅在详情 `/fixtures/{id}/analysis`；空数据时先跑 sync / `fetch-leagues` / `fetch-upcoming`
 - `league_id`（联赛）与 `fixture_id`（比赛）不要混用
 - 不在前端存放或请求 API-Sports / RapidAPI Key
 - UI 栈：Vue 3 + TS + Vite + Naive UI + ECharts；页面交互见 `frontend/FRONTEND_UI_SPEC.md`；组件优先见 `frontend-ui.mdc`
