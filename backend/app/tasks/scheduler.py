@@ -98,6 +98,12 @@ async def daily_init() -> None:
                 await fetcher.capture_finished_results(lookback_days=2)
             except Exception as exc:
                 logger.warning("daily_init capture_results skipped: %s", exc)
+            try:
+                from app.services.ml_predictor import maybe_auto_train_model
+
+                await maybe_auto_train_model()
+            except Exception as exc:
+                logger.warning("daily_init ML auto-train skipped: %s", exc)
     except Exception as exc:
         _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
         logger.error("Task daily_init failed: %s", exc, exc_info=True)
@@ -216,6 +222,7 @@ async def clean_old_data() -> None:
             fixture_ids = [row[0] for row in old_fixtures.all()]
 
             if fixture_ids:
+                # Keep match_features for ML training; only drop display analysis JSON.
                 result = await session.execute(
                     delete(PreMatchData).where(PreMatchData.fixture_id.in_(fixture_ids))
                 )
@@ -259,16 +266,70 @@ async def capture_results() -> None:
     try:
         async with FootballFetcher() as fetcher:
             saved = await fetcher.capture_finished_results(lookback_days=3)
-            _set_task_status(
-                task_name,
-                "completed",
-                fixtures_saved=saved,
-                finished_at=_utc_now().isoformat(),
-            )
-            logger.info("Task capture_results completed. fixtures_saved=%s", saved)
+
+        # After new FT labels land, try auto-train so inference can switch to ml.
+        train_info: dict[str, Any] = {}
+        try:
+            from app.services.ml_predictor import maybe_auto_train_model
+
+            train_info = await maybe_auto_train_model()
+        except Exception as train_exc:
+            logger.warning("ML auto-train after capture_results failed: %s", train_exc)
+            train_info = {"ok": False, "error": str(train_exc)}
+
+        _set_task_status(
+            task_name,
+            "completed",
+            fixtures_saved=saved,
+            ml_train=train_info,
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.info(
+            "Task capture_results completed. fixtures_saved=%s ml_train=%s",
+            saved,
+            train_info.get("reason") or train_info.get("inference") or train_info.get("ok"),
+        )
     except Exception as exc:
         _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
         logger.error("Task capture_results failed: %s", exc, exc_info=True)
+
+
+async def train_model() -> None:
+    """Manual / scheduled: backfill features + train if enough labeled rows."""
+    task_name = "train_model"
+    _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
+    logger.info("Task train_model started.")
+    try:
+        from app.services.ml_predictor import maybe_auto_train_model, model_status
+
+        # Force attempt even if ML_AUTO_TRAIN is false when manually triggered:
+        # temporarily rely on train_model_from_db via maybe with auto flag check.
+        from app.core.config import get_settings
+        from app.core.database import AsyncSessionLocal
+        from app.services.ml_predictor import train_model_from_db
+
+        settings = get_settings()
+        async with AsyncSessionLocal() as session:
+            if settings.ML_AUTO_TRAIN:
+                result = await maybe_auto_train_model(session)
+                # maybe skips when no new labels; manual task should still refit if enough.
+                if result.get("skipped") and result.get("reason") == "no_new_labels":
+                    result = await train_model_from_db(session)
+            else:
+                result = await train_model_from_db(session)
+
+        status = model_status()
+        _set_task_status(
+            task_name,
+            "completed",
+            train=result,
+            model_status=status,
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.info("Task train_model completed. result=%s status=%s", result.get("ok"), status)
+    except Exception as exc:
+        _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
+        logger.error("Task train_model failed: %s", exc, exc_info=True)
 
 
 TASK_HANDLERS = {
@@ -276,6 +337,7 @@ TASK_HANDLERS = {
     "pre_match_update": pre_match_update,
     "capture_results": capture_results,
     "clean_old_data": clean_old_data,
+    "train_model": train_model,
 }
 
 

@@ -35,7 +35,7 @@ from app.services.ttl_policy import (
 
 logger = logging.getLogger(__name__)
 
-HOME_ADVANTAGE = 0.1
+HOME_ADVANTAGE = 0.1  # retained for reference; probs now via ml_predictor
 AWAY_DISADVANTAGE = 0.05
 DEFAULT_PROB = 1 / 3
 
@@ -99,10 +99,10 @@ def get_confidence_level(data_completeness: float) -> str:
     return "低"
 
 
-def get_recommendation(probs: dict[str, float]) -> str:
+def get_recommendation(probs: dict[str, float], features: dict[str, float] | None = None) -> str:
     from app.services.prediction import get_recommendation as _rec
 
-    return _rec(probs)
+    return _rec(probs, features=features)
 
 
 def parse_team_form(payload: dict[str, Any], team_id: int) -> TeamFormStats:
@@ -176,6 +176,8 @@ class AnalyzerService:
         draw_prob: float,
         away_win_prob: float,
         package: dict[str, Any] | None = None,
+        features: dict[str, float] | None = None,
+        model_source: str | None = None,
     ) -> None:
         result = await self.session.execute(
             select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
@@ -228,6 +230,7 @@ class AnalyzerService:
                 "away": away_win_prob,
             },
             odds_for_snap if isinstance(odds_for_snap, dict) else None,
+            features=features,
         )
         fields["recommendation"] = snap.get("recommendation")
         fields["score_hint"] = snap.get("score_hint")
@@ -242,6 +245,21 @@ class AnalyzerService:
             for key, value in fields.items():
                 if value is not None:
                     setattr(record, key, value)
+
+        if features is not None:
+            from app.services.ml_predictor import persist_match_features
+
+            await persist_match_features(
+                self.session,
+                fixture_id,
+                features,
+                {
+                    "home": home_win_prob,
+                    "draw": draw_prob,
+                    "away": away_win_prob,
+                },
+                source=model_source or "multifactor",
+            )
 
         await self.session.commit()
 
@@ -823,14 +841,35 @@ class AnalyzerService:
                     fixture, home_name, away_name, league_name, stored, confidence="低"
                 )
 
-        raw_probs = {
-            "home": home_form.win_rate + HOME_ADVANTAGE,
-            "draw": (home_form.draw_rate + away_form.draw_rate) / 2,
-            "away": max(away_form.win_rate - AWAY_DISADVANTAGE, 0.0),
-        }
-        probs = normalize_probabilities(raw_probs)
+        # Ensure form summaries are in package for feature extraction even when
+        # only TeamFormStats were populated via legacy get_team_form path.
+        # Do not invent a chronological form string from unsorted W/D/L counts —
+        # that would fake win/loss streaks.
+        if not isinstance(package.get("home_form"), dict) or not package["home_form"].get("played"):
+            package["home_form"] = {
+                "played": home_form.played,
+                "wins": home_form.wins,
+                "draws": home_form.draws,
+                "losses": home_form.losses,
+                "form": "",
+            }
+        if not isinstance(package.get("away_form"), dict) or not package["away_form"].get("played"):
+            package["away_form"] = {
+                "played": away_form.played,
+                "wins": away_form.wins,
+                "draws": away_form.draws,
+                "losses": away_form.losses,
+                "form": "",
+            }
+
+        from app.services.ml_predictor import predict_probabilities
+
+        prediction = predict_probabilities(package)
+        probs = normalize_probabilities(prediction.probs)
         completeness = sources_ok / total_sources
         confidence = get_confidence_level(completeness)
+        if prediction.source == "ml" and completeness >= 0.5:
+            confidence = get_confidence_level(max(completeness, 0.8))
 
         result = AnalysisResult(
             fixture_id=fixture_id,
@@ -843,8 +882,10 @@ class AnalyzerService:
             draw_prob=round(probs["draw"], 4),
             away_win_prob=round(probs["away"], 4),
             confidence=confidence,
-            recommendation=get_recommendation(probs),
-            data_source=data_source,
+            recommendation=get_recommendation(probs, features=prediction.features),
+            data_source=data_source if prediction.source == "form_fallback" else (
+                f"{data_source}+{prediction.source}"
+            ),
             analyzed_at=datetime.now(timezone.utc),
             cache_status="miss",
             package=package if include_package else None,
@@ -856,6 +897,8 @@ class AnalyzerService:
             result.draw_prob,
             result.away_win_prob,
             package=package if include_package else None,
+            features=prediction.features,
+            model_source=prediction.source,
         )
 
         await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)

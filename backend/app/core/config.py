@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     LOCAL_FIRST: bool = True
     # Optional override for analysis refresh TTL (seconds). Empty/0 = kickoff-based policy.
     ANALYSIS_REFRESH_TTL_SECONDS: int = 0
+    # ML: accumulate local labels from now; auto-train & switch when enough samples.
+    ML_MIN_TRAIN_SAMPLES: int = 30
+    ML_AUTO_TRAIN: bool = True
 
     # Display name (中文) → API-Sports league id. Menu order follows this dict.
     LEAGUE_IDS: dict[str, int] = {

@@ -165,6 +165,68 @@ async def run_scheduler_loop() -> None:
         shutdown_scheduler()
 
 
+async def run_backfill_features() -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.ml_predictor import collect_training_rows
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        rows = await collect_training_rows(session)
+    print(f"Backfilled / collected {len(rows)} labeled training row(s).")
+
+
+async def run_train_model() -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.ml_predictor import (
+        MIN_TRAIN_SAMPLES,
+        min_train_samples,
+        model_status,
+        train_model_from_db,
+    )
+
+    await init_db()
+    threshold = min_train_samples()
+    async with AsyncSessionLocal() as session:
+        result = await train_model_from_db(session)
+    status = model_status()
+    if not result.get("ok"):
+        print(
+            f"Training skipped: {result.get('reason')} "
+            f"(need >={threshold} finished fixtures with features; default {MIN_TRAIN_SAMPLES})."
+        )
+        print(f"Current labeled samples: {result.get('n_samples', 0)}")
+        print(f"Current inference mode: {status['inference_mode']}")
+        return
+    print("Training succeeded — inference will auto-switch to source=ml.")
+    print(f"Samples: {result.get('n_samples')}")
+    print(f"Val log-loss: {result.get('val_metrics', {}).get('log_loss')}")
+    print(f"Val accuracy: {result.get('val_metrics', {}).get('accuracy')}")
+    print(f"Weights: {result.get('weights_path')}")
+    print(f"Model status: {status}")
+
+
+async def run_model_status() -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.models.match_feature import MatchFeature
+    from app.services.ml_predictor import model_status
+    from sqlalchemy import func, select
+
+    await init_db()
+    status = model_status()
+    async with AsyncSessionLocal() as session:
+        total = await session.scalar(select(func.count()).select_from(MatchFeature))
+        labeled = await session.scalar(
+            select(func.count()).select_from(MatchFeature).where(MatchFeature.label.is_not(None))
+        )
+    print(f"inference_mode: {status['inference_mode']}")
+    print(f"artifact_ready: {status['artifact_ready']}")
+    print(f"trained_n_samples: {status['trained_n_samples']}")
+    print(f"min_train_samples: {status['min_train_samples']}")
+    print(f"match_features_total: {total or 0}")
+    print(f"match_features_labeled: {labeled or 0}")
+    print(f"trained_at: {status.get('trained_at')}")
+
+
 def main() -> None:
     _setup_cli_logging()
 
@@ -190,12 +252,30 @@ def main() -> None:
     subparsers.add_parser("cache-stats", help="Show cache hit/miss statistics")
     subparsers.add_parser("list-tasks", help="List registered scheduler tasks")
     subparsers.add_parser("run-scheduler", help="Run scheduler in foreground for debugging")
+    subparsers.add_parser(
+        "backfill-features",
+        help="Build match_features from finished fixtures + pre_match packages",
+    )
+    subparsers.add_parser(
+        "train-model",
+        help="Train 1X2 probability model from labeled match_features (needs >= ML_MIN_TRAIN_SAMPLES)",
+    )
+    subparsers.add_parser(
+        "model-status",
+        help="Show labeled sample count and whether inference is multifactor or ml",
+    )
 
     trigger_parser = subparsers.add_parser("trigger-task", help="Manually trigger a scheduler task")
     trigger_parser.add_argument(
         "--name",
         required=True,
-        choices=["daily_init", "pre_match_update", "capture_results", "clean_old_data"],
+        choices=[
+            "daily_init",
+            "pre_match_update",
+            "capture_results",
+            "clean_old_data",
+            "train_model",
+        ],
         help="Task name to trigger",
     )
 
@@ -219,6 +299,9 @@ def main() -> None:
         "cache-stats": run_cache_stats,
         "list-tasks": run_list_tasks,
         "run-scheduler": run_scheduler_loop,
+        "backfill-features": run_backfill_features,
+        "train-model": run_train_model,
+        "model-status": run_model_status,
     }
 
     asyncio.run(commands[args.command]())

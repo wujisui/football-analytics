@@ -67,6 +67,11 @@ async def _ensure_sqlite_columns(conn) -> None:
         {
             "home_goals": "INTEGER",
             "away_goals": "INTEGER",
+            "status_short": "TEXT",
+            "et_home_goals": "INTEGER",
+            "et_away_goals": "INTEGER",
+            "pen_home": "INTEGER",
+            "pen_away": "INTEGER",
         },
     )
 

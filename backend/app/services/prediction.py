@@ -109,15 +109,35 @@ def resolve_match_probabilities(
     return implied if implied is not None else normalized
 
 
-def get_recommendation(probs: dict[str, float]) -> str:
+def get_recommendation(
+    probs: dict[str, float],
+    features: dict[str, float] | None = None,
+) -> str:
     """Single pick or 双选 (主胜/平、客胜/平). Flat prior → 待分析.
 
     仅在「胜+平」或「负+平」接近时双选。主客接近时不推「防平」
    （几乎包圆且易与参考比分打架），改为单选概率更高的一侧。
+
+    When streak/mean-reversion features are extreme, widen the double-chance
+    edge so we do not over-commit to a side that is statistically due to fade
+    or bounce.
     """
     normalized = normalize_probabilities(probs)
     if _is_flat_prior(normalized):
         return "待分析"
+    edge = _DOUBLE_CHANCE_EDGE
+    if features:
+        # Long winning streak on the favorite → prefer softer (双选) picks.
+        top_key = max(("home", "draw", "away"), key=lambda k: normalized[k])
+        if top_key == "home" and features.get("home_win_streak", 0) >= 4:
+            edge = 0.12
+        elif top_key == "away" and features.get("away_win_streak", 0) >= 4:
+            edge = 0.12
+        # Long winless underdog as top pick → also soften (bounce is noisy).
+        if top_key == "home" and features.get("home_winless_streak", 0) >= 5:
+            edge = max(edge, 0.11)
+        elif top_key == "away" and features.get("away_winless_streak", 0) >= 5:
+            edge = max(edge, 0.11)
     ranked = sorted(
         (("home", normalized["home"]), ("draw", normalized["draw"]), ("away", normalized["away"])),
         key=lambda x: x[1],
@@ -125,7 +145,7 @@ def get_recommendation(probs: dict[str, float]) -> str:
     )
     top_key, top_p = ranked[0]
     second_key, second_p = ranked[1]
-    if top_p - second_p < _DOUBLE_CHANCE_EDGE:
+    if top_p - second_p < edge:
         pair = frozenset({top_key, second_key})
         if pair == frozenset({"home", "away"}):
             return _LABEL[top_key]
@@ -474,11 +494,15 @@ def _score_hints_for_recommendation(
 def derive_prediction_leans(
     probs: dict[str, float],
     odds: dict[str, Any] | None = None,
+    features: dict[str, float] | None = None,
 ) -> dict[str, str]:
     """Derive O/U, BTTS, score and handicap leans from 1X2 + markets.
 
     Flat prior with local odds → use odds-implied 1X2 (no API).
     Flat prior and no usable odds → 待分析.
+
+    When model probs are real (non-flat), prefer probability-driven O/U over
+    blindly following the lower bookmaker price.
     """
     normalized = resolve_match_probabilities(probs, odds)
     if _is_flat_prior(normalized):
@@ -495,14 +519,19 @@ def derive_prediction_leans(
     line = _parse_ou_line(ou.get("line")) or 2.5
     over = _odd_float(ou.get("home"))
     under = _odd_float(ou.get("away"))
-    side = _market_ou_side(over, under) or _side_from_probs(normalized)
+    # Prefer model-driven side; only use market when model is still flat-ish.
+    model_driven = not _is_flat_prior(normalize_probabilities(probs or {}))
+    if model_driven:
+        side = _side_from_probs(normalized)
+    else:
+        side = _market_ou_side(over, under) or _side_from_probs(normalized)
     total = _target_total(line, side)
     line_label = _format_line(line)
     goal_lean = (
         f"倾向大球（{line_label}）" if side == "over" else f"倾向小球（{line_label}）"
     )
 
-    recommendation = get_recommendation(normalized)
+    recommendation = get_recommendation(normalized, features=features)
     score_hint, score_lines = _score_hints_for_recommendation(
         recommendation, normalized, total
     )
@@ -550,14 +579,15 @@ def adjust_probabilities_with_factors(
 def build_prediction_snapshot(
     probs: dict[str, float],
     odds: dict[str, Any] | None = None,
+    features: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_probabilities(probs)
-    leans = derive_prediction_leans(normalized, odds)
+    leans = derive_prediction_leans(normalized, odds, features=features)
     return {
         "home_win_prob": round(normalized["home"], 4),
         "draw_prob": round(normalized["draw"], 4),
         "away_win_prob": round(normalized["away"], 4),
-        "recommendation": get_recommendation(normalized),
+        "recommendation": get_recommendation(normalized, features=features),
         **leans,
     }
 
@@ -596,9 +626,9 @@ def evaluate_prediction_vs_score(
     both_score_lean: str,
     recommendation: str = "",
 ) -> dict[str, Any]:
-    """
-    Compare derived pre-match leans against final score.
+    """Compare pre-match leans against regulation-time (90') score.
 
+    ``home_goals`` / ``away_goals`` must be fulltime, not AET/PEN boards.
     Returns hit flags (True/False/None). None = not evaluable (no FT / 待分析 / push).
     """
     result: dict[str, Any] = {
