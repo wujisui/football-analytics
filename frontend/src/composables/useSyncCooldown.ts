@@ -2,6 +2,9 @@ import { computed, onUnmounted, ref } from 'vue'
 
 import type { SyncFixturesResult } from '@/api/fixtures'
 
+/** Keep in sync with backend `_SYNC_COOLDOWN_SECONDS`. */
+export const SYNC_COOLDOWN_SECONDS = 90
+
 /** Shared across Home / Results — backend sync cooldown is process-wide. */
 const cooldownLeft = ref(0)
 let timer: ReturnType<typeof setInterval> | null = null
@@ -33,7 +36,7 @@ function startCooldown(seconds: number) {
 
 /**
  * Global force-sync cooldown (matches backend ~90s).
- * Shows remaining seconds so users do not keep clicking blindly.
+ * After any sync response, disable the button until the timer ends.
  */
 export function useSyncCooldown() {
   subscribers += 1
@@ -48,22 +51,21 @@ export function useSyncCooldown() {
 
   const inCooldown = computed(() => cooldownLeft.value > 0)
 
-  const cooldownHint = computed(() => {
-    if (cooldownLeft.value <= 0) return ''
-    return `同步冷却中，请 ${cooldownLeft.value} 秒后再试（保护官方 API 配额）`
-  })
-
+  /**
+   * Apply server sync response: always start local cooldown.
+   * @returns true if the request was blocked (already cooling on server)
+   */
   function applySyncResult(result: SyncFixturesResult): boolean {
-    if (result.status !== 'cooldown') return false
-    const retry = result.retry_after_seconds ?? 90
-    startCooldown(retry)
-    return true
+    const seconds =
+      result.retry_after_seconds ??
+      (result.status === 'cooldown' ? cooldownLeft.value || SYNC_COOLDOWN_SECONDS : SYNC_COOLDOWN_SECONDS)
+    startCooldown(seconds)
+    return result.status === 'cooldown'
   }
 
   return {
     cooldownLeft,
     inCooldown,
-    cooldownHint,
     startCooldown,
     applySyncResult,
   }

@@ -2,9 +2,9 @@ import { darkTheme, type GlobalTheme, type GlobalThemeOverrides } from 'naive-ui
 import { computed, ref, watch } from 'vue'
 
 import {
-  THEME_OPTIONS,
   applyShellCssVars,
   getPreset,
+  normalizePresetId,
   type ThemePresetId,
 } from '@/theme/presets'
 
@@ -12,17 +12,10 @@ const STORAGE_KEY = 'fa-theme-preset'
 
 function readStored(): ThemePresetId {
   try {
-    const v = localStorage.getItem(STORAGE_KEY)
-    if (v && THEME_OPTIONS.some((o) => o.value === v)) {
-      return v as ThemePresetId
-    }
-    // migrate old light/dark toggle
-    if (v === 'dark') return 'dark'
-    if (v === 'light') return 'light'
+    return normalizePresetId(localStorage.getItem(STORAGE_KEY))
   } catch {
-    /* ignore */
+    return 'light'
   }
-  return 'light'
 }
 
 const presetId = ref<ThemePresetId>(readStored())
@@ -52,8 +45,14 @@ export function useTheme() {
     () => preset.value.overrides,
   )
 
+  const isDark = computed(() => preset.value.dark)
+
   function setPreset(id: ThemePresetId) {
     presetId.value = id
+  }
+
+  function toggleTheme() {
+    presetId.value = isDark.value ? 'light' : 'dark'
   }
 
   return {
@@ -61,8 +60,8 @@ export function useTheme() {
     preset,
     naiveTheme,
     themeOverrides,
-    themeOptions: THEME_OPTIONS,
-    isDark: computed(() => preset.value.dark),
+    isDark,
     setPreset,
+    toggleTheme,
   }
 }

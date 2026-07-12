@@ -55,10 +55,10 @@ Naive UI **只内置两套全局主题**：默认浅色（`theme=null`）与 `da
 
 本项目做法：
 
-1. 下拉首两项为 Naive 内置：**浅色（Naive 默认）** / **深色（Naive 默认）**（无 `theme-overrides`）
-2. 其余项为同基调 + `theme-overrides` 换主色（蓝/橙等），见 `frontend/src/theme/presets.ts`
+1. 仅保留 Naive 内置两套：**浅色**（`theme=null`）/ **深色**（`darkTheme`），无 `theme-overrides`
+2. 主题切换为**右下角固定图标按钮**（深色月亮 / 浅色太阳），不占用顶栏、避免贴边裁切
 3. 自定义页面壳用 `--fa-*`（非 Naive 变量），由预设同步；**禁止**写死 `#fff` / `#f5f6f8`
-4. 偏好键：`fa-theme-preset`（`localStorage`）
+4. 偏好键：`fa-theme-preset`（`localStorage`，值为 `light` | `dark`；旧色系 id 会自动归一）
 
 **禁止**在页面/卡片上写死 `#fff` / `#f5f6f8`；自定义区域用 `--fa-*`。
 

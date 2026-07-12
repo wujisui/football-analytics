@@ -1,19 +1,14 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
-export type ThemePresetId =
-  | 'light'
-  | 'dark'
-  | 'light-blue'
-  | 'light-orange'
-  | 'dark-blue'
-  | 'dark-orange'
+/** Only Naive built-in light / dark (no color variants). */
+export type ThemePresetId = 'light' | 'dark'
 
 export interface ThemePreset {
   id: ThemePresetId
   label: string
   /** Whether Naive `darkTheme` is applied */
   dark: boolean
-  /** Naive theme-overrides (library-native customization) */
+  /** Naive theme-overrides (empty for stock themes) */
   overrides: GlobalThemeOverrides
   /** Page shell tokens for custom (non-Naive) surfaces */
   shell: {
@@ -71,68 +66,24 @@ const darkShell = {
   highlightText: '#f0c78a',
 } as const
 
-function primaryOverrides(
-  primary: string,
-  hover: string,
-  pressed: string,
-  suppl: string,
-): GlobalThemeOverrides {
-  return {
-    common: {
-      primaryColor: primary,
-      primaryColorHover: hover,
-      primaryColorPressed: pressed,
-      primaryColorSuppl: suppl,
-    },
-  }
-}
-
 /**
- * Presets:
- * - `light` / `dark`: Naive UI built-in themes only (theme=null / darkTheme, no overrides)
- * - others: same base + theme-overrides for primary color
+ * Official themes only:
+ * - `light`: Naive default (theme=null)
+ * - `dark`: Naive `darkTheme`
  */
 export const THEME_PRESETS: ThemePreset[] = [
   {
     id: 'light',
-    label: '浅色（Naive 默认）',
+    label: '浅色',
     dark: false,
     overrides: {},
     shell: lightShell,
   },
   {
     id: 'dark',
-    label: '深色（Naive 默认）',
+    label: '深色',
     dark: true,
     overrides: {},
-    shell: darkShell,
-  },
-  {
-    id: 'light-blue',
-    label: '浅色 · 蓝色',
-    dark: false,
-    overrides: primaryOverrides('#2080f0', '#4098fc', '#1060c9', '#2080f0'),
-    shell: lightShell,
-  },
-  {
-    id: 'light-orange',
-    label: '浅色 · 橙色',
-    dark: false,
-    overrides: primaryOverrides('#f0a020', '#fcb040', '#c97c10', '#f0a020'),
-    shell: lightShell,
-  },
-  {
-    id: 'dark-blue',
-    label: '深色 · 蓝色',
-    dark: true,
-    overrides: primaryOverrides('#70c0e8', '#8acbec', '#5a9fc7', '#70c0e8'),
-    shell: darkShell,
-  },
-  {
-    id: 'dark-orange',
-    label: '深色 · 橙色',
-    dark: true,
-    overrides: primaryOverrides('#fcb040', '#ffc860', '#d09020', '#fcb040'),
     shell: darkShell,
   },
 ]
@@ -142,8 +93,17 @@ export const THEME_OPTIONS = THEME_PRESETS.map((p) => ({
   value: p.id,
 }))
 
+/** Map legacy color-variant ids → light/dark. */
+export function normalizePresetId(id: string | null | undefined): ThemePresetId {
+  if (!id) return 'light'
+  if (id === 'dark' || id.startsWith('dark-')) return 'dark'
+  if (id === 'light' || id.startsWith('light-')) return 'light'
+  return 'light'
+}
+
 export function getPreset(id: string | null | undefined): ThemePreset {
-  return THEME_PRESETS.find((p) => p.id === id) ?? THEME_PRESETS[0]
+  const normalized = normalizePresetId(id)
+  return THEME_PRESETS.find((p) => p.id === normalized) ?? THEME_PRESETS[0]
 }
 
 export function applyShellCssVars(preset: ThemePreset) {

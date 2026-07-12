@@ -30,7 +30,7 @@ const {
   loadHomeFixtures,
 } = useHomeFixtures()
 
-const { cooldownLeft, inCooldown, cooldownHint, applySyncResult } = useSyncCooldown()
+const { cooldownLeft, inCooldown, applySyncResult } = useSyncCooldown()
 
 /** null = 全部联赛 */
 const selectedLeagueId = ref<number | null>(null)
@@ -40,9 +40,7 @@ const syncing = ref(false)
 const syncHint = ref('')
 
 const refreshDisabled = computed(() => loading.value || syncing.value || inCooldown.value)
-const refreshLabel = computed(() =>
-  inCooldown.value ? `冷却中 ${cooldownLeft.value}s` : '强制刷新',
-)
+const refreshLabel = computed(() => (inCooldown.value ? '刷新冷却中' : '强制刷新'))
 
 const selectedLeague = computed(() =>
   selectedLeagueId.value == null
@@ -121,29 +119,21 @@ async function loadAll(force = false) {
 
 /** Force pull from official API into local DB, then reload list. */
 async function forceRefresh() {
-  if (inCooldown.value) {
-    message.warning(cooldownHint.value || `请稍后再试（剩余 ${cooldownLeft.value} 秒）`)
-    return
-  }
+  if (inCooldown.value) return
   syncing.value = true
-  syncHint.value = '正在强制同步赛程与盘口…'
+  syncHint.value = ''
   try {
     const result = await syncFixtures({
       days: homeWindowDays(),
       date: homeWindowStartDate(),
       includeResults: true,
     })
-    if (applySyncResult(result)) {
-      syncHint.value = cooldownHint.value || result.message
-      message.warning(syncHint.value)
-      return
-    }
-    syncHint.value = result.message
-    message.success(result.message || '同步完成')
+    const blocked = applySyncResult(result)
+    if (blocked) return
+    message.success(`刷新成功，${cooldownLeft.value} 秒后可再次刷新`)
     await loadAll(true)
   } catch (err) {
-    syncHint.value = err instanceof Error ? err.message : '同步失败'
-    message.error(syncHint.value)
+    message.error(err instanceof Error ? err.message : '同步失败')
     // Still try a local reload so the UI is not stuck.
     await loadAll(true)
   } finally {
@@ -222,29 +212,18 @@ onMounted(() => {
             class="refresh-btn"
             :loading="syncing"
             :disabled="refreshDisabled"
-            :title="inCooldown ? cooldownHint : '从官方强制同步赛程与盘口到本地'"
             @click="forceRefresh"
           >
             {{ refreshLabel }}
           </n-button>
         </div>
 
-        <n-alert
-          v-if="inCooldown"
-          type="warning"
-          :title="cooldownHint"
-          class="cooldown-alert"
-          :bordered="false"
-        >
-          冷却是为了避免短时间重复打官方接口、耗尽免费配额。倒计时结束后即可再次强制刷新。
-        </n-alert>
-
         <n-page-header :title="listTitle" class="page-header">
           <template #subtitle>
             未完赛 {{ displayedFixtures.length }} 场
             <template v-if="windowLabel"> · {{ windowLabel }}</template>
             <span class="desktop-only"> · 数据来自本地库</span>
-            <template v-if="syncHint && !inCooldown"> · {{ syncHint }}</template>
+            <template v-if="syncHint"> · {{ syncHint }}</template>
           </template>
         </n-page-header>
       </n-layout-header>
@@ -312,10 +291,6 @@ onMounted(() => {
   padding: 10px 12px 8px;
   background: var(--fa-bg-elevated);
   flex-shrink: 0;
-}
-
-.cooldown-alert {
-  margin: 8px 0 0;
 }
 
 .toolbar-top {
