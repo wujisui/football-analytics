@@ -7,3 +7,6 @@
 **/*.local.env
 !**/.env.example
 !**/secrets.local.env.example
+
+# Trained model artifacts (regenerate via `python manage.py train-model`)
+backend/data/models/

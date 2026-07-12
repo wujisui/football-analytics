@@ -7,7 +7,7 @@
 - **数据拉取**：联赛、球队、当日赛程、历史交锋、球队统计等
 - **本地优先**：官方响应写入 SQLite（`api_snapshots`），业务优先读本地，过期再请求官方
 - **缓存层**：Redis 作热缓存（无 Redis 时自动降级为 fakeredis）
-- **赛前分析**：基于历史数据计算胜/平/负概率及推荐，结果写入 `pre_match_data`
+- **赛前分析**：多因子胜/平/负概率（近况/交锋/均值回归/轻度盘口）及推荐，结果写入 `pre_match_data` + `match_features`
 - **定时任务**：每日初始化、赛前更新、过期数据清理
 - **管理接口**：查看调度器状态、手动触发任务
 
@@ -140,10 +140,22 @@ python manage.py cache-stats      # 查看缓存命中率
 python manage.py list-tasks       # 列出定时任务
 python manage.py trigger-task --name daily_init   # 手动触发任务
 python manage.py run-scheduler    # 前台运行调度器（调试用）
+python manage.py backfill-features  # 从已结束场次回填 match_features 训练行
+python manage.py train-model      # 用赛果标签训练 1X2（需 ≥ ML_MIN_TRAIN_SAMPLES）
+python manage.py model-status     # 查看标签数与当前 multifactor / ml
 ```
 
-可触发的任务名：`daily_init`、`pre_match_update`、`clean_old_data`。
+可触发的任务名：`daily_init`、`pre_match_update`、`capture_results`、`clean_old_data`、`train_model`。
 
+### 概率模型（多因子 → 自动切 ML）
+
+本地数据从现在起积累。链路：
+
+1. 赛前分析写入 `match_features`（特征 + 当时概率）
+2. 赛果回写打 `label`；`capture_results` 后若标签 ≥ `ML_MIN_TRAIN_SAMPLES`（默认 30）且有新增 → **自动训练**
+3. 有合格模型后，新分析自动 `source=ml`；否则继续 `multifactor`
+
+配置见 `.env`：`ML_MIN_TRAIN_SAMPLES`、`ML_AUTO_TRAIN`。盘口权重刻意偏低；长连胜淡化、长不胜抬升反弹。
 ## API 接口
 
 所有业务接口前缀为 `/api/v1`。完整请求/响应结构见 **[/docs](http://127.0.0.1:8000/docs)**。
