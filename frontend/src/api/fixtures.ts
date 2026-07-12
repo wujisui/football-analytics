@@ -57,8 +57,16 @@ export interface ResultFixture {
   away_team_name: string
   fixture_date: string
   status: string
+  /** Official short: FT / AET / PEN */
+  status_short?: string | null
+  /** Regulation (90') */
   home_goals?: number | null
   away_goals?: number | null
+  /** Extra time board (usually cumulative after ET) */
+  et_home_goals?: number | null
+  et_away_goals?: number | null
+  pen_home?: number | null
+  pen_away?: number | null
   has_prediction?: boolean
   recommendation?: string | null
   score_hint?: string | null

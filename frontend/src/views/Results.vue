@@ -14,14 +14,14 @@ import {
 import AccuracyHistoryChart from '@/components/AccuracyHistoryChart.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useSyncCooldown } from '@/composables/useSyncCooldown'
-import { formatDateTime, statusLabel, statusTagType } from '@/utils/format'
+import { formatDateTime, leagueTagColor, statusLabel, statusTagType } from '@/utils/format'
 import { leagueNameZh } from '@/utils/leagueNames'
 import { teamNameZh } from '@/utils/teamNames'
 
 const HISTORY_DAYS = 30
 const isPhone = useIsPhone()
 const message = useMessage()
-const { cooldownLeft, inCooldown, cooldownHint, applySyncResult } = useSyncCooldown()
+const { cooldownLeft, inCooldown, applySyncResult } = useSyncCooldown()
 
 function localISODate(d: Date): string {
   const y = d.getFullYear()
@@ -46,15 +46,122 @@ const syncing = ref(false)
 const error = ref('')
 const hint = ref('')
 
-const emptyText = computed(() =>
-  selectedDate.value
-    ? `${selectedDate.value} 暂无已结束赛果（可点「同步赛果」从官方回写）`
-    : '请选择日期',
+/** Filters applied to list (confirmed from popover). */
+const filterLeagueId = ref<number | 'all'>('all')
+const filterHit = ref<'all' | 'result' | 'score' | 'ou' | 'btts'>('all')
+/** Draft values inside the list-header filter popover. */
+const draftLeagueId = ref<number | 'all'>('all')
+const draftHit = ref<'all' | 'result' | 'score' | 'ou' | 'btts'>('all')
+const filterOpen = ref(false)
+
+const leagueOptions = computed(() => {
+  const map = new Map<number, string>()
+  for (const fx of fixtures.value) {
+    if (!map.has(fx.league_id)) {
+      map.set(fx.league_id, leagueNameZh(fx.league_name))
+    }
+  }
+  return [
+    { label: '全部联赛', value: 'all' as const },
+    ...[...map.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1], 'zh'))
+      .map(([id, name]) => ({ label: name, value: id })),
+  ]
+})
+
+const hitOptions = [
+  { label: '全部结果', value: 'all' },
+  { label: '胜平负命中', value: 'result' },
+  { label: '比分命中', value: 'score' },
+  { label: '大小球命中', value: 'ou' },
+  { label: '双方进球命中', value: 'btts' },
+]
+
+const filterActive = computed(
+  () => filterLeagueId.value !== 'all' || filterHit.value !== 'all',
 )
 
+function openFilterPopover(show: boolean) {
+  filterOpen.value = show
+  if (show) {
+    draftLeagueId.value = filterLeagueId.value
+    draftHit.value = filterHit.value
+  }
+}
+
+function resetFilterDraft() {
+  draftLeagueId.value = 'all'
+  draftHit.value = 'all'
+}
+
+function confirmFilter() {
+  filterLeagueId.value = draftLeagueId.value
+  filterHit.value = draftHit.value
+  filterOpen.value = false
+}
+
+const filteredFixtures = computed(() => {
+  let list = fixtures.value
+  if (filterLeagueId.value !== 'all') {
+    list = list.filter((fx) => fx.league_id === filterLeagueId.value)
+  }
+  if (filterHit.value === 'result') {
+    list = list.filter((fx) => fx.result_hit === true)
+  } else if (filterHit.value === 'score') {
+    list = list.filter((fx) => fx.score_hit === true)
+  } else if (filterHit.value === 'ou') {
+    list = list.filter((fx) => fx.ou_hit === true)
+  } else if (filterHit.value === 'btts') {
+    list = list.filter((fx) => fx.btts_hit === true)
+  }
+  return list
+})
+
+function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
+  const rows = list.map((fx) => ({
+    has_prediction: !!fx.has_prediction,
+    evaluable: fx.home_goals != null && fx.away_goals != null,
+    result_hit: fx.result_hit ?? null,
+    score_hit: fx.score_hit ?? null,
+    ou_hit: fx.ou_hit ?? null,
+    btts_hit: fx.btts_hit ?? null,
+  }))
+  const rate = (key: 'result_hit' | 'score_hit' | 'ou_hit' | 'btts_hit') => {
+    const evalRows = rows.filter((r) => r.has_prediction && r[key] !== null && r[key] !== undefined)
+    const hits = evalRows.filter((r) => r[key] === true).length
+    const total = evalRows.length
+    return {
+      hits,
+      total,
+      rate: total > 0 ? hits / total : null,
+    }
+  }
+  return {
+    result: rate('result_hit'),
+    score: rate('score_hit'),
+    ou: rate('ou_hit'),
+    btts: rate('btts_hit'),
+    fixtures_with_prediction: rows.filter((r) => r.has_prediction).length,
+    fixtures_finished: rows.filter((r) => r.evaluable).length,
+  }
+}
+
+const displayAccuracy = computed(() => {
+  const filtered = filterLeagueId.value !== 'all' || filterHit.value !== 'all'
+  if (!filtered) return dayAccuracy.value
+  return summarizeFiltered(filteredFixtures.value)
+})
+
+const emptyText = computed(() => {
+  if (!selectedDate.value) return '请选择日期'
+  if (fixtures.value.length && !filteredFixtures.value.length) {
+    return '当前筛选下无场次，可调整联赛 / 命中维度'
+  }
+  return `${selectedDate.value} 暂无已结束赛果（可点「同步赛果」从官方回写）`
+})
+
 const subtitle = computed(() => {
-  if (inCooldown.value) return cooldownHint.value
-  const base = '左列表 · 右准确率（默认昨天）'
+  const base = '常规时间对照预测 · 加时/点球单独标注'
   return hint.value ? `${base} · ${hint.value}` : base
 })
 
@@ -68,11 +175,37 @@ const hasChartData = computed(
   () => (history.value?.series ?? []).some((p) => p.fixtures_with_prediction > 0),
 )
 
-const listTitle = computed(() => `赛果列表 · ${selectedDate.value}`)
+const listTitle = computed(() => {
+  const n = filteredFixtures.value.length
+  const total = fixtures.value.length
+  if (total && n !== total) return `赛果列表 · ${selectedDate.value}（${n}/${total}）`
+  return `赛果列表 · ${selectedDate.value}`
+})
 
+/** Main board = regulation 90'. */
 function scoreText(fx: ResultFixture): string {
   if (fx.home_goals == null || fx.away_goals == null) return '—'
   return `${fx.home_goals} : ${fx.away_goals}`
+}
+
+/** One line under main score: 加时：a-b；点球：c-d */
+function extraScoreLine(fx: ResultFixture): string | null {
+  const parts: string[] = []
+  const et = etScoreText(fx)
+  const pen = penScoreText(fx)
+  if (et) parts.push(`加时：${et}`)
+  if (pen) parts.push(`点球：${pen}`)
+  return parts.length ? parts.join('；') : null
+}
+
+function etScoreText(fx: ResultFixture): string | null {
+  if (fx.et_home_goals == null || fx.et_away_goals == null) return null
+  return `${fx.et_home_goals}-${fx.et_away_goals}`
+}
+
+function penScoreText(fx: ResultFixture): string | null {
+  if (fx.pen_home == null || fx.pen_away == null) return null
+  return `${fx.pen_home}-${fx.pen_away}`
 }
 
 function formatRate(stat: AccuracyStat | undefined): string {
@@ -117,7 +250,10 @@ async function loadDayResults() {
 async function loadHistory() {
   historyLoading.value = true
   try {
-    history.value = await fetchResultsHistory({ days: HISTORY_DAYS })
+    history.value = await fetchResultsHistory({
+      days: HISTORY_DAYS,
+      leagueId: filterLeagueId.value === 'all' ? undefined : filterLeagueId.value,
+    })
   } catch {
     history.value = null
   } finally {
@@ -130,26 +266,18 @@ function onDateChange(value: string | null) {
 }
 
 async function syncDay() {
-  if (!selectedDate.value) return
-  if (inCooldown.value) {
-    message.warning(cooldownHint.value || `请稍后再试（剩余 ${cooldownLeft.value} 秒）`)
-    return
-  }
+  if (!selectedDate.value || inCooldown.value) return
   syncing.value = true
   error.value = ''
-  hint.value = '正在同步…'
+  hint.value = ''
   try {
     const result = await syncFixtures({
       date: selectedDate.value,
       includeResults: true,
     })
-    if (applySyncResult(result)) {
-      hint.value = cooldownHint.value || result.message
-      message.warning(hint.value)
-      return
-    }
-    hint.value = result.message
-    message.success(result.message || '同步完成')
+    const blocked = applySyncResult(result)
+    if (blocked) return
+    message.success(`刷新成功，${cooldownLeft.value} 秒后可再次刷新`)
     await Promise.all([loadDayResults(), loadHistory()])
   } catch (err) {
     error.value = err instanceof Error ? err.message : '同步失败'
@@ -161,6 +289,10 @@ async function syncDay() {
 
 watch(selectedDate, () => {
   void loadDayResults()
+})
+
+watch(filterLeagueId, () => {
+  void loadHistory()
 })
 
 onMounted(() => {
@@ -183,7 +315,7 @@ onMounted(() => {
           <n-breadcrumb-item>赛果</n-breadcrumb-item>
           <n-breadcrumb-item>{{ selectedDate }}</n-breadcrumb-item>
         </n-breadcrumb>
-        <n-space :size="8" align="center">
+        <n-space :size="8" align="center" wrap>
           <n-date-picker
             v-model:formatted-value="selectedDate"
             value-format="yyyy-MM-dd"
@@ -191,26 +323,17 @@ onMounted(() => {
             size="small"
             @update:formatted-value="onDateChange"
           />
-          <n-button size="small" :loading="loading" @click="loadDayResults">查询</n-button>
           <n-button
             size="small"
             type="primary"
             :loading="syncing"
             :disabled="syncing || inCooldown"
-            :title="inCooldown ? cooldownHint : '同步当日赛果'"
             @click="syncDay"
           >
-            {{ inCooldown ? `冷却中 ${cooldownLeft}s` : '同步赛果' }}
+            {{ inCooldown ? '刷新冷却中' : '同步赛果' }}
           </n-button>
         </n-space>
       </n-space>
-      <n-alert
-        v-if="inCooldown"
-        type="warning"
-        :title="cooldownHint"
-        :bordered="false"
-        style="margin-top: 8px;"
-      />
       <n-page-header title="赛果与预测复盘" :subtitle="subtitle" style="margin-top: 4px;" />
     </n-layout-header>
 
@@ -228,8 +351,57 @@ onMounted(() => {
         :native-scrollbar="true"
         content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
       >
-        <div style="padding: 10px 12px 6px; flex-shrink: 0;">
+        <div
+          style="padding: 10px 12px 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;"
+        >
           <n-text strong>{{ listTitle }}</n-text>
+          <n-popover
+            :show="filterOpen"
+            trigger="click"
+            placement="bottom-end"
+            :show-arrow="false"
+            @update:show="openFilterPopover"
+          >
+            <template #trigger>
+              <n-button
+                size="tiny"
+                quaternary
+                :type="filterActive ? 'primary' : 'default'"
+                aria-label="筛选赛果"
+              >
+                <template #icon>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    width="14"
+                    height="14"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" />
+                  </svg>
+                </template>
+                筛选
+              </n-button>
+            </template>
+            <div style="width: 200px; display: flex; flex-direction: column; gap: 10px;">
+              <n-select
+                v-model:value="draftLeagueId"
+                :options="leagueOptions"
+                size="small"
+                :consistent-menu-width="false"
+              />
+              <n-select
+                v-model:value="draftHit"
+                :options="hitOptions"
+                size="small"
+              />
+              <n-space justify="end" :size="8">
+                <n-button size="tiny" @click="resetFilterDraft">重置</n-button>
+                <n-button size="tiny" type="primary" @click="confirmFilter">确认</n-button>
+              </n-space>
+            </div>
+          </n-popover>
         </div>
         <n-alert
           v-if="error"
@@ -243,16 +415,23 @@ onMounted(() => {
           <div style="padding: 4px 14px 16px;">
             <n-spin :show="loading || syncing">
               <n-empty
-                v-if="!loading && !fixtures.length"
+                v-if="!loading && !filteredFixtures.length"
                 :description="emptyText"
                 style="padding: 40px 12px;"
               />
               <n-list v-else style="background: transparent;">
-                <n-list-item v-for="fx in fixtures" :key="fx.fixture_id">
+                <n-list-item v-for="fx in filteredFixtures" :key="fx.fixture_id">
                   <n-thing>
                     <template #header>
                       <n-space :size="6" align="center" wrap>
-                        <n-tag size="small" :bordered="false">
+                        <n-tag
+                          size="small"
+                          :bordered="false"
+                          :color="{
+                            color: `${leagueTagColor(fx.league_id)}18`,
+                            textColor: leagueTagColor(fx.league_id),
+                          }"
+                        >
                           {{ leagueNameZh(fx.league_name) }}
                         </n-tag>
                         <span style="font-size: 12px; color: var(--fa-text-secondary);">
@@ -261,8 +440,12 @@ onMounted(() => {
                       </n-space>
                     </template>
                     <template #header-extra>
-                      <n-tag size="small" :type="statusTagType(fx.status)" :bordered="false">
-                        {{ statusLabel(fx.status) }}
+                      <n-tag
+                        size="small"
+                        :type="statusTagType(fx.status, fx.status_short)"
+                        :bordered="false"
+                      >
+                        {{ statusLabel(fx.status, fx.status_short) }}
                       </n-tag>
                     </template>
                     <n-grid :cols="3" :x-gap="8" style="align-items: center; font-weight: 600;">
@@ -270,7 +453,13 @@ onMounted(() => {
                         {{ teamNameZh(fx.home_team_name, fx.home_team_id) }}
                       </n-gi>
                       <n-gi style="text-align: center; font-variant-numeric: tabular-nums;">
-                        {{ scoreText(fx) }}
+                        <div>{{ scoreText(fx) }}</div>
+                        <div
+                          v-if="extraScoreLine(fx)"
+                          style="font-size: 11px; font-weight: 500; color: var(--fa-text-secondary); margin-top: 2px;"
+                        >
+                          {{ extraScoreLine(fx) }}
+                        </div>
                       </n-gi>
                       <n-gi style="font-size: 13px;">
                         {{ teamNameZh(fx.away_team_name, fx.away_team_id) }}
@@ -326,26 +515,72 @@ onMounted(() => {
         <n-card
           v-if="isPhone"
           size="small"
-          :title="listTitle"
           :segmented="{ content: true }"
           style="flex: 0 0 42%; min-height: 0; display: flex; flex-direction: column; background: var(--fa-bg-elevated);"
           content-style="flex: 1; min-height: 0; padding: 0;"
         >
+          <template #header>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;">
+              <span>{{ listTitle }}</span>
+              <n-popover
+                :show="filterOpen"
+                trigger="click"
+                placement="bottom-end"
+                :show-arrow="false"
+                @update:show="openFilterPopover"
+              >
+                <template #trigger>
+                  <n-button
+                    size="tiny"
+                    quaternary
+                    :type="filterActive ? 'primary' : 'default'"
+                    aria-label="筛选赛果"
+                  >
+                    筛选
+                  </n-button>
+                </template>
+                <div style="width: 200px; display: flex; flex-direction: column; gap: 10px;">
+                  <n-select
+                    v-model:value="draftLeagueId"
+                    :options="leagueOptions"
+                    size="small"
+                    :consistent-menu-width="false"
+                  />
+                  <n-select
+                    v-model:value="draftHit"
+                    :options="hitOptions"
+                    size="small"
+                  />
+                  <n-space justify="end" :size="8">
+                    <n-button size="tiny" @click="resetFilterDraft">重置</n-button>
+                    <n-button size="tiny" type="primary" @click="confirmFilter">确认</n-button>
+                  </n-space>
+                </div>
+              </n-popover>
+            </div>
+          </template>
           <n-scrollbar style="max-height: 100%;" trigger="hover">
             <div style="padding: 8px 12px 12px;">
               <n-spin :show="loading || syncing">
                 <n-empty
-                  v-if="!loading && !fixtures.length"
+                  v-if="!loading && !filteredFixtures.length"
                   :description="emptyText"
                   style="padding: 24px 12px;"
                 />
                 <n-list v-else>
-                  <n-list-item v-for="fx in fixtures" :key="fx.fixture_id">
+                  <n-list-item v-for="fx in filteredFixtures" :key="fx.fixture_id">
                     <n-thing>
                       <template #header>
                         {{ teamNameZh(fx.home_team_name, fx.home_team_id) }}
                         {{ scoreText(fx) }}
                         {{ teamNameZh(fx.away_team_name, fx.away_team_id) }}
+                        <n-text
+                          v-if="extraScoreLine(fx)"
+                          depth="3"
+                          style="display: block; font-size: 11px; font-weight: 400;"
+                        >
+                          {{ extraScoreLine(fx) }}
+                        </n-text>
                       </template>
                       <n-space v-if="fx.has_prediction" :size="6" wrap>
                         <n-tag size="small" :type="hitTagType(fx.result_hit)" :bordered="false">
@@ -383,16 +618,16 @@ onMounted(() => {
               <n-spin :show="loading">
                 <n-grid :cols="2" :x-gap="8" :y-gap="8">
                   <n-gi>
-                    <n-statistic label="胜平负" :value="formatRate(dayAccuracy?.result)" />
+                    <n-statistic label="胜平负" :value="formatRate(displayAccuracy?.result)" />
                   </n-gi>
                   <n-gi>
-                    <n-statistic label="比分" :value="formatRate(dayAccuracy?.score)" />
+                    <n-statistic label="比分" :value="formatRate(displayAccuracy?.score)" />
                   </n-gi>
                   <n-gi>
-                    <n-statistic label="大小球" :value="formatRate(dayAccuracy?.ou)" />
+                    <n-statistic label="大小球" :value="formatRate(displayAccuracy?.ou)" />
                   </n-gi>
                   <n-gi>
-                    <n-statistic label="双方进球" :value="formatRate(dayAccuracy?.btts)" />
+                    <n-statistic label="双方进球" :value="formatRate(displayAccuracy?.btts)" />
                   </n-gi>
                 </n-grid>
               </n-spin>

@@ -154,7 +154,11 @@ export function confidenceType(
   return 'default'
 }
 
-export function statusLabel(status: string): string {
+export function statusLabel(status: string, statusShort?: string | null): string {
+  const short = (statusShort || '').toUpperCase()
+  if (short === 'AET') return '加时结束'
+  if (short === 'PEN') return '点球决胜'
+  if (short === 'FT') return '完场'
   const map: Record<string, string> = {
     pending: '未开始',
     live: '进行中',
@@ -167,7 +171,10 @@ export function statusLabel(status: string): string {
 
 export function statusTagType(
   status: string,
+  statusShort?: string | null,
 ): 'default' | 'success' | 'warning' | 'error' | 'info' {
+  const short = (statusShort || '').toUpperCase()
+  if (short === 'AET' || short === 'PEN') return 'warning'
   const key = status.toLowerCase()
   if (key === 'pending') return 'info'
   if (key === 'live') return 'warning'
