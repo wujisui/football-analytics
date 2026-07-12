@@ -61,6 +61,9 @@ body,
   overflow: hidden;
   background-color: var(--fa-bg);
   color: var(--fa-text);
+  /* Avoid iOS tap highlight / rubber-band fighting the app shell */
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
 
 a {
@@ -70,4 +73,13 @@ a {
 
 button {
   font-family: inherit;
+}
+
+/* Safe area for notched phones when deployed / PWA-like */
+.app-safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.app-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
