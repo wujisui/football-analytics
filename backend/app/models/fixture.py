@@ -27,8 +27,17 @@ class Fixture(Base):
     )
     date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
+    # Official short code when known: FT / AET / PEN / …
+    status_short: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Regulation time (90') — used for prediction evaluation / ML labels.
     home_goals: Mapped[int | None] = mapped_column(Integer, nullable=True)
     away_goals: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Extra time board (usually cumulative after ET); display only.
+    et_home_goals: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    et_away_goals: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Penalty shootout; display only.
+    pen_home: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pen_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),

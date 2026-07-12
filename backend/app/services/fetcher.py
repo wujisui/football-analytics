@@ -235,6 +235,11 @@ class FootballFetcher:
         status: str,
         home_goals: int | None = None,
         away_goals: int | None = None,
+        status_short: str | None = None,
+        et_home_goals: int | None = None,
+        et_away_goals: int | None = None,
+        pen_home: int | None = None,
+        pen_away: int | None = None,
     ) -> Fixture:
         assert self.session is not None
         fixture = await self.session.get(Fixture, fixture_id)
@@ -248,8 +253,13 @@ class FootballFetcher:
                 away_team_id=away_team_id,
                 date=fixture_date,
                 status=status,
+                status_short=status_short,
                 home_goals=home_goals,
                 away_goals=away_goals,
+                et_home_goals=et_home_goals,
+                et_away_goals=et_away_goals,
+                pen_home=pen_home,
+                pen_away=pen_away,
             )
             self.session.add(fixture)
         else:
@@ -258,11 +268,33 @@ class FootballFetcher:
             fixture.away_team_id = away_team_id
             fixture.date = fixture_date
             fixture.status = status
-            # Never clobber a stored final score with null from a partial payload.
+            if status_short is not None:
+                fixture.status_short = status_short
+            # Score boards: always refresh when parser provided regulation goals.
             if home_goals is not None:
                 fixture.home_goals = home_goals
             if away_goals is not None:
                 fixture.away_goals = away_goals
+            if status_short == "FT":
+                fixture.et_home_goals = None
+                fixture.et_away_goals = None
+                fixture.pen_home = None
+                fixture.pen_away = None
+            elif status_short in {"AET", "PEN", "ET"}:
+                # Overwrite ET/PEN boards on finished knockout results.
+                fixture.et_home_goals = et_home_goals
+                fixture.et_away_goals = et_away_goals
+                fixture.pen_home = pen_home
+                fixture.pen_away = pen_away
+            else:
+                if et_home_goals is not None:
+                    fixture.et_home_goals = et_home_goals
+                if et_away_goals is not None:
+                    fixture.et_away_goals = et_away_goals
+                if pen_home is not None:
+                    fixture.pen_home = pen_home
+                if pen_away is not None:
+                    fixture.pen_away = pen_away
 
         if previous_status is not None and previous_status != status:
             await self.cache.delete(fixture_cache_key(fixture_id))
@@ -430,6 +462,15 @@ class FootballFetcher:
                     fixture["status"],
                     home_goals=_as_int_or_none(fixture.get("home_goals")),
                     away_goals=_as_int_or_none(fixture.get("away_goals")),
+                    status_short=(
+                        str(fixture["status_short"]).upper()
+                        if fixture.get("status_short") is not None
+                        else None
+                    ),
+                    et_home_goals=_as_int_or_none(fixture.get("et_home_goals")),
+                    et_away_goals=_as_int_or_none(fixture.get("et_away_goals")),
+                    pen_home=_as_int_or_none(fixture.get("pen_home")),
+                    pen_away=_as_int_or_none(fixture.get("pen_away")),
                 )
                 league_ids.add(league_id)
                 saved += 1
@@ -570,7 +611,38 @@ class FootballFetcher:
             len(dates),
             total,
         )
+        await self._label_match_features_for_finished()
         return total
+
+    async def _label_match_features_for_finished(self) -> int:
+        """Stamp outcome labels onto stored match_features after FT scores land."""
+        assert self.session is not None
+        from sqlalchemy import select
+
+        from app.models.match_feature import MatchFeature
+        from app.services.ml_predictor import outcome_label
+
+        result = await self.session.execute(
+            select(MatchFeature, Fixture)
+            .join(Fixture, Fixture.id == MatchFeature.fixture_id)
+            .where(
+                Fixture.status == "finished",
+                Fixture.home_goals.is_not(None),
+                Fixture.away_goals.is_not(None),
+                MatchFeature.label.is_(None),
+            )
+        )
+        updated = 0
+        for feat, fixture in result.all():
+            label = outcome_label(fixture.home_goals, fixture.away_goals)
+            if label:
+                feat.label = label
+                updated += 1
+        if updated:
+            await self.session.commit()
+            logger.info("Labeled %s match_features rows with FT outcomes.", updated)
+        return updated
+
     async def fetch_headtohead(
         self,
         home_team_id: int,

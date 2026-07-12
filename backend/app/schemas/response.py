@@ -223,8 +223,8 @@ class FixtureResponse(BaseModel):
     away_team_name: str = Field(..., description="客队名称")
     fixture_date: datetime = Field(..., description="比赛时间（UTC）")
     status: str = Field(..., description="比赛状态")
-    home_goals: int | None = Field(default=None, description="主队进球（终场）")
-    away_goals: int | None = Field(default=None, description="客队进球（终场）")
+    home_goals: int | None = Field(default=None, description="主队进球（常规时间 90'）")
+    away_goals: int | None = Field(default=None, description="客队进球（常规时间 90'）")
     analysis: AnalysisResponse = Field(..., description="赛前分析结果")
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
@@ -254,8 +254,15 @@ class ResultFixtureResponse(BaseModel):
     away_team_name: str
     fixture_date: datetime
     status: str
-    home_goals: int | None = None
-    away_goals: int | None = None
+    status_short: str | None = Field(
+        default=None, description="官方短码 FT/AET/PEN；预测对照用常规时间比分"
+    )
+    home_goals: int | None = Field(default=None, description="常规时间（90'）主队进球")
+    away_goals: int | None = Field(default=None, description="常规时间（90'）客队进球")
+    et_home_goals: int | None = Field(default=None, description="加时结束比分（通常含 90'）主")
+    et_away_goals: int | None = Field(default=None, description="加时结束比分（通常含 90'）客")
+    pen_home: int | None = Field(default=None, description="点球大战主队")
+    pen_away: int | None = Field(default=None, description="点球大战客队")
     # Pre-match prediction snapshot (recomputed from stored probs + odds)
     has_prediction: bool = False
     recommendation: str | None = None

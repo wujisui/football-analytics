@@ -5,8 +5,13 @@ from typing import Any
 import httpx
 
 from app.core.config import Settings
-from app.services.api_utils import extract_items, first_value, map_fixture_status, parse_date
-
+from app.services.api_utils import (
+    extract_fixture_scores,
+    extract_items,
+    first_value,
+    map_fixture_status,
+    parse_date,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -496,12 +501,7 @@ class ApiFootballProvider(BaseApiProvider):
                             item, [["fixture", "status", "short"], ["status", "short"], ["status"]]
                         )
                     ),
-                    "home_goals": first_value(
-                        item, [["goals", "home"], ["score", "fulltime", "home"], ["score", "home"]]
-                    ),
-                    "away_goals": first_value(
-                        item, [["goals", "away"], ["score", "fulltime", "away"], ["score", "away"]]
-                    ),
+                    **extract_fixture_scores(item),
                 }
             )
         return parsed

@@ -323,8 +323,13 @@ async def get_fixture_results(
                 away_team_name=fx.away_team.name if fx.away_team else "",
                 fixture_date=fx.date,
                 status=fx.status,
+                status_short=getattr(fx, "status_short", None),
                 home_goals=fx.home_goals,
                 away_goals=fx.away_goals,
+                et_home_goals=getattr(fx, "et_home_goals", None),
+                et_away_goals=getattr(fx, "et_away_goals", None),
+                pen_home=getattr(fx, "pen_home", None),
+                pen_away=getattr(fx, "pen_away", None),
                 has_prediction=evaluated["has_prediction"],
                 recommendation=evaluated["recommendation"],
                 score_hint=evaluated["score_hint"],
@@ -429,12 +434,11 @@ async def sync_fixtures(
                 for day in day_list:
                     saved += await fetcher.fetch_fixtures_for_date(day, force=True)
 
-                odds_saved = 0
                 if include_odds:
                     try:
                         # Let rate-limit window cool after fixture day fetches.
                         await asyncio.sleep(3.0)
-                        odds_saved = await fetcher.sync_odds_for_dates(day_list)
+                        await fetcher.sync_odds_for_dates(day_list)
                     except Exception as exc:
                         logger.warning("include_odds batch failed: %s", exc)
 
@@ -452,16 +456,13 @@ async def sync_fixtures(
             raise HTTPException(status_code=503, detail=f"同步失败：{exc}") from exc
 
         _last_sync_monotonic = time.monotonic()
-        odds_note = f"，盘口写入 {odds_saved} 场" if include_odds else ""
         return SyncFixturesResponse(
             status="ok",
             fixtures_saved=saved,
             days=window,
             date=start.isoformat(),
-            message=(
-                f"已强制同步赛程 {saved} 场{odds_note}"
-                "（免费套餐按场次补拉盘口；官方未开盘则仍为空）"
-            ),
+            message="刷新成功",
+            retry_after_seconds=_SYNC_COOLDOWN_SECONDS,
         )
 
 
