@@ -195,7 +195,7 @@ def main() -> None:
     trigger_parser.add_argument(
         "--name",
         required=True,
-        choices=["daily_init", "pre_match_update", "clean_old_data"],
+        choices=["daily_init", "pre_match_update", "capture_results", "clean_old_data"],
         help="Task name to trigger",
     )
 

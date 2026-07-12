@@ -24,32 +24,51 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def _ensure_sqlite_columns(conn) -> None:
-    """Add newly introduced columns on existing SQLite databases."""
+async def _ensure_table_columns(conn, table: str, additions: dict[str, str]) -> None:
+    """Add newly introduced columns on an existing SQLite table."""
     from sqlalchemy import text
 
     try:
-        result = await conn.execute(text("PRAGMA table_info(pre_match_data)"))
+        result = await conn.execute(text(f"PRAGMA table_info({table})"))
         existing = {row[1] for row in result.fetchall()}
     except Exception:
         return
     if not existing:
         return
 
-    additions = {
-        "odds_json": "TEXT",
-        "lineups_json": "TEXT",
-        "injuries_json": "TEXT",
-        "h2h_json": "TEXT",
-        "home_form_json": "TEXT",
-        "away_form_json": "TEXT",
-        "standings_json": "TEXT",
-    }
     for column, col_type in additions.items():
         if column not in existing:
-            await conn.execute(
-                text(f"ALTER TABLE pre_match_data ADD COLUMN {column} {col_type}")
-            )
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+
+
+async def _ensure_sqlite_columns(conn) -> None:
+    """Add newly introduced columns on existing SQLite databases."""
+    await _ensure_table_columns(
+        conn,
+        "pre_match_data",
+        {
+            "odds_json": "TEXT",
+            "lineups_json": "TEXT",
+            "injuries_json": "TEXT",
+            "h2h_json": "TEXT",
+            "home_form_json": "TEXT",
+            "away_form_json": "TEXT",
+            "standings_json": "TEXT",
+            "recommendation": "TEXT",
+            "score_hint": "TEXT",
+            "goal_lean": "TEXT",
+            "both_score_lean": "TEXT",
+            "handicap_lean": "TEXT",
+        },
+    )
+    await _ensure_table_columns(
+        conn,
+        "fixtures",
+        {
+            "home_goals": "INTEGER",
+            "away_goals": "INTEGER",
+        },
+    )
 
 
 async def init_db() -> None:

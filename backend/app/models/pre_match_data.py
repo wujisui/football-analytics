@@ -24,6 +24,12 @@ class PreMatchData(Base):
     home_win_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
     draw_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
     away_win_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Frozen prediction snapshot at last pre-match analysis (for results audit).
+    recommendation: Mapped[str | None] = mapped_column(String, nullable=True)
+    score_hint: Mapped[str | None] = mapped_column(String, nullable=True)
+    goal_lean: Mapped[str | None] = mapped_column(String, nullable=True)
+    both_score_lean: Mapped[str | None] = mapped_column(String, nullable=True)
+    handicap_lean: Mapped[str | None] = mapped_column(String, nullable=True)
     # Structured pre-match package (JSON text)
     odds_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     lineups_json: Mapped[str | None] = mapped_column(Text, nullable=True)

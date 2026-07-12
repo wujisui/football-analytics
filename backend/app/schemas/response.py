@@ -18,9 +18,13 @@ def _utc_iso(value: datetime) -> str:
 
 
 class ProbabilitiesResponse(BaseModel):
-    home_win_prob: float = Field(..., ge=0, le=1, description="主队胜率")
-    draw_prob: float = Field(..., ge=0, le=1, description="平局概率")
-    away_win_prob: float = Field(..., ge=0, le=1, description="客队胜率")
+    available: bool = Field(
+        default=True,
+        description="是否有有效胜平负概率；无数据时为 false，勿展示 33%/33%/33%",
+    )
+    home_win_prob: float | None = Field(default=None, ge=0, le=1, description="主队胜率")
+    draw_prob: float | None = Field(default=None, ge=0, le=1, description="平局概率")
+    away_win_prob: float | None = Field(default=None, ge=0, le=1, description="客队胜率")
 
 
 class MatchWinnerOddsResponse(BaseModel):
@@ -37,6 +41,10 @@ class LineOddsResponse(BaseModel):
     line: str | None = None
     home: str | float | None = None
     away: str | float | None = None
+    lines: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="多档盘口：[{line, home, away}, ...]，首项为主盘",
+    )
     values: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -155,7 +163,10 @@ class AnalysisResponse(BaseModel):
     goal_lean: str = Field(default="", description="大小球倾向（相对主盘）")
     both_score_lean: str = Field(default="", description="双方进球倾向")
     score_hint: str = Field(default="", description="参考比分")
-    handicap_lean: str = Field(default="", description="让球倾向（竞彩风格，相对亚盘）")
+    handicap_lean: str = Field(
+        default="",
+        description="让球胜平负推荐（让胜/让平/让负，附盘口，可多档）",
+    )
     data_source: str = Field(..., description="数据来源：cache/api/database")
     analyzed_at: datetime = Field(..., description="分析时间（UTC）")
     cache_status: str = Field(default="miss", description="分析缓存状态：hit/miss")
@@ -212,6 +223,8 @@ class FixtureResponse(BaseModel):
     away_team_name: str = Field(..., description="客队名称")
     fixture_date: datetime = Field(..., description="比赛时间（UTC）")
     status: str = Field(..., description="比赛状态")
+    home_goals: int | None = Field(default=None, description="主队进球（终场）")
+    away_goals: int | None = Field(default=None, description="客队进球（终场）")
     analysis: AnalysisResponse = Field(..., description="赛前分析结果")
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
@@ -231,6 +244,93 @@ class TodayFixturesResponse(BaseModel):
     fixtures: list[FixtureResponse] = Field(default_factory=list, description="赛程列表")
 
 
+class ResultFixtureResponse(BaseModel):
+    fixture_id: int
+    league_id: int
+    league_name: str
+    home_team_id: int
+    away_team_id: int
+    home_team_name: str
+    away_team_name: str
+    fixture_date: datetime
+    status: str
+    home_goals: int | None = None
+    away_goals: int | None = None
+    # Pre-match prediction snapshot (recomputed from stored probs + odds)
+    has_prediction: bool = False
+    recommendation: str | None = None
+    score_hint: str | None = None
+    goal_lean: str | None = None
+    both_score_lean: str | None = None
+    score_hit: bool | None = None
+    ou_hit: bool | None = None
+    btts_hit: bool | None = None
+    result_hit: bool | None = None
+
+    @field_serializer("fixture_date")
+    def serialize_fixture_date(self, value: datetime) -> str:
+        return _utc_iso(value)
+
+
+class AccuracyStatResponse(BaseModel):
+    hits: int = 0
+    total: int = 0
+    rate: float | None = Field(default=None, description="命中率 0–1；无样本时为 null")
+
+
+class ResultsAccuracyResponse(BaseModel):
+    result: AccuracyStatResponse = Field(
+        default_factory=AccuracyStatResponse, description="胜平负命中（含双选）"
+    )
+    score: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse, description="比分命中")
+    ou: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse, description="大小球命中")
+    btts: AccuracyStatResponse = Field(
+        default_factory=AccuracyStatResponse, description="双方进球命中"
+    )
+    fixtures_with_prediction: int = 0
+    fixtures_finished: int = 0
+
+
+class AccuracyDayPointResponse(BaseModel):
+    date: str
+    result_rate: float | None = None
+    score_rate: float | None = None
+    ou_rate: float | None = None
+    btts_rate: float | None = None
+    result: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
+    score: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
+    ou: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
+    btts: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
+    fixtures_with_prediction: int = 0
+    fixtures_finished: int = 0
+
+
+class ResultsHistoryResponse(BaseModel):
+    days: int
+    start_date: str
+    end_date: str
+    overall: ResultsAccuracyResponse
+    series: list[AccuracyDayPointResponse] = Field(default_factory=list)
+
+
+class ResultsResponse(BaseModel):
+    date: str = Field(..., description="查询日期 YYYY-MM-DD")
+    total: int = Field(..., description="赛果场次")
+    fixtures: list[ResultFixtureResponse] = Field(default_factory=list)
+    accuracy: ResultsAccuracyResponse = Field(default_factory=ResultsAccuracyResponse)
+
+
+class SyncFixturesResponse(BaseModel):
+    status: str = Field(..., description="ok / cooldown")
+    fixtures_saved: int = Field(default=0, description="写入/更新的场次数")
+    days: int = Field(default=1, description="同步窗口天数")
+    date: str | None = Field(default=None, description="单日同步时的日期")
+    message: str = Field(default="")
+    retry_after_seconds: int | None = Field(
+        default=None, description="冷却剩余秒数（status=cooldown 时）"
+    )
+
+
 class LeagueSummaryResponse(BaseModel):
     league_id: int = Field(..., description="联赛 ID")
     league_name: str = Field(..., description="联赛名称")
@@ -248,7 +348,12 @@ class LeaguesListResponse(BaseModel):
 
 
 def analysis_to_response(analysis) -> AnalysisResponse:
-    from app.services.prediction import derive_prediction_leans, get_recommendation
+    from app.services.prediction import (
+        derive_prediction_leans,
+        get_recommendation,
+        is_flat_prior,
+        resolve_match_probabilities,
+    )
 
     package = None
     odds = None
@@ -257,11 +362,13 @@ def analysis_to_response(analysis) -> AnalysisResponse:
         if isinstance(analysis.package, dict):
             odds = analysis.package.get("odds")
 
-    probs = {
+    raw = {
         "home": analysis.home_win_prob,
         "draw": analysis.draw_prob,
         "away": analysis.away_win_prob,
     }
+    probs = resolve_match_probabilities(raw, odds if isinstance(odds, dict) else None)
+    ready = not is_flat_prior(probs)
     leans = derive_prediction_leans(
         probs,
         odds if isinstance(odds, dict) else None,
@@ -275,16 +382,16 @@ def analysis_to_response(analysis) -> AnalysisResponse:
         fixture_date=analysis.fixture_date,
         status=analysis.status,
         probabilities=ProbabilitiesResponse(
-            home_win_prob=analysis.home_win_prob,
-            draw_prob=analysis.draw_prob,
-            away_win_prob=analysis.away_win_prob,
+            available=ready,
+            home_win_prob=probs["home"] if ready else None,
+            draw_prob=probs["draw"] if ready else None,
+            away_win_prob=probs["away"] if ready else None,
         ),
         confidence=analysis.confidence,
-        # Always recompute — do not reuse stale DB recommendation strings.
-        recommendation=get_recommendation(probs),
-        goal_lean=leans["goal_lean"],
-        both_score_lean=leans["both_score_lean"],
-        score_hint=leans["score_hint"],
+        recommendation=get_recommendation(probs) if ready else "待分析",
+        goal_lean=leans["goal_lean"] if ready else "大小球：待分析",
+        both_score_lean=leans["both_score_lean"] if ready else "双方进球：待分析",
+        score_hint=leans["score_hint"] if ready else "待分析",
         handicap_lean=leans["handicap_lean"],
         data_source=analysis.data_source,
         analyzed_at=analysis.analyzed_at,

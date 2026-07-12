@@ -22,8 +22,8 @@ from app.services.prematch_package import (
     package_from_record,
     parse_injuries_payload,
     parse_lineups_payload,
-    parse_odds_payload,
     parse_standings_for_teams,
+    rehydrate_odds_markets,
     summarize_form_payload,
     summarize_h2h_payload,
 )
@@ -196,7 +196,6 @@ class AnalyzerService:
             "away_formation": away_lineup.get("formation"),
             "injuries_home": dumps_json(injuries.get("home")),
             "injuries_away": dumps_json(injuries.get("away")),
-            "odds_json": dumps_json(package.get("odds")),
             "lineups_json": dumps_json(package.get("lineups")),
             "injuries_json": dumps_json(package.get("injuries")),
             "h2h_json": dumps_json(package.get("head_to_head")),
@@ -204,6 +203,37 @@ class AnalyzerService:
             "away_form_json": dumps_json(package.get("away_form")),
             "standings_json": dumps_json(package.get("standings")),
         }
+        # Odds come from batch sync only — never wipe a good local board with empty package.
+        odds_pkg = package.get("odds") if isinstance(package.get("odds"), dict) else None
+        if odds_pkg and odds_pkg.get("available"):
+            fields["odds_json"] = dumps_json(odds_pkg)
+        elif record is None:
+            fields["odds_json"] = dumps_json({"available": False})
+
+        # Freeze recommendation / leans at analysis time for results audit.
+        from app.services.prediction import build_prediction_snapshot
+
+        odds_for_snap = rehydrate_odds_markets(
+            odds_pkg
+            or (
+                loads_json(record.odds_json, {"available": False})
+                if record and record.odds_json
+                else {"available": False}
+            )
+        )
+        snap = build_prediction_snapshot(
+            {
+                "home": home_win_prob,
+                "draw": draw_prob,
+                "away": away_win_prob,
+            },
+            odds_for_snap if isinstance(odds_for_snap, dict) else None,
+        )
+        fields["recommendation"] = snap.get("recommendation")
+        fields["score_hint"] = snap.get("score_hint")
+        fields["goal_lean"] = snap.get("goal_lean")
+        fields["both_score_lean"] = snap.get("both_score_lean")
+        fields["handicap_lean"] = snap.get("handicap_lean")
 
         if record is None:
             record = PreMatchData(fixture_id=fixture_id, **fields)
@@ -302,8 +332,19 @@ class AnalyzerService:
                 payload, fixture.away_team_id, limit=20
             )
 
-        async def _odds() -> None:
-            package["odds"] = parse_odds_payload(await fetcher.fetch_odds(fixture.id, ttl=ttl))
+        async def _odds_from_local() -> None:
+            # Odds are batch-synced with fixtures (POST /fixtures/sync).
+            # Detail never calls /odds?fixture= — local only.
+            result = await self.session.execute(
+                select(PreMatchData).where(PreMatchData.fixture_id == fixture.id)
+            )
+            stored = result.scalar_one_or_none()
+            if stored and stored.odds_json:
+                package["odds"] = rehydrate_odds_markets(
+                    loads_json(stored.odds_json, {"available": False})
+                )
+            else:
+                package["odds"] = {"available": False}
 
         async def _lineups() -> None:
             package["lineups"] = parse_lineups_payload(
@@ -346,7 +387,7 @@ class AnalyzerService:
             ("H2H", _h2h),
             ("home_form", _home_form),
             ("away_form", _away_form),
-            ("odds", _odds),
+            ("odds_local", _odds_from_local),
             ("standings", _standings),
             ("lineups", _lineups),
             ("injuries", _injuries),

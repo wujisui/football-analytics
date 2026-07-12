@@ -90,6 +90,14 @@ class BaseApiProvider:
     ) -> dict[str, Any]:
         raise NotImplementedError
 
+    async def fetch_odds_by_date_payload(
+        self,
+        client: httpx.AsyncClient,
+        date_str: str,
+    ) -> dict[str, Any]:
+        """Batch pre-match odds for a calendar day (may be empty for some providers)."""
+        raise NotImplementedError
+
     async def fetch_lineups_payload(
         self,
         client: httpx.AsyncClient,
@@ -316,6 +324,62 @@ class ApiFootballProvider(BaseApiProvider):
         response.raise_for_status()
         return self._json_from_response(response)
 
+    async def fetch_odds_by_date_payload(
+        self,
+        client: httpx.AsyncClient,
+        date_str: str,
+    ) -> dict[str, Any]:
+        """Pull pre-match odds for a date.
+
+        Free plans only allow ``page`` up to 3 and return a worldwide mix, so
+        this is best-effort. Prefer per-fixture odds for tracked leagues.
+        """
+        import asyncio
+
+        page = 1
+        max_page = 3  # free-plan hard limit
+        merged: list[Any] = []
+        last_payload: dict[str, Any] = {"response": []}
+        while page <= max_page:
+            response = await client.get(
+                self.settings.API_ENDPOINT_ODDS,
+                params={"date": date_str, "page": page},
+            )
+            if response.status_code == 429:
+                await asyncio.sleep(8.0)
+                response = await client.get(
+                    self.settings.API_ENDPOINT_ODDS,
+                    params={"date": date_str, "page": page},
+                )
+            response.raise_for_status()
+            last_payload = self._json_from_response(response)
+            errors = last_payload.get("errors") if isinstance(last_payload, dict) else None
+            if isinstance(errors, dict) and errors.get("plan"):
+                # Plan restriction — keep whatever we already have and stop.
+                logger.warning("Odds date=%s page=%s plan limit: %s", date_str, page, errors.get("plan"))
+                items = last_payload.get("response")
+                if isinstance(items, list):
+                    merged.extend(items)
+                break
+            items = last_payload.get("response")
+            if isinstance(items, list):
+                merged.extend(items)
+            paging = last_payload.get("paging") if isinstance(last_payload, dict) else None
+            total_pages = 1
+            current = page
+            if isinstance(paging, dict):
+                try:
+                    total_pages = max(1, min(max_page, int(paging.get("total") or 1)))
+                    current = int(paging.get("current") or page)
+                except (TypeError, ValueError):
+                    total_pages = 1
+                    current = page
+            if current >= total_pages or not items:
+                break
+            page += 1
+            await asyncio.sleep(1.2)
+        return {**last_payload, "response": merged, "results": len(merged)}
+
     async def fetch_lineups_payload(
         self,
         client: httpx.AsyncClient,
@@ -431,6 +495,12 @@ class ApiFootballProvider(BaseApiProvider):
                         first_value(
                             item, [["fixture", "status", "short"], ["status", "short"], ["status"]]
                         )
+                    ),
+                    "home_goals": first_value(
+                        item, [["goals", "home"], ["score", "fulltime", "home"], ["score", "home"]]
+                    ),
+                    "away_goals": first_value(
+                        item, [["goals", "away"], ["score", "fulltime", "away"], ["score", "away"]]
                     ),
                 }
             )
@@ -581,6 +651,13 @@ class LiveFootballDataProvider(BaseApiProvider):
         self,
         client: httpx.AsyncClient,
         fixture_id: int,
+    ) -> dict[str, Any]:
+        return {"response": []}
+
+    async def fetch_odds_by_date_payload(
+        self,
+        client: httpx.AsyncClient,
+        date_str: str,
     ) -> dict[str, Any]:
         return {"response": []}
 

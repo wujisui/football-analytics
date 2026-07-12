@@ -187,10 +187,10 @@ def _parse_line_market(
     home_labels: set[str],
     away_labels: set[str],
 ) -> dict[str, Any] | None:
-    """Pick the main handicap / O-U line (most balanced over/under or home/away odds).
+    """Parse handicap / O-U lines; keep main line + multi-line board.
 
-    Bookmakers return many lines (0.5…5.5). Taking the last row wrongly showed
-    exotic lines like 4.5; the main market is usually closest to even money.
+    Bookmakers return many lines. Main market = closest to even money.
+    ``lines`` lists additional paired home/away quotes for UI (e.g. -0.5 and -1).
     """
     by_line: dict[str, dict[str, Any]] = {}
     for v in parsed_values:
@@ -201,15 +201,15 @@ def _parse_line_market(
         if not line:
             continue
         bucket = by_line.setdefault(line, {})
-        if any(k in label_l for k in home_labels) or label_l in home_labels:
+        # Match by first token / whole label — never substring "1" inside "-1".
+        tokens = label_l.replace("/", " ").split()
+        first = tokens[0] if tokens else ""
+        if first in home_labels or label_l in home_labels or "home" in tokens or "over" in tokens:
             bucket["home"] = odd
-        elif any(k in label_l for k in away_labels) or label_l in away_labels:
+        elif first in away_labels or label_l in away_labels or "away" in tokens or "under" in tokens:
             bucket["away"] = odd
 
-    best_line: str | None = None
-    best_home = None
-    best_away = None
-    best_score: float | None = None
+    complete: list[tuple[float, str, Any, Any]] = []
     for line, sides in by_line.items():
         home_odd = sides.get("home")
         away_odd = sides.get("away")
@@ -217,25 +217,50 @@ def _parse_line_market(
         away_f = _odd_float(away_odd)
         if home_f is None or away_f is None:
             continue
-        # Prefer the line closest to even; tiny bias toward common 2.5 when tied.
         score = abs(home_f - away_f)
         if line in {"2.5", "2,5"}:
             score -= 0.01
-        if best_score is None or score < best_score:
-            best_score = score
-            best_line = line
-            best_home = home_odd
-            best_away = away_odd
+        complete.append((score, line, home_odd, away_odd))
 
-    if best_line is None:
+    if not complete:
         return None
+
+    complete.sort(key=lambda x: x[0])
+    best_score, best_line, best_home, best_away = complete[0]
+
+    def _abs_line(token: str) -> float:
+        try:
+            return abs(float(str(token).replace(",", ".")))
+        except ValueError:
+            return 99.0
+
+    # Prefer common AH magnitudes for the multi-line board (-0.5, -1, 0, …).
+    preferred = {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0}
+    board = sorted(complete, key=lambda x: (_abs_line(x[1]) not in preferred, _abs_line(x[1]), x[0]))
+    lines_out: list[dict[str, Any]] = []
+    seen_lines: set[str] = set()
+    for _, line, home_odd, away_odd in board:
+        if line in seen_lines:
+            continue
+        seen_lines.add(line)
+        lines_out.append({"line": line, "home": home_odd, "away": away_odd})
+        if len(lines_out) >= 6:
+            break
+
+    # Ensure main line is first in lines list.
+    lines_out = [
+        {"line": best_line, "home": best_home, "away": best_away},
+        *[x for x in lines_out if x["line"] != best_line],
+    ][:6]
+
     return {
         "bookmaker": book_name,
         "bet": bet_name,
         "line": best_line,
         "home": best_home,
         "away": best_away,
-        "values": parsed_values[:20],
+        "lines": lines_out,
+        "values": parsed_values[:24],
     }
 
 

@@ -19,7 +19,10 @@ def verify_admin_key(x_admin_key: str | None = Header(default=None)) -> None:
 
 
 class TriggerTaskRequest(BaseModel):
-    name: str = Field(..., description="任务名称：daily_init / pre_match_update / clean_old_data")
+    name: str = Field(
+        ...,
+        description="任务名称：daily_init / pre_match_update / capture_results / clean_old_data",
+    )
 
 
 @router.get("/tasks")

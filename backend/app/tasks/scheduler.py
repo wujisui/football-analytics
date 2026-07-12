@@ -85,7 +85,7 @@ async def daily_init() -> None:
                         exc_info=True,
                     )
 
-            saved = await fetcher.fetch_upcoming_fixtures()
+            saved = await fetcher.fetch_upcoming_fixtures(force=True)
             _set_task_status(
                 task_name,
                 "completed",
@@ -93,6 +93,11 @@ async def daily_init() -> None:
                 finished_at=_utc_now().isoformat(),
             )
             logger.info("Task daily_init completed. fixtures_saved=%s", saved)
+            # Also backfill yesterday/today results while we are already hitting the API.
+            try:
+                await fetcher.capture_finished_results(lookback_days=2)
+            except Exception as exc:
+                logger.warning("daily_init capture_results skipped: %s", exc)
     except Exception as exc:
         _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
         logger.error("Task daily_init failed: %s", exc, exc_info=True)
@@ -245,9 +250,31 @@ async def clean_old_data() -> None:
         logger.error("Task clean_old_data failed: %s", exc, exc_info=True)
 
 
+async def capture_results() -> None:
+    """Backfill FT scores for recently finished fixtures (by calendar date, not live)."""
+    task_name = "capture_results"
+    _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
+    logger.info("Task capture_results started.")
+
+    try:
+        async with FootballFetcher() as fetcher:
+            saved = await fetcher.capture_finished_results(lookback_days=3)
+            _set_task_status(
+                task_name,
+                "completed",
+                fixtures_saved=saved,
+                finished_at=_utc_now().isoformat(),
+            )
+            logger.info("Task capture_results completed. fixtures_saved=%s", saved)
+    except Exception as exc:
+        _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
+        logger.error("Task capture_results failed: %s", exc, exc_info=True)
+
+
 TASK_HANDLERS = {
     "daily_init": daily_init,
     "pre_match_update": pre_match_update,
+    "capture_results": capture_results,
     "clean_old_data": clean_old_data,
 }
 
@@ -280,6 +307,17 @@ def register_jobs() -> None:
             IntervalTrigger(minutes=5),
             id="pre_match_update",
             name="pre_match_update",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+
+    if scheduler.get_job("capture_results") is None:
+        scheduler.add_job(
+            capture_results,
+            IntervalTrigger(minutes=30),
+            id="capture_results",
+            name="capture_results",
             replace_existing=True,
             max_instances=1,
             coalesce=True,

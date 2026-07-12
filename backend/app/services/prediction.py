@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 DEFAULT_PROB = 1 / 3
@@ -41,9 +42,9 @@ _FACTOR_DELTAS: dict[str, dict[str, float]] = {
 
 _LABEL = {"home": "主胜", "draw": "平局", "away": "客胜"}
 _DOUBLE = {
-    frozenset({"home", "draw"}): "主胜/平",
-    frozenset({"away", "draw"}): "客胜/平",
-    frozenset({"home", "away"}): "主胜/客胜",
+    frozenset({"home", "draw"}): "主胜/平（主队不败）",
+    frozenset({"away", "draw"}): "客胜/平（客队不败）",
+    frozenset({"home", "away"}): "主胜/客胜（防平）",
 }
 
 
@@ -54,7 +55,7 @@ def normalize_probabilities(probs: dict[str, float]) -> dict[str, float]:
     return {k: max(float(v), 0.0) / total for k, v in probs.items()}
 
 
-def _is_flat_prior(probs: dict[str, float]) -> bool:
+def is_flat_prior(probs: dict[str, float]) -> bool:
     """True only for placeholder 1/3·1/3·1/3 (no real analysis yet)."""
     return all(
         abs(float(probs.get(k, 0)) - DEFAULT_PROB) < _FLAT_EPS
@@ -62,10 +63,57 @@ def _is_flat_prior(probs: dict[str, float]) -> bool:
     )
 
 
-def get_recommendation(probs: dict[str, float]) -> str:
-    """Single pick or 双选 (主胜/平 etc.). Flat prior → 待分析.
+def _is_flat_prior(probs: dict[str, float]) -> bool:
+    return is_flat_prior(probs)
 
-    No ML required: rank 1X2 probabilities; if top-2 are close, cover both.
+
+def implied_probs_from_odds(odds: dict[str, Any] | None) -> dict[str, float] | None:
+    """Derive 1X2 probabilities from match-winner odds (local, no API).
+
+    Uses inverse-odds normalized to remove bookmaker margin.
+    """
+    if not isinstance(odds, dict) or not odds.get("available"):
+        return None
+    mw = odds.get("match_winner")
+    if not isinstance(mw, dict):
+        return None
+    home = _odd_float(mw.get("home"))
+    draw = _odd_float(mw.get("draw"))
+    away = _odd_float(mw.get("away"))
+    if home is None or draw is None or away is None:
+        return None
+    inv_h, inv_d, inv_a = 1.0 / home, 1.0 / draw, 1.0 / away
+    total = inv_h + inv_d + inv_a
+    if total <= 0:
+        return None
+    return normalize_probabilities(
+        {"home": inv_h / total, "draw": inv_d / total, "away": inv_a / total}
+    )
+
+
+def resolve_match_probabilities(
+    probs: dict[str, float] | None,
+    odds: dict[str, Any] | None = None,
+) -> dict[str, float]:
+    """Prefer stored model probs; if still flat prior, fall back to odds-implied."""
+    normalized = normalize_probabilities(
+        {
+            "home": float((probs or {}).get("home", DEFAULT_PROB)),
+            "draw": float((probs or {}).get("draw", DEFAULT_PROB)),
+            "away": float((probs or {}).get("away", DEFAULT_PROB)),
+        }
+    )
+    if not _is_flat_prior(normalized):
+        return normalized
+    implied = implied_probs_from_odds(odds)
+    return implied if implied is not None else normalized
+
+
+def get_recommendation(probs: dict[str, float]) -> str:
+    """Single pick or 双选 (主胜/平、客胜/平). Flat prior → 待分析.
+
+    仅在「胜+平」或「负+平」接近时双选。主客接近时不推「防平」
+   （几乎包圆且易与参考比分打架），改为单选概率更高的一侧。
     """
     normalized = normalize_probabilities(probs)
     if _is_flat_prior(normalized):
@@ -78,8 +126,31 @@ def get_recommendation(probs: dict[str, float]) -> str:
     top_key, top_p = ranked[0]
     second_key, second_p = ranked[1]
     if top_p - second_p < _DOUBLE_CHANCE_EDGE:
-        return _DOUBLE[frozenset({top_key, second_key})]
+        pair = frozenset({top_key, second_key})
+        if pair == frozenset({"home", "away"}):
+            return _LABEL[top_key]
+        return _DOUBLE[pair]
     return _LABEL[top_key]
+
+
+def recommendation_outcomes(recommendation: str) -> set[str] | None:
+    """Map recommendation text → {home,draw,away} outcomes that count as hit."""
+    rec = (recommendation or "").strip()
+    if not rec or "待分析" in rec:
+        return None
+    if "主队不败" in rec or rec.startswith("主胜/平"):
+        return {"home", "draw"}
+    if "客队不败" in rec or rec.startswith("客胜/平"):
+        return {"away", "draw"}
+    if "防平" in rec or rec.startswith("主胜/客胜"):
+        return {"home", "away"}
+    if rec == "主胜":
+        return {"home"}
+    if rec == "平局":
+        return {"draw"}
+    if rec == "客胜":
+        return {"away"}
+    return None
 
 
 def _odd_float(value: Any) -> float | None:
@@ -148,15 +219,21 @@ def _primary_1x2_key(probs: dict[str, float]) -> str:
 
 
 def _split_score(total: int, probs: dict[str, float]) -> tuple[int, int]:
-    """Build a concrete scoreline from total goals + primary 1X2 winner."""
+    """Build a concrete scoreline from total goals + primary 1X2 winner.
+
+    When home/away are nearly tied, avoid blowouts like 2-0 that fight a weak edge.
+    """
     key = _primary_1x2_key(probs)
     h, d, a = probs["home"], probs["draw"], probs["away"]
     if total <= 0:
         return 0, 0
+    close_sides = abs(h - a) < _DOUBLE_CHANCE_EDGE
     if key == "draw":
         home = total // 2
         return home, total - home
     if key == "home":
+        if close_sides:
+            return (1, 0) if total <= 2 else (2, 1)
         if h >= 0.55 and d < 0.24 and total <= 3:
             return total, 0
         away = (total - 1) // 2
@@ -168,6 +245,8 @@ def _split_score(total: int, probs: dict[str, float]) -> tuple[int, int]:
         if home <= away:
             return away + 1, max(0, total - away - 1)
         return home, away
+    if close_sides:
+        return (0, 1) if total <= 2 else (1, 2)
     if a >= 0.55 and d < 0.24 and total <= 3:
         return 0, total
     home = (total - 1) // 2
@@ -181,29 +260,215 @@ def _split_score(total: int, probs: dict[str, float]) -> tuple[int, int]:
     return home, away
 
 
-def _handicap_lean(odds: dict[str, Any] | None) -> str:
-    """竞彩风格让球倾向 from Asian handicap market — rule-based, no ML."""
-    ah = (odds or {}).get("asian_handicap") if isinstance(odds, dict) else None
-    if not isinstance(ah, dict):
-        return "让球：暂无盘口"
-    line_raw = ah.get("line")
-    if line_raw is None or line_raw == "":
-        return "让球：暂无盘口"
-    line = _format_line(line_raw)
-    home_odd = _odd_float(ah.get("home"))
-    away_odd = _odd_float(ah.get("away"))
-    if home_odd is None or away_odd is None:
-        return f"让球盘（{line}）"
+def _sanitize_handicap_pick(pick: str, line_f: float | None) -> str:
+    """Half / quarter lines cannot be 平 or 胜/平 — goals are integers."""
+    if _line_allows_push(line_f):
+        return pick
+    if pick in {"让球平", "让球盘"}:
+        return "让球胜" if pick == "让球平" else pick
+    if pick == "让球胜/平":
+        return "让球胜"
+    if pick == "让球负/平":
+        return "让球负"
+    if "/平" in pick or pick.endswith("平"):
+        return pick.replace("胜/平", "胜").replace("负/平", "负").replace("让球平", "让球胜")
+    return pick
 
-    # Lower odd ≈ market favorite on that AH side (home = 让球主队方向).
+
+def _line_allows_push(line_f: float | None) -> bool:
+    """True only for integer AH lines (0 / ±1 / ±2…), where a push is possible.
+
+    Half lines (±0.5 / ±1.5…) never push: goals are integers, so the bet
+    always settles as win or lose. Quarter lines (±0.25 / ±0.75) settle as
+    half-win / half-lose — also not a full 平.
+    """
+    if line_f is None:
+        return False
+    frac = abs(float(line_f)) % 1.0
+    return frac < 1e-6 or abs(frac - 1.0) < 1e-6
+
+
+def _handicap_pick(
+    line_f: float | None,
+    home_odd: float | None,
+    away_odd: float | None,
+    recommendation: str,
+) -> str:
+    """Pick 让球胜 / 让球平 / 让球负 for one AH line.
+
+    核心规则（优先于赔率）：
+    - 半盘（±0.5 等）只有胜/负，绝无平（进球数为整数）。
+    - 胜平负推荐「主胜/平」+ 主让半球 → 让球负
+      （平局即输盘；主胜才赢盘，双选落到让球侧只能选负）。
+    - 「客胜/平」+ 主受让半球 → 让球胜（对称）。
+    """
+    rec = recommendation
+    can_push = _line_allows_push(line_f)
+    half_giving = line_f is not None and -1.15 <= line_f <= -0.4
+    half_receiving = line_f is not None and 0.4 <= line_f <= 1.15
+    home_undivided = "主队不败" in rec or rec.startswith("主胜/平")
+    away_undivided = "客队不败" in rec or rec.startswith("客胜/平")
+
+    # 1) 胜平 / 负平 + 半球：直接映射，不看赔率。
+    if home_undivided and half_giving:
+        return "让球负"
+    if home_undivided and half_receiving:
+        return "让球胜"
+    if away_undivided and half_receiving:
+        return "让球胜"
+    if away_undivided and half_giving:
+        return "让球负"
+
+    # 2) 单选胜平负 + 半球
+    if rec == "主胜" and half_giving:
+        return "让球胜"
+    if rec == "主胜" and half_receiving:
+        return "让球胜"
+    if rec == "客胜" and half_receiving:
+        return "让球负"
+    if rec == "客胜" and half_giving:
+        return "让球负"
+    if rec == "平局":
+        if half_giving:
+            return "让球负"
+        if half_receiving:
+            return "让球胜"
+        if can_push and line_f is not None and abs(line_f) < 1e-6:
+            return "让球平"
+
+    # 3) 半盘：没有 1X2 强映射时，也只能在胜/负里选，绝不能出平。
+    if line_f is not None and not can_push:
+        if home_odd is None or away_odd is None:
+            return "让球盘"
+        return "让球胜" if home_odd <= away_odd else "让球负"
+
+    # 4) 整球盘：可用赔率，才允许平 / 胜平 / 负平。
+    if home_odd is None or away_odd is None:
+        return "让球盘"
     ratio = home_odd / away_odd
     if ratio <= 0.88:
-        return f"让球胜（{line}）"
+        return "让球胜"
     if ratio >= 1.12:
-        return f"让球负（{line}）"
+        return "让球负"
+    if abs(home_odd - away_odd) < 0.08:
+        return "让球平"
     if home_odd <= away_odd:
-        return f"让球胜平（{line}）"
-    return f"让球负平（{line}）"
+        return "让球胜/平"
+    return "让球负/平"
+
+
+def _handicap_lean(
+    odds: dict[str, Any] | None,
+    recommendation: str | None = None,
+) -> str:
+    """竞彩风格「让球胜平负」推荐：结合主盘 + 胜平负（含双选）。
+
+    例：推荐「主胜/平（主队不败）」且主队让 0.5/1 → 「让球负（-0.5）」。
+    """
+    ah = (odds or {}).get("asian_handicap") if isinstance(odds, dict) else None
+    if not isinstance(ah, dict):
+        return "缺少盘口数据分析"
+
+    line_entries: list[dict[str, Any]] = []
+    lines = ah.get("lines")
+    if isinstance(lines, list) and lines:
+        for item in lines:
+            if isinstance(item, dict):
+                line_entries.append(item)
+    elif ah.get("line") is not None:
+        line_entries.append(
+            {"line": ah.get("line"), "home": ah.get("home"), "away": ah.get("away")}
+        )
+
+    if not line_entries:
+        return "缺少盘口数据分析"
+
+    rec = (recommendation or "").strip()
+    leans: list[str] = []
+    for item in line_entries[:4]:
+        line_raw = item.get("line")
+        if line_raw is None or line_raw == "":
+            continue
+        line = _format_line(line_raw)
+        try:
+            line_f = float(str(line_raw).replace(",", "."))
+        except ValueError:
+            line_f = None
+        pick = _sanitize_handicap_pick(
+            _handicap_pick(
+                line_f,
+                _odd_float(item.get("home")),
+                _odd_float(item.get("away")),
+                rec,
+            ),
+            line_f,
+        )
+        leans.append(f"{pick}（{line}）")
+
+    if not leans:
+        return "缺少盘口数据分析"
+    seen: set[str] = set()
+    unique: list[str] = []
+    for text in leans:
+        if text not in seen:
+            seen.add(text)
+            unique.append(text)
+    return "；".join(unique)
+
+
+def _draw_scoreline(preferred_total: int) -> tuple[int, int]:
+    """Even scoreline closest to preferred total (0-0 / 1-1 / 2-2…)."""
+    total = max(0, int(preferred_total))
+    if total % 2 == 1:
+        total -= 1
+    half = total // 2
+    return half, half
+
+
+def _score_hints_for_recommendation(
+    recommendation: str,
+    probs: dict[str, float],
+    total: int,
+) -> tuple[str, list[tuple[int, int]]]:
+    """Build reference score(s) consistent with 胜平负推荐.
+
+    双选时给多个比分（用 / 连接），避免「主胜/平却只给 2-0」这类打架。
+    """
+    rec = (recommendation or "").strip()
+    outcomes = recommendation_outcomes(rec) or {_primary_1x2_key(probs)}
+    lines: list[tuple[int, int]] = []
+
+    if outcomes == {"draw"} or rec == "平局":
+        lines.append(_draw_scoreline(total if total > 0 else 0))
+    elif outcomes == {"home", "draw"} or "主队不败" in rec or rec.startswith("主胜/平"):
+        # 胜平：一记小胜 + 平局（0-0 / 1-1 / 2-2）
+        lines.append((1, 0) if total <= 2 else (2, 1))
+        draw_total = 0 if total <= 0 else (2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1))
+        lines.append(_draw_scoreline(draw_total))
+    elif outcomes == {"away", "draw"} or "客队不败" in rec or rec.startswith("客胜/平"):
+        lines.append((0, 1) if total <= 2 else (1, 2))
+        draw_total = 0 if total <= 0 else (2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1))
+        lines.append(_draw_scoreline(draw_total))
+    elif outcomes == {"home", "away"} or "防平" in rec:
+        ht = max(1, total if total > 0 else 1)
+        lines.append((1, 0) if ht <= 2 else (2, 1))
+        lines.append((0, 1) if ht <= 2 else (1, 2))
+    elif outcomes == {"home"} or rec == "主胜":
+        lines.append(_split_score(max(1, total), probs))
+    elif outcomes == {"away"} or rec == "客胜":
+        lines.append(_split_score(max(1, total), probs))
+    else:
+        lines.append(_split_score(max(0, total), probs))
+
+    # Deduplicate while preserving order.
+    seen: set[tuple[int, int]] = set()
+    unique: list[tuple[int, int]] = []
+    for pair in lines:
+        if pair not in seen:
+            seen.add(pair)
+            unique.append(pair)
+    text = " / ".join(f"{h}-{a}" for h, a in unique)
+    return text, unique
 
 
 def derive_prediction_leans(
@@ -212,21 +477,17 @@ def derive_prediction_leans(
 ) -> dict[str, str]:
     """Derive O/U, BTTS, score and handicap leans from 1X2 + markets.
 
-    Always commits when real probabilities exist. Flat prior → 待分析.
+    Flat prior with local odds → use odds-implied 1X2 (no API).
+    Flat prior and no usable odds → 待分析.
     """
-    normalized = normalize_probabilities(
-        {
-            "home": float(probs.get("home", DEFAULT_PROB)),
-            "draw": float(probs.get("draw", DEFAULT_PROB)),
-            "away": float(probs.get("away", DEFAULT_PROB)),
-        }
-    )
+    normalized = resolve_match_probabilities(probs, odds)
     if _is_flat_prior(normalized):
+        has_ah = isinstance((odds or {}).get("asian_handicap"), dict) if odds else False
         return {
             "goal_lean": "大小球：待分析",
             "both_score_lean": "双方进球：待分析",
             "score_hint": "待分析",
-            "handicap_lean": "让球：待分析",
+            "handicap_lean": "让球：待分析" if has_ah else "缺少盘口数据分析",
         }
 
     ou = (odds or {}).get("goals_ou") if isinstance(odds, dict) else None
@@ -241,12 +502,19 @@ def derive_prediction_leans(
         f"倾向大球（{line_label}）" if side == "over" else f"倾向小球（{line_label}）"
     )
 
-    hg, ag = _split_score(total, normalized)
+    recommendation = get_recommendation(normalized)
+    score_hint, score_lines = _score_hints_for_recommendation(
+        recommendation, normalized, total
+    )
+    btts = any(h > 0 and a > 0 for h, a in score_lines)
     return {
         "goal_lean": goal_lean,
-        "both_score_lean": "双方进球：是" if hg > 0 and ag > 0 else "双方进球：否",
-        "score_hint": f"{hg}-{ag}",
-        "handicap_lean": _handicap_lean(odds if isinstance(odds, dict) else None),
+        "both_score_lean": "双方进球：是" if btts else "双方进球：否",
+        "score_hint": score_hint,
+        "handicap_lean": _handicap_lean(
+            odds if isinstance(odds, dict) else None,
+            recommendation=recommendation,
+        ),
     }
 
 
@@ -291,4 +559,116 @@ def build_prediction_snapshot(
         "away_win_prob": round(normalized["away"], 4),
         "recommendation": get_recommendation(normalized),
         **leans,
+    }
+
+
+def _parse_score_hint(score_hint: str) -> tuple[int, int] | None:
+    text = (score_hint or "").strip()
+    if not text or "待分析" in text or "-" not in text:
+        return None
+    left, _, right = text.partition("-")
+    try:
+        return int(left.strip()), int(right.strip())
+    except ValueError:
+        return None
+
+
+def _parse_goal_lean(goal_lean: str) -> tuple[str, float] | None:
+    """Return ('over'|'under', line) from strings like 倾向大球（2.5）."""
+    text = (goal_lean or "").strip()
+    match = re.search(r"倾向(大球|小球)[（(](.+?)[）)]", text)
+    if not match:
+        return None
+    side = "over" if match.group(1) == "大球" else "under"
+    try:
+        line = float(str(match.group(2)).replace(",", ".").strip())
+    except ValueError:
+        return None
+    return side, line
+
+
+def evaluate_prediction_vs_score(
+    *,
+    home_goals: int | None,
+    away_goals: int | None,
+    score_hint: str,
+    goal_lean: str,
+    both_score_lean: str,
+    recommendation: str = "",
+) -> dict[str, Any]:
+    """
+    Compare derived pre-match leans against final score.
+
+    Returns hit flags (True/False/None). None = not evaluable (no FT / 待分析 / push).
+    """
+    result: dict[str, Any] = {
+        "result_hit": None,
+        "score_hit": None,
+        "ou_hit": None,
+        "btts_hit": None,
+        "evaluable": False,
+    }
+    if home_goals is None or away_goals is None:
+        return result
+
+    total = home_goals + away_goals
+    actual_btts = home_goals > 0 and away_goals > 0
+    result["evaluable"] = True
+
+    if home_goals > away_goals:
+        actual_1x2 = "home"
+    elif home_goals < away_goals:
+        actual_1x2 = "away"
+    else:
+        actual_1x2 = "draw"
+
+    rec = (recommendation or "").strip()
+    outcomes = recommendation_outcomes(rec)
+    if outcomes is not None:
+        result["result_hit"] = actual_1x2 in outcomes
+
+    pred_score = _parse_score_hint(score_hint)
+    if pred_score is not None:
+        result["score_hit"] = pred_score == (home_goals, away_goals)
+
+    parsed_ou = _parse_goal_lean(goal_lean)
+    if parsed_ou is not None:
+        side, line = parsed_ou
+        # Half-lines never push; integer lines push when total == line.
+        if abs(total - line) < 1e-9:
+            result["ou_hit"] = None
+        elif side == "over":
+            result["ou_hit"] = total > line
+        else:
+            result["ou_hit"] = total < line
+
+    lean = (both_score_lean or "").strip()
+    if lean.endswith("：是") or lean.endswith(":是"):
+        result["btts_hit"] = actual_btts is True
+    elif lean.endswith("：否") or lean.endswith(":否"):
+        result["btts_hit"] = actual_btts is False
+
+    return result
+
+
+def summarize_accuracy(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate per-fixture hit flags into rates for 1X2 / score / O/U / BTTS."""
+
+    def _rate(key: str) -> dict[str, Any]:
+        judged = [r[key] for r in rows if r.get(key) is not None]
+        hits = sum(1 for v in judged if v is True)
+        total = len(judged)
+        return {
+            "hits": hits,
+            "total": total,
+            "rate": round(hits / total, 4) if total else None,
+        }
+
+    return {
+        "result": _rate("result_hit"),
+        "score": _rate("score_hit"),
+        "ou": _rate("ou_hit"),
+        "btts": _rate("btts_hit"),
+        "fixtures_with_prediction": sum(1 for r in rows if r.get("has_prediction")),
+        "fixtures_finished": sum(1 for r in rows if r.get("evaluable")),
     }

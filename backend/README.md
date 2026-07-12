@@ -155,6 +155,9 @@ python manage.py run-scheduler    # 前台运行调度器（调试用）
 | GET | `/health`                         | 服务状态与缓存统计                    |
 | GET | `/leagues`                        | 已配置联赛列表；可选 `date`、`days`；含今日/近期场次数 |
 | GET | `/fixtures/today`                 | 赛程列表；可选 `league_id`、`date`、`days`（默认仅当天） |
+| POST | `/fixtures/sync`                 | 强制同步赛程（绕过日缓存）；可选 `days` / `date`；约 90s 冷却 |
+| GET | `/fixtures/results`               | 按日查赛果 + 当日预测命中；必填 `date=YYYY-MM-DD` |
+| GET | `/fixtures/results/history`       | 历史准确率汇总 + 按日序列；可选 `days`（默认 30） |
 | GET | `/fixtures/{fixture_id}/analysis` | 单场比赛详细分析                     |
 
 **注意**：`league_id` 是联赛 ID（如英超 `39`），`fixture_id` 是具体比赛 ID，二者不同。查英超今日比赛应使用：
@@ -170,7 +173,7 @@ GET /api/v1/fixtures/today?league_id=39
 | 方法   | 路径                     | 说明                                    |
 |------|------------------------|---------------------------------------|
 | GET  | `/admin/tasks`         | 调度器与任务状态                              |
-| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "daily_init"}` |
+| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "daily_init"|"pre_match_update"|"capture_results"|"clean_old_data"}` |
 
 ### 常用联赛 ID
 

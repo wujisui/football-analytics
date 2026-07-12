@@ -73,3 +73,12 @@ class SnapshotStore:
 
         await self.session.commit()
         logger.info("Saved DB snapshot for %s (ttl=%ss)", cache_key, ttl_seconds)
+
+    async def invalidate(self, cache_key: str) -> None:
+        """Expire a snapshot so the next local-first read misses and re-fetches."""
+        row = await self.session.get(ApiSnapshot, cache_key)
+        if row is None:
+            return
+        row.expires_at = _utc_now() - timedelta(seconds=1)
+        await self.session.commit()
+        logger.info("Invalidated DB snapshot for %s", cache_key)
