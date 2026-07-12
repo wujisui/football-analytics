@@ -44,15 +44,15 @@ const option = computed(() => ({
       data: [
         {
           name: '主胜',
-          value: Number((props.probabilities.home_win_prob * 100).toFixed(1)),
+          value: Number(((props.probabilities.home_win_prob ?? 0) * 100).toFixed(1)),
         },
         {
           name: '平局',
-          value: Number((props.probabilities.draw_prob * 100).toFixed(1)),
+          value: Number(((props.probabilities.draw_prob ?? 0) * 100).toFixed(1)),
         },
         {
           name: '客胜',
-          value: Number((props.probabilities.away_win_prob * 100).toFixed(1)),
+          value: Number(((props.probabilities.away_win_prob ?? 0) * 100).toFixed(1)),
         },
       ],
     },

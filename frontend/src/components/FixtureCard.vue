@@ -4,10 +4,10 @@ import { useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
 import {
-  confidenceType,
   formatDate,
   formatOdd,
   formatTime,
+  hasRealProbabilities,
   leagueTagColor,
   rankBracket,
   statusLabel,
@@ -25,13 +25,37 @@ const props = defineProps<{
 const router = useRouter()
 
 const prediction = computed(() => snapshotFromAnalysis(props.fixture.analysis))
-
+const predictionReady = computed(() =>
+  hasRealProbabilities(
+    props.fixture.analysis.probabilities,
+    prediction.value.recommendation,
+  ),
+)
+const recommendationPending = computed(
+  () => !predictionReady.value || prediction.value.recommendation === '待分析',
+)
+const handicapPending = computed(() => {
+  const text = prediction.value.handicap_lean || ''
+  return !text || text.includes('缺少盘口') || text.includes('待分析')
+})
 
 const odds = computed(() => props.fixture.odds_snippet)
 const ah = computed(() => odds.value?.asian_handicap ?? null)
 const ou = computed(() => odds.value?.goals_ou ?? null)
 const mw = computed(() => odds.value?.match_winner ?? null)
 const hasMarkets = computed(() => !!(mw.value || ah.value || ou.value))
+
+const ahLines = computed(() => {
+  const market = ah.value
+  if (!market) return []
+  if (market.lines?.length) {
+    return market.lines.filter((l) => l.line != null && l.line !== '')
+  }
+  if (market.line != null && market.line !== '') {
+    return [{ line: market.line, home: market.home, away: market.away }]
+  }
+  return []
+})
 
 const homeName = computed(() =>
   teamNameZh(props.fixture.home_team_name, props.fixture.home_team_id),
@@ -50,11 +74,14 @@ const awayLabel = computed(() => {
   return rank ? `${awayName.value} ${rank}` : awayName.value
 })
 
-const probs = computed(() => [
-  { key: 'home', label: '主胜', value: prediction.value.home_win_prob },
-  { key: 'draw', label: '平局', value: prediction.value.draw_prob },
-  { key: 'away', label: '客胜', value: prediction.value.away_win_prob },
-])
+const probs = computed(() => {
+  if (!predictionReady.value) return []
+  return [
+    { key: 'home', label: '主胜', value: prediction.value.home_win_prob },
+    { key: 'draw', label: '平局', value: prediction.value.draw_prob },
+    { key: 'away', label: '客胜', value: prediction.value.away_win_prob },
+  ]
+})
 
 function goDetail() {
   router.push({
@@ -116,12 +143,18 @@ function goDetail() {
               <span class="market-col mid">{{ formatOdd(mw.draw) }}</span>
               <span class="market-col">{{ formatOdd(mw.away) }}</span>
             </div>
-            <div v-if="ah" class="market-row">
-              <span class="market-label">让球</span>
-              <span class="market-col">{{ formatOdd(ah.home) }}</span>
-              <span class="market-col mid line">{{ ah.line || '—' }}</span>
-              <span class="market-col">{{ formatOdd(ah.away) }}</span>
-            </div>
+            <template v-if="ahLines.length">
+              <div
+                v-for="(row, idx) in ahLines"
+                :key="`ah-${row.line}-${idx}`"
+                class="market-row"
+              >
+                <span class="market-label">{{ idx === 0 ? '让球' : '' }}</span>
+                <span class="market-col">{{ formatOdd(row.home) }}</span>
+                <span class="market-col mid line">{{ row.line || '—' }}</span>
+                <span class="market-col">{{ formatOdd(row.away) }}</span>
+              </div>
+            </template>
             <div v-if="ou" class="market-row">
               <span class="market-label">大小</span>
               <span class="market-col">{{ formatOdd(ou.home) }}</span>
@@ -138,20 +171,20 @@ function goDetail() {
         <div class="rec-row">
           <span class="rec-label">推荐</span>
           <n-tag
-            :type="prediction.recommendation === '待分析' ? 'default' : 'primary'"
+            :type="recommendationPending ? 'default' : 'primary'"
             size="small"
           >
             {{ prediction.recommendation }}
           </n-tag>
           <n-tag
+            :type="handicapPending ? 'default' : 'warning'"
             size="small"
-            :type="confidenceType(fixture.analysis.confidence)"
-            :bordered="false"
+            class="rec-tag"
           >
-            数据完整度 {{ fixture.analysis.confidence }}
+            {{ prediction.handicap_lean || '缺少盘口数据分析' }}
           </n-tag>
         </div>
-        <div class="prob-row">
+        <div v-if="predictionReady" class="prob-row">
           <div v-for="p in probs" :key="p.key" class="prob-item">
             <span class="prob-label">{{ p.label }}</span>
             <span class="prob-value">{{ toPercent(p.value) }}</span>
@@ -164,17 +197,19 @@ function goDetail() {
             />
           </div>
         </div>
-        <div class="lean-row">
+        <p v-else class="predict-empty">暂无有效胜平负概率（缺近况或盘口）</p>
+        <div v-if="predictionReady" class="lean-row">
           <n-tag size="small" :bordered="false">{{ prediction.goal_lean }}</n-tag>
           <n-tag size="small" :bordered="false">{{ prediction.both_score_lean }}</n-tag>
-          <n-tag size="small" :bordered="false" type="warning">
-            {{ prediction.handicap_lean }}
-          </n-tag>
           <n-tag size="small" :bordered="false" type="info">
             参考比分 {{ prediction.score_hint }}
           </n-tag>
         </div>
-        <p class="lean-hint">由后端算法结合胜平负与主盘推演</p>
+        <div v-else-if="!handicapPending" class="lean-row">
+          <n-tag size="small" :bordered="false" type="warning">
+            {{ prediction.handicap_lean }}
+          </n-tag>
+        </div>
       </section>
     </div>
   </article>
@@ -302,6 +337,15 @@ function goDetail() {
 .rec-label {
   font-size: 13px;
   color: var(--fa-text-secondary);
+  flex-shrink: 0;
+}
+
+.rec-tag {
+  max-width: 100%;
+  white-space: normal;
+  height: auto;
+  line-height: 1.4;
+  padding: 2px 8px;
 }
 
 .prob-row {
@@ -336,11 +380,10 @@ function goDetail() {
   gap: 6px;
 }
 
-.lean-hint {
-  margin: 8px 0 0;
-  font-size: 11px;
+.predict-empty {
+  margin: 0 0 8px;
+  font-size: 13px;
   color: var(--fa-text-faint);
-  line-height: 1.4;
 }
 
 .markets {
@@ -403,6 +446,38 @@ function goDetail() {
 @media (max-width: 900px) {
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .fixture-card {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .matchup {
+    gap: 8px;
+  }
+
+  .team {
+    font-size: 14px;
+  }
+
+  .market-head .market-col {
+    font-size: 11px;
+  }
+
+  .lean-row {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .card-head {
+    gap: 6px;
+  }
+
+  .kickoff {
+    flex: 1 1 100%;
+    order: 3;
   }
 }
 </style>

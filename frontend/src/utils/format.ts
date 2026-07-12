@@ -128,6 +128,23 @@ export function toPercent(prob: number, digits = 0): string {
   return `${(prob * 100).toFixed(digits)}%`
 }
 
+/** True when API has real 1X2 probabilities (not placeholder / missing). */
+export function hasRealProbabilities(
+  probabilities?: ProbabilitiesResponse | null,
+  recommendation?: string | null,
+): boolean {
+  if (recommendation === '待分析') return false
+  if (!probabilities) return false
+  if (probabilities.available === false) return false
+  const h = probabilities.home_win_prob
+  const d = probabilities.draw_prob
+  const a = probabilities.away_win_prob
+  if (h == null || d == null || a == null) return false
+  // Guard against legacy flat 1/3 payloads.
+  const flat = Math.abs(h - 1 / 3) < 0.02 && Math.abs(d - 1 / 3) < 0.02 && Math.abs(a - 1 / 3) < 0.02
+  return !flat
+}
+
 export function confidenceType(
   confidence: string,
 ): 'success' | 'warning' | 'error' | 'default' {
@@ -170,6 +187,17 @@ export function analysisConclusion(
         ? probabilities.away_win_prob
         : probabilities.draw_prob
   return `${recommendation}概率较高（约 ${toPercent(top)}）`
+}
+
+/** 胜平负 + 让球同一行：主胜；让球胜（-0.5） */
+export function combinedRecommendation(
+  recommendation: string,
+  handicapLean?: string | null,
+): string {
+  const rec = (recommendation || '').trim() || '待分析'
+  const handicap = (handicapLean || '').trim()
+  if (!handicap || handicap === rec) return rec
+  return `${rec}；${handicap}`
 }
 
 const LEAGUE_COLORS = [

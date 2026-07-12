@@ -1,7 +1,9 @@
 export interface ProbabilitiesResponse {
-  home_win_prob: number
-  draw_prob: number
-  away_win_prob: number
+  /** false = no real probs; do not render fake 33/33/33 */
+  available?: boolean
+  home_win_prob?: number | null
+  draw_prob?: number | null
+  away_win_prob?: number | null
 }
 
 export interface MatchWinnerOdds {
@@ -18,6 +20,12 @@ export interface LineOdds {
   line?: string | null
   home?: string | number | null
   away?: string | number | null
+  /** Multi-line board; first item is usually the main line. */
+  lines?: Array<{
+    line?: string | null
+    home?: string | number | null
+    away?: string | number | null
+  }>
   values?: Array<{ label?: string; odd?: string | number | null }>
 }
 
@@ -178,6 +186,8 @@ export interface FixtureResponse {
   away_team_name: string
   fixture_date: string
   status: string
+  home_goals?: number | null
+  away_goals?: number | null
   analysis: AnalysisResponse
   home_rank?: number | null
   away_rank?: number | null

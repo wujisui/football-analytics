@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import H2HTab from '@/components/detail/H2HTab.vue'
 import LineupTab from '@/components/detail/LineupTab.vue'
 import PredictionTab from '@/components/detail/PredictionTab.vue'
 import StatsTab from '@/components/detail/StatsTab.vue'
+import { useIsPhone } from '@/composables/useMediaQuery'
 import type { FixtureResponse, PrematchPackage } from '@/api/types'
 
 type TabKey = 'record' | 'stats' | 'lineup' | 'prediction'
@@ -20,16 +21,26 @@ defineEmits<{
   retry: []
 }>()
 
+const isPhone = useIsPhone()
+const tabsSize = computed(() => (isPhone.value ? 'small' : 'medium'))
+
 const activeTab = ref<TabKey>('record')
 /** Mount tab content only after first visit (lazy UI); data already from /analysis. */
 const visited = ref<Set<TabKey>>(new Set(['record']))
 
-const tabs: { name: TabKey; label: string }[] = [
-  { name: 'record', label: '战绩与交锋' },
-  { name: 'stats', label: '赛季数据' },
-  { name: 'lineup', label: '伤病与阵容' },
-  { name: 'prediction', label: '我的预测' },
+const tabs: { name: TabKey; label: string; short: string }[] = [
+  { name: 'record', label: '战绩与交锋', short: '战绩' },
+  { name: 'stats', label: '赛季数据', short: '数据' },
+  { name: 'lineup', label: '伤病与阵容', short: '阵容' },
+  { name: 'prediction', label: '我的预测', short: '预测' },
 ]
+
+const tabItems = computed(() =>
+  tabs.map((t) => ({
+    ...t,
+    display: isPhone.value ? t.short : t.label,
+  })),
+)
 
 function onTabChange(name: string) {
   const key = name as TabKey
@@ -54,13 +65,14 @@ watch(
       :value="activeTab"
       type="line"
       :animated="false"
+      :size="tabsSize"
       @update:value="onTabChange"
     >
       <n-tab-pane
-        v-for="tab in tabs"
+        v-for="tab in tabItems"
         :key="tab.name"
         :name="tab.name"
-        :tab="tab.label"
+        :tab="tab.display"
         display-directive="show:lazy"
       >
         <div class="pane">
@@ -170,5 +182,22 @@ watch(
 .pane-body {
   padding-right: 8px;
   padding-bottom: 12px;
+}
+
+@media (max-width: 767px) {
+  .tabs-container {
+    padding: 4px 8px 8px;
+    border-radius: 6px;
+  }
+
+  .tabs-container :deep(.n-tabs .n-tabs-tab) {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .pane-body {
+    padding-right: 0;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
 }
 </style>

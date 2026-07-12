@@ -5,6 +5,8 @@ import { fetchLeagues } from '@/api/leagues'
 import type { FixtureResponse, LeagueSummaryResponse } from '@/api/types'
 
 const LOOKAHEAD_DAYS = 7
+/** Include yesterday so kickoff-delayed / in-play fixtures are not dropped. */
+const LOOKBACK_DAYS = 1
 /** Reuse list data across Home remounts (detail → back) within this TTL. */
 const CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -20,6 +22,20 @@ function cacheFresh(): boolean {
   return loadedAt.value > 0 && Date.now() - loadedAt.value < CACHE_TTL_MS
 }
 
+function homeWindowStartDate(): string {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - LOOKBACK_DAYS)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function homeWindowDays(): number {
+  return LOOKAHEAD_DAYS + LOOKBACK_DAYS
+}
+
 async function loadHomeFixtures(options?: { force?: boolean }): Promise<void> {
   // Detail → Home remounts the page; reuse in-memory list (local DB only, but still avoid churn).
   if (!options?.force && cacheFresh()) {
@@ -32,9 +48,11 @@ async function loadHomeFixtures(options?: { force?: boolean }): Promise<void> {
   error.value = ''
   inflight = (async () => {
     try {
+      const days = homeWindowDays()
+      const date = homeWindowStartDate()
       const [leaguesData, fixturesData] = await Promise.all([
-        fetchLeagues({ days: LOOKAHEAD_DAYS }),
-        fetchTodayFixtures({ days: LOOKAHEAD_DAYS }),
+        fetchLeagues({ days }),
+        fetchTodayFixtures({ date, days }),
       ])
       leagues.value = leaguesData.leagues
       allFixtures.value = fixturesData.fixtures
@@ -58,6 +76,9 @@ async function loadHomeFixtures(options?: { force?: boolean }): Promise<void> {
 export function useHomeFixtures() {
   return {
     LOOKAHEAD_DAYS,
+    LOOKBACK_DAYS,
+    homeWindowDays,
+    homeWindowStartDate,
     leagues,
     allFixtures,
     windowLabel,

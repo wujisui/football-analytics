@@ -4,10 +4,19 @@ import { computed, onMounted, watch } from 'vue'
 import BasicInfo from '@/components/detail/BasicInfo.vue'
 import TabsContainer from '@/components/detail/TabsContainer.vue'
 import { useFixtureAnalysis } from '@/composables/useFixtureAnalysis'
+import { useIsPhone } from '@/composables/useMediaQuery'
 
 const props = defineProps<{
   fixtureId: string
 }>()
+
+const isPhone = useIsPhone()
+const contentStyle = computed(
+  () =>
+    `height: 100%; box-sizing: border-box; padding: ${
+      isPhone.value ? '12px 12px 16px' : '16px 20px 24px'
+    }; display: flex; flex-direction: column; overflow: hidden;`,
+)
 
 const fixtureIdNumber = computed(() => Number(props.fixtureId))
 const { data, loading, error, ensureLoaded, reload, reset } =
@@ -31,7 +40,7 @@ watch(
     <n-layout-content
       class="detail-content"
       :native-scrollbar="false"
-      content-style="height: 100%; box-sizing: border-box; padding: 16px 20px 24px; display: flex; flex-direction: column; overflow: hidden;"
+      :content-style="contentStyle"
     >
       <n-spin class="detail-spin" :show="loading && !data">
         <div class="spin-body">
@@ -95,12 +104,13 @@ watch(
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
   max-width: 1520px;
   margin: 0 auto;
   box-sizing: border-box;
   overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .spin-body :deep(.basic-info) {
@@ -113,5 +123,11 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+@media (min-width: 1024px) {
+  .spin-body {
+    gap: 16px;
+  }
 }
 </style>
