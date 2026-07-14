@@ -130,6 +130,13 @@ class BaseApiProvider:
     ) -> dict[str, Any]:
         raise NotImplementedError
 
+    async def fetch_predictions_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
     def parse_leagues(self, payload: dict[str, Any], league_ids: list[int]) -> list[dict[str, Any]]:
         raise NotImplementedError
 
@@ -454,6 +461,19 @@ class ApiFootballProvider(BaseApiProvider):
         response.raise_for_status()
         return self._json_from_response(response)
 
+    async def fetch_predictions_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        """Official API-Sports pre-match briefing: GET /predictions?fixture=."""
+        response = await client.get(
+            self.settings.API_ENDPOINT_PREDICTIONS,
+            params={"fixture": fixture_id},
+        )
+        response.raise_for_status()
+        return self._json_from_response(response)
+
     def parse_leagues(self, payload: dict[str, Any], league_ids: list[int]) -> list[dict[str, Any]]:
         parsed: list[dict[str, Any]] = []
         allowed = set(league_ids)
@@ -749,6 +769,13 @@ class LiveFootballDataProvider(BaseApiProvider):
         return {"response": []}
 
     async def fetch_injuries_payload(
+        self,
+        client: httpx.AsyncClient,
+        fixture_id: int,
+    ) -> dict[str, Any]:
+        return {"response": []}
+
+    async def fetch_predictions_payload(
         self,
         client: httpx.AsyncClient,
         fixture_id: int,

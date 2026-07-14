@@ -270,7 +270,7 @@ def main() -> None:
         "--name",
         required=True,
         choices=[
-            "daily_init",
+            "midday_fixtures_sync",
             "pre_match_update",
             "capture_results",
             "clean_old_data",

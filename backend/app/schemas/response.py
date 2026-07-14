@@ -54,6 +54,8 @@ class OddsPackageResponse(BaseModel):
     asian_handicap: LineOddsResponse | None = None
     goals_ou: LineOddsResponse | None = None
     bookmakers: list[dict[str, Any]] = Field(default_factory=list)
+    role: str | None = Field(default=None, description="opening|current")
+    captured_at: str | None = None
 
 
 class StandingsSnippetResponse(BaseModel):
@@ -135,14 +137,60 @@ class H2HPackageResponse(BaseModel):
     fetched: bool | None = None
 
 
+class BriefingWinnerResponse(BaseModel):
+    id: int | None = None
+    name: str | None = None
+    comment: str | None = None
+
+
+class BriefingPercentResponse(BaseModel):
+    home: str | None = None
+    draw: str | None = None
+    away: str | None = None
+
+
+class BriefingGoalsResponse(BaseModel):
+    home: str | None = None
+    away: str | None = None
+
+
+class BriefingComparisonItemResponse(BaseModel):
+    key: str = ""
+    label: str = ""
+    home: str | None = None
+    away: str | None = None
+
+
+class BriefingPackageResponse(BaseModel):
+    """Official API-Sports /predictions (赛前简报); not local ML 我的预测."""
+
+    available: bool = False
+    fetched: bool | None = None
+    advice: str | None = None
+    winner: BriefingWinnerResponse = Field(default_factory=BriefingWinnerResponse)
+    win_or_draw: bool | None = None
+    under_over: str | None = None
+    goals: BriefingGoalsResponse = Field(default_factory=BriefingGoalsResponse)
+    percent: BriefingPercentResponse = Field(default_factory=BriefingPercentResponse)
+    comparison: list[BriefingComparisonItemResponse] = Field(default_factory=list)
+
+
 class PrematchPackageResponse(BaseModel):
-    odds: OddsPackageResponse = Field(default_factory=OddsPackageResponse)
+    odds: OddsPackageResponse = Field(
+        default_factory=OddsPackageResponse,
+        description="即时盘（最近一次拉取）",
+    )
+    odds_opening: OddsPackageResponse = Field(
+        default_factory=OddsPackageResponse,
+        description="初盘（中午定时任务首次落库，冻结）",
+    )
     lineups: LineupsPackageResponse = Field(default_factory=LineupsPackageResponse)
     injuries: InjuriesPackageResponse = Field(default_factory=InjuriesPackageResponse)
     head_to_head: H2HPackageResponse = Field(default_factory=H2HPackageResponse)
     home_form: FormPackageResponse = Field(default_factory=FormPackageResponse)
     away_form: FormPackageResponse = Field(default_factory=FormPackageResponse)
     standings: StandingsSnippetResponse = Field(default_factory=StandingsSnippetResponse)
+    briefing: BriefingPackageResponse = Field(default_factory=BriefingPackageResponse)
     home_formation: str | None = None
     away_formation: str | None = None
 
@@ -171,7 +219,7 @@ class AnalysisResponse(BaseModel):
     analyzed_at: datetime = Field(..., description="分析时间（UTC）")
     cache_status: str = Field(default="miss", description="分析缓存状态：hit/miss")
     package: PrematchPackageResponse | None = Field(
-        default=None, description="赛前数据包：赔率/阵容/伤病/交锋/近况"
+        default=None, description="赛前数据包：赔率/阵容/伤病/交锋/近况/官方简报"
     )
 
     @field_serializer("fixture_date", "analyzed_at")

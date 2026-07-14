@@ -103,6 +103,10 @@ def injuries_cache_key(fixture_id: int) -> str:
     return f"api:football:injuries:fixture:{fixture_id}"
 
 
+def predictions_cache_key(fixture_id: int) -> str:
+    return f"api:football:predictions:fixture:{fixture_id}"
+
+
 class CacheService:
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -293,6 +297,7 @@ __all__ = [
     "get_cache_service",
     "headtohead_cache_key",
     "injuries_cache_key",
+    "predictions_cache_key",
     "leagues_cache_key",
     "lineups_cache_key",
     "odds_cache_key",

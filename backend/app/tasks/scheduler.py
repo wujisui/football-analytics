@@ -1,7 +1,8 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -11,7 +12,6 @@ from sqlalchemy import delete, select
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.models.fixture import Fixture
-from app.models.league import League
 from app.models.pre_match_data import PreMatchData
 from app.services.analyzer import AnalyzerService
 from app.services.api_utils import extract_items, first_value, map_fixture_status
@@ -59,54 +59,70 @@ def get_task_status() -> dict[str, Any]:
     }
 
 
-async def daily_init() -> None:
+async def midday_fixtures_sync() -> None:
+    """每天中午：强制从官方拉取近期窗口赛程（对齐首页），并补缺盘口。"""
     settings = get_settings()
-    task_name = "daily_init"
+    task_name = "midday_fixtures_sync"
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
-    logger.info("Task daily_init started.")
+    logger.info("Task midday_fixtures_sync started.")
 
     try:
+        tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
+        today = datetime.now(tz).date()
+        window = max(1, min(int(settings.FIXTURES_LOOKAHEAD_DAYS), 14))
+        day_list: list[date] = [today + timedelta(days=i) for i in range(window)]
+
         async with FootballFetcher() as fetcher:
-            league_ids = list(settings.LEAGUE_IDS.values())
-            await fetcher.fetch_leagues(league_ids)
-
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(select(League).where(League.id.in_(league_ids)))
-                leagues = result.scalars().all()
-
-            for league in leagues:
-                try:
-                    await fetcher.fetch_teams_by_league(league.id, league.season)
-                except Exception as exc:
-                    logger.error(
-                        "daily_init failed to fetch teams for league %s: %s",
-                        league.id,
-                        exc,
-                        exc_info=True,
-                    )
-
-            saved = await fetcher.fetch_upcoming_fixtures(force=True)
-            _set_task_status(
-                task_name,
-                "completed",
-                fixtures_saved=saved,
-                finished_at=_utc_now().isoformat(),
+            saved = await fetcher.fetch_fixtures_window(
+                day_list[0],
+                day_list[-1],
+                force=True,
             )
-            logger.info("Task daily_init completed. fixtures_saved=%s", saved)
-            # Also backfill yesterday/today results while we are already hitting the API.
+            odds_updated = 0
+            try:
+                # 中午盘口：缺盘补全；首次有盘记为初盘，已有盘口再同步只动即时盘。
+                odds_updated = await fetcher.sync_odds_for_dates(
+                    day_list,
+                    refresh_existing=False,
+                    set_opening=True,
+                )
+            except Exception as exc:
+                logger.warning("midday_fixtures_sync odds gap-fill skipped: %s", exc)
             try:
                 await fetcher.capture_finished_results(lookback_days=2)
             except Exception as exc:
-                logger.warning("daily_init capture_results skipped: %s", exc)
+                logger.warning("midday_fixtures_sync capture_results skipped: %s", exc)
             try:
                 from app.services.ml_predictor import maybe_auto_train_model
 
                 await maybe_auto_train_model()
             except Exception as exc:
-                logger.warning("daily_init ML auto-train skipped: %s", exc)
+                logger.warning("midday_fixtures_sync ML auto-train skipped: %s", exc)
+
+        _set_task_status(
+            task_name,
+            "completed",
+            fixtures_saved=saved,
+            odds_updated=odds_updated,
+            window_start=day_list[0].isoformat(),
+            window_days=window,
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.info(
+            "Task midday_fixtures_sync completed. fixtures_saved=%s odds_updated=%s window=%s+%sd",
+            saved,
+            odds_updated,
+            day_list[0],
+            window,
+        )
     except Exception as exc:
-        _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
-        logger.error("Task daily_init failed: %s", exc, exc_info=True)
+        _set_task_status(
+            task_name,
+            "failed",
+            error=str(exc),
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.error("Task midday_fixtures_sync failed: %s", exc, exc_info=True)
 
 
 async def pre_match_update() -> None:
@@ -333,7 +349,7 @@ async def train_model() -> None:
 
 
 TASK_HANDLERS = {
-    "daily_init": daily_init,
+    "midday_fixtures_sync": midday_fixtures_sync,
     "pre_match_update": pre_match_update,
     "capture_results": capture_results,
     "clean_old_data": clean_old_data,
@@ -352,12 +368,16 @@ def register_jobs() -> None:
     settings = get_settings()
     timezone = settings.SCHEDULER_TIMEZONE
 
-    if scheduler.get_job("daily_init") is None:
+    # Remove legacy 06:00 daily_init if still registered from an older process.
+    if scheduler.get_job("daily_init") is not None:
+        scheduler.remove_job("daily_init")
+
+    if scheduler.get_job("midday_fixtures_sync") is None:
         scheduler.add_job(
-            daily_init,
-            CronTrigger(hour=6, minute=0, timezone=timezone),
-            id="daily_init",
-            name="daily_init",
+            midday_fixtures_sync,
+            CronTrigger(hour=12, minute=0, timezone=timezone),
+            id="midday_fixtures_sync",
+            name="midday_fixtures_sync",
             replace_existing=True,
             max_instances=1,
             coalesce=True,

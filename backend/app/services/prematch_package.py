@@ -1,4 +1,4 @@
-"""Parse and assemble pre-match package (odds / lineups / injuries / H2H / form)."""
+"""Parse and assemble pre-match package (odds / lineups / injuries / H2H / form / briefing)."""
 
 from __future__ import annotations
 
@@ -506,6 +506,93 @@ def parse_injuries_payload(
     }
 
 
+_COMPARISON_LABELS = {
+    "form": "近况",
+    "att": "进攻",
+    "def": "防守",
+    "poisson_distribution": "泊松分布",
+    "h2h": "交锋",
+    "goals": "进球",
+    "total": "综合",
+}
+
+
+def _side_percent(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def parse_predictions_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize official GET /predictions into package.briefing (赛前简报).
+
+    Not our local ML 「我的预测」. Empty coverage → available=False, fetched=True
+    so detail refresh does not retry-storm.
+    """
+    items = extract_items(payload)
+    if not items:
+        return {"available": False, "fetched": True}
+
+    item = items[0] if isinstance(items[0], dict) else {}
+    pred = item.get("predictions") if isinstance(item.get("predictions"), dict) else {}
+    winner_raw = pred.get("winner") if isinstance(pred.get("winner"), dict) else {}
+    percent_raw = pred.get("percent") if isinstance(pred.get("percent"), dict) else {}
+    goals_raw = pred.get("goals") if isinstance(pred.get("goals"), dict) else {}
+
+    comparison_out: list[dict[str, Any]] = []
+    comparison = item.get("comparison") if isinstance(item.get("comparison"), dict) else {}
+    for key, sides in comparison.items():
+        if not isinstance(sides, dict):
+            continue
+        comparison_out.append(
+            {
+                "key": key,
+                "label": _COMPARISON_LABELS.get(str(key), str(key)),
+                "home": _side_percent(sides.get("home")),
+                "away": _side_percent(sides.get("away")),
+            }
+        )
+
+    advice = first_value(pred, [["advice"]], None)
+    winner_name = first_value(winner_raw, [["name"]], None)
+    winner_comment = first_value(winner_raw, [["comment"]], None)
+    under_over = first_value(pred, [["under_over"]], None)
+    win_or_draw = pred.get("win_or_draw")
+    percent = {
+        "home": _side_percent(percent_raw.get("home")),
+        "draw": _side_percent(percent_raw.get("draw")),
+        "away": _side_percent(percent_raw.get("away")),
+    }
+    goals = {
+        "home": _side_percent(goals_raw.get("home")),
+        "away": _side_percent(goals_raw.get("away")),
+    }
+
+    available = bool(
+        advice
+        or winner_name
+        or under_over
+        or any(percent.values())
+        or comparison_out
+    )
+    return {
+        "available": available,
+        "fetched": True,
+        "advice": advice,
+        "winner": {
+            "id": first_value(winner_raw, [["id"]], None),
+            "name": winner_name,
+            "comment": winner_comment,
+        },
+        "win_or_draw": bool(win_or_draw) if win_or_draw is not None else None,
+        "under_over": under_over,
+        "goals": goals,
+        "percent": percent,
+        "comparison": comparison_out,
+    }
+
+
 def rehydrate_odds_markets(odds: dict[str, Any] | None) -> dict[str, Any]:
     """Normalize odds; re-pick main AH / O-U lines from stored bookmaker values.
 
@@ -554,6 +641,10 @@ def rehydrate_odds_markets(odds: dict[str, Any] | None) -> dict[str, Any]:
         or merged.get("goals_ou")
         or merged.get("bookmakers")
     )
+    if odds.get("role") is not None:
+        merged["role"] = odds.get("role")
+    if odds.get("captured_at") is not None:
+        merged["captured_at"] = odds.get("captured_at")
     return merged
 
 
@@ -561,11 +652,21 @@ def package_from_record(record: Any) -> dict[str, Any]:
     """Build API package dict from PreMatchData ORM row."""
     lineups = loads_json(getattr(record, "lineups_json", None), {})
     injuries = loads_json(getattr(record, "injuries_json", None), {})
+    briefing = loads_json(getattr(record, "briefing_json", None), {})
     odds = rehydrate_odds_markets(
         loads_json(getattr(record, "odds_json", None), {"available": False})
     )
+    odds_opening_raw = loads_json(
+        getattr(record, "odds_opening_json", None), {"available": False}
+    )
+    odds_opening = (
+        rehydrate_odds_markets(odds_opening_raw)
+        if isinstance(odds_opening_raw, dict) and odds_opening_raw.get("available")
+        else {"available": False}
+    )
     return {
         "odds": odds,
+        "odds_opening": odds_opening,
         "lineups": lineups if lineups else {"available": False, "home": None, "away": None},
         "injuries": injuries if injuries else {"available": False, "home": [], "away": []},
         "head_to_head": loads_json(getattr(record, "h2h_json", None), {"played": 0, "matches": []}),
@@ -575,6 +676,7 @@ def package_from_record(record: Any) -> dict[str, Any]:
             getattr(record, "standings_json", None),
             {"available": False},
         ),
+        "briefing": briefing if briefing else {"available": False, "fetched": False},
         "home_formation": getattr(record, "home_formation", None)
         or (lineups.get("home") or {}).get("formation"),
         "away_formation": getattr(record, "away_formation", None)

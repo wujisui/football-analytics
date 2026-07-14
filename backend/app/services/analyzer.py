@@ -22,6 +22,8 @@ from app.services.prematch_package import (
     package_from_record,
     parse_injuries_payload,
     parse_lineups_payload,
+    parse_odds_payload,
+    parse_predictions_payload,
     parse_standings_for_teams,
     rehydrate_odds_markets,
     summarize_form_payload,
@@ -205,10 +207,23 @@ class AnalyzerService:
             "away_form_json": dumps_json(package.get("away_form")),
             "standings_json": dumps_json(package.get("standings")),
         }
-        # Odds come from batch sync only — never wipe a good local board with empty package.
+        briefing_pkg = package.get("briefing") if isinstance(package.get("briefing"), dict) else None
+        if briefing_pkg and briefing_pkg.get("fetched"):
+            fields["briefing_json"] = dumps_json(briefing_pkg)
+        # Never wipe a good local board with an empty package result.
         odds_pkg = package.get("odds") if isinstance(package.get("odds"), dict) else None
         if odds_pkg and odds_pkg.get("available"):
             fields["odds_json"] = dumps_json(odds_pkg)
+        elif odds_pkg and odds_pkg.get("fetched"):
+            existing = (
+                loads_json(record.odds_json, {})
+                if record and record.odds_json
+                else {}
+            )
+            if not existing.get("available"):
+                fields["odds_json"] = dumps_json(
+                    {"available": False, "fetched": True}
+                )
         elif record is None:
             fields["odds_json"] = dumps_json({"available": False})
 
@@ -308,12 +323,14 @@ class AnalyzerService:
         """Fetch package pieces in parallel (each failure is isolated)."""
         package: dict[str, Any] = {
             "odds": {"available": False},
+            "odds_opening": {"available": False},
             "lineups": {"available": False, "home": None, "away": None},
             "injuries": {"available": False, "home": [], "away": []},
             "head_to_head": {"played": 0, "matches": []},
             "home_form": {"played": 0, "matches": []},
             "away_form": {"played": 0, "matches": []},
             "standings": {"available": False},
+            "briefing": {"available": False, "fetched": False},
         }
         league = fixture.league
         season = (
@@ -351,19 +368,42 @@ class AnalyzerService:
                 payload, fixture.away_team_id, limit=20
             )
 
-        async def _odds_from_local() -> None:
-            # Odds are batch-synced with fixtures (POST /fixtures/sync).
-            # Detail never calls /odds?fixture= — local only.
+        async def _odds() -> None:
+            """Local board first; if missing, pull official /odds?fixture= once.
+
+            Empty official coverage is persisted as fetched=true so detail does
+            not retry-storm. Batch sync still refreshes boards for the window.
+            """
             result = await self.session.execute(
                 select(PreMatchData).where(PreMatchData.fixture_id == fixture.id)
             )
             stored = result.scalar_one_or_none()
-            if stored and stored.odds_json:
-                package["odds"] = rehydrate_odds_markets(
+            local = (
+                rehydrate_odds_markets(
                     loads_json(stored.odds_json, {"available": False})
                 )
-            else:
-                package["odds"] = {"available": False}
+                if stored and stored.odds_json
+                else {"available": False}
+            )
+            if local.get("available"):
+                package["odds"] = local
+                return
+            if local.get("fetched"):
+                package["odds"] = {"available": False, "fetched": True}
+                return
+            if should_stop_api_refresh(fixture.date, fixture.status):
+                package["odds"] = local
+                return
+            try:
+                raw = await fetcher.fetch_odds(fixture.id, ttl=ttl)
+                parsed = rehydrate_odds_markets(parse_odds_payload(raw))
+                if parsed.get("available"):
+                    package["odds"] = parsed
+                else:
+                    package["odds"] = {"available": False, "fetched": True}
+            except Exception:
+                package["odds"] = {"available": False, "fetched": True}
+                raise
 
         async def _lineups() -> None:
             package["lineups"] = parse_lineups_payload(
@@ -376,6 +416,15 @@ class AnalyzerService:
                 fixture.home_team_id,
                 fixture.away_team_id,
             )
+
+        async def _briefing() -> None:
+            try:
+                package["briefing"] = parse_predictions_payload(
+                    await fetcher.fetch_predictions(fixture.id, ttl=ttl)
+                )
+            except Exception:
+                package["briefing"] = {"available": False, "fetched": True}
+                raise
 
         async def _standings() -> None:
             try:
@@ -406,10 +455,11 @@ class AnalyzerService:
             ("H2H", _h2h),
             ("home_form", _home_form),
             ("away_form", _away_form),
-            ("odds_local", _odds_from_local),
+            ("odds", _odds),
             ("standings", _standings),
             ("lineups", _lineups),
             ("injuries", _injuries),
+            ("briefing", _briefing),
         ):
             try:
                 await coro_factory()
@@ -643,13 +693,20 @@ class AnalyzerService:
                 )
                 # Old/failed rows or pre-merge fetch strategy → one refresh.
                 standings = loads_json(getattr(stored, "standings_json", None), {}) or {}
+                briefing = loads_json(getattr(stored, "briefing_json", None), {}) or {}
+                odds_stored = loads_json(getattr(stored, "odds_json", None), {}) or {}
                 history_tag = get_settings().history_source_tag
+                odds_needs_fetch = not odds_stored.get("available") and not odds_stored.get(
+                    "fetched"
+                )
                 package_stale = (
                     "fetched" not in h2h
                     or h2h.get("source") != history_tag
                     or home_form.get("source") != history_tag
                     or away_form.get("source") != history_tag
                     or not standings.get("fetched")
+                    or not briefing.get("fetched")
+                    or odds_needs_fetch
                 )
                 has_any_package = bool(
                     stored.h2h_json
@@ -658,6 +715,7 @@ class AnalyzerService:
                     or stored.home_form_json
                     or stored.away_form_json
                     or getattr(stored, "standings_json", None)
+                    or getattr(stored, "briefing_json", None)
                 )
                 if (
                     include_package

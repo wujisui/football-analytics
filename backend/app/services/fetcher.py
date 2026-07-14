@@ -34,6 +34,7 @@ from app.services.cache import (
     leagues_cache_key,
     lineups_cache_key,
     odds_cache_key,
+    predictions_cache_key,
     standings_cache_key,
     team_form_cache_key,
     team_statistics_cache_key,
@@ -1142,8 +1143,10 @@ class FootballFetcher:
         fixture_id: int,
         parsed: dict[str, Any],
         raw: dict[str, Any],
+        *,
+        set_opening: bool = False,
     ) -> None:
-        """Write latest board, recompute 1X2 from local package + new odds, bust analysis cache."""
+        """Write 即时盘; optionally freeze 初盘 once (midday scheduled sync)."""
         from sqlalchemy import select
 
         from app.models.pre_match_data import PreMatchData
@@ -1153,7 +1156,9 @@ class FootballFetcher:
         from app.services.prematch_package import dumps_json, loads_json, rehydrate_odds_markets
 
         assert self.session is not None
-        odds_text = dumps_json(parsed)
+        captured_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        current_payload = {**parsed, "role": "current", "captured_at": captured_at}
+        odds_text = dumps_json(current_payload)
         odds_pkg = rehydrate_odds_markets(parsed)
 
         async with self._db_lock:
@@ -1182,10 +1187,23 @@ class FootballFetcher:
 
             snap = build_prediction_snapshot(probs, odds_pkg, features=pred.features)
 
+            opening_text: str | None = None
+            if set_opening and parsed.get("available"):
+                existing_open = (
+                    loads_json(getattr(row, "odds_opening_json", None), {})
+                    if row is not None
+                    else {}
+                )
+                if not existing_open.get("available"):
+                    opening_text = dumps_json(
+                        {**parsed, "role": "opening", "captured_at": captured_at}
+                    )
+
             if row is None:
                 row = PreMatchData(
                     fixture_id=fixture_id,
                     odds_json=odds_text,
+                    odds_opening_json=opening_text,
                     home_win_prob=probs["home"],
                     draw_prob=probs["draw"],
                     away_win_prob=probs["away"],
@@ -1198,6 +1216,8 @@ class FootballFetcher:
                 self.session.add(row)
             else:
                 row.odds_json = odds_text
+                if opening_text is not None:
+                    row.odds_opening_json = opening_text
                 row.home_win_prob = probs["home"]
                 row.draw_prob = probs["draw"]
                 row.away_win_prob = probs["away"]
@@ -1228,6 +1248,7 @@ class FootballFetcher:
         refresh_existing: bool = False,
         budget: int = 40,
         league_ids: list[int] | None = None,
+        set_opening: bool = False,
     ) -> int:
         """Sync pre-match odds for tracked pending fixtures in the date window.
 
@@ -1238,13 +1259,14 @@ class FootballFetcher:
 
         Default (scheduler / background): **gap-fill** missing boards only.
         Force sync (``refresh_existing=True``): also re-pull boards that already
-        exist so afternoon line moves update local odds **and** recompute 1X2.
+        exist so afternoon line moves update local 即时盘 **and** recompute 1X2.
+        ``set_opening=True`` (midday job): freeze 初盘 on first available board.
         Missing fixtures are always prioritized within ``budget``.
         """
         from sqlalchemy import select
 
         from app.models.pre_match_data import PreMatchData
-        from app.services.prematch_package import loads_json, parse_odds_payload
+        from app.services.prematch_package import dumps_json, loads_json, parse_odds_payload
 
         assert self.session is not None
         allowed = self.settings.fetchable_league_ids()
@@ -1291,12 +1313,14 @@ class FootballFetcher:
         take = min(len(queue), max(1, budget))
 
         logger.info(
-            "Odds sync: missing=%s refreshable=%s take=%s/%s pending (refresh_existing=%s)",
+            "Odds sync: missing=%s refreshable=%s take=%s/%s pending "
+            "(refresh_existing=%s set_opening=%s)",
             len(missing),
             len(refreshable),
             take,
             len(fixtures),
             refresh_existing,
+            set_opening,
         )
 
         for index, fixture_id in enumerate(queue[:take]):
@@ -1309,12 +1333,40 @@ class FootballFetcher:
                     logger.info("No official odds yet for fixture %s", fixture_id)
                     await asyncio.sleep(1.2)
                     continue
-                await self._upsert_odds_and_recompute(fixture_id, parsed, raw)
+                await self._upsert_odds_and_recompute(
+                    fixture_id, parsed, raw, set_opening=set_opening
+                )
                 updated += 1
             except Exception as exc:
                 logger.warning("Fixture odds %s failed: %s", fixture_id, exc)
             if index + 1 < take:
                 await asyncio.sleep(2.0)
+
+        # Midday: promote existing 即时盘 → 初盘 when opening was never frozen
+        # (e.g. board first arrived via manual sync).
+        if set_opening:
+            promoted = 0
+            fresh_rows = (
+                await self.session.execute(
+                    select(PreMatchData).where(
+                        PreMatchData.fixture_id.in_([fx.id for fx in fixtures] or [0])
+                    )
+                )
+            ).scalars().all()
+            for stored in fresh_rows:
+                current = loads_json(getattr(stored, "odds_json", None), {}) or {}
+                opening = loads_json(getattr(stored, "odds_opening_json", None), {}) or {}
+                if current.get("available") and not opening.get("available"):
+                    captured_at = datetime.now(timezone.utc).isoformat().replace(
+                        "+00:00", "Z"
+                    )
+                    stored.odds_opening_json = dumps_json(
+                        {**current, "role": "opening", "captured_at": captured_at}
+                    )
+                    promoted += 1
+            if promoted:
+                await self.session.commit()
+                logger.info("Odds sync: promoted %s current boards to opening", promoted)
 
         logger.info(
             "Odds sync done: upserted=%s missing=%s refreshed_candidates=%s (window %s..%s)",
@@ -1373,6 +1425,16 @@ class FootballFetcher:
             ttl or TTL_TEAM_FORM,
             "fetch_injuries",
             lambda client: self.provider.fetch_injuries_payload(client, fixture_id),
+        )
+
+    async def fetch_predictions(self, fixture_id: int, ttl: int | None = None) -> dict[str, Any]:
+        """Official /predictions (赛前简报); cached like lineups."""
+        cache_key = predictions_cache_key(fixture_id)
+        return await self._get_or_fetch(
+            cache_key,
+            ttl or TTL_TEAM_FORM,
+            "fetch_predictions",
+            lambda client: self.provider.fetch_predictions_payload(client, fixture_id),
         )
 
     async def fetch_fixture_details(self, fixture_id: int) -> dict[str, Any]:

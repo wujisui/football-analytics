@@ -65,10 +65,10 @@
 | 本地优先与 TTL        | ✅ 完成    | 落库、开赛后冻结、按开赛时间刷新                            |
 | 赛前概率分析           | 🟡 积累期 | 多因子在线；特征+预测入 `match_features`；赛果打标；**≥阈值自动训练并切 `ml`**（见阶段 M） |
 | 业务 API           | ✅ MVP   | leagues / today / sync（含按日批量赔率） / results / analysis / admin |
-| 定时任务             | ✅ 完成    | 每日初始化、赛前窗口、赛果回写（含自动 train）、清理、可选 `train_model` |
+| 定时任务             | ✅ 完成    | **每日 12:00 赛程同步（初盘冻结）**、赛前窗口、赛果回写（含自动 train）、清理 |
 | 密钥管理             | ✅ 完成    | `secrets.local.env`（不进 Git）                 |
 | 前端展示             | 🟡 MVP  | 联赛 → 今日赛程 → 详情（概率 + 赛前包分区）                    |
-| 赛前详情页（赔率/阵容/伤病等） | 🟡 进行中 | API `package` + 前端分区已接；依赖官方开盘/公布阵容           |
+| 赛前详情页（赔率/阵容/伤病等） | 🟡 进行中 | API `package` + 前端分区已接；官方 `/predictions`→「赛前简报」Tab；依赖官方开盘/公布阵容/简报覆盖 |
 | 官方 Widgets       | ❌ 未做    | 可选增强，非必须                                    |
 | 测试 / 部署          | ❌ 未做    | 无自动化测试与生产部署方案                               |
 
@@ -113,7 +113,7 @@
 
 ### 3.5 调度
 
-- [x] `daily_init`：每日拉取联赛 / 球队 / 今日赛程（含赛果回写后尝试自动 train）
+- [x] `midday_fixtures_sync`：每日 12:00 拉取近期赛程 + 缺盘补全；首次盘口冻为初盘，手动同步为即时盘
 - [x] `pre_match_update`：开赛前窗口内更新（默认 2 小时内）
 - [x] `capture_results`：按日回写终场比分 + 打标 + 条件自动 train
 - [x] `clean_old_data`：清理过期展示分析与日志（保留 `match_features`）
@@ -129,7 +129,7 @@
 - [x] 官方 `/odds`、`/fixtures/lineups`、`/injuries` 拉取（本地优先缓存）
 - [x] `pre_match_data` 扩展 JSON 字段并落库
 - [x] `GET /fixtures/{id}/analysis` 返回 `analysis.package`
-- [x] 前端详情页分区：赔率、交锋、近况、阵容/替补、伤病
+- [x] 前端详情页分区：赔率、交锋、近况、阵容/替补、伤病、官方赛前简报
 - [x] 今日列表分析不拉完整包（省配额）；**强制 sync / 首页筛选**：配置联赛默认勾选；`leagues.example.json` 中今日有赛的其它一级联赛默认不勾选，确认后按需拉取；左侧只展示勾选且有未完赛的联赛
 - [x] **ML 概率模型（首版 + 自动切换）**：`match_features` 落库；赛果打标；`ML_AUTO_TRAIN` 在样本≥阈值时自动训练；推断自动从 `multifactor` 切到 `ml`
 
@@ -143,7 +143,7 @@
 
 | 需求     | 现状                                       | 缺口                        |
 |--------|------------------------------------------|---------------------------|
-| 赛前赔率   | 强制 sync **覆盖**已有盘口并本地重算 1X2；日常/调度仅补缺；详情只读库 | 未同步过则空态；勿在详情兜底打单场 odds |
+| 赛前赔率   | 中午任务冻**初盘**（`odds_opening_json`）；强制 sync / 详情补拉写**即时盘**（`odds_json`）并重算 1X2；缺盘补全 | 官方未开盘仍空态 |
 | 阵容（首发） | 已接 lineups，落库并展示                         | 临场前官方可能无数据               |
 | 替补     | 已随 lineups 解析 `substitutes` 并展示           | 同上                      |
 | 伤病     | 已接 `/injuries` 并展示                         | 部分联赛覆盖不全                 |
@@ -204,7 +204,7 @@
 | 赛果打标 | ✅ | `capture_finished_results` 后写 `label` |
 | 清理保留特征 | ✅ | `clean_old_data` 只删展示包，保留 `match_features` |
 | 多因子在线输出 | ✅ | 样本不足时默认路径 |
-| 自动训练 | ✅ | `capture_results` / `daily_init` 后 `maybe_auto_train_model` |
+| 自动训练 | ✅ | `capture_results` / `midday_fixtures_sync` 后可 `maybe_auto_train_model` |
 | 自动切换推断 | ✅ | 有合格 artifact 时 → `source=ml` |
 | 运维命令 | ✅ | `backfill-features` / `train-model` / `model-status`；任务 `train_model` |
 

@@ -32,12 +32,16 @@ class PreMatchData(Base):
     handicap_lean: Mapped[str | None] = mapped_column(String, nullable=True)
     # Structured pre-match package (JSON text)
     odds_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # First board from midday scheduled sync (初盘); never overwritten once set.
+    odds_opening_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     lineups_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     injuries_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     h2h_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     home_form_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     away_form_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     standings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Official API-Sports /predictions (赛前简报); not our local 1X2 model.
+    briefing_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),

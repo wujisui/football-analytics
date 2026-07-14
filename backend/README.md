@@ -37,6 +37,7 @@ Redis 热缓存 → SQLite api_snapshots / pre_match_data → API-Sports 官方
 | 历史交锋 / 近况 | 已接；详情 `package` 展示 |
 | 赛前概率结果    | 已写入 `pre_match_data` |
 | 阵容 / 替补 / 伤病 | 已接 lineups / injuries 并展示 |
+| 赛前简报 | 官方 `/predictions` → `package.briefing`，详情页「赛前简报」Tab（与本地「我的预测」无关） |
 | 赛前赔率      | 已接 `/odds`（无开盘则为空） |
 | 实时比分 / 滚球 | **不做**               |
 
@@ -139,14 +140,14 @@ python manage.py test-api         # 测试 API 连通性
 python manage.py clear-cache      # 清空足球 API 缓存
 python manage.py cache-stats      # 查看缓存命中率
 python manage.py list-tasks       # 列出定时任务
-python manage.py trigger-task --name daily_init   # 手动触发任务
+python manage.py trigger-task --name midday_fixtures_sync   # 手动触发中午赛程同步
 python manage.py run-scheduler    # 前台运行调度器（调试用）
 python manage.py backfill-features  # 从已结束场次回填 match_features 训练行
 python manage.py train-model      # 用赛果标签训练 1X2（需 ≥ ML_MIN_TRAIN_SAMPLES）
 python manage.py model-status     # 查看标签数与当前 multifactor / ml
 ```
 
-可触发的任务名：`daily_init`、`pre_match_update`、`capture_results`、`clean_old_data`、`train_model`。
+可触发的任务名：`midday_fixtures_sync`、`pre_match_update`、`capture_results`、`clean_old_data`、`train_model`。
 
 ### 概率模型（多因子 → 自动切 ML）
 
@@ -186,7 +187,7 @@ GET /api/v1/fixtures/today?league_id=39
 | 方法   | 路径                     | 说明                                    |
 |------|------------------------|---------------------------------------|
 | GET  | `/admin/tasks`         | 调度器与任务状态                              |
-| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "daily_init"|"pre_match_update"|"capture_results"|"clean_old_data"}` |
+| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "midday_fixtures_sync"|"pre_match_update"|"capture_results"|"clean_old_data"|"train_model"}` |
 
 ### 常用联赛 ID
 
@@ -223,13 +224,16 @@ GET /api/v1/fixtures/today?league_id=39
 
 应用启动时（`uvicorn main:app`）会自动注册并运行调度器：
 
-| 任务                 | 触发规则      | 作用                  |
-|--------------------|-----------|---------------------|
-| `daily_init`       | 每天 06:00  | 拉取联赛、球队、今日赛程        |
-| `pre_match_update` | 每 5 分钟    | 更新开赛前 2 小时内的比赛数据与分析 |
-| `clean_old_data`   | 每周一 03:00 | 清理 7 天前的分析数据与过期日志   |
+| 任务                     | 触发规则      | 作用                                      |
+|------------------------|-----------|-----------------------------------------|
+| `midday_fixtures_sync` | 每天 12:00  | 强制拉取近期窗口赛程 + 缺盘补全（对齐首页同步窗口）              |
+| `pre_match_update`     | 每 5 分钟    | 更新开赛前 2 小时内的比赛数据与分析                     |
+| `capture_results`      | 每 30 分钟   | 回写近日终场比分                                  |
+| `clean_old_data`       | 每周一 03:00 | 清理 7 天前的分析数据与过期日志                       |
 
-时区由 `SCHEDULER_TIMEZONE` 控制。
+时区由 `SCHEDULER_TIMEZONE` 控制（默认 `Asia/Shanghai`）。  
+官网文档：赛前 `/odds` 约每 3 小时更新；赛程类日更一次即可。本项目用中午任务对齐「日更」，并把该次首次落库的盘口冻为**初盘**；首页强制刷新 / 详情补拉写入**即时盘**。  
+手动：`python manage.py trigger-task midday_fixtures_sync`。
 
 ## 前端对接提示
 
@@ -252,7 +256,7 @@ python manage.py fetch-upcoming
 公司网络代理会拦截 HTTPS，在 `.env` 中设置 `HTTP_VERIFY_SSL=false`。
 
 **今日比赛为空**  
-先执行 `python manage.py fetch-today`，或等待 `daily_init` 任务运行。
+先执行 `python manage.py fetch-upcoming`，或等待中午 `midday_fixtures_sync` / 首页强制刷新。
 
 **API 配额不足**  
 用 `python manage.py check-quota` 查看剩余次数；缓存开启后可减少重复请求。
