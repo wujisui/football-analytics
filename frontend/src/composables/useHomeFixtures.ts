@@ -1,8 +1,7 @@
 import { ref } from 'vue'
 
 import { fetchTodayFixtures } from '@/api/fixtures'
-import { fetchLeagues } from '@/api/leagues'
-import type { FixtureResponse, LeagueSummaryResponse } from '@/api/types'
+import type { FixtureResponse } from '@/api/types'
 
 const LOOKAHEAD_DAYS = 7
 /** Include yesterday so kickoff-delayed / in-play fixtures are not dropped. */
@@ -10,7 +9,6 @@ const LOOKBACK_DAYS = 1
 /** Reuse list data across Home remounts (detail → back) within this TTL. */
 const CACHE_TTL_MS = 5 * 60 * 1000
 
-const leagues = ref<LeagueSummaryResponse[]>([])
 const allFixtures = ref<FixtureResponse[]>([])
 const windowLabel = ref('')
 const loadedAt = ref(0)
@@ -22,22 +20,36 @@ function cacheFresh(): boolean {
   return loadedAt.value > 0 && Date.now() - loadedAt.value < CACHE_TTL_MS
 }
 
-function homeWindowStartDate(): string {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() - LOOKBACK_DAYS)
+function isoDate(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
 
+function homeWindowStartDate(): string {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - LOOKBACK_DAYS)
+  return isoDate(d)
+}
+
+function todayDate(): string {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return isoDate(d)
+}
+
 function homeWindowDays(): number {
   return LOOKAHEAD_DAYS + LOOKBACK_DAYS
 }
 
+/**
+ * Load home window fixtures from local API only.
+ * Client filters by tracked league ids — do not narrow with league_ids here
+ * (extras from the reference catalog must remain visible after sync).
+ */
 async function loadHomeFixtures(options?: { force?: boolean }): Promise<void> {
-  // Detail → Home remounts the page; reuse in-memory list (local DB only, but still avoid churn).
   if (!options?.force && cacheFresh()) {
     loading.value = false
     return
@@ -50,11 +62,7 @@ async function loadHomeFixtures(options?: { force?: boolean }): Promise<void> {
     try {
       const days = homeWindowDays()
       const date = homeWindowStartDate()
-      const [leaguesData, fixturesData] = await Promise.all([
-        fetchLeagues({ days }),
-        fetchTodayFixtures({ date, days }),
-      ])
-      leagues.value = leaguesData.leagues
+      const fixturesData = await fetchTodayFixtures({ date, days })
       allFixtures.value = fixturesData.fixtures
       windowLabel.value =
         fixturesData.days > 1
@@ -76,16 +84,13 @@ async function loadHomeFixtures(options?: { force?: boolean }): Promise<void> {
 export function useHomeFixtures() {
   return {
     LOOKAHEAD_DAYS,
-    LOOKBACK_DAYS,
     homeWindowDays,
     homeWindowStartDate,
-    leagues,
+    todayDate,
     allFixtures,
     windowLabel,
     loading,
     error,
-    loadedAt,
     loadHomeFixtures,
-    cacheFresh,
   }
 }

@@ -66,7 +66,6 @@ export function useSyncCooldown() {
   return {
     cooldownLeft,
     inCooldown,
-    startCooldown,
     applySyncResult,
   }
 }

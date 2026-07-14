@@ -6,12 +6,15 @@ export const apiClient = axios.create({
   baseURL,
   // List endpoints are local-only and should be fast.
   timeout: 15000,
+  // FastAPI list query expects league_ids=1&league_ids=2 (not league_ids[]=).
+  paramsSerializer: { indexes: null },
 })
 
 export const analysisClient = axios.create({
   baseURL,
   // Detail analysis may enrich from official API within a server-side budget.
   timeout: 45000,
+  paramsSerializer: { indexes: null },
 })
 
 function toError(error: AxiosError<{ detail?: string | { msg?: string }[] }>): Error {

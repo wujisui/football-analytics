@@ -144,15 +144,10 @@ function onUpdateValue(key: string) {
 <template>
   <div class="league-menu" :class="{ collapsed }">
     <div class="menu-title">
-      <template v-if="collapsed">
-        <n-tooltip placement="right" trigger="hover">
-          <template #trigger>
-            <span class="title-collapsed" aria-label="联赛筛选">筛</span>
-          </template>
-          联赛筛选
-        </n-tooltip>
-      </template>
-      <template v-else>联赛筛选</template>
+      <span v-if="!collapsed" class="menu-title-text">联赛筛选</span>
+      <div class="menu-title-actions">
+        <slot name="filter" />
+      </div>
     </div>
 
     <n-spin :show="!!loading">
@@ -190,32 +185,32 @@ function onUpdateValue(key: string) {
 }
 
 .menu-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--fa-text-muted);
-  padding: 0 20px 10px;
+  padding: 0 12px 10px 20px;
   letter-spacing: 0.04em;
+  min-height: 28px;
 }
 
 .league-menu.collapsed .menu-title {
   padding: 0 0 10px;
-  display: flex;
   justify-content: center;
 }
 
-.title-collapsed {
+.menu-title-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.menu-title-actions {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--fa-bg-soft);
-  border: 1px solid var(--fa-border);
-  color: var(--fa-text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: default;
 }
 
 .menu-empty {

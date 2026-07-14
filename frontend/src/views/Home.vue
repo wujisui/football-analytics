@@ -4,11 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 
 import FixtureList from '@/components/FixtureList.vue'
+import LeagueFilterTrigger from '@/components/LeagueFilterTrigger.vue'
 import LeagueMenu from '@/components/LeagueMenu.vue'
 import { syncFixtures } from '@/api/fixtures'
+import type { LeagueSummaryResponse } from '@/api/types'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone, useIsTabletDown } from '@/composables/useMediaQuery'
 import { useSyncCooldown } from '@/composables/useSyncCooldown'
+import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
 import { parseApiDate } from '@/utils/format'
 import { leagueNameZh } from '@/utils/leagueNames'
 
@@ -22,7 +25,7 @@ const {
   LOOKAHEAD_DAYS,
   homeWindowDays,
   homeWindowStartDate,
-  leagues,
+  todayDate,
   allFixtures,
   windowLabel,
   loading,
@@ -31,21 +34,27 @@ const {
 } = useHomeFixtures()
 
 const { cooldownLeft, inCooldown, applySyncResult } = useSyncCooldown()
+const {
+  catalog,
+  trackedIds,
+  filterOptionsError,
+  setTrackedIds,
+  allFilterOptions,
+  loadFilterOptions,
+} = useTrackedLeagues()
 
-/** null = 全部联赛 */
 const selectedLeagueId = ref<number | null>(null)
 const siderCollapsed = ref(false)
 const leagueDrawerShow = ref(false)
 const syncing = ref(false)
-const syncHint = ref('')
 
 const refreshDisabled = computed(() => loading.value || syncing.value || inCooldown.value)
 const refreshLabel = computed(() => (inCooldown.value ? '刷新冷却中' : '强制刷新'))
 
-const selectedLeague = computed(() =>
-  selectedLeagueId.value == null
-    ? null
-    : (leagues.value.find((l) => l.league_id === selectedLeagueId.value) ?? null),
+const trackedIdSet = computed(() => new Set(trackedIds.value))
+const filterLeagueOptions = computed(() => allFilterOptions())
+const filterOptionById = computed(
+  () => new Map(filterLeagueOptions.value.map((o) => [o.league_id, o])),
 )
 
 const ACTIVE_STATUSES = new Set(['pending', 'live'])
@@ -54,21 +63,46 @@ function isActiveFixture(status: string): boolean {
   return ACTIVE_STATUSES.has(status.toLowerCase())
 }
 
+const trackedFixtures = computed(() =>
+  allFixtures.value.filter(
+    (f) => trackedIdSet.value.has(f.league_id) && isActiveFixture(f.status),
+  ),
+)
+
 const pendingCountByLeague = computed(() => {
   const map = new Map<number, number>()
-  for (const f of allFixtures.value) {
-    if (!isActiveFixture(f.status)) continue
+  for (const f of trackedFixtures.value) {
     map.set(f.league_id, (map.get(f.league_id) || 0) + 1)
   }
   return map
 })
 
-const totalPending = computed(() =>
-  allFixtures.value.filter((f) => isActiveFixture(f.status)).length,
-)
+/** Left menu derived only from tracked fixtures (+ filter option names). */
+const menuLeagues = computed((): LeagueSummaryResponse[] => {
+  const map = new Map<number, LeagueSummaryResponse>()
+  for (const f of trackedFixtures.value) {
+    const opt = filterOptionById.value.get(f.league_id)
+    const count = pendingCountByLeague.value.get(f.league_id) || 0
+    map.set(f.league_id, {
+      league_id: f.league_id,
+      league_name: opt?.league_name || f.league_name || `League ${f.league_id}`,
+      country: opt?.country ?? null,
+      today_fixtures_count: 0,
+      upcoming_fixtures_count: count,
+    })
+  }
+  return [...map.values()]
+})
+
+const totalPending = computed(() => trackedFixtures.value.length)
+
+const selectedLeague = computed(() => {
+  if (selectedLeagueId.value == null) return null
+  return menuLeagues.value.find((l) => l.league_id === selectedLeagueId.value) ?? null
+})
 
 const displayedFixtures = computed(() => {
-  let list = allFixtures.value.filter((f) => isActiveFixture(f.status))
+  let list = trackedFixtures.value
   if (selectedLeagueId.value != null) {
     list = list.filter((f) => f.league_id === selectedLeagueId.value)
   }
@@ -82,8 +116,14 @@ const displayedFixtures = computed(() => {
 })
 
 const emptyText = computed(() => {
+  if (!filterLeagueOptions.value.length && !trackedFixtures.value.length) {
+    return '今日暂无匹配联赛，可先点「强制刷新」拉取配置联赛'
+  }
+  if (!trackedIds.value.length) {
+    return '请先在「筛选」中勾选要关注的联赛'
+  }
   if (selectedLeagueId.value == null) {
-    return `近 ${LOOKAHEAD_DAYS} 日暂无未完赛赛事`
+    return `近 ${LOOKAHEAD_DAYS} 日勾选联赛暂无未完赛赛事`
   }
   const name = leagueNameZh(selectedLeague.value?.league_name) || '该联赛'
   return `近 ${LOOKAHEAD_DAYS} 日暂无${name}未完赛赛事`
@@ -97,6 +137,16 @@ const breadcrumbFilter = computed(() =>
   selectedLeague.value ? leagueNameZh(selectedLeague.value.league_name) : '全部',
 )
 
+const filterActive = computed(() => {
+  const defaults = filterLeagueOptions.value
+    .filter((o) => o.default_checked)
+    .map((o) => o.league_id)
+  if (!defaults.length && !trackedIds.value.length) return false
+  if (trackedIds.value.length !== defaults.length) return true
+  const tracked = trackedIdSet.value
+  return defaults.some((id) => !tracked.has(id))
+})
+
 function syncLeagueFromRoute() {
   const fromQuery = route.query.league
   if (fromQuery === 'all' || fromQuery == null || fromQuery === '') {
@@ -105,7 +155,7 @@ function syncLeagueFromRoute() {
   }
   const id = Number(fromQuery)
   selectedLeagueId.value =
-    !Number.isNaN(id) && leagues.value.some((l) => l.league_id === id) ? id : null
+    !Number.isNaN(id) && menuLeagues.value.some((l) => l.league_id === id) ? id : null
 }
 
 async function loadAll(force = false) {
@@ -117,27 +167,68 @@ async function loadAll(force = false) {
   }
 }
 
-/** Force pull from official API into local DB, then reload list. */
-async function forceRefresh() {
-  if (inCooldown.value) return
+async function runSync(leagueIds: number[], opts?: { days?: number; date?: string }) {
+  if (!leagueIds.length) {
+    message.warning('请至少勾选一个联赛')
+    return false
+  }
+  if (inCooldown.value) {
+    message.warning(`同步冷却中，请 ${cooldownLeft.value} 秒后再试`)
+    return false
+  }
   syncing.value = true
-  syncHint.value = ''
   try {
     const result = await syncFixtures({
-      days: homeWindowDays(),
-      date: homeWindowStartDate(),
+      days: opts?.days ?? homeWindowDays(),
+      date: opts?.date ?? homeWindowStartDate(),
       includeResults: true,
+      leagueIds,
     })
-    const blocked = applySyncResult(result)
-    if (blocked) return
-    message.success(`刷新成功，${cooldownLeft.value} 秒后可再次刷新`)
-    await loadAll(true)
+    if (applySyncResult(result)) return false
+    message.success(`已同步 ${leagueIds.length} 个联赛，${cooldownLeft.value} 秒后可再次刷新`)
+    await Promise.all([loadFilterOptions({ discover: true }), loadAll(true)])
+    return true
   } catch (err) {
     message.error(err instanceof Error ? err.message : '同步失败')
-    // Still try a local reload so the UI is not stuck.
     await loadAll(true)
+    return false
   } finally {
     syncing.value = false
+  }
+}
+
+async function forceRefresh() {
+  const ids =
+    trackedIds.value.length > 0
+      ? trackedIds.value
+      : catalog.value.map((l) => l.league_id)
+  if (!ids.length) {
+    message.warning('联赛目录为空，请检查 config/leagues.json')
+    return
+  }
+  await runSync(ids)
+}
+
+async function confirmFilter(ids: number[]) {
+  const allow = new Set(filterLeagueOptions.value.map((o) => o.league_id))
+  const allowed = ids.filter((id) => allow.has(id))
+  if (!allowed.length) {
+    message.warning('请至少勾选一个今日有赛的联赛')
+    return
+  }
+  setTrackedIds(allowed)
+  if (
+    selectedLeagueId.value != null &&
+    !allowed.includes(selectedLeagueId.value)
+  ) {
+    selectLeague(null)
+  }
+  const needFetch = allowed.filter((id) => {
+    const opt = filterOptionById.value.get(id)
+    return !!opt && !opt.locally_loaded
+  })
+  if (needFetch.length) {
+    await runSync(needFetch, { days: 1, date: todayDate() })
   }
 }
 
@@ -158,9 +249,23 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => {
-  // Full browser refresh should not reuse the 5‑min in-memory list (stale picks).
-  void loadAll(true)
+watch(menuLeagues, () => {
+  if (
+    selectedLeagueId.value != null &&
+    !menuLeagues.value.some((l) => l.league_id === selectedLeagueId.value)
+  ) {
+    selectedLeagueId.value = null
+  }
+})
+
+onMounted(async () => {
+  try {
+    await loadFilterOptions({ discover: true })
+  } catch {
+    if (filterOptionsError.value) message.warning(filterOptionsError.value)
+  }
+  // force once on cold start; later remounts can reuse in-memory cache via loadAll(false)
+  void loadAll(!allFixtures.value.length)
 })
 </script>
 
@@ -178,14 +283,25 @@ onMounted(() => {
       content-style="height: 100%;"
     >
       <LeagueMenu
-        :leagues="leagues"
+        :leagues="menuLeagues"
         :selected-league-id="selectedLeagueId"
         :pending-count-by-league="pendingCountByLeague"
         :total-pending="totalPending"
         :loading="loading"
         :collapsed="siderCollapsed"
         @select="selectLeague"
-      />
+      >
+        <template #filter>
+          <LeagueFilterTrigger
+            :options="filterLeagueOptions"
+            :tracked-ids="trackedIds"
+            :icon-only="siderCollapsed"
+            :filter-active="filterActive"
+            :confirming="syncing"
+            @confirm="confirmFilter"
+          />
+        </template>
+      </LeagueMenu>
     </n-layout-sider>
 
     <n-layout
@@ -200,7 +316,7 @@ onMounted(() => {
             class="league-trigger"
             @click="leagueDrawerShow = true"
           >
-            联赛筛选
+            联赛
           </n-button>
           <n-breadcrumb class="crumb">
             <n-breadcrumb-item @click="selectLeague(null)">赛前赛事</n-breadcrumb-item>
@@ -208,12 +324,26 @@ onMounted(() => {
           </n-breadcrumb>
           <n-button
             size="small"
-            quaternary
+            secondary
             class="refresh-btn"
             :loading="syncing"
             :disabled="refreshDisabled"
             @click="forceRefresh"
           >
+            <template #icon>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L14 10h6V4l-2.35 2.35z"
+                />
+              </svg>
+            </template>
             {{ refreshLabel }}
           </n-button>
         </div>
@@ -223,7 +353,6 @@ onMounted(() => {
             未完赛 {{ displayedFixtures.length }} 场
             <template v-if="windowLabel"> · {{ windowLabel }}</template>
             <span class="desktop-only"> · 数据来自本地库</span>
-            <template v-if="syncHint"> · {{ syncHint }}</template>
           </template>
         </n-page-header>
       </n-layout-header>
@@ -241,7 +370,7 @@ onMounted(() => {
           <n-button size="small" type="primary" @click="loadAll(true)">重试</n-button>
         </n-alert>
 
-        <n-spin v-else :show="loading">
+        <n-spin v-else :show="loading || syncing">
           <div class="spin-body">
             <FixtureList
               v-if="!loading || allFixtures.length"
@@ -261,16 +390,26 @@ onMounted(() => {
     to="body"
     display-directive="show"
   >
-    <n-drawer-content title="联赛筛选" closable :native-scrollbar="false">
+    <n-drawer-content title="联赛" closable :native-scrollbar="false">
       <LeagueMenu
-        :leagues="leagues"
+        :leagues="menuLeagues"
         :selected-league-id="selectedLeagueId"
         :pending-count-by-league="pendingCountByLeague"
         :total-pending="totalPending"
         :loading="loading"
         :collapsed="false"
         @select="selectLeague"
-      />
+      >
+        <template #filter>
+          <LeagueFilterTrigger
+            :options="filterLeagueOptions"
+            :tracked-ids="trackedIds"
+            :filter-active="filterActive"
+            :confirming="syncing"
+            @confirm="confirmFilter"
+          />
+        </template>
+      </LeagueMenu>
     </n-drawer-content>
   </n-drawer>
 </template>
@@ -313,7 +452,7 @@ onMounted(() => {
 
 .refresh-btn {
   flex-shrink: 0;
-  margin-left: auto;
+  font-weight: 600;
 }
 
 .page-header {
@@ -351,14 +490,6 @@ onMounted(() => {
 
   .desktop-only {
     display: none;
-  }
-
-  .page-header :deep(.n-page-header__title) {
-    font-size: 18px;
-  }
-
-  .page-header :deep(.n-page-header__subtitle) {
-    font-size: 12px;
   }
 }
 </style>

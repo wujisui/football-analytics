@@ -7,13 +7,13 @@ import type {
 } from './types'
 
 export async function fetchTodayFixtures(options?: {
-  leagueId?: number
+  leagueIds?: number[]
   date?: string
   days?: number
 }): Promise<TodayFixturesResponse> {
   const { data } = await apiClient.get<TodayFixturesResponse>('/fixtures/today', {
     params: {
-      league_id: options?.leagueId,
+      league_ids: options?.leagueIds,
       date: options?.date,
       days: options?.days,
     },
@@ -35,14 +35,16 @@ export async function syncFixtures(options?: {
   days?: number
   date?: string
   includeResults?: boolean
+  leagueIds?: number[]
 }): Promise<SyncFixturesResult> {
   const { data } = await apiClient.post<SyncFixturesResult>('/fixtures/sync', null, {
     params: {
       days: options?.days,
       date: options?.date,
       include_results: options?.includeResults ?? true,
+      league_ids: options?.leagueIds,
     },
-    timeout: 120_000,
+    timeout: 180_000,
   })
   return data
 }
