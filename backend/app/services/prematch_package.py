@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Any
 
+from app.core.config import get_settings
 from app.services.api_utils import extract_items, first_value
 
 logger = logging.getLogger(__name__)
@@ -61,16 +62,26 @@ def summarize_form_payload(payload: dict[str, Any], team_id: int, limit: int = 2
         result = parse_match_result_for_team(item, team_id)
         if result is None:
             continue
+        ht_home = first_value(item, [["score", "halftime", "home"]])
+        ht_away = first_value(item, [["score", "halftime", "away"]])
+        score_ht = (
+            f"{ht_home}-{ht_away}"
+            if ht_home is not None and ht_away is not None
+            else None
+        )
         matches.append(
             {
                 "fixture_id": first_value(item, [["fixture", "id"], ["id"]]),
                 "date": first_value(item, [["fixture", "date"], ["date"]]),
                 "home": first_value(item, [["teams", "home", "name"], ["homeTeam", "name"]], ""),
                 "away": first_value(item, [["teams", "away", "name"], ["awayTeam", "name"]], ""),
+                "home_id": first_value(item, [["teams", "home", "id"], ["homeTeam", "id"]]),
+                "away_id": first_value(item, [["teams", "away", "id"], ["awayTeam", "id"]]),
                 "score": (
                     f"{first_value(item, [['goals', 'home'], ['score', 'home']], '-')}"
                     f"-{first_value(item, [['goals', 'away'], ['score', 'away']], '-')}"
                 ),
+                "score_ht": score_ht,
                 "league_id": first_value(item, [["league", "id"]]),
                 "league_name": first_value(item, [["league", "name"]], "") or "",
                 "league_country": first_value(item, [["league", "country"]], "") or "",
@@ -93,7 +104,7 @@ def summarize_form_payload(payload: dict[str, Any], team_id: int, limit: int = 2
         "losses": losses,
         "form": "".join(m["result"] for m in matches),
         "matches": matches,
-        "source": "free-2022-2024-v3",
+        "source": get_settings().history_source_tag,
     }
 
 
@@ -121,13 +132,23 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
         else:
             outcome = "away" if current_was_home else "home"
 
+        ht_home = first_value(item, [["score", "halftime", "home"]])
+        ht_away = first_value(item, [["score", "halftime", "away"]])
+        score_ht = (
+            f"{ht_home}-{ht_away}"
+            if ht_home is not None and ht_away is not None
+            else None
+        )
         matches.append(
             {
                 "fixture_id": first_value(item, [["fixture", "id"], ["id"]]),
                 "date": first_value(item, [["fixture", "date"], ["date"]]),
                 "home": first_value(item, [["teams", "home", "name"]], ""),
                 "away": first_value(item, [["teams", "away", "name"]], ""),
+                "home_id": first_value(item, [["teams", "home", "id"]]),
+                "away_id": first_value(item, [["teams", "away", "id"]]),
                 "score": f"{home_goals}-{away_goals}",
+                "score_ht": score_ht,
                 "league_id": first_value(item, [["league", "id"]]),
                 "league_name": first_value(item, [["league", "name"]], "") or "",
                 "league_country": first_value(item, [["league", "country"]], "") or "",
@@ -157,7 +178,7 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
         # Distinguishes "API returned zero H2H" from "fetch/summarize never succeeded".
         "fetched": True,
         # Bump when H2H fetch strategy changes so stale empty rows are refreshed.
-        "source": "free-2022-2024-v3",
+        "source": get_settings().history_source_tag,
     }
 
 

@@ -31,6 +31,24 @@ def fixtures_cache_key(date: str) -> str:
     return f"api:football:fixtures:date:{date}"
 
 
+def fixtures_day_leagues_cache_key(date: str) -> str:
+    """Aggregated league IDs playing on a calendar day (from worldwide date=)."""
+    return f"api:football:fixtures:day-leagues:{date}"
+
+
+def fixtures_league_date_cache_key(league_id: int, date: str, season: str) -> str:
+    return f"api:football:fixtures:league:{league_id}:season:{season}:date:{date}"
+
+
+def fixtures_league_range_cache_key(
+    league_id: int, season: str, date_from: str, date_to: str
+) -> str:
+    return (
+        f"api:football:fixtures:league:{league_id}:season:{season}"
+        f":from:{date_from}:to:{date_to}"
+    )
+
+
 def fixture_cache_key(fixture_id: int) -> str:
     return f"api:football:fixture:{fixture_id}"
 
@@ -269,6 +287,9 @@ __all__ = [
     "fixture_cache_key",
     "fixture_detail_ttl",
     "fixtures_cache_key",
+    "fixtures_day_leagues_cache_key",
+    "fixtures_league_date_cache_key",
+    "fixtures_league_range_cache_key",
     "get_cache_service",
     "headtohead_cache_key",
     "injuries_cache_key",

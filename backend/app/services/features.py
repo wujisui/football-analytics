@@ -1,8 +1,9 @@
 """Feature engineering for 1X2 probability models.
 
-Features emphasize form, H2H, standings, injuries, mild odds signal, and
-**mean-reversion / streak** effects (long winless → bounce risk; long winning
-streak → fade risk). Odds are one input among many, not the sole driver.
+Features emphasize form, H2H, standings, injuries, **market odds** (strong
+prior while samples are scarce), and streak / mean-reversion. Odds are a major
+input in the multifactor stage, not a token nudge — bookmakers price risk;
+upsets / manipulation are possible but not assumed every match.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ FEATURE_NAMES: list[str] = [
     "rank_diff",  # away_rank - home_rank (positive → home higher table)
     "home_injuries_n",
     "away_injuries_n",
-    # Mild market prior (optional; missing → 1/3)
+    # Market prior (strong in multifactor / thin-data stage)
     "odds_home",
     "odds_draw",
     "odds_away",

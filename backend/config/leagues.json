@@ -1,0 +1,17 @@
+[
+  {"name": "英超", "id": 39, "country": "England"},
+  {"name": "西甲", "id": 140, "country": "Spain"},
+  {"name": "德甲", "id": 78, "country": "Germany"},
+  {"name": "意甲", "id": 135, "country": "Italy"},
+  {"name": "法甲", "id": 61, "country": "France"},
+  {"name": "欧冠", "id": 2, "country": "World"},
+  {"name": "欧罗巴", "id": 3, "country": "World"},
+  {"name": "欧协联", "id": 848, "country": "World"},
+  {"name": "亚冠", "id": 10, "country": "World"},
+  {"name": "中超", "id": 169, "country": "China"},
+  {"name": "世界杯", "id": 1, "country": "World", "season": "2026"},
+  {"name": "美职联", "id": 253, "country": "USA"},
+  {"name": "巴甲", "id": 71, "country": "Brazil"},
+  {"name": "日职联", "id": 98, "country": "Japan"},
+  {"name": "韩K联", "id": 292, "country": "South-Korea"}
+]

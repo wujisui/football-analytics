@@ -107,6 +107,7 @@ API_SPORTS_KEY=你的官方Key
 | `HTTP_VERIFY_SSL`                 | 公司代理拦截 SSL 时设为 `false`                      |
 | `SCHEDULER_TIMEZONE`              | 调度器时区，默认 `Asia/Shanghai`                    |
 | `LOCAL_FIRST`                     | `true` 时优先读本地库/缓存，再打官方                      |
+| `API_HISTORY_MODE`                | `full`=付费历史（H2H 不限年份）；`free`=仅 2022–2024      |
 | `ANALYSIS_REFRESH_TTL_SECONDS`    | `0`=按开赛时间动态刷新；`>0` 则强制固定秒数                  |
 
 > 不要把真实 Key 写进 `.env.example` 或提交到 Git。本地运行时会先读 `.env`，再读 `secrets.local.env`（后者覆盖前者）。
@@ -189,7 +190,14 @@ GET /api/v1/fixtures/today?league_id=39
 
 ### 常用联赛 ID
 
-| 联赛  | ID   |
+**生效目录**：`config/leagues.json`（也可设环境变量 `LEAGUES_JSON`）。  
+**参考目录**：`config/leagues.example.json`（全球一级联赛清单；后端会加载为筛选「额外联赛」与 sync 白名单，**不会**替代 `leagues.json` 的默认勾选集）。
+
+用法：从 example 里复制需要的条目到 `leagues.json`，保存后**重启后端**。条目字段：`name`（中文显示名）、`id`（API-Sports）、`country`；可选 `season`（如世界杯）、`region`（仅注释用，程序忽略）。
+
+增删联赛只改 `leagues.json`；左侧菜单、筛选目录与强制刷新都只认该文件。
+
+| 联赛（当前 `leagues.json` 常用） | ID |
 |-----|------|
 | 英超  | 39   |
 | 西甲  | 140  |
@@ -198,12 +206,18 @@ GET /api/v1/fixtures/today?league_id=39
 | 法甲  | 61   |
 | 欧冠  | 2    |
 | 欧罗巴 | 3    |
+| 欧协联 | 848  |
 | 亚冠  | 10   |
 | 中超  | 169  |
+| 世界杯 | 1    |
 | 美职联 | 253  |
 | 巴甲  | 71   |
 | 日职联 | 98   |
 | 韩K联 | 292  |
+
+更多一级联赛（荷甲/土超/墨超/沙特联/解放者杯等）见 `leagues.example.json`。
+
+赛程同步按**配置联赛**调用 `fixtures?league=&season=&from=&to=`；免费套餐对当前赛季受限时会回退到按日 `date=` 并过滤目录联赛。
 
 ## 定时任务
 

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_serializer
 
@@ -338,6 +338,20 @@ class SyncFixturesResponse(BaseModel):
     )
 
 
+class LeagueCatalogItemResponse(BaseModel):
+    league_id: int = Field(..., description="联赛 ID")
+    league_name: str = Field(..., description="展示名（中文）")
+    country: str | None = Field(default=None, description="国家/地区")
+    season: str | None = Field(default=None, description="目录中的赛季提示（可选）")
+
+
+class LeagueCatalogResponse(BaseModel):
+    leagues: list[LeagueCatalogItemResponse] = Field(
+        default_factory=list,
+        description="config/leagues.json 中可拉取的全部联赛",
+    )
+
+
 class LeagueSummaryResponse(BaseModel):
     league_id: int = Field(..., description="联赛 ID")
     league_name: str = Field(..., description="联赛名称")
@@ -346,6 +360,40 @@ class LeagueSummaryResponse(BaseModel):
     upcoming_fixtures_count: int = Field(
         default=0, description="从指定日期起未来 N 天（含当天）的比赛数量"
     )
+
+
+class LeagueFilterOptionResponse(BaseModel):
+    league_id: int
+    league_name: str
+    country: str | None = None
+    fixtures_count: int = Field(0, description="当日场次（发现或本地）")
+    tier: Literal["configured", "extra"] = Field(
+        ...,
+        description="configured=leagues.json；extra=参考目录中今日有赛且非配置默认",
+    )
+    default_checked: bool = Field(
+        ...,
+        description="配置联赛默认勾选；额外联赛默认不勾选",
+    )
+    locally_loaded: bool = Field(
+        False,
+        description="本地库当日是否已有该联赛赛程",
+    )
+
+
+class LeagueFilterOptionsResponse(BaseModel):
+    date: str = Field(..., description="统计日 YYYY-MM-DD（先做「今天」）")
+    configured: list[LeagueFilterOptionResponse] = Field(default_factory=list)
+    extra: list[LeagueFilterOptionResponse] = Field(default_factory=list)
+    catalog: list[LeagueCatalogItemResponse] = Field(
+        default_factory=list,
+        description="完整 leagues.json 目录（供强制刷新回退，避免再调 /catalog）",
+    )
+    discovery_source: str = Field(
+        default="local",
+        description="api|cache|local|unavailable|error",
+    )
+    message: str | None = Field(default=None)
 
 
 class LeaguesListResponse(BaseModel):

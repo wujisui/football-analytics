@@ -166,7 +166,11 @@ def _list_extras_from_stored(stored: PreMatchData | None) -> tuple[
 @router.get("/today", response_model=TodayFixturesResponse)
 async def get_today_fixtures(
     response: Response,
-    league_id: int | None = Query(default=None, description="按联赛 ID 过滤"),
+    league_id: int | None = Query(default=None, description="按单个联赛 ID 过滤"),
+    league_ids: list[int] | None = Query(
+        default=None,
+        description="按多个联赛 ID 过滤（首页勾选）；与 league_id 同时传时取交集",
+    ),
     date_str: str | None = Query(
         default=None,
         alias="date",
@@ -195,9 +199,28 @@ async def get_today_fixtures(
     start_dt = datetime.combine(base_date, datetime.min.time())
     end_dt = datetime.combine(end_date, datetime.max.time())
 
+    fetchable = settings.fetchable_league_ids()
+    allowed: set[int]
+    if league_ids is not None:
+        allowed = {int(x) for x in league_ids} & fetchable
+        if not allowed:
+            raise HTTPException(status_code=400, detail="league_ids 为空或不在可拉取目录中")
+    else:
+        # Default list: configured + reference leagues already synced into local DB.
+        allowed = fetchable
+    if league_id is not None:
+        if league_id not in allowed:
+            allowed = set()
+        else:
+            allowed = {league_id}
+
     stmt = (
         select(Fixture)
-        .where(Fixture.date >= start_dt, Fixture.date <= end_dt)
+        .where(
+            Fixture.date >= start_dt,
+            Fixture.date <= end_dt,
+            Fixture.league_id.in_(list(allowed) or [-1]),
+        )
         .options(
             selectinload(Fixture.home_team),
             selectinload(Fixture.away_team),
@@ -205,10 +228,6 @@ async def get_today_fixtures(
         )
         .order_by(Fixture.date)
     )
-    if league_id is not None:
-        stmt = stmt.where(Fixture.league_id == league_id)
-    else:
-        stmt = stmt.where(Fixture.league_id.in_(list(settings.LEAGUE_IDS.values())))
 
     result = await db.execute(stmt)
     fixtures = list(result.scalars().all())
@@ -388,14 +407,19 @@ async def sync_fixtures(
     ),
     include_odds: bool = Query(
         default=True,
-        description="按日批量拉取赛前赔率写入本地（首页可直接展示盘口）",
+        description="拉取赛前赔率：缺盘补全；强制刷新时覆盖已有盘口并重算胜平负",
+    ),
+    league_ids: list[int] | None = Query(
+        default=None,
+        description="仅同步勾选的联赛 ID；默认全部 config/leagues.json",
     ),
 ) -> SyncFixturesResponse:
     """
     强制从官方拉取赛程并写入本地库（绕过 Redis/SQLite 日缓存）。
 
     首页「刷新」应调用本接口，再读 `/fixtures/today`。
-    赔率用 ``/odds?date=`` 按日批量拉取，避免一场一场打接口。
+    赛程按勾选联赛（或全部目录联赛）窗口拉取；
+    赔率：缺盘补全，强制刷新时覆盖已有盘口并本地重算胜平负（非实时轮询）。
     """
     global _last_sync_monotonic
     settings = get_settings()
@@ -429,16 +453,32 @@ async def sync_fixtures(
             window = max(1, min(window, 14))
             day_list = [start + timedelta(days=i) for i in range(window)]
 
+            selected = league_ids
+            if selected is not None:
+                fetchable = settings.fetchable_league_ids()
+                selected = [lid for lid in selected if lid in fetchable]
+                if not selected:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="league_ids 为空或不在可拉取目录中（leagues.json / leagues.example.json）",
+                    )
+
             async with FootballFetcher() as fetcher:
-                saved = 0
-                for day in day_list:
-                    saved += await fetcher.fetch_fixtures_for_date(day, force=True)
+                saved = await fetcher.fetch_fixtures_window(
+                    day_list[0],
+                    day_list[-1],
+                    force=True,
+                    league_ids=selected,
+                )
 
                 if include_odds:
                     try:
-                        # Let rate-limit window cool after fixture day fetches.
                         await asyncio.sleep(3.0)
-                        await fetcher.sync_odds_for_dates(day_list)
+                        await fetcher.sync_odds_for_dates(
+                            day_list,
+                            refresh_existing=True,
+                            league_ids=selected,
+                        )
                     except Exception as exc:
                         logger.warning("include_odds batch failed: %s", exc)
 

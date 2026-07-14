@@ -44,6 +44,19 @@ class BaseApiProvider:
     ) -> dict[str, Any]:
         raise NotImplementedError
 
+    async def fetch_fixtures_for_league(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        league_id: int,
+        season: str,
+        date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> dict[str, Any]:
+        """Fixtures scoped to one configured league (preferred over worldwide date=)."""
+        raise NotImplementedError
+
     async def fetch_fixture_detail_payload(
         self,
         client: httpx.AsyncClient,
@@ -187,6 +200,28 @@ class ApiFootballProvider(BaseApiProvider):
         response.raise_for_status()
         return self._json_from_response(response)
 
+    async def fetch_fixtures_for_league(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        league_id: int,
+        season: str,
+        date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"league": league_id, "season": season}
+        if date:
+            params["date"] = date
+        elif date_from and date_to:
+            params["from"] = date_from
+            params["to"] = date_to
+        else:
+            raise ValueError("Provide date= or date_from+date_to for league fixtures")
+        response = await client.get(self.settings.API_ENDPOINT_FIXTURES, params=params)
+        response.raise_for_status()
+        return self._json_from_response(response)
+
     async def fetch_fixture_detail_payload(
         self,
         client: httpx.AsyncClient,
@@ -211,16 +246,16 @@ class ApiFootballProvider(BaseApiProvider):
         away_team_id: int,
         last: int = 10,
     ) -> dict[str, Any]:
-        """Free plans reject `last=` and seasons outside 2022–2024.
+        """Head-to-head fixtures between two teams.
 
-        Do NOT use `to=today` (e.g. 2026): the whole window can come back empty.
-        Stick to the free-plan date window that actually returns history.
+        - ``full``: no ``from``/``to`` — API returns earliest available history.
+        - ``free``: free plans reject ``last=`` and seasons outside 2022–2024;
+          do not use ``to=today`` (empty window); stick to 2022-01-01…2024-12-31.
         """
-        params = {
-            "h2h": f"{home_team_id}-{away_team_id}",
-            "from": "2022-01-01",
-            "to": "2024-12-31",
-        }
+        params: dict[str, Any] = {"h2h": f"{home_team_id}-{away_team_id}"}
+        if not self.settings.uses_full_history:
+            params["from"] = "2022-01-01"
+            params["to"] = "2024-12-31"
         response = await client.get(self.settings.API_ENDPOINT_HEADTOHEAD, params=params)
         response.raise_for_status()
         payload = self._json_from_response(response)
@@ -236,9 +271,10 @@ class ApiFootballProvider(BaseApiProvider):
 
         items = [i for i in items if isinstance(i, dict)]
         items.sort(key=_item_date, reverse=True)
-        cap = max(last * 4, 40)
-        if len(items) > cap:
-            items = items[:cap]
+        if not self.settings.uses_full_history:
+            cap = max(last * 4, 40)
+            if len(items) > cap:
+                items = items[:cap]
         return {**payload, "response": items, "results": len(items)}
 
     async def fetch_team_statistics_payload(
@@ -274,11 +310,20 @@ class ApiFootballProvider(BaseApiProvider):
         team_id: int,
         last: int = 5,
     ) -> dict[str, Any]:
-        """Free plans reject `last=` and seasons outside 2022–2024.
+        """Recent finished fixtures for a team (form strip).
 
-        Merge all accessible seasons (newest first in summarizer). Do not call
-        2025/2026 on free tier — those burn daily quota and always error.
+        - ``full``: ``fixtures?team=&last=`` (paid plans).
+        - ``free``: merge seasons 2022–2024 only; do not call 2025/2026 on free
+          tier (quota burn + always error).
         """
+        if self.settings.uses_full_history:
+            response = await client.get(
+                self.settings.API_ENDPOINT_FIXTURES,
+                params={"team": team_id, "last": max(int(last), 1)},
+            )
+            response.raise_for_status()
+            return self._json_from_response(response)
+
         seasons = [2024, 2023, 2022]
         merged: dict[int | str, dict[str, Any]] = {}
         last_payload: dict[str, Any] = {"response": [], "results": 0, "errors": {}}
@@ -574,6 +619,41 @@ class LiveFootballDataProvider(BaseApiProvider):
         assert last_error is not None
         raise last_error
 
+    async def fetch_fixtures_for_league(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        league_id: int,
+        season: str,
+        date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> dict[str, Any]:
+        base: dict[str, Any] = {"league": league_id, "season": season}
+        if date:
+            base["date"] = date
+        elif date_from and date_to:
+            base["from"] = date_from
+            base["to"] = date_to
+        else:
+            raise ValueError("Provide date= or date_from+date_to for league fixtures")
+        param_sets = [
+            base,
+            {**base, "league_id": league_id},
+            {**base, "leagueId": league_id},
+        ]
+        last_error: Exception | None = None
+        for params in param_sets:
+            try:
+                return await self._request_json(
+                    client, self.settings.API_ENDPOINT_FIXTURES, params
+                )
+            except Exception as exc:
+                last_error = exc
+                logger.debug("League fixtures failed with params %s: %s", params, exc)
+        assert last_error is not None
+        raise last_error
+
     async def fetch_fixture_detail_payload(
         self,
         client: httpx.AsyncClient,
@@ -792,6 +872,26 @@ class ApiFootball186Provider(ApiFootballProvider):
                 last_error = exc
         assert last_error is not None
         raise last_error
+
+    async def fetch_fixtures_for_league(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        league_id: int,
+        season: str,
+        date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> dict[str, Any]:
+        # Prefer Api-Football-compatible league scoping when the proxy supports it.
+        return await ApiFootballProvider(self.settings).fetch_fixtures_for_league(
+            client,
+            league_id=league_id,
+            season=season,
+            date=date,
+            date_from=date_from,
+            date_to=date_to,
+        )
 
     async def fetch_fixture_detail_payload(
         self,

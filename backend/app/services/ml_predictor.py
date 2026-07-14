@@ -2,12 +2,13 @@
 
 Design goals
 ------------
-- Odds are a *mild* prior, not the recommendation driver.
-- Streak / mean-reversion features push long winning runs toward fade and
-  long winless runs toward bounce (regression to the mean).
+- While labeled samples are scarce (``source=multifactor``), **odds are a strong
+  prior**: bookmakers are not charities; the board aggregates information.
+  Match-fixing / one-off shocks exist but are not the base rate for every game.
+- Form, H2H, ranks, injuries, and streak / mean-reversion still matter; odds
+  should not be the *only* driver, but they must move the output when lines shift.
 - When enough labeled ``match_features`` rows exist, fit multinomial logistic
-  regression and prefer it; otherwise fall back to the explicit multi-factor
-  engine (still online-capable without training).
+  regression and prefer it; learned weights then replace these hand constants.
 """
 
 from __future__ import annotations
@@ -39,12 +40,13 @@ MODEL_DIR = BACKEND_ROOT / "data" / "models"
 MODEL_META_NAME = "1x2_meta.json"
 MODEL_WEIGHTS_NAME = "1x2_weights.npz"
 
-# Multi-factor weights (logits). Odds weight kept intentionally low.
+# Multi-factor weights (logits). Odds kept strong while data is thin.
 _W_FORM = 1.15
 _W_H2H = 0.45
 _W_RANK = 0.35
 _W_INJURY = 0.25
-_W_ODDS = 0.40  # mild — market is one signal, not the model
+_W_ODDS = 1.25  # bookmaker board = strong prior until ML is trained
+_W_ODDS_THIN_FORM = 0.45  # extra when recent form sample is thin
 _W_REVERSION = 1.00
 _W_HOME_ADV = 0.22
 _W_DRAW_BASE = 0.05
@@ -76,13 +78,21 @@ def multifactor_probabilities(features: dict[str, float]) -> dict[str, float]:
     home_form += 0.04 * max(-3.0, min(3.0, f["home_gd_avg_5"]))
     away_form += 0.04 * max(-3.0, min(3.0, f["away_gd_avg_5"]))
 
+    # Thin recent form → lean harder on the market (still not odds-only).
+    # wr_* default to 1/3 when empty; treat near-flat both sides as thin signal.
+    thin_form = (
+        abs(home_form - DEFAULT_PROB) < 0.04
+        and abs(away_form - DEFAULT_PROB) < 0.04
+    )
+    odds_w = _W_ODDS + (_W_ODDS_THIN_FORM if thin_form else 0.0)
+
     logit_h = (
         _W_FORM * (home_form - away_form)
         + _W_H2H * (f["h2h_home_rate"] - f["h2h_away_rate"]) * (0.4 + 0.6 * f["h2h_played_n"])
         + _W_RANK * f["rank_diff"]
         - _W_INJURY * f["home_injuries_n"]
         + _W_INJURY * f["away_injuries_n"]
-        + _W_ODDS * f["has_odds"] * (f["odds_home"] - DEFAULT_PROB)
+        + odds_w * f["has_odds"] * (f["odds_home"] - DEFAULT_PROB)
         + _W_REVERSION * f["home_reversion"]
         - _W_REVERSION * f["away_reversion"]
         + _W_HOME_ADV * f["home_advantage"]
@@ -93,7 +103,7 @@ def multifactor_probabilities(features: dict[str, float]) -> dict[str, float]:
         - _W_RANK * f["rank_diff"]
         - _W_INJURY * f["away_injuries_n"]
         + _W_INJURY * f["home_injuries_n"]
-        + _W_ODDS * f["has_odds"] * (f["odds_away"] - DEFAULT_PROB)
+        + odds_w * f["has_odds"] * (f["odds_away"] - DEFAULT_PROB)
         + _W_REVERSION * f["away_reversion"]
         - _W_REVERSION * f["home_reversion"]
     )
@@ -110,7 +120,7 @@ def multifactor_probabilities(features: dict[str, float]) -> dict[str, float]:
         + 0.9 * draw_form
         + 0.35 * closeness
         + _W_H2H * f["h2h_draw_rate"] * (0.4 + 0.6 * f["h2h_played_n"])
-        + _W_ODDS * f["has_odds"] * (f["odds_draw"] - DEFAULT_PROB) * 0.7
+        + odds_w * f["has_odds"] * (f["odds_draw"] - DEFAULT_PROB) * 0.85
         + streak_draw
         # Mutual reversion → more chaos / draw mass
         + 0.25 * max(0.0, f["home_reversion"]) * max(0.0, f["away_reversion"])

@@ -321,14 +321,15 @@ class AnalyzerService:
             if league and league.season
             else str(datetime.now(timezone.utc).year)
         )
-        # Prefer free-plan accessible season when current season is blocked.
+        # Free plan: clamp standings to 2024 when current season is blocked.
         standings_season = season
-        try:
-            year = int(str(season)[:4])
-            if year > 2024:
+        if not get_settings().uses_full_history:
+            try:
+                year = int(str(season)[:4])
+                if year > 2024:
+                    standings_season = "2024"
+            except ValueError:
                 standings_season = "2024"
-        except ValueError:
-            standings_season = "2024"
 
         async def _h2h() -> None:
             payload = await fetcher.fetch_headtohead(
@@ -573,11 +574,12 @@ class AnalyzerService:
                 away_form = package.get("away_form") or {}
                 # Pre-fix / failed summarize / old fetch strategy → refresh once.
                 standings = package.get("standings") or {}
+                history_tag = get_settings().history_source_tag
                 package_stale = (
                     "fetched" not in h2h_pkg
-                    or h2h_pkg.get("source") != "free-2022-2024-v3"
-                    or home_form.get("source") != "free-2022-2024-v3"
-                    or away_form.get("source") != "free-2022-2024-v3"
+                    or h2h_pkg.get("source") != history_tag
+                    or home_form.get("source") != history_tag
+                    or away_form.get("source") != history_tag
                     or not standings.get("fetched")
                 )
                 package_useful = bool(
@@ -641,11 +643,12 @@ class AnalyzerService:
                 )
                 # Old/failed rows or pre-merge fetch strategy → one refresh.
                 standings = loads_json(getattr(stored, "standings_json", None), {}) or {}
+                history_tag = get_settings().history_source_tag
                 package_stale = (
                     "fetched" not in h2h
-                    or h2h.get("source") != "free-2022-2024-v3"
-                    or home_form.get("source") != "free-2022-2024-v3"
-                    or away_form.get("source") != "free-2022-2024-v3"
+                    or h2h.get("source") != history_tag
+                    or home_form.get("source") != history_tag
+                    or away_form.get("source") != history_tag
                     or not standings.get("fetched")
                 )
                 has_any_package = bool(

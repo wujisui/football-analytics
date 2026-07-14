@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -25,6 +25,9 @@ from app.services.cache import (
     fixture_cache_key,
     fixture_detail_ttl,
     fixtures_cache_key,
+    fixtures_day_leagues_cache_key,
+    fixtures_league_date_cache_key,
+    fixtures_league_range_cache_key,
     get_cache_service,
     headtohead_cache_key,
     injuries_cache_key,
@@ -52,6 +55,33 @@ def _as_int_or_none(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _api_payload_errors(payload: dict[str, Any] | None) -> Any:
+    if not isinstance(payload, dict):
+        return None
+    errors = payload.get("errors")
+    if errors is None or errors == "" or errors == [] or errors == {}:
+        return None
+    return errors
+
+
+def _api_payload_unusable(payload: dict[str, Any] | None) -> bool:
+    """True when the upstream body is an error shell (plan/rateLimit/etc.)."""
+    return _api_payload_errors(payload) is not None
+
+
+def _api_payload_plan_or_season_blocked(payload: dict[str, Any] | None) -> bool:
+    """Free plans often block ``league+season`` for current WC / domestic seasons."""
+    errors = _api_payload_errors(payload)
+    if errors is None:
+        return False
+    text = str(errors).lower()
+    return (
+        "free plans do not have access" in text
+        or "season" in text
+        or "plan" in text
+    )
 
 
 class ApiKeyNotConfiguredError(RuntimeError):
@@ -154,25 +184,58 @@ class FootballFetcher:
         operation: str,
         fetch_callback: Callable[[httpx.AsyncClient], Awaitable[dict[str, Any]]],
     ) -> dict[str, Any]:
-        """Local-first: Redis → SQLite snapshot → official API."""
+        """Local-first: Redis → SQLite snapshot → official API.
+
+        Never cache / re-serve payloads that only contain upstream ``errors``
+        (free-plan season blocks, rate limits, etc.) — those must not poison
+        later syncs.
+        """
         cached = await self.cache.get(cache_key)
         if cached is not None and "payload" in cached:
-            self.cache.record_hit()
-            logger.info("Cache hit for %s (cached at %s)", cache_key, cached.get("_cached_at"))
-            return cached["payload"]
+            cached_payload = cached["payload"]
+            if _api_payload_unusable(cached_payload):
+                logger.warning(
+                    "Dropping unusable cached payload for %s: %s",
+                    cache_key,
+                    _api_payload_errors(cached_payload),
+                )
+                await self.cache.delete(cache_key)
+            else:
+                self.cache.record_hit()
+                logger.info(
+                    "Cache hit for %s (cached at %s)",
+                    cache_key,
+                    cached.get("_cached_at"),
+                )
+                return cached_payload
 
         if self.settings.LOCAL_FIRST and self.session is not None:
             async with self._db_lock:
                 store = SnapshotStore(self.session)
                 db_payload = await store.get_valid(cache_key)
             if db_payload is not None:
-                self.cache.record_hit()
-                await self.cache.set(cache_key, db_payload, ttl)
-                return db_payload
+                if _api_payload_unusable(db_payload):
+                    logger.warning(
+                        "Ignoring unusable snapshot for %s: %s",
+                        cache_key,
+                        _api_payload_errors(db_payload),
+                    )
+                else:
+                    self.cache.record_hit()
+                    await self.cache.set(cache_key, db_payload, ttl)
+                    return db_payload
 
         self.cache.record_miss()
         logger.info("Cache/DB miss for %s — calling official API", cache_key)
         payload = await self._run_with_retry(operation, fetch_callback)
+        if _api_payload_unusable(payload):
+            logger.warning(
+                "Not caching unusable API payload for %s: %s",
+                cache_key,
+                _api_payload_errors(payload),
+            )
+            return payload
+
         await self.cache.set(cache_key, payload, ttl)
 
         if self.session is not None:
@@ -317,6 +380,7 @@ class FootballFetcher:
             async with self._db_lock:
                 store = SnapshotStore(self.session)
                 await store.invalidate(cache_key)
+
     async def _get_league_season(self, league_id: int) -> str:
         assert self.session is not None
         league = await self.session.get(League, league_id)
@@ -339,11 +403,14 @@ class FootballFetcher:
         saved = 0
         for league_id in league_ids:
             try:
+                season = (
+                    self.settings.configured_season(league_id) or season_default
+                )
                 await self._upsert_league(
                     league_id,
                     id_to_name.get(league_id, f"League {league_id}"),
                     countries.get(league_id),
-                    season_default,
+                    season,
                 )
                 saved += 1
             except Exception as exc:
@@ -494,72 +561,431 @@ class FootballFetcher:
         self.cache.last_data_update = datetime.now()
         return saved
 
+    async def _resolve_league_season(self, league_id: int, hint_date: date | None = None) -> str:
+        """Prefer catalog season → DB league.season → calendar year of hint/today."""
+        configured = self.settings.configured_season(league_id)
+        if configured:
+            return configured
+        season = await self._get_league_season(league_id)
+        if season:
+            return season
+        return str((hint_date or date.today()).year)
+
+    async def _configured_league_items(
+        self,
+        league_ids: list[int] | None = None,
+    ) -> list[tuple[str, int]]:
+        """Menu catalog entries, optionally narrowed to an allow-list.
+
+        When ``league_ids`` is set, allow configured **or** reference-catalog IDs
+        (home filter extras). Default (None) stays configured-only.
+        """
+        name_by_id: dict[int, str] = {
+            lid: name for name, lid in self.settings.REFERENCE_LEAGUE_IDS.items()
+        }
+        name_by_id.update(
+            {lid: name for name, lid in self.settings.LEAGUE_IDS.items()}
+        )
+        if league_ids is None:
+            return list(self.settings.LEAGUE_IDS.items())
+        allow = {int(x) for x in league_ids}
+        fetchable = self.settings.fetchable_league_ids()
+        unknown = allow - fetchable
+        if unknown:
+            logger.warning(
+                "Ignoring league_ids not in configured/reference catalog: %s",
+                sorted(unknown),
+            )
+        selected = sorted(allow & fetchable)
+        return [(name_by_id.get(lid, f"League {lid}"), lid) for lid in selected]
+
+    async def discover_playing_leagues_for_date(
+        self,
+        day: date | None = None,
+        *,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """One worldwide ``fixtures?date=`` → unique leagues playing that day.
+
+        Cached under ``fixtures_day_leagues_cache_key`` so filter extras cost at
+        most ~1 request/day (plus free-plan pagination if any).
+        """
+        target = day or date.today()
+        date_str = target.isoformat()
+        summary_key = fixtures_day_leagues_cache_key(date_str)
+        if force:
+            await self.cache.delete(summary_key)
+
+        cached = await self.cache.get(summary_key)
+        if cached is not None and "payload" in cached and not force:
+            payload = cached["payload"]
+            if isinstance(payload, dict) and payload.get("league_ids") is not None:
+                self.cache.record_hit()
+                return payload
+
+        if self.settings.LOCAL_FIRST and self.session is not None and not force:
+            async with self._db_lock:
+                store = SnapshotStore(self.session)
+                db_payload = await store.get_valid(summary_key)
+            if isinstance(db_payload, dict) and db_payload.get("league_ids") is not None:
+                self.cache.record_hit()
+                await self.cache.set(summary_key, db_payload, TTL_FIXTURES_TODAY)
+                return db_payload
+
+        # Reuse worldwide day fixtures cache when present; else one API call.
+        day_key = fixtures_cache_key(date_str)
+        if force:
+            await self.cache.delete(day_key)
+        try:
+            raw = await self._get_or_fetch(
+                day_key,
+                TTL_FIXTURES_TODAY,
+                "discover_playing_leagues_for_date",
+                lambda client, d=date_str: self.provider.fetch_fixtures_payload(client, d),
+            )
+        except Exception as exc:
+            logger.warning("discover_playing_leagues_for_date %s failed: %s", date_str, exc)
+            return {
+                "date": date_str,
+                "league_ids": [],
+                "leagues": {},
+                "source": "error",
+                "error": str(exc),
+            }
+
+        if _api_payload_unusable(raw):
+            return {
+                "date": date_str,
+                "league_ids": [],
+                "leagues": {},
+                "source": "unavailable",
+                "error": str(_api_payload_errors(raw)),
+            }
+
+        counts: dict[int, int] = {}
+        meta: dict[int, dict[str, Any]] = {}
+        for fx in self.provider.parse_fixtures(raw):
+            try:
+                lid = int(fx["league_id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            counts[lid] = counts.get(lid, 0) + 1
+            if lid not in meta:
+                meta[lid] = {
+                    "league_id": lid,
+                    "league_name": str(fx.get("league_name") or ""),
+                    "country": fx.get("country"),
+                }
+
+        leagues_out = {
+            str(lid): {
+                **meta[lid],
+                "fixtures_count": counts[lid],
+            }
+            for lid in counts
+        }
+        summary: dict[str, Any] = {
+            "date": date_str,
+            "league_ids": sorted(counts.keys()),
+            "leagues": leagues_out,
+            "source": "api",
+        }
+        await self.cache.set(summary_key, summary, TTL_FIXTURES_TODAY)
+        if self.session is not None:
+            async with self._db_lock:
+                store = SnapshotStore(self.session)
+                await store.save(summary_key, summary, TTL_FIXTURES_TODAY)
+        return summary
+
+    async def _fetch_day_worldwide_filtered(
+        self,
+        day: date,
+        allowed: set[int],
+        *,
+        force: bool = False,
+        fetch_teams: bool = True,
+    ) -> int:
+        """Worldwide ``date=`` then keep only configured leagues.
+
+        Free plans often reject ``league+season`` for current seasons (e.g. WC
+        2026) but still allow a short rolling ``date=`` window.
+        """
+        date_str = day.isoformat()
+        cache_key = fixtures_cache_key(date_str)
+        if force:
+            await self.cache.delete(cache_key)
+            await self.invalidate_fixtures_day_cache(date_str)
+        try:
+            payload = await self._get_or_fetch(
+                cache_key,
+                TTL_FIXTURES_TODAY,
+                "fetch_fixtures_worldwide_day",
+                lambda client, d=date_str: self.provider.fetch_fixtures_payload(client, d),
+            )
+            if _api_payload_unusable(payload):
+                logger.warning(
+                    "Worldwide fixtures date=%s blocked: %s",
+                    date_str,
+                    _api_payload_errors(payload),
+                )
+                return 0
+            fixtures = self.provider.parse_fixtures(payload)
+            saved = await self._persist_fixtures(
+                fixtures,
+                allowed_league_ids=allowed,
+                fetch_teams=fetch_teams,
+            )
+            logger.info(
+                "Worldwide fallback date=%s allowed=%s saved=%s",
+                date_str,
+                sorted(allowed),
+                saved,
+            )
+            return saved
+        except Exception as exc:
+            logger.error(
+                "Worldwide fixtures date=%s failed: %s",
+                date_str,
+                exc,
+                exc_info=True,
+            )
+            return 0
+
     async def fetch_fixtures_for_date(
         self,
         target_date: date | str,
         *,
         force: bool = False,
+        league_ids: list[int] | None = None,
     ) -> int:
-        """Fetch and persist fixtures for one calendar day (configured leagues only)."""
+        """Fetch one calendar day for configured (or selected) left-menu leagues.
+
+        Prefers ``league + season + date``; falls back to worldwide ``date=``
+        when the free plan blocks current-season league queries (World Cup etc.).
+        """
         assert self.session is not None
-        date_str = (
-            target_date.isoformat() if isinstance(target_date, date) else str(target_date)
+        day = (
+            target_date
+            if isinstance(target_date, date)
+            else date.fromisoformat(str(target_date)[:10])
         )
-        allowed = set(self.settings.LEAGUE_IDS.values())
-        cache_key = fixtures_cache_key(date_str)
+        date_str = day.isoformat()
+        league_items = await self._configured_league_items(league_ids)
+        if not league_items:
+            logger.warning("No leagues to fetch for date %s", date_str)
+            return 0
+        allowed = {lid for _, lid in league_items}
+        # Bust legacy worldwide day cache used by older builds.
         if force:
             await self.invalidate_fixtures_day_cache(date_str)
-        payload = await self._get_or_fetch(
-            cache_key,
-            TTL_FIXTURES_TODAY,
-            "fetch_fixtures_for_date",
-            lambda client: self.provider.fetch_fixtures_payload(client, date_str),
-        )
-        fixtures = self.provider.parse_fixtures(payload)
-        saved = await self._persist_fixtures(fixtures, allowed_league_ids=allowed)
-        logger.info("Saved %s fixtures for %s (force=%s).", saved, date_str, force)
-        return saved
+
+        total = 0
+        blocked: list[tuple[str, int]] = []
+        for index, (league_name, league_id) in enumerate(league_items):
+            season = await self._resolve_league_season(league_id, day)
+            cache_key = fixtures_league_date_cache_key(league_id, date_str, season)
+            if force:
+                await self.cache.delete(cache_key)
+            try:
+                payload = await self._get_or_fetch(
+                    cache_key,
+                    TTL_FIXTURES_TODAY,
+                    "fetch_fixtures_for_date",
+                    lambda client, lid=league_id, s=season, d=date_str: (
+                        self.provider.fetch_fixtures_for_league(
+                            client,
+                            league_id=lid,
+                            season=s,
+                            date=d,
+                        )
+                    ),
+                )
+                if _api_payload_plan_or_season_blocked(payload):
+                    blocked.append((league_name, league_id))
+                    logger.warning(
+                        "League day query blocked date=%s league=%s(%s): %s",
+                        date_str,
+                        league_name,
+                        league_id,
+                        _api_payload_errors(payload),
+                    )
+                    continue
+                fixtures = self.provider.parse_fixtures(payload)
+                saved = await self._persist_fixtures(
+                    fixtures,
+                    allowed_league_ids=allowed,
+                    fetch_teams=(index == 0 and not blocked),
+                )
+                total += saved
+                logger.info(
+                    "Saved %s fixtures for %s league=%s(%s) season=%s force=%s",
+                    saved,
+                    date_str,
+                    league_name,
+                    league_id,
+                    season,
+                    force,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Fixtures day=%s league=%s(%s) failed: %s",
+                    date_str,
+                    league_name,
+                    league_id,
+                    exc,
+                    exc_info=True,
+                )
+            if index + 1 < len(league_items):
+                await asyncio.sleep(0.35)
+
+        if blocked:
+            total += await self._fetch_day_worldwide_filtered(
+                day,
+                {lid for _, lid in blocked},
+                force=force,
+                fetch_teams=total == 0,
+            )
+
+        logger.info("Saved %s fixtures total for %s (force=%s).", total, date_str, force)
+        return total
 
     async def fetch_today_fixtures(self, *, force: bool = False) -> int:
         return await self.fetch_fixtures_for_date(date.today(), force=force)
+
+    async def fetch_fixtures_window(
+        self,
+        start: date,
+        end: date,
+        *,
+        force: bool = False,
+        league_ids: list[int] | None = None,
+    ) -> int:
+        """Fetch ``[start, end]`` once per selected/configured league (``from``/``to``).
+
+        Leagues blocked by free-plan season limits fall back to per-day worldwide
+        ``date=`` filtered to those league IDs (within the provider's date window).
+        """
+        assert self.session is not None
+        if end < start:
+            start, end = end, start
+        date_from = start.isoformat()
+        date_to = end.isoformat()
+        league_items = await self._configured_league_items(league_ids)
+        if not league_items:
+            logger.warning("No leagues to fetch for window %s..%s", date_from, date_to)
+            return 0
+        allowed = {lid for _, lid in league_items}
+        total = 0
+        blocked_ids: set[int] = set()
+
+        for index, (league_name, league_id) in enumerate(league_items):
+            season = await self._resolve_league_season(league_id, start)
+            cache_key = fixtures_league_range_cache_key(
+                league_id, season, date_from, date_to
+            )
+            if force:
+                await self.cache.delete(cache_key)
+                cursor = start
+                while cursor <= end:
+                    await self.cache.delete(
+                        fixtures_league_date_cache_key(league_id, cursor.isoformat(), season)
+                    )
+                    await self.invalidate_fixtures_day_cache(cursor.isoformat())
+                    cursor += timedelta(days=1)
+            try:
+                payload = await self._get_or_fetch(
+                    cache_key,
+                    TTL_FIXTURES_TODAY,
+                    "fetch_fixtures_window",
+                    lambda client, lid=league_id, s=season: (
+                        self.provider.fetch_fixtures_for_league(
+                            client,
+                            league_id=lid,
+                            season=s,
+                            date_from=date_from,
+                            date_to=date_to,
+                        )
+                    ),
+                )
+                if _api_payload_plan_or_season_blocked(payload):
+                    blocked_ids.add(league_id)
+                    logger.warning(
+                        "League window query blocked %s..%s league=%s(%s): %s",
+                        date_from,
+                        date_to,
+                        league_name,
+                        league_id,
+                        _api_payload_errors(payload),
+                    )
+                    continue
+                fixtures = self.provider.parse_fixtures(payload)
+                saved = await self._persist_fixtures(
+                    fixtures,
+                    allowed_league_ids=allowed,
+                    fetch_teams=(index == 0 and not blocked_ids),
+                )
+                total += saved
+                logger.info(
+                    "Window %s..%s league=%s(%s) season=%s saved=%s force=%s",
+                    date_from,
+                    date_to,
+                    league_name,
+                    league_id,
+                    season,
+                    saved,
+                    force,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Window fixtures league=%s(%s) failed: %s",
+                    league_name,
+                    league_id,
+                    exc,
+                    exc_info=True,
+                )
+            if index + 1 < len(league_items):
+                await asyncio.sleep(0.45)
+
+        if blocked_ids:
+            cursor = start
+            first = True
+            while cursor <= end:
+                total += await self._fetch_day_worldwide_filtered(
+                    cursor,
+                    blocked_ids,
+                    force=force,
+                    fetch_teams=first and total == 0,
+                )
+                first = False
+                cursor += timedelta(days=1)
+                if cursor <= end:
+                    await asyncio.sleep(0.35)
+
+        logger.info(
+            "Saved %s fixtures across leagues for %s..%s (blocked_fallback=%s, force=%s).",
+            total,
+            date_from,
+            date_to,
+            sorted(blocked_ids),
+            force,
+        )
+        return total
 
     async def fetch_upcoming_fixtures(
         self,
         days: int | None = None,
         *,
         force: bool = False,
+        league_ids: list[int] | None = None,
     ) -> int:
-        """Fetch fixtures for today and the next (days-1) days. Uses 1 API call per day."""
+        """Fetch fixtures for today and the next (days-1) days via per-league ranges."""
         window = days if days is not None else self.settings.FIXTURES_LOOKAHEAD_DAYS
         window = max(1, min(window, 60))
-        total = 0
         start = date.today()
-        for offset in range(window):
-            day = start + timedelta(days=offset)
-            try:
-                # Avoid re-fetching teams for every day in the window.
-                date_str = day.isoformat()
-                allowed = set(self.settings.LEAGUE_IDS.values())
-                cache_key = fixtures_cache_key(date_str)
-                if force:
-                    await self.invalidate_fixtures_day_cache(date_str)
-                payload = await self._get_or_fetch(
-                    cache_key,
-                    TTL_FIXTURES_TODAY,
-                    "fetch_upcoming_fixtures",
-                    lambda client, d=date_str: self.provider.fetch_fixtures_payload(client, d),
-                )
-                fixtures = self.provider.parse_fixtures(payload)
-                saved = await self._persist_fixtures(
-                    fixtures,
-                    allowed_league_ids=allowed,
-                    fetch_teams=(offset == 0),
-                )
-                total += saved
-            except Exception as exc:
-                logger.error("Failed to fetch fixtures for %s: %s", day, exc, exc_info=True)
-        logger.info("Saved %s fixtures across %s day(s) (force=%s).", total, window, force)
-        return total
+        end = start + timedelta(days=window - 1)
+        return await self.fetch_fixtures_window(
+            start, end, force=force, league_ids=league_ids
+        )
 
     async def capture_finished_results(self, lookback_days: int = 3) -> int:
         """
@@ -650,7 +1076,10 @@ class FootballFetcher:
         last: int = 5,
     ) -> dict[str, Any]:
         cache_key = headtohead_cache_key(
-            home_team_id, away_team_id, last, window="free-2022-2024-v3"
+            home_team_id,
+            away_team_id,
+            last,
+            window=self.settings.history_source_tag,
         )
         return await self._get_or_fetch(
             cache_key,
@@ -689,7 +1118,9 @@ class FootballFetcher:
         )
 
     async def fetch_team_form_payload(self, team_id: int, last: int = 5) -> dict[str, Any]:
-        cache_key = team_form_cache_key(team_id, last, season="free-2022-2024-v3")
+        cache_key = team_form_cache_key(
+            team_id, last, season=self.settings.history_source_tag
+        )
         return await self._get_or_fetch(
             cache_key,
             TTL_TEAM_FORM,
@@ -706,25 +1137,120 @@ class FootballFetcher:
             lambda client: self.provider.fetch_odds_payload(client, fixture_id),
         )
 
-    async def sync_odds_for_dates(self, days: list[date]) -> int:
-        """Fill pre-match odds for tracked fixtures in the given date window.
+    async def _upsert_odds_and_recompute(
+        self,
+        fixture_id: int,
+        parsed: dict[str, Any],
+        raw: dict[str, Any],
+    ) -> None:
+        """Write latest board, recompute 1X2 from local package + new odds, bust analysis cache."""
+        from sqlalchemy import select
+
+        from app.models.pre_match_data import PreMatchData
+        from app.services.cache import analysis_cache_key
+        from app.services.ml_predictor import persist_match_features, predict_probabilities
+        from app.services.prediction import build_prediction_snapshot, implied_probs_from_odds
+        from app.services.prematch_package import dumps_json, loads_json, rehydrate_odds_markets
+
+        assert self.session is not None
+        odds_text = dumps_json(parsed)
+        odds_pkg = rehydrate_odds_markets(parsed)
+
+        async with self._db_lock:
+            row = (
+                await self.session.execute(
+                    select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
+                )
+            ).scalar_one_or_none()
+
+            package: dict[str, Any] = {
+                "odds": odds_pkg,
+                "home_form": loads_json(getattr(row, "home_form_json", None), {}) or {},
+                "away_form": loads_json(getattr(row, "away_form_json", None), {}) or {},
+                "head_to_head": loads_json(getattr(row, "h2h_json", None), {}) or {},
+                "standings": loads_json(getattr(row, "standings_json", None), {}) or {},
+                "injuries": loads_json(getattr(row, "injuries_json", None), {}) or {},
+                "lineups": loads_json(getattr(row, "lineups_json", None), {}) or {},
+            }
+            pred = predict_probabilities(package)
+            probs = pred.probs
+            # Brand-new / never-analyzed rows: odds-implied is fine until form package exists.
+            if pred.source == "form_fallback":
+                implied = implied_probs_from_odds(parsed)
+                if implied:
+                    probs = implied
+
+            snap = build_prediction_snapshot(probs, odds_pkg, features=pred.features)
+
+            if row is None:
+                row = PreMatchData(
+                    fixture_id=fixture_id,
+                    odds_json=odds_text,
+                    home_win_prob=probs["home"],
+                    draw_prob=probs["draw"],
+                    away_win_prob=probs["away"],
+                    recommendation=snap.get("recommendation"),
+                    score_hint=snap.get("score_hint"),
+                    goal_lean=snap.get("goal_lean"),
+                    both_score_lean=snap.get("both_score_lean"),
+                    handicap_lean=snap.get("handicap_lean"),
+                )
+                self.session.add(row)
+            else:
+                row.odds_json = odds_text
+                row.home_win_prob = probs["home"]
+                row.draw_prob = probs["draw"]
+                row.away_win_prob = probs["away"]
+                row.recommendation = snap.get("recommendation")
+                row.score_hint = snap.get("score_hint")
+                row.goal_lean = snap.get("goal_lean")
+                row.both_score_lean = snap.get("both_score_lean")
+                row.handicap_lean = snap.get("handicap_lean")
+
+            await persist_match_features(
+                self.session,
+                fixture_id,
+                pred.features,
+                probs,
+                source=pred.source,
+            )
+            # Ensure TTL freshness sees this write (SQLite onupdate can be flaky).
+            row.updated_at = datetime.now(timezone.utc)
+            await self.session.commit()
+
+        await self.cache.delete(analysis_cache_key(fixture_id))
+        await self.cache.set(odds_cache_key(fixture_id), raw, TTL_HEADTOHEAD)
+
+    async def sync_odds_for_dates(
+        self,
+        days: list[date],
+        *,
+        refresh_existing: bool = False,
+        budget: int = 40,
+        league_ids: list[int] | None = None,
+    ) -> int:
+        """Sync pre-match odds for tracked pending fixtures in the date window.
 
         Free-plan constraints (API-Sports):
         - ``/odds?league=&season=`` blocked for current seasons (2025/2026).
-        - ``/odds?date=`` only first 3 worldwide pages + short date window → misses
-          our leagues and burns quota into 429.
+        - ``/odds?date=`` only first 3 worldwide pages → misses our leagues.
         - ``/odds?fixture=`` works for open boards.
 
-        Therefore we **only** gap-fill missing odds for local pending/live fixtures.
+        Default (scheduler / background): **gap-fill** missing boards only.
+        Force sync (``refresh_existing=True``): also re-pull boards that already
+        exist so afternoon line moves update local odds **and** recompute 1X2.
+        Missing fixtures are always prioritized within ``budget``.
         """
         from sqlalchemy import select
 
         from app.models.pre_match_data import PreMatchData
-        from app.services.prematch_package import dumps_json, loads_json, parse_odds_payload
+        from app.services.prematch_package import loads_json, parse_odds_payload
 
         assert self.session is not None
-        allowed = set(self.settings.LEAGUE_IDS.values())
-        if not days:
+        allowed = self.settings.fetchable_league_ids()
+        if league_ids is not None:
+            allowed &= {int(x) for x in league_ids}
+        if not days or not allowed:
             return 0
 
         start = datetime.combine(min(days), datetime.min.time())
@@ -736,10 +1262,12 @@ class FootballFetcher:
                 Fixture.date >= start,
                 Fixture.date <= end,
                 Fixture.league_id.in_(list(allowed)),
-                Fixture.status.in_(["pending", "live"]),
+                # Pre-match only — do not chase live boards.
+                Fixture.status == "pending",
             )
         )
         fixtures = list(result.scalars().all())
+        fixtures.sort(key=lambda fx: fx.date)
         odds_rows = (
             await self.session.execute(
                 select(PreMatchData).where(
@@ -748,70 +1276,51 @@ class FootballFetcher:
             )
         ).scalars().all()
         odds_by_fid = {row.fixture_id: row for row in odds_rows}
+
         missing: list[int] = []
+        refreshable: list[int] = []
         for fx in fixtures:
             stored = odds_by_fid.get(fx.id)
             odds = loads_json(getattr(stored, "odds_json", None), {}) or {}
             if not odds.get("available"):
                 missing.append(fx.id)
+            elif refresh_existing:
+                refreshable.append(fx.id)
+
+        queue = missing + (refreshable if refresh_existing else [])
+        take = min(len(queue), max(1, budget))
 
         logger.info(
-            "Odds gap-fill: %s/%s active fixtures missing odds in window",
+            "Odds sync: missing=%s refreshable=%s take=%s/%s pending (refresh_existing=%s)",
             len(missing),
+            len(refreshable),
+            take,
             len(fixtures),
+            refresh_existing,
         )
 
-        budget = min(len(missing), 40)
-        for index, fixture_id in enumerate(missing[:budget]):
+        for index, fixture_id in enumerate(queue[:take]):
             try:
+                # Bust Redis odds cache so force refresh never serves a stale board.
+                await self.cache.delete(odds_cache_key(fixture_id))
                 raw = await self._fetch_odds_with_rate_limit(fixture_id)
                 parsed = parse_odds_payload(raw)
                 if not parsed.get("available"):
                     logger.info("No official odds yet for fixture %s", fixture_id)
                     await asyncio.sleep(1.2)
                     continue
-                async with self._db_lock:
-                    row = (
-                        await self.session.execute(
-                            select(PreMatchData).where(
-                                PreMatchData.fixture_id == fixture_id
-                            )
-                        )
-                    ).scalar_one_or_none()
-                    odds_text = dumps_json(parsed)
-                    # Seed 1X2 from odds when form analysis never ran (local only).
-                    from app.services.prediction import implied_probs_from_odds
-
-                    implied = implied_probs_from_odds(parsed)
-                    if row is None:
-                        row = PreMatchData(fixture_id=fixture_id, odds_json=odds_text)
-                        if implied:
-                            row.home_win_prob = implied["home"]
-                            row.draw_prob = implied["draw"]
-                            row.away_win_prob = implied["away"]
-                        self.session.add(row)
-                    else:
-                        row.odds_json = odds_text
-                        if implied and None in (
-                            row.home_win_prob,
-                            row.draw_prob,
-                            row.away_win_prob,
-                        ):
-                            row.home_win_prob = implied["home"]
-                            row.draw_prob = implied["draw"]
-                            row.away_win_prob = implied["away"]
-                    await self.session.commit()
+                await self._upsert_odds_and_recompute(fixture_id, parsed, raw)
                 updated += 1
-                await self.cache.set(odds_cache_key(fixture_id), raw, TTL_HEADTOHEAD)
             except Exception as exc:
                 logger.warning("Fixture odds %s failed: %s", fixture_id, exc)
-            if index + 1 < budget:
+            if index + 1 < take:
                 await asyncio.sleep(2.0)
 
         logger.info(
-            "Odds sync done: upserted=%s missing_were=%s (window %s..%s)",
+            "Odds sync done: upserted=%s missing=%s refreshed_candidates=%s (window %s..%s)",
             updated,
             len(missing),
+            len(refreshable),
             min(days),
             max(days),
         )

@@ -1,19 +1,50 @@
+from __future__ import annotations
+
+import json
+import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from dotenv import load_dotenv
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ApiProvider = Literal["api_football186", "api_football", "live_football_data"]
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+LEAGUES_CATALOG_PATH = BACKEND_ROOT / "config" / "leagues.json"
+LEAGUES_REFERENCE_PATH = BACKEND_ROOT / "config" / "leagues.example.json"
+
+logger = logging.getLogger(__name__)
 
 
 def load_local_env() -> None:
     """Load non-secret .env first, then local secrets (secrets override)."""
     load_dotenv(BACKEND_ROOT / ".env", override=False)
     load_dotenv(BACKEND_ROOT / "secrets.local.env", override=True)
+
+
+def _parse_league_catalog(raw: list[Any]) -> tuple[dict[str, int], dict[int, str], dict[int, str]]:
+    ids: dict[str, int] = {}
+    countries: dict[int, str] = {}
+    seasons: dict[int, str] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        league_id = item.get("id")
+        if not name or league_id is None:
+            continue
+        lid = int(league_id)
+        ids[name] = lid
+        country = item.get("country")
+        if country:
+            countries[lid] = str(country)
+        season = item.get("season")
+        if season is not None and str(season).strip():
+            seasons[lid] = str(season).strip()
+    return ids, countries, seasons
 
 
 class Settings(BaseSettings):
@@ -60,13 +91,21 @@ class Settings(BaseSettings):
     LOG_DIR: str = "logs"
     # Prefer local DB / cache before calling API-Sports (saves quota).
     LOCAL_FIRST: bool = True
+    # History window for H2H / team form:
+    # - full: paid plan — no artificial 2022–2024 cap (h2h all history; form via last=)
+    # - free: API-Sports free tier season/date limits
+    API_HISTORY_MODE: Literal["full", "free"] = "full"
     # Optional override for analysis refresh TTL (seconds). Empty/0 = kickoff-based policy.
     ANALYSIS_REFRESH_TTL_SECONDS: int = 0
     # ML: accumulate local labels from now; auto-train & switch when enough samples.
     ML_MIN_TRAIN_SAMPLES: int = 30
     ML_AUTO_TRAIN: bool = True
 
-    # Display name (中文) → API-Sports league id. Menu order follows this dict.
+    # Optional JSON array override (same shape as config/leagues.json). Highest priority.
+    LEAGUES_JSON: str = ""
+
+    # Built-in fallback when no catalog file / LEAGUES_JSON is present.
+    # Prefer editing backend/config/leagues.json — left menu + fixture sync both use it.
     LEAGUE_IDS: dict[str, int] = {
         "英超": 39,
         "西甲": 140,
@@ -84,7 +123,6 @@ class Settings(BaseSettings):
         "日职联": 98,
         "韩K联": 292,
     }
-    # Fallback country labels when API enrich is unavailable.
     LEAGUE_COUNTRIES: dict[int, str] = {
         39: "England",
         140: "Spain",
@@ -102,8 +140,96 @@ class Settings(BaseSettings):
         98: "Japan",
         292: "South Korea",
     }
+    # Optional per-league season override (catalog ``season`` field / env).
+    LEAGUE_SEASONS: dict[int, str] = {}
+    # Reference catalog (leagues.example.json): filter extras / expanded sync allow-list.
+    REFERENCE_LEAGUE_IDS: dict[str, int] = {}
+    REFERENCE_LEAGUE_COUNTRIES: dict[int, str] = {}
+    REFERENCE_LEAGUE_SEASONS: dict[int, str] = {}
     # Default window (days, including today) used by leagues summary / upcoming fetch.
     FIXTURES_LOOKAHEAD_DAYS: int = 7
+
+    @model_validator(mode="after")
+    def apply_league_catalog(self) -> Settings:
+        raw: list[Any] | None = None
+        source = ""
+        text = (self.LEAGUES_JSON or "").strip()
+        if text:
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    raw = parsed
+                    source = "LEAGUES_JSON"
+            except json.JSONDecodeError as exc:
+                logger.warning("LEAGUES_JSON invalid, ignoring: %s", exc)
+        if raw is None and LEAGUES_CATALOG_PATH.is_file():
+            try:
+                parsed = json.loads(LEAGUES_CATALOG_PATH.read_text(encoding="utf-8"))
+                if isinstance(parsed, list):
+                    raw = parsed
+                    source = str(LEAGUES_CATALOG_PATH)
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Failed to load %s: %s", LEAGUES_CATALOG_PATH, exc)
+
+        if raw is not None:
+            ids, countries, seasons = _parse_league_catalog(raw)
+            if ids:
+                self.LEAGUE_IDS = ids
+                merged_countries = dict(self.LEAGUE_COUNTRIES)
+                merged_countries.update(countries)
+                self.LEAGUE_COUNTRIES = {
+                    lid: merged_countries[lid]
+                    for lid in ids.values()
+                    if lid in merged_countries
+                }
+                merged_seasons = dict(self.LEAGUE_SEASONS)
+                merged_seasons.update(seasons)
+                self.LEAGUE_SEASONS = {
+                    lid: merged_seasons[lid] for lid in ids.values() if lid in merged_seasons
+                }
+                logger.info("Loaded %s leagues from %s", len(ids), source)
+            else:
+                logger.warning(
+                    "League catalog %s produced no leagues; keeping defaults", source
+                )
+
+        self._load_reference_catalog()
+        return self
+
+    def _load_reference_catalog(self) -> None:
+        """Load leagues.example.json as expanded allow-list for filter extras."""
+        if not LEAGUES_REFERENCE_PATH.is_file():
+            return
+        try:
+            parsed = json.loads(LEAGUES_REFERENCE_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Failed to load reference catalog %s: %s", LEAGUES_REFERENCE_PATH, exc
+            )
+            return
+        if not isinstance(parsed, list):
+            return
+        ids, countries, seasons = _parse_league_catalog(parsed)
+        if not ids:
+            return
+        self.REFERENCE_LEAGUE_IDS = ids
+        self.REFERENCE_LEAGUE_COUNTRIES = countries
+        self.REFERENCE_LEAGUE_SEASONS = seasons
+        logger.info(
+            "Loaded %s reference leagues from %s",
+            len(ids),
+            LEAGUES_REFERENCE_PATH,
+        )
+
+    def fetchable_league_ids(self) -> set[int]:
+        """Configured + reference — IDs allowed for sync / local fixture reads."""
+        return set(self.LEAGUE_IDS.values()) | set(self.REFERENCE_LEAGUE_IDS.values())
+
+    def reference_display_name(self, league_id: int, fallback: str = "") -> str:
+        for name, lid in self.REFERENCE_LEAGUE_IDS.items():
+            if lid == league_id:
+                return name
+        return self.league_display_name(league_id, fallback)
 
     @property
     def api_host(self) -> str:
@@ -121,9 +247,26 @@ class Settings(BaseSettings):
     def league_display_name(self, league_id: int, fallback: str = "") -> str:
         return self.league_display_names.get(league_id) or fallback or f"League {league_id}"
 
+    def configured_season(self, league_id: int, fallback: str | None = None) -> str | None:
+        """Season hint from catalog; None → caller may use DB / calendar year."""
+        if league_id in self.LEAGUE_SEASONS:
+            return self.LEAGUE_SEASONS[league_id]
+        if league_id in self.REFERENCE_LEAGUE_SEASONS:
+            return self.REFERENCE_LEAGUE_SEASONS[league_id]
+        return fallback
+
     @property
     def uses_api_sports_direct(self) -> bool:
         return bool(self.API_SPORTS_KEY.strip())
+
+    @property
+    def uses_full_history(self) -> bool:
+        return self.API_HISTORY_MODE == "full"
+
+    @property
+    def history_source_tag(self) -> str:
+        """Bump when fetch strategy changes so stale package rows refresh."""
+        return "full-history-v1" if self.uses_full_history else "free-2022-2024-v3"
 
     @property
     def football_api_key(self) -> str:
