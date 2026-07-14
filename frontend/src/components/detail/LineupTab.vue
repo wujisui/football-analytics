@@ -2,19 +2,14 @@
 import { computed } from 'vue'
 
 import type { FixtureResponse, LineupPlayer, PrematchPackage } from '@/api/types'
-import { teamNameZh } from '@/utils/teamNames'
 
 const props = defineProps<{
   fixture: FixtureResponse
   pkg: PrematchPackage | null
 }>()
 
-const homeName = computed(() =>
-  teamNameZh(props.fixture.home_team_name, props.fixture.home_team_id),
-)
-const awayName = computed(() =>
-  teamNameZh(props.fixture.away_team_name, props.fixture.away_team_id),
-)
+const homeName = computed(() => props.fixture.home_team_name || '—')
+const awayName = computed(() => props.fixture.away_team_name || '—')
 
 function playerLabel(p: LineupPlayer): string {
   const num = p.number != null ? `${p.number}. ` : ''

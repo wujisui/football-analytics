@@ -33,6 +33,7 @@ const {
   homeWindowStartDate,
   todayDate,
   allFixtures,
+  windowLabel,
   loading,
   error,
   loadHomeFixtures,
@@ -242,8 +243,12 @@ async function runSync(leagueIds: number[], opts?: { days?: number; date?: strin
       leagueIds,
     })
     if (applySyncResult(result)) return false
-    message.success(`已同步 ${leagueIds.length} 个联赛，${cooldownLeft.value} 秒后可再次刷新`)
+    message.success(result.message || `已同步 ${leagueIds.length} 个联赛`)
     await Promise.all([loadFilterOptions({ discover: true }), loadAll(true)])
+    // Odds finish in a backend follow-up; refresh list once they have time to land.
+    window.setTimeout(() => {
+      void loadAll(true)
+    }, 12_000)
     return true
   } catch (err) {
     message.error(err instanceof Error ? err.message : '同步失败')
@@ -349,7 +354,13 @@ onActivated(() => {
 </script>
 
 <template>
-  <n-layout :has-sider="!isPhone" class="home-layout" position="absolute">
+  <!-- Lock page height like Results: toolbar stays put; only the list scrolls. -->
+  <n-layout
+    :has-sider="!isPhone"
+    class="home-layout"
+    position="absolute"
+    content-style="height: 100%;"
+  >
     <n-layout-sider
       v-if="!isPhone"
       v-model:collapsed="siderCollapsed"
@@ -385,7 +396,8 @@ onActivated(() => {
 
     <n-layout
       class="home-main"
-      content-style="display: flex; flex-direction: column; height: 100%;"
+      style="height: 100%; flex: 1; min-height: 0; min-width: 0;"
+      content-style="display: flex; flex-direction: column; height: 100%; overflow: hidden;"
     >
       <n-layout-header bordered class="home-toolbar" style="flex-shrink: 0;">
         <div class="toolbar-top">
@@ -429,7 +441,8 @@ onActivated(() => {
 
         <n-page-header :title="listTitle" class="page-header">
           <template #subtitle>
-            未完赛 {{ displayedFixtures.length }} 场
+            <span v-if="windowLabel" class="window-meta">{{ windowLabel }}</span>
+            <span class="window-meta">未完赛 {{ displayedFixtures.length }} 场</span>
           </template>
           <template #extra>
             <n-date-picker
@@ -450,7 +463,9 @@ onActivated(() => {
         :native-scrollbar="false"
         :scrollbar-props="{ trigger: 'hover' }"
         :content-style="
-          isPhone ? 'padding: 12px 12px 20px;' : 'padding: 16px 20px 24px;'
+          isPhone
+            ? 'padding: 12px 12px 20px; box-sizing: border-box;'
+            : 'padding: 16px 20px 24px; box-sizing: border-box;'
         "
         style="flex: 1; min-height: 0;"
       >
@@ -506,12 +521,15 @@ onActivated(() => {
 <style scoped>
 .home-layout {
   inset: 0;
+  height: 100%;
+  overflow: hidden;
   background: var(--fa-bg);
 }
 
 .home-main {
   background: var(--fa-bg);
   min-width: 0;
+  overflow: hidden;
 }
 
 .home-toolbar {
@@ -519,6 +537,8 @@ onActivated(() => {
   padding: 10px 12px 8px;
   background: var(--fa-bg-elevated);
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .toolbar-top {
@@ -546,6 +566,11 @@ onActivated(() => {
 
 .page-header {
   margin-top: 6px;
+}
+
+.window-meta + .window-meta::before {
+  content: ' · ';
+  color: var(--fa-text-faint);
 }
 
 .home-content {

@@ -226,7 +226,6 @@ frontend/src/
 ├── utils/
 │   ├── format.ts
 │   ├── leagueNames.ts
-│   ├── teamNames.ts
 │   └── opinionAdjust.ts
 ├── views/
 │   ├── Home.vue

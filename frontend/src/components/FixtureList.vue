@@ -62,13 +62,16 @@ const dayGroups = computed((): DayGroup[] => {
         :key="group.key"
         class="day-section"
       >
-        <n-divider title-placement="left" class="day-divider">
-          {{ group.label }}
-          <n-text depth="3" class="day-count">
-            · {{ group.fixtures.length }} 场
+        <n-flex class="section-band" justify="space-between" align="center" :size="12">
+          <n-flex align="center" :size="8">
+            <span class="title-bar" aria-hidden="true" />
+            <n-text strong style="font-size: 15px">{{ group.label }}</n-text>
+          </n-flex>
+          <n-text depth="3" style="font-size: 13px; white-space: nowrap">
+            {{ group.fixtures.length }} 场
           </n-text>
-        </n-divider>
-        <n-space vertical :size="14">
+        </n-flex>
+        <n-space vertical :size="14" class="day-cards">
           <FixtureCard
             v-for="fixture in group.fixtures"
             :key="fixture.fixture_id"
@@ -84,17 +87,31 @@ const dayGroups = computed((): DayGroup[] => {
 .fixture-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 16px;
 }
 
-.day-divider {
-  margin-top: 4px;
-  margin-bottom: 12px;
+.day-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.day-count {
-  font-weight: 400;
-  margin-left: 2px;
+.section-band {
+  padding: 10px 12px;
+  background: var(--fa-bg-soft);
+  border-radius: 6px;
+}
+
+.title-bar {
+  width: 3px;
+  height: 14px;
+  border-radius: 1px;
+  background: #c23b3b;
+  flex-shrink: 0;
+}
+
+.day-cards {
+  width: 100%;
 }
 
 .empty {

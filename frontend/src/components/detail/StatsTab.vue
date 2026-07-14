@@ -4,7 +4,6 @@ import { computed } from 'vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import type { FixtureResponse, FormMatch, FormPackage, PrematchPackage } from '@/api/types'
 import { toPercent } from '@/utils/format'
-import { teamNameZh } from '@/utils/teamNames'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -23,7 +22,7 @@ function winRate(form: FormPackage | undefined): number | null {
 }
 
 function teamGoalAvgs(
-  teamName: string,
+  teamId: number,
   matches: FormMatch[],
 ): { scored: number | null; conceded: number | null } {
   let scored = 0
@@ -32,13 +31,11 @@ function teamGoalAvgs(
   for (const m of matches) {
     const g = parseGoals(m.score)
     if (!g) continue
-    const home = m.home.trim()
-    const away = m.away.trim()
-    if (home === teamName || home.includes(teamName) || teamName.includes(home)) {
+    if (m.home_id != null && Number(m.home_id) === teamId) {
       scored += g[0]
       conceded += g[1]
       n += 1
-    } else if (away === teamName || away.includes(teamName) || teamName.includes(away)) {
+    } else if (m.away_id != null && Number(m.away_id) === teamId) {
       scored += g[1]
       conceded += g[0]
       n += 1
@@ -55,10 +52,10 @@ const homeWinRate = computed(() => winRate(props.pkg?.home_form))
 const awayWinRate = computed(() => winRate(props.pkg?.away_form))
 
 const homeGoals = computed(() =>
-  teamGoalAvgs(props.fixture.home_team_name, props.pkg?.home_form.matches ?? []),
+  teamGoalAvgs(props.fixture.home_team_id, props.pkg?.home_form.matches ?? []),
 )
 const awayGoals = computed(() =>
-  teamGoalAvgs(props.fixture.away_team_name, props.pkg?.away_form.matches ?? []),
+  teamGoalAvgs(props.fixture.away_team_id, props.pkg?.away_form.matches ?? []),
 )
 
 const hasAny = computed(
@@ -85,7 +82,7 @@ function pctLabel(n: number | null): string {
     <template v-if="hasAny">
       <n-grid :cols="statsCols" :x-gap="14" :y-gap="14">
         <n-gi>
-          <n-card size="small" :title="teamNameZh(fixture.home_team_name, fixture.home_team_id)">
+          <n-card size="small" :title="fixture.home_team_name || '—'">
             <n-space vertical :size="14">
               <div>
                 <n-statistic label="近况胜率" :value="pctLabel(homeWinRate)" />
@@ -104,7 +101,7 @@ function pctLabel(n: number | null): string {
           </n-card>
         </n-gi>
         <n-gi>
-          <n-card size="small" :title="teamNameZh(fixture.away_team_name, fixture.away_team_id)">
+          <n-card size="small" :title="fixture.away_team_name || '—'">
             <n-space vertical :size="14">
               <div>
                 <n-statistic label="近况胜率" :value="pctLabel(awayWinRate)" />

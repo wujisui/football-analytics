@@ -5,7 +5,6 @@ import type { DataTableColumns } from 'naive-ui'
 import type { FormMatch } from '@/api/types'
 import { formatDateYyMmDd, resultToZh } from '@/utils/format'
 import { leagueNameZh } from '@/utils/leagueNames'
-import { teamNameZh } from '@/utils/teamNames'
 
 const props = withDefaults(
   defineProps<{
@@ -89,7 +88,7 @@ const columns = computed<DataTableColumns<FormMatch>>(() => [
         h(
           'span',
           { class: ['team-name', 'home', teamTone(row, 'home')] },
-          teamNameZh(row.home, row.home_id ?? undefined),
+          row.home || '—',
         ),
         h('span', { class: 'score-block' }, [
           h('span', { class: 'score-ft' }, row.score),
@@ -100,7 +99,7 @@ const columns = computed<DataTableColumns<FormMatch>>(() => [
         h(
           'span',
           { class: ['team-name', 'away', teamTone(row, 'away')] },
-          teamNameZh(row.away, row.away_id ?? undefined),
+          row.away || '—',
         ),
       ])
     },

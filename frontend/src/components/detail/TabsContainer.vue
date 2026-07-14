@@ -12,7 +12,8 @@ import type { FixtureResponse, PrematchPackage } from '@/api/types'
 type TabKey = 'record' | 'stats' | 'lineup' | 'briefing' | 'prediction'
 
 const props = defineProps<{
-  fixture: FixtureResponse
+  /** Null while deep-link cold load — tab chrome still renders. */
+  fixture: FixtureResponse | null
   pkg: PrematchPackage | null
   loading?: boolean
   error?: string
@@ -44,6 +45,11 @@ const tabItems = computed(() =>
   })),
 )
 
+/** Full /analysis settled — preview fixture alone is not enough for tab bodies. */
+const ready = computed(
+  () => !!props.fixture && !props.loading && !props.error,
+)
+
 function onTabChange(name: string) {
   const key = name as TabKey
   activeTab.value = key
@@ -53,7 +59,7 @@ function onTabChange(name: string) {
 }
 
 watch(
-  () => props.fixture.fixture_id,
+  () => props.fixture?.fixture_id,
   () => {
     activeTab.value = 'record'
     visited.value = new Set(['record'])
@@ -78,14 +84,25 @@ watch(
         display-directive="show:lazy"
       >
         <div class="pane">
-          <n-spin :show="!!loading">
+          <n-spin :show="!!loading && !error">
             <n-scrollbar class="pane-scroll" trigger="hover">
               <div class="pane-body">
                 <n-alert v-if="error" type="error" :title="error">
                   <n-button size="small" type="primary" @click="$emit('retry')">重试</n-button>
                 </n-alert>
 
-                <template v-else-if="visited.has(tab.name)">
+                <div v-else-if="!ready" class="pane-skel" aria-busy="true">
+                  <n-skeleton text :repeat="3" />
+                  <n-skeleton
+                    height="120px"
+                    width="100%"
+                    style="margin-top: 12px"
+                    :sharp="false"
+                  />
+                  <n-skeleton text :repeat="2" style="margin-top: 12px" />
+                </div>
+
+                <template v-else-if="fixture && visited.has(tab.name)">
                   <H2HTab
                     v-if="tab.name === 'record'"
                     :home-team-name="fixture.home_team_name"
@@ -192,6 +209,11 @@ watch(
 .pane-body {
   padding-right: 8px;
   padding-bottom: 12px;
+  min-height: 160px;
+}
+
+.pane-skel {
+  padding: 4px 0 8px;
 }
 
 @media (max-width: 767px) {

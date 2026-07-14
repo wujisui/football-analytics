@@ -6,7 +6,6 @@ import MatchStatsTable from '@/components/detail/MatchStatsTable.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import type { PrematchPackage } from '@/api/types'
 import { formCharClass, formCharsZh } from '@/utils/format'
-import { teamNameZh } from '@/utils/teamNames'
 
 const props = defineProps<{
   homeTeamName: string
@@ -30,8 +29,8 @@ const limitOptions = [
   { label: '近 20 场', value: 20 },
 ]
 
-const homeZh = computed(() => teamNameZh(props.homeTeamName, props.homeTeamId))
-const awayZh = computed(() => teamNameZh(props.awayTeamName, props.awayTeamId))
+const homeZh = computed(() => props.homeTeamName || '—')
+const awayZh = computed(() => props.awayTeamName || '—')
 
 const h2hMatches = computed(
   () => props.pkg?.head_to_head?.matches?.slice(0, h2hLimit.value) ?? [],

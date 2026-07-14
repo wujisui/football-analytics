@@ -16,7 +16,6 @@ import {
 } from '@/utils/format'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { leagueNameZh } from '@/utils/leagueNames'
-import { teamNameZh } from '@/utils/teamNames'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -57,12 +56,10 @@ const ahLines = computed(() => {
   return []
 })
 
-const homeName = computed(() =>
-  teamNameZh(props.fixture.home_team_name, props.fixture.home_team_id),
-)
-const awayName = computed(() =>
-  teamNameZh(props.fixture.away_team_name, props.fixture.away_team_id),
-)
+/** Plain names for odds / prediction headers (no rank brackets). */
+const homeName = computed(() => props.fixture.home_team_name || '—')
+const awayName = computed(() => props.fixture.away_team_name || '—')
+const matchupTitle = computed(() => `${homeName.value} vs ${awayName.value}`)
 
 const homeLabel = computed(() => {
   const rank = rankBracket(props.fixture.home_rank)
@@ -167,7 +164,10 @@ function goDetail() {
       </section>
 
       <section class="zone predict-zone">
-        <h3 class="zone-title">算法预测</h3>
+        <h3 class="zone-title">
+          算法预测
+          <span class="zone-matchup">{{ matchupTitle }}</span>
+        </h3>
         <div class="rec-row">
           <span class="rec-label">推荐</span>
           <n-tag
@@ -324,6 +324,16 @@ function goDetail() {
   font-size: 13px;
   font-weight: 600;
   color: var(--fa-text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+}
+
+.zone-matchup {
+  font-weight: 500;
+  color: var(--fa-text);
+  font-size: 12px;
 }
 
 .rec-row {

@@ -19,7 +19,6 @@ import { useIsPhone } from '@/composables/useMediaQuery'
 import { useSyncCooldown } from '@/composables/useSyncCooldown'
 import { formatDateTime, leagueTagColor, statusLabel, statusTagType } from '@/utils/format'
 import { leagueNameZh } from '@/utils/leagueNames'
-import { teamNameZh } from '@/utils/teamNames'
 
 const HISTORY_DAYS = 30
 const ALL_HIT_KEYS: ResultsHitKey[] = ['score', 'result', 'ou', 'btts']
@@ -414,7 +413,7 @@ onMounted(() => {
                     </template>
                     <n-grid :cols="3" :x-gap="8" style="align-items: center; font-weight: 600;">
                       <n-gi style="text-align: right; font-size: 13px;">
-                        {{ teamNameZh(fx.home_team_name, fx.home_team_id) }}
+                        {{ fx.home_team_name }}
                       </n-gi>
                       <n-gi style="text-align: center; font-variant-numeric: tabular-nums;">
                         <div>{{ scoreText(fx) }}</div>
@@ -426,7 +425,7 @@ onMounted(() => {
                         </div>
                       </n-gi>
                       <n-gi style="font-size: 13px;">
-                        {{ teamNameZh(fx.away_team_name, fx.away_team_id) }}
+                        {{ fx.away_team_name }}
                       </n-gi>
                     </n-grid>
                     <n-space
@@ -507,9 +506,9 @@ onMounted(() => {
                   <n-list-item v-for="fx in filteredFixtures" :key="fx.fixture_id">
                     <n-thing>
                       <template #header>
-                        {{ teamNameZh(fx.home_team_name, fx.home_team_id) }}
+                        {{ fx.home_team_name }}
                         {{ scoreText(fx) }}
-                        {{ teamNameZh(fx.away_team_name, fx.away_team_id) }}
+                        {{ fx.away_team_name }}
                         <n-text
                           v-if="extraScoreLine(fx)"
                           depth="3"

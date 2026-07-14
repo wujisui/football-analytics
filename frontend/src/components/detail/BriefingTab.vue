@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 
 import type { PrematchPackage } from '@/api/types'
-import { teamNameZh } from '@/utils/teamNames'
 
 type ComparisonRow = {
   key: string
@@ -23,12 +22,8 @@ const props = defineProps<{
 const briefing = computed(() => props.pkg?.briefing ?? null)
 const available = computed(() => !!briefing.value?.available)
 
-const homeName = computed(() =>
-  teamNameZh(props.homeTeamName, props.homeTeamId ?? undefined),
-)
-const awayName = computed(() =>
-  teamNameZh(props.awayTeamName, props.awayTeamId ?? undefined),
-)
+const homeName = computed(() => props.homeTeamName || '—')
+const awayName = computed(() => props.awayTeamName || '—')
 
 const percent = computed(() => briefing.value?.percent ?? {})
 const goals = computed(() => briefing.value?.goals ?? {})
@@ -163,7 +158,7 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
         <n-descriptions-item v-if="underOverDisplay" label="大小球">
           <n-space :size="4" align="center" :wrap="false">
             <span>{{ underOverDisplay }}</span>
-            <n-tooltip v-if="underOverTip" trigger="hover" placement="top">
+            <n-tooltip v-if="underOverTip" trigger="hover" placement="bottom">
               <template #trigger>
                 <n-button
                   quaternary
@@ -182,7 +177,7 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
         <n-descriptions-item v-if="goalsDisplay" label="预期进球">
           <n-space :size="4" align="center" :wrap="false">
             <span>{{ goalsDisplay }}</span>
-            <n-tooltip v-if="goalsTip" trigger="hover" placement="top">
+            <n-tooltip v-if="goalsTip" trigger="hover" placement="bottom">
               <template #trigger>
                 <n-button
                   quaternary

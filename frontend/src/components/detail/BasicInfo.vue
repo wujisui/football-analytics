@@ -11,7 +11,6 @@ import {
   statusTagType,
 } from '@/utils/format'
 import { homeRouteWithLeague, writeHomeLeagueFilter } from '@/utils/homeLeagueFilter'
-import { teamNameZh } from '@/utils/teamNames'
 import { leagueNameZh } from '@/utils/leagueNames'
 
 const props = defineProps<{
@@ -20,18 +19,13 @@ const props = defineProps<{
 
 const router = useRouter()
 
-const homeName = computed(() =>
-  teamNameZh(props.fixture.home_team_name, props.fixture.home_team_id),
-)
-const awayName = computed(() =>
-  teamNameZh(props.fixture.away_team_name, props.fixture.away_team_id),
-)
-
 const matchTitle = computed(() => {
   const hr = rankBracket(props.fixture.home_rank)
   const ar = rankBracket(props.fixture.away_rank)
-  const home = hr ? `${hr} ${homeName.value}` : homeName.value
-  const away = ar ? `${awayName.value} ${ar}` : awayName.value
+  const homeName = props.fixture.home_team_name || '—'
+  const awayName = props.fixture.away_team_name || '—'
+  const home = hr ? `${hr} ${homeName}` : homeName
+  const away = ar ? `${awayName} ${ar}` : awayName
   return `${home} VS ${away}`
 })
 

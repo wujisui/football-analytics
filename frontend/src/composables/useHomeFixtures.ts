@@ -10,7 +10,6 @@ const LOOKBACK_DAYS = 1
 const CACHE_TTL_MS = 5 * 60 * 1000
 
 const allFixtures = ref<FixtureResponse[]>([])
-const windowLabel = ref('')
 const loadedAt = ref(0)
 const loading = ref(false)
 const error = ref('')
@@ -44,6 +43,12 @@ function homeWindowDays(): number {
   return LOOKAHEAD_DAYS + LOOKBACK_DAYS
 }
 
+function formatWindowLabel(startDate: string, days: number): string {
+  return days > 1 ? `${startDate} 起 ${days} 天` : startDate
+}
+
+const windowLabel = ref(formatWindowLabel(homeWindowStartDate(), homeWindowDays()))
+
 /**
  * Load home window fixtures from local API only.
  * Client filters by tracked league ids — do not narrow with league_ids here
@@ -64,10 +69,7 @@ async function loadHomeFixtures(options?: { force?: boolean }): Promise<void> {
       const date = homeWindowStartDate()
       const fixturesData = await fetchTodayFixtures({ date, days })
       allFixtures.value = fixturesData.fixtures
-      windowLabel.value =
-        fixturesData.days > 1
-          ? `${fixturesData.date} 起 ${fixturesData.days} 天`
-          : fixturesData.date
+      windowLabel.value = formatWindowLabel(fixturesData.date, fixturesData.days)
       loadedAt.value = Date.now()
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载失败'

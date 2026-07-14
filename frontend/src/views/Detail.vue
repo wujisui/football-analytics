@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 import BasicInfo from '@/components/detail/BasicInfo.vue'
 import TabsContainer from '@/components/detail/TabsContainer.vue'
 import { useFixtureAnalysis } from '@/composables/useFixtureAnalysis'
+import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { homeRouteWithLeague } from '@/utils/homeLeagueFilter'
 
 const props = defineProps<{
   fixtureId: string
 }>()
 
+const router = useRouter()
 const isPhone = useIsPhone()
 const contentStyle = computed(
   () =>
@@ -21,6 +25,19 @@ const contentStyle = computed(
 const fixtureIdNumber = computed(() => Number(props.fixtureId))
 const { data, loading, error, ensureLoaded, reload, reset } =
   useFixtureAnalysis(fixtureIdNumber)
+const { allFixtures } = useHomeFixtures()
+
+/** List-row snapshot so breadcrumb / header paint before /analysis returns. */
+const preview = computed(
+  () =>
+    allFixtures.value.find((f) => f.fixture_id === fixtureIdNumber.value) ?? null,
+)
+const headerFixture = computed(() => data.value ?? preview.value)
+const contentLoading = computed(() => loading.value || !data.value)
+
+function goHome() {
+  router.push(homeRouteWithLeague())
+}
 
 onMounted(() => {
   void ensureLoaded()
@@ -42,27 +59,31 @@ watch(
       :native-scrollbar="false"
       :content-style="contentStyle"
     >
-      <n-spin class="detail-spin" :show="loading && !data">
-        <div class="spin-body">
-          <n-alert v-if="error && !data" type="error" :title="error">
-            <n-button size="small" type="primary" :loading="loading" @click="reload">
-              重试
-            </n-button>
-          </n-alert>
-
-          <template v-else-if="data">
-            <BasicInfo :fixture="data" />
-            <TabsContainer
-              class="tabs-fill"
-              :fixture="data"
-              :pkg="data.analysis.package ?? null"
-              :loading="loading"
-              :error="error"
-              @retry="reload"
-            />
-          </template>
+      <div class="detail-body">
+        <BasicInfo v-if="headerFixture" :fixture="headerFixture" />
+        <div v-else class="basic-info-skel">
+          <n-breadcrumb>
+            <n-breadcrumb-item @click="goHome">赛前赛事</n-breadcrumb-item>
+            <n-breadcrumb-item>
+              <n-skeleton text :width="72" :sharp="false" />
+            </n-breadcrumb-item>
+            <n-breadcrumb-item>
+              <n-skeleton text :width="160" :sharp="false" />
+            </n-breadcrumb-item>
+          </n-breadcrumb>
+          <n-skeleton text :width="240" style="margin-top: 12px" :sharp="false" />
+          <n-skeleton text :width="180" style="margin-top: 8px" :sharp="false" />
         </div>
-      </n-spin>
+
+        <TabsContainer
+          class="tabs-fill"
+          :fixture="headerFixture"
+          :pkg="data?.analysis.package ?? null"
+          :loading="contentLoading"
+          :error="error"
+          @retry="reload"
+        />
+      </div>
     </n-layout-content>
   </n-layout>
 </template>
@@ -78,27 +99,7 @@ watch(
   height: 100%;
 }
 
-.detail-spin {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.detail-spin :deep(.n-spin-container),
-.detail-spin :deep(.n-spin-body),
-.detail-spin :deep(.n-spin-content) {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.spin-body {
+.detail-body {
   flex: 1;
   min-height: 0;
   height: 100%;
@@ -113,8 +114,14 @@ watch(
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.spin-body :deep(.basic-info) {
+.detail-body :deep(.basic-info),
+.basic-info-skel {
   flex-shrink: 0;
+}
+
+.basic-info-skel {
+  display: flex;
+  flex-direction: column;
 }
 
 .tabs-fill {
@@ -126,7 +133,7 @@ watch(
 }
 
 @media (min-width: 1024px) {
-  .spin-body {
+  .detail-body {
     gap: 16px;
   }
 }

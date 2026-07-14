@@ -44,7 +44,8 @@ export async function syncFixtures(options?: {
       include_results: options?.includeResults ?? true,
       league_ids: options?.leagueIds,
     },
-    timeout: 180_000,
+    // Fixtures return first; odds/results continue in a server background task.
+    timeout: 90_000,
   })
   return data
 }

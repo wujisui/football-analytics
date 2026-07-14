@@ -7,7 +7,6 @@ import { adjustFixturePrediction } from '@/api/fixtures'
 import type { FixtureResponse, OddsPackage, PredictionSnapshot } from '@/api/types'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { formatDateTime, formatOdd } from '@/utils/format'
-import { teamNameZh } from '@/utils/teamNames'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -48,12 +47,8 @@ const showCurrent = computed(() => hasMarkets(oddsCurrent.value))
 const showOpening = computed(() => hasMarkets(oddsOpening.value))
 const showAnyBoard = computed(() => showCurrent.value || showOpening.value)
 
-const homeName = computed(() =>
-  teamNameZh(props.fixture.home_team_name, props.fixture.home_team_id),
-)
-const awayName = computed(() =>
-  teamNameZh(props.fixture.away_team_name, props.fixture.away_team_id),
-)
+const homeName = computed(() => props.fixture.home_team_name || '—')
+const awayName = computed(() => props.fixture.away_team_name || '—')
 
 async function submitOpinion() {
   if (!selectedFactors.value.length) return
