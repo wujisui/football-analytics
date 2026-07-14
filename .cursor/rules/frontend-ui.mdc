@@ -23,7 +23,8 @@ alwaysApply: false
 | 标签 / 按钮 / 卡片 / Tabs | `n-tag`、`n-button`、`n-card`、`n-tabs` | 重复造轮子 |
 | 区域滚动 | `n-scrollbar`，或 Layout 设 `:native-scrollbar="false"` | 手写 `overflow` + 自定义 `::-webkit-scrollbar` |
 | 表单输入 | `n-input`、`n-form`（需要时） | 原生 textarea 无统一样式 |
-| 数据展示 | `n-descriptions`、`n-progress`、`n-list`、`n-table`（适合时） | 无必要的纯 HTML 表格 / 手写卡片列表堆砌 |
+| 数据展示 | `n-descriptions`、`n-progress`、`n-list`、**`n-data-table` / `n-table`** | **禁止**原生 `<table>` / 手写表格网格；对阵列表、赛果表一律 Naive 表格 |
+| 分区栅格 | `n-grid` / `n-gi`、`n-flex`、`n-space` | 业务页再造一套 `display:grid/flex` 分栏（壳层 Layout 除外） |
 | 全局配置 | 根节点 `n-config-provider`（中文 locale + `theme`） | 各页各自套主题 |
 | 明暗主题 | `darkTheme` + 顶栏切换，偏好写入 `localStorage` | 手写整站 CSS 变量换肤 |
 
@@ -56,7 +57,7 @@ Naive UI **只内置两套全局主题**：默认浅色（`theme=null`）与 `da
 本项目做法：
 
 1. 仅保留 Naive 内置两套：**浅色**（`theme=null`）/ **深色**（`darkTheme`），无 `theme-overrides`
-2. 主题切换为**右下角固定图标按钮**（深色月亮 / 浅色太阳），不占用顶栏、避免贴边裁切
+2. 主题切换为**顶栏右上角图标按钮**（深色月亮 / 浅色太阳），放在导航分段控件右侧
 3. 自定义页面壳用 `--fa-*`（非 Naive 变量），由预设同步；**禁止**写死 `#fff` / `#f5f6f8`
 4. 偏好键：`fa-theme-preset`（`localStorage`，值为 `light` | `dark`；旧色系 id 会自动归一）
 
@@ -79,7 +80,9 @@ Naive UI **只内置两套全局主题**：默认浅色（`theme=null`）与 `da
 
 - 业务特有可视化（如 ECharts 概率图、W/D/L 色块）
 - 组件库没有对应能力、或包装成本明显高于收益的极小组件
-- 此时仍应嵌在 Naive 的 Card / Layout / Space 等容器内，保持视觉一致
+- 此时仍应嵌在 Naive 的 Card / Layout / Space / DataTable 等容器内，保持视觉一致
+
+**自检（改 UI 必做）**：新增列表/表格前先查 Naive 是否已有 `n-data-table` / `n-list` / `n-descriptions`；没有充分理由不得提交原生 `<table>`。
 
 ## 反例（已踩过的坑）
 
