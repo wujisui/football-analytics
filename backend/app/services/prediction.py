@@ -592,15 +592,18 @@ def build_prediction_snapshot(
     }
 
 
-def _parse_score_hint(score_hint: str) -> tuple[int, int] | None:
+def _parse_score_hint(score_hint: str) -> list[tuple[int, int]]:
+    """Extract all candidate scores from hints like ``2-1`` or ``2-1 / 1-1``."""
     text = (score_hint or "").strip()
-    if not text or "待分析" in text or "-" not in text:
-        return None
-    left, _, right = text.partition("-")
-    try:
-        return int(left.strip()), int(right.strip())
-    except ValueError:
-        return None
+    if not text or "待分析" in text:
+        return []
+    found: list[tuple[int, int]] = []
+    for match in re.finditer(r"(\d+)\s*[-:]\s*(\d+)", text):
+        try:
+            found.append((int(match.group(1)), int(match.group(2))))
+        except ValueError:
+            continue
+    return found
 
 
 def _parse_goal_lean(goal_lean: str) -> tuple[str, float] | None:
@@ -657,9 +660,10 @@ def evaluate_prediction_vs_score(
     if outcomes is not None:
         result["result_hit"] = actual_1x2 in outcomes
 
-    pred_score = _parse_score_hint(score_hint)
-    if pred_score is not None:
-        result["score_hit"] = pred_score == (home_goals, away_goals)
+    pred_scores = _parse_score_hint(score_hint)
+    if pred_scores:
+        actual = (home_goals, away_goals)
+        result["score_hit"] = actual in pred_scores
 
     parsed_ou = _parse_goal_lean(goal_lean)
     if parsed_ou is not None:
