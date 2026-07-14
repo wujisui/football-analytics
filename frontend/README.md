@@ -15,7 +15,8 @@ Naive UI 组件优先与全屏布局见仓库 `.cursor/rules/frontend-ui.mdc`。
 
 ## 快速开始
 
-先确保后端已在 `http://127.0.0.1:8000` 运行（见仓库根目录或 [backend/README.md](../backend/README.md)）。
+换机环境（Node 版本、Volar 等）见仓库根目录 **[DEV_SETUP.md](../DEV_SETUP.md)**。  
+先确保后端已在 `http://127.0.0.1:8000` 运行（见 [backend/README.md](../backend/README.md)）。
 
 ```bash
 cd frontend

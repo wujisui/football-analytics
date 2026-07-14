@@ -72,6 +72,8 @@ football-analytics/
 
 ## 快速开始
 
+换机或新电脑请先按仓库根目录 **[DEV_SETUP.md](../DEV_SETUP.md)** 安装 Python / Node / IDE 插件并配置密钥。
+
 ### 1. 环境准备
 
 ```bash

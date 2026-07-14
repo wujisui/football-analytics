@@ -2,13 +2,15 @@
 
 足球数据分析全栈项目。后端对接 [API-Sports](https://www.api-football.com/)（官方 Key，RapidAPI 仅备用），做**赛前**概率分析并通过 REST API 对外提供；前端用 Vue 展示联赛、今日比赛与分析结果。
 
-> 产品定位、已完成 / 未完成 / 后续规划见 **[PROJECT_PLAN.md](PROJECT_PLAN.md)**。
+> 产品定位、已完成 / 未完成 / 后续规划见 **[PROJECT_PLAN.md](PROJECT_PLAN.md)**。  
+> **换机 / 新环境**：版本、IDE 插件与安装步骤见 **[DEV_SETUP.md](DEV_SETUP.md)**（按该文档准备即可对齐开发环境）。
 
 ## 仓库结构
 
 ```
 football-analytics/
 ├── PROJECT_PLAN.md   # 项目计划书（进度与路线图）
+├── DEV_SETUP.md      # 本地开发环境标准（版本 / 插件 / 配置）
 ├── backend/          # Python + FastAPI 后端
 │   ├── app/          # 业务代码：API、模型、服务、定时任务
 │   ├── main.py       # 应用入口
@@ -25,6 +27,8 @@ football-analytics/
 | `frontend/` | Vue 前端，对接 `/api/v1` 接口      | 可用（MVP） |
 
 ## 本地全栈启动
+
+完整清单（Python/Node 版本、Cursor/VS Code/PyCharm 插件、密钥与联赛配置）见 **[DEV_SETUP.md](DEV_SETUP.md)**。
 
 开两个终端：
 
