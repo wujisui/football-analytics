@@ -12,6 +12,9 @@ import {
   type ResultsHistoryResponse,
 } from '@/api/fixtures'
 import AccuracyHistoryChart from '@/components/AccuracyHistoryChart.vue'
+import ResultsFilterTrigger, {
+  type ResultsHitKey,
+} from '@/components/ResultsFilterTrigger.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useSyncCooldown } from '@/composables/useSyncCooldown'
 import { formatDateTime, leagueTagColor, statusLabel, statusTagType } from '@/utils/format'
@@ -19,6 +22,14 @@ import { leagueNameZh } from '@/utils/leagueNames'
 import { teamNameZh } from '@/utils/teamNames'
 
 const HISTORY_DAYS = 30
+const ALL_HIT_KEYS: ResultsHitKey[] = ['score', 'result', 'ou', 'btts']
+const HIT_FIELD: Record<ResultsHitKey, keyof ResultFixture> = {
+  result: 'result_hit',
+  score: 'score_hit',
+  ou: 'ou_hit',
+  btts: 'btts_hit',
+}
+
 const isPhone = useIsPhone()
 const message = useMessage()
 const { cooldownLeft, inCooldown, applySyncResult } = useSyncCooldown()
@@ -46,13 +57,9 @@ const syncing = ref(false)
 const error = ref('')
 const hint = ref('')
 
-/** Filters applied to list (confirmed from popover). */
-const filterLeagueId = ref<number | 'all'>('all')
-const filterHit = ref<'all' | 'result' | 'score' | 'ou' | 'btts'>('all')
-/** Draft values inside the list-header filter popover. */
-const draftLeagueId = ref<number | 'all'>('all')
-const draftHit = ref<'all' | 'result' | 'score' | 'ou' | 'btts'>('all')
-const filterOpen = ref(false)
+/** Applied filters — default all leagues of the day + all hit dimensions. */
+const filterLeagueIds = ref<number[]>([])
+const filterHitKeys = ref<ResultsHitKey[]>([...ALL_HIT_KEYS])
 
 const leagueOptions = computed(() => {
   const map = new Map<number, string>()
@@ -61,58 +68,50 @@ const leagueOptions = computed(() => {
       map.set(fx.league_id, leagueNameZh(fx.league_name))
     }
   }
-  return [
-    { label: '全部联赛', value: 'all' as const },
-    ...[...map.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1], 'zh'))
-      .map(([id, name]) => ({ label: name, value: id })),
-  ]
+  return [...map.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], 'zh'))
+    .map(([league_id, label]) => ({ league_id, label }))
 })
 
-const hitOptions = [
-  { label: '全部结果', value: 'all' },
-  { label: '胜平负命中', value: 'result' },
-  { label: '比分命中', value: 'score' },
-  { label: '大小球命中', value: 'ou' },
-  { label: '双方进球命中', value: 'btts' },
-]
+const allDayLeagueIds = computed(() => leagueOptions.value.map((o) => o.league_id))
 
-const filterActive = computed(
-  () => filterLeagueId.value !== 'all' || filterHit.value !== 'all',
-)
+function syncFilterLeaguesToDay() {
+  const allow = new Set(allDayLeagueIds.value)
+  const kept = filterLeagueIds.value.filter((id) => allow.has(id))
+  filterLeagueIds.value = kept.length ? kept : [...allDayLeagueIds.value]
+}
 
-function openFilterPopover(show: boolean) {
-  filterOpen.value = show
-  if (show) {
-    draftLeagueId.value = filterLeagueId.value
-    draftHit.value = filterHit.value
+const filterActive = computed(() => {
+  const leagues = allDayLeagueIds.value
+  if (!leagues.length) return false
+  if (filterLeagueIds.value.length !== leagues.length) return true
+  if (filterHitKeys.value.length !== ALL_HIT_KEYS.length) return true
+  const set = new Set(filterLeagueIds.value)
+  return leagues.some((id) => !set.has(id))
+})
+
+function confirmFilter(payload: { leagueIds: number[]; hitKeys: ResultsHitKey[] }) {
+  if (!payload.leagueIds.length) {
+    message.warning('请至少勾选一个联赛')
+    return
   }
-}
-
-function resetFilterDraft() {
-  draftLeagueId.value = 'all'
-  draftHit.value = 'all'
-}
-
-function confirmFilter() {
-  filterLeagueId.value = draftLeagueId.value
-  filterHit.value = draftHit.value
-  filterOpen.value = false
+  if (!payload.hitKeys.length) {
+    message.warning('请至少勾选一个预测维度')
+    return
+  }
+  filterLeagueIds.value = payload.leagueIds
+  filterHitKeys.value = payload.hitKeys
 }
 
 const filteredFixtures = computed(() => {
-  let list = fixtures.value
-  if (filterLeagueId.value !== 'all') {
-    list = list.filter((fx) => fx.league_id === filterLeagueId.value)
-  }
-  if (filterHit.value === 'result') {
-    list = list.filter((fx) => fx.result_hit === true)
-  } else if (filterHit.value === 'score') {
-    list = list.filter((fx) => fx.score_hit === true)
-  } else if (filterHit.value === 'ou') {
-    list = list.filter((fx) => fx.ou_hit === true)
-  } else if (filterHit.value === 'btts') {
-    list = list.filter((fx) => fx.btts_hit === true)
+  const leagueSet = new Set(filterLeagueIds.value)
+  let list = fixtures.value.filter((fx) => leagueSet.has(fx.league_id))
+  // All hit dims checked → no hit filter; otherwise keep fixtures that hit any checked dim.
+  if (filterHitKeys.value.length && filterHitKeys.value.length < ALL_HIT_KEYS.length) {
+    const keys = filterHitKeys.value
+    list = list.filter((fx) =>
+      keys.some((k) => fx[HIT_FIELD[k]] === true),
+    )
   }
   return list
 })
@@ -147,23 +146,19 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
 }
 
 const displayAccuracy = computed(() => {
-  const filtered = filterLeagueId.value !== 'all' || filterHit.value !== 'all'
-  if (!filtered) return dayAccuracy.value
+  if (!filterActive.value) return dayAccuracy.value
   return summarizeFiltered(filteredFixtures.value)
 })
 
 const emptyText = computed(() => {
   if (!selectedDate.value) return '请选择日期'
   if (fixtures.value.length && !filteredFixtures.value.length) {
-    return '当前筛选下无场次，可调整联赛 / 命中维度'
+    return '当前筛选下无场次，可调整联赛 / 预测维度'
   }
   return `${selectedDate.value} 暂无已结束赛果（可点「同步赛果」从官方回写）`
 })
 
-const subtitle = computed(() => {
-  const base = '常规时间对照预测 · 加时/点球单独标注'
-  return hint.value ? `${base} · ${hint.value}` : base
-})
+const subtitle = computed(() => hint.value || undefined)
 
 const historyRangeLabel = computed(() => {
   if (!history.value) return `近 ${HISTORY_DAYS} 日汇总`
@@ -238,6 +233,7 @@ async function loadDayResults() {
     fixtures.value = data.fixtures
     dayAccuracy.value = data.accuracy ?? null
     hint.value = data.total ? `共 ${data.total} 场` : ''
+    syncFilterLeaguesToDay()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载失败'
     fixtures.value = []
@@ -250,9 +246,11 @@ async function loadDayResults() {
 async function loadHistory() {
   historyLoading.value = true
   try {
+    const single =
+      filterLeagueIds.value.length === 1 ? filterLeagueIds.value[0] : undefined
     history.value = await fetchResultsHistory({
       days: HISTORY_DAYS,
-      leagueId: filterLeagueId.value === 'all' ? undefined : filterLeagueId.value,
+      leagueId: single,
     })
   } catch {
     history.value = null
@@ -288,12 +286,18 @@ async function syncDay() {
 }
 
 watch(selectedDate, () => {
+  filterLeagueIds.value = []
+  filterHitKeys.value = [...ALL_HIT_KEYS]
   void loadDayResults()
 })
 
-watch(filterLeagueId, () => {
-  void loadHistory()
-})
+watch(
+  filterLeagueIds,
+  () => {
+    void loadHistory()
+  },
+  { deep: true },
+)
 
 onMounted(() => {
   void loadDayResults()
@@ -355,53 +359,13 @@ onMounted(() => {
           style="padding: 10px 12px 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;"
         >
           <n-text strong>{{ listTitle }}</n-text>
-          <n-popover
-            :show="filterOpen"
-            trigger="click"
-            placement="bottom-end"
-            :show-arrow="false"
-            @update:show="openFilterPopover"
-          >
-            <template #trigger>
-              <n-button
-                size="tiny"
-                quaternary
-                :type="filterActive ? 'primary' : 'default'"
-                aria-label="筛选赛果"
-              >
-                <template #icon>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    width="14"
-                    height="14"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" />
-                  </svg>
-                </template>
-                筛选
-              </n-button>
-            </template>
-            <div style="width: 200px; display: flex; flex-direction: column; gap: 10px;">
-              <n-select
-                v-model:value="draftLeagueId"
-                :options="leagueOptions"
-                size="small"
-                :consistent-menu-width="false"
-              />
-              <n-select
-                v-model:value="draftHit"
-                :options="hitOptions"
-                size="small"
-              />
-              <n-space justify="end" :size="8">
-                <n-button size="tiny" @click="resetFilterDraft">重置</n-button>
-                <n-button size="tiny" type="primary" @click="confirmFilter">确认</n-button>
-              </n-space>
-            </div>
-          </n-popover>
+          <ResultsFilterTrigger
+            :league-options="leagueOptions"
+            :selected-league-ids="filterLeagueIds"
+            :selected-hit-keys="filterHitKeys"
+            :filter-active="filterActive"
+            @confirm="confirmFilter"
+          />
         </div>
         <n-alert
           v-if="error"
@@ -522,41 +486,13 @@ onMounted(() => {
           <template #header>
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;">
               <span>{{ listTitle }}</span>
-              <n-popover
-                :show="filterOpen"
-                trigger="click"
-                placement="bottom-end"
-                :show-arrow="false"
-                @update:show="openFilterPopover"
-              >
-                <template #trigger>
-                  <n-button
-                    size="tiny"
-                    quaternary
-                    :type="filterActive ? 'primary' : 'default'"
-                    aria-label="筛选赛果"
-                  >
-                    筛选
-                  </n-button>
-                </template>
-                <div style="width: 200px; display: flex; flex-direction: column; gap: 10px;">
-                  <n-select
-                    v-model:value="draftLeagueId"
-                    :options="leagueOptions"
-                    size="small"
-                    :consistent-menu-width="false"
-                  />
-                  <n-select
-                    v-model:value="draftHit"
-                    :options="hitOptions"
-                    size="small"
-                  />
-                  <n-space justify="end" :size="8">
-                    <n-button size="tiny" @click="resetFilterDraft">重置</n-button>
-                    <n-button size="tiny" type="primary" @click="confirmFilter">确认</n-button>
-                  </n-space>
-                </div>
-              </n-popover>
+              <ResultsFilterTrigger
+                :league-options="leagueOptions"
+                :selected-league-ids="filterLeagueIds"
+                :selected-hit-keys="filterHitKeys"
+                :filter-active="filterActive"
+                @confirm="confirmFilter"
+              />
             </div>
           </template>
           <n-scrollbar style="max-height: 100%;" trigger="hover">
