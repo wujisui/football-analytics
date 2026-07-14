@@ -12,6 +12,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useTheme } from '@/composables/useTheme'
+import { homeRouteWithLeague } from '@/utils/homeLeagueFilter'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,8 +23,16 @@ const activeNav = computed(() => {
   return 'home'
 })
 
+function goHome() {
+  void router.push(homeRouteWithLeague())
+}
+
 function goNav(name: 'home' | 'results') {
   if (route.name === name) return
+  if (name === 'home') {
+    goHome()
+    return
+  }
   void router.push({ name })
 }
 </script>
@@ -46,8 +55,8 @@ function goNav(name: 'home' | 'results') {
           class="brand"
           role="link"
           tabindex="0"
-          @click="$router.push({ name: 'home' })"
-          @keydown.enter="$router.push({ name: 'home' })"
+          @click="goHome"
+          @keydown.enter="goHome"
         >
           <span class="brand-title">Football Analytics</span>
           <span class="brand-subtitle">赛前分析 · 人机协同</span>
@@ -119,7 +128,12 @@ function goNav(name: 'home' | 'results') {
         content-style="height: 100%; overflow: hidden; position: relative;"
         style="flex: 1; min-height: 0;"
       >
-        <router-view />
+        <!-- Keep Home alive so list scroll / filter UI survive detail round-trips. -->
+        <router-view v-slot="{ Component }">
+          <keep-alive :include="['Home']">
+            <component :is="Component" />
+          </keep-alive>
+        </router-view>
       </n-layout-content>
     </n-layout>
     </n-message-provider>

@@ -10,6 +10,7 @@ import {
   statusLabel,
   statusTagType,
 } from '@/utils/format'
+import { homeRouteWithLeague, writeHomeLeagueFilter } from '@/utils/homeLeagueFilter'
 import { teamNameZh } from '@/utils/teamNames'
 import { leagueNameZh } from '@/utils/leagueNames'
 
@@ -35,14 +36,12 @@ const matchTitle = computed(() => {
 })
 
 function goHome() {
-  router.push({ name: 'home' })
+  router.push(homeRouteWithLeague())
 }
 
 function goLeague() {
-  router.push({
-    name: 'home',
-    query: { league: String(props.fixture.league_id) },
-  })
+  writeHomeLeagueFilter(props.fixture.league_id)
+  router.push(homeRouteWithLeague(props.fixture.league_id))
 }
 </script>
 

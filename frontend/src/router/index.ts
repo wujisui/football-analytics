@@ -39,8 +39,10 @@ const router = createRouter({
       }),
     },
   ],
-  scrollBehavior() {
-    return { top: 0 }
+  scrollBehavior(_to, _from, savedPosition) {
+    // Prefer browser back/forward position; Home list scroll is kept via keep-alive.
+    if (savedPosition) return savedPosition
+    return false
   },
 })
 

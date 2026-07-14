@@ -36,7 +36,6 @@ watch(show, (open) => {
 const configuredOptions = computed(() =>
   props.options.filter((o) => o.tier === 'configured'),
 )
-const extraOptions = computed(() => props.options.filter((o) => o.tier === 'extra'))
 
 function labelOf(opt: LeagueFilterOption): string {
   const name = leagueNameZh(opt.league_name)
@@ -94,29 +93,15 @@ function confirm() {
     </template>
     <div class="league-filter-panel">
       <n-scrollbar style="max-height: min(360px, 55vh);">
-        <n-checkbox-group v-model:value="draft" class="league-checks">
-          <div v-if="configuredOptions.length" class="section">
-            <div class="section-title">已配置</div>
-            <n-space vertical :size="6">
-              <n-checkbox
-                v-for="opt in configuredOptions"
-                :key="opt.league_id"
-                :value="opt.league_id"
-                :label="labelOf(opt)"
-              />
-            </n-space>
-          </div>
-          <div v-if="extraOptions.length" class="section">
-            <div class="section-title">今日其它一级联赛</div>
-            <n-space vertical :size="6">
-              <n-checkbox
-                v-for="opt in extraOptions"
-                :key="opt.league_id"
-                :value="opt.league_id"
-                :label="labelOf(opt)"
-              />
-            </n-space>
-          </div>
+        <n-checkbox-group v-model:value="draft">
+          <n-flex :size="[10, 6]" :wrap="true">
+            <n-checkbox
+              v-for="opt in options"
+              :key="opt.league_id"
+              :value="opt.league_id"
+              :label="labelOf(opt)"
+            />
+          </n-flex>
         </n-checkbox-group>
         <n-empty
           v-if="!options.length"
@@ -159,26 +144,10 @@ function confirm() {
 }
 
 .league-filter-panel {
-  width: min(300px, 82vw);
+  width: min(340px, 86vw);
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.section {
-  margin-bottom: 10px;
-}
-
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--fa-text-muted);
-  margin-bottom: 6px;
-}
-
-.league-checks {
-  padding-right: 4px;
 }
 
 .actions {

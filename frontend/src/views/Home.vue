@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 
@@ -13,7 +13,13 @@ import { useIsPhone, useIsTabletDown } from '@/composables/useMediaQuery'
 import { useSyncCooldown } from '@/composables/useSyncCooldown'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
 import { parseApiDate } from '@/utils/format'
+import {
+  readHomeLeagueFilter,
+  writeHomeLeagueFilter,
+} from '@/utils/homeLeagueFilter'
 import { leagueNameZh } from '@/utils/leagueNames'
+
+defineOptions({ name: 'Home' })
 
 const route = useRoute()
 const router = useRouter()
@@ -27,7 +33,6 @@ const {
   homeWindowStartDate,
   todayDate,
   allFixtures,
-  windowLabel,
   loading,
   error,
   loadHomeFixtures,
@@ -44,11 +49,23 @@ const {
 } = useTrackedLeagues()
 
 const selectedLeagueId = ref<number | null>(null)
+/** Local calendar day `yyyy-MM-dd`; null = all days in the home window. */
+const selectedDay = ref<string | null>(null)
 const siderCollapsed = ref(false)
 const leagueDrawerShow = ref(false)
 const syncing = ref(false)
 
-const refreshDisabled = computed(() => loading.value || syncing.value || inCooldown.value)
+function localDayKey(dateStr: string): string {
+  const d = parseApiDate(dateStr)
+  if (Number.isNaN(d.getTime())) return String(dateStr).slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Disable only the refresh control — list stays interactive during sync. */
+const refreshDisabled = computed(() => syncing.value || inCooldown.value)
 const refreshLabel = computed(() => (inCooldown.value ? '刷新冷却中' : '强制刷新'))
 
 const trackedIdSet = computed(() => new Set(trackedIds.value))
@@ -101,10 +118,26 @@ const selectedLeague = computed(() => {
   return menuLeagues.value.find((l) => l.league_id === selectedLeagueId.value) ?? null
 })
 
-const displayedFixtures = computed(() => {
+const leagueFilteredFixtures = computed(() => {
   let list = trackedFixtures.value
   if (selectedLeagueId.value != null) {
     list = list.filter((f) => f.league_id === selectedLeagueId.value)
+  }
+  return list
+})
+
+const availableDayKeys = computed(() => {
+  const keys = new Set<string>()
+  for (const f of leagueFilteredFixtures.value) {
+    keys.add(localDayKey(f.fixture_date))
+  }
+  return keys
+})
+
+const displayedFixtures = computed(() => {
+  let list = leagueFilteredFixtures.value
+  if (selectedDay.value) {
+    list = list.filter((f) => localDayKey(f.fixture_date) === selectedDay.value)
   }
   return list
     .slice()
@@ -115,12 +148,21 @@ const displayedFixtures = computed(() => {
     )
 })
 
+function isHomeDayDisabled(ts: number): boolean {
+  const d = new Date(ts)
+  const localKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return !availableDayKeys.value.has(localKey)
+}
+
 const emptyText = computed(() => {
   if (!filterLeagueOptions.value.length && !trackedFixtures.value.length) {
-    return '今日暂无匹配联赛，可先点「强制刷新」拉取配置联赛'
+    return '暂无匹配联赛，可先点「强制刷新」拉取配置联赛'
   }
   if (!trackedIds.value.length) {
     return '请先在「筛选」中勾选要关注的联赛'
+  }
+  if (selectedDay.value && !displayedFixtures.value.length) {
+    return `${selectedDay.value} 暂无未完赛赛事`
   }
   if (selectedLeagueId.value == null) {
     return `近 ${LOOKAHEAD_DAYS} 日勾选联赛暂无未完赛赛事`
@@ -149,13 +191,28 @@ const filterActive = computed(() => {
 
 function syncLeagueFromRoute() {
   const fromQuery = route.query.league
-  if (fromQuery === 'all' || fromQuery == null || fromQuery === '') {
+  if (fromQuery === 'all') {
     selectedLeagueId.value = null
+    writeHomeLeagueFilter(null)
     return
   }
-  const id = Number(fromQuery)
-  selectedLeagueId.value =
-    !Number.isNaN(id) && menuLeagues.value.some((l) => l.league_id === id) ? id : null
+  if (fromQuery != null && fromQuery !== '') {
+    const id = Number(fromQuery)
+    if (!Number.isNaN(id)) {
+      selectedLeagueId.value = id
+      writeHomeLeagueFilter(id)
+      return
+    }
+  }
+  // No query (e.g. header → home): restore last sidebar selection.
+  const stored = readHomeLeagueFilter()
+  selectedLeagueId.value = stored
+  if (stored != null && route.query.league !== String(stored)) {
+    void router.replace({
+      name: 'home',
+      query: { league: String(stored) },
+    })
+  }
 }
 
 async function loadAll(force = false) {
@@ -234,6 +291,7 @@ async function confirmFilter(ids: number[]) {
 
 function selectLeague(leagueId: number | null) {
   selectedLeagueId.value = leagueId
+  writeHomeLeagueFilter(leagueId)
   leagueDrawerShow.value = false
   router.replace({
     name: 'home',
@@ -250,11 +308,27 @@ watch(
 )
 
 watch(menuLeagues, () => {
-  if (
-    selectedLeagueId.value != null &&
-    !menuLeagues.value.some((l) => l.league_id === selectedLeagueId.value)
-  ) {
+  if (selectedLeagueId.value == null || !menuLeagues.value.length) return
+  if (!menuLeagues.value.some((l) => l.league_id === selectedLeagueId.value)) {
     selectedLeagueId.value = null
+    writeHomeLeagueFilter(null)
+    if (route.query.league) {
+      void router.replace({ name: 'home', query: {} })
+    }
+  }
+})
+
+watch(
+  () => route.query.league,
+  () => {
+    if (route.name !== 'home') return
+    syncLeagueFromRoute()
+  },
+)
+
+watch(availableDayKeys, (keys) => {
+  if (selectedDay.value && !keys.has(selectedDay.value)) {
+    selectedDay.value = null
   }
 })
 
@@ -266,6 +340,11 @@ onMounted(async () => {
   }
   // force once on cold start; later remounts can reuse in-memory cache via loadAll(false)
   void loadAll(!allFixtures.value.length)
+})
+
+onActivated(() => {
+  // keep-alive return from detail: sync ?league= without remounting (keeps scroll)
+  syncLeagueFromRoute()
 })
 </script>
 
@@ -351,8 +430,17 @@ onMounted(async () => {
         <n-page-header :title="listTitle" class="page-header">
           <template #subtitle>
             未完赛 {{ displayedFixtures.length }} 场
-            <template v-if="windowLabel"> · {{ windowLabel }}</template>
-            <span class="desktop-only"> · 数据来自本地库</span>
+          </template>
+          <template #extra>
+            <n-date-picker
+              v-model:formatted-value="selectedDay"
+              value-format="yyyy-MM-dd"
+              type="date"
+              size="small"
+              clearable
+              placeholder="全部日期"
+              :is-date-disabled="isHomeDayDisabled"
+            />
           </template>
         </n-page-header>
       </n-layout-header>
@@ -370,7 +458,8 @@ onMounted(async () => {
           <n-button size="small" type="primary" @click="loadAll(true)">重试</n-button>
         </n-alert>
 
-        <n-spin v-else :show="loading || syncing">
+        <!-- Only block list on cold load; force-refresh is background sync. -->
+        <n-spin v-else :show="loading && !allFixtures.length">
           <div class="spin-body">
             <FixtureList
               v-if="!loading || allFixtures.length"
@@ -486,10 +575,6 @@ onMounted(async () => {
 @media (max-width: 767px) {
   .league-trigger {
     display: inline-flex;
-  }
-
-  .desktop-only {
-    display: none;
   }
 }
 </style>
