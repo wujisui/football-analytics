@@ -9,6 +9,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AccuracyHistoryChart: typeof import('./src/components/AccuracyHistoryChart.vue')['default']
     BasicInfo: typeof import('./src/components/detail/BasicInfo.vue')['default']
+    BriefingTab: typeof import('./src/components/detail/BriefingTab.vue')['default']
     FixtureCard: typeof import('./src/components/FixtureCard.vue')['default']
     FixtureList: typeof import('./src/components/FixtureList.vue')['default']
     H2HTab: typeof import('./src/components/detail/H2HTab.vue')['default']
@@ -28,6 +29,7 @@ declare module 'vue' {
     NDatePicker: typeof import('naive-ui')['NDatePicker']
     NDescriptions: typeof import('naive-ui')['NDescriptions']
     NDescriptionsItem: typeof import('naive-ui')['NDescriptionsItem']
+    NDivider: typeof import('naive-ui')['NDivider']
     NDrawer: typeof import('naive-ui')['NDrawer']
     NDrawerContent: typeof import('naive-ui')['NDrawerContent']
     NEmpty: typeof import('naive-ui')['NEmpty']

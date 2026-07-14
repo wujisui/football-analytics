@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
+import BriefingTab from '@/components/detail/BriefingTab.vue'
 import H2HTab from '@/components/detail/H2HTab.vue'
 import LineupTab from '@/components/detail/LineupTab.vue'
 import PredictionTab from '@/components/detail/PredictionTab.vue'
@@ -8,7 +9,7 @@ import StatsTab from '@/components/detail/StatsTab.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import type { FixtureResponse, PrematchPackage } from '@/api/types'
 
-type TabKey = 'record' | 'stats' | 'lineup' | 'prediction'
+type TabKey = 'record' | 'stats' | 'lineup' | 'briefing' | 'prediction'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -32,6 +33,7 @@ const tabs: { name: TabKey; label: string; short: string }[] = [
   { name: 'record', label: '统计', short: '统计' },
   { name: 'stats', label: '赛季数据', short: '数据' },
   { name: 'lineup', label: '伤病与阵容', short: '阵容' },
+  { name: 'briefing', label: '赛前简报', short: '简报' },
   { name: 'prediction', label: '我的预测', short: '预测' },
 ]
 
@@ -100,6 +102,14 @@ watch(
                   <LineupTab
                     v-else-if="tab.name === 'lineup'"
                     :fixture="fixture"
+                    :pkg="pkg"
+                  />
+                  <BriefingTab
+                    v-else-if="tab.name === 'briefing'"
+                    :home-team-name="fixture.home_team_name"
+                    :away-team-name="fixture.away_team_name"
+                    :home-team-id="fixture.home_team_id"
+                    :away-team-id="fixture.away_team_id"
                     :pkg="pkg"
                   />
                   <PredictionTab

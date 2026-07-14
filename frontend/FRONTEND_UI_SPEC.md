@@ -69,12 +69,14 @@
 
 ### 3.4 右侧比赛列表
 
-- 仅展示 `pending`（未开始）
-- 按开赛时间从近到远排序
+- 仅展示未完赛（含近期窗口内未踢完场次）
+- 按开赛时间从近到远排序，并按**本地日历日**分组（`n-divider` 显示日期+星期）
+- 顶栏「全部比赛」行右侧：`n-date-picker`（可清空，默认全部日期；选中后只显示该日）
 - 空态文案示例：
-  - 全部：`近 7 日暂无未开赛赛事`
-  - 某联赛：`近 7 日暂无{联赛名}未开赛赛事`
+  - 全部：`近 7 日勾选联赛暂无未完赛赛事`
+  - 某联赛：`近 7 日暂无{联赛名}未完赛赛事`
 - Loading / Error + 重试
+- 副标题仅「未完赛 N 场」，不展示同步窗口说明
 
 ### 3.5 比赛卡片
 
@@ -111,6 +113,7 @@ n-layout-content（全屏滚动）
       ├── 统计 H2HTab（历史交锋 + 主客近期战绩，MatchStatsTable）
       ├── 赛季数据 StatsTab
       ├── 伤病与阵容 LineupTab
+      ├── 赛前简报 BriefingTab（官方 /predictions）
       └── 我的预测 PredictionTab
             ├── OpinionInput
             └── PredictionResult
@@ -126,9 +129,10 @@ n-layout-content（全屏滚动）
 
 1. 首页：`/leagues` + `/fixtures/today` 只读本地库；模块级缓存约 5 分钟，详情返回不重复请求；切换联赛仅前端过滤
 2. 进入详情页请求一次：`GET /api/v1/fixtures/{fixture_id}/analysis`（此处才可能打官方 API）
-3. 响应中的 `analysis` + `analysis.package`（赔率 / 近况 / 交锋 / 阵容 / 伤病等）供各 Tab 共用
+3. 响应中的 `analysis` + `analysis.package`（赔率 / 近况 / 交锋 / 阵容 / 伤病 / 官方简报等）供各 Tab 共用
 4. Tabs：**首次切换到某 Tab 再挂载内容**（懒渲染）；已访问过的 Tab 保留，不重复请求
 5. 「我的预测」中融合结果为**前端本地启发式**（`utils/opinionAdjust.ts`），差异高亮；待后端提供预测接口后再改为服务端融合
+6. 「赛前简报」来自官方 `GET /predictions`，落库 `package.briefing`，与「我的预测」本地模型无关
 
 ### 4.3 各 Tab 展示要求
 
@@ -137,6 +141,7 @@ n-layout-content（全屏滚动）
 | 统计 | 无外层 card；历史交锋 / 近期战绩色带分隔；`MatchStatsSummary` + **`n-data-table`（MatchStatsTable）**；近期主客 `n-grid` 左右分栏 |
 | 赛季数据  | 在独立 stats 接口就绪前，可用近况估算胜率、场均进/失球；可附带 1X2 赔率参考；需标明数据来源局限                                                                |
 | 伤病与阵容 | 双方伤病列表；首发 / 替补 / 阵型（无数据时空态）                                                                                           |
+| 赛前简报 | 官方 advice / 胜平负占比 / 大小球 / 对比表；无 coverage 时空态                                                                 |
 | 我的预测  | 算法原始胜平负 + 推荐；主观意见输入；提交后展示融合对比（差异高亮）                                                                                   |
 
 ### 4.4 状态处理

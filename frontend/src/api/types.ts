@@ -35,6 +35,9 @@ export interface OddsPackage {
   asian_handicap?: LineOdds | null
   goals_ou?: LineOdds | null
   bookmakers?: Array<Record<string, unknown>>
+  /** opening = 初盘；current = 即时盘 */
+  role?: string | null
+  captured_at?: string | null
 }
 
 export interface StandingsSnippet {
@@ -123,14 +126,47 @@ export interface H2HPackage {
   source?: string | null
 }
 
+/** Official API-Sports /predictions; not local ML 「我的预测」. */
+export interface BriefingPackage {
+  available: boolean
+  fetched?: boolean | null
+  advice?: string | null
+  winner?: {
+    id?: number | null
+    name?: string | null
+    comment?: string | null
+  } | null
+  win_or_draw?: boolean | null
+  under_over?: string | null
+  goals?: {
+    home?: string | null
+    away?: string | null
+  } | null
+  percent?: {
+    home?: string | null
+    draw?: string | null
+    away?: string | null
+  } | null
+  comparison?: {
+    key: string
+    label: string
+    home?: string | null
+    away?: string | null
+  }[]
+}
+
 export interface PrematchPackage {
+  /** 即时盘 */
   odds: OddsPackage
+  /** 初盘（中午定时首次落库后冻结） */
+  odds_opening?: OddsPackage | null
   lineups: LineupsPackage
   injuries: InjuriesPackage
   head_to_head: H2HPackage
   home_form: FormPackage
   away_form: FormPackage
   standings?: StandingsSnippet | null
+  briefing?: BriefingPackage | null
   home_formation?: string | null
   away_formation?: string | null
 }
