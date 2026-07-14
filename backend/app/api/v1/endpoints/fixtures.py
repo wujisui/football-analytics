@@ -3,7 +3,7 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -50,6 +50,7 @@ from app.services.results_accuracy import (
     evaluate_fixture_prediction,
     load_stored_by_fixture_ids,
 )
+from app.services.team_names import team_name_zh
 
 router = APIRouter(prefix="/fixtures", tags=["fixtures"])
 logger = logging.getLogger(__name__)
@@ -58,6 +59,39 @@ logger = logging.getLogger(__name__)
 _SYNC_COOLDOWN_SECONDS = 90
 _last_sync_monotonic: float | None = None
 _sync_lock = asyncio.Lock()
+_odds_followup_lock = asyncio.Lock()
+
+
+async def _sync_odds_and_results_followup(
+    day_list: list[date],
+    selected: list[int] | None,
+    *,
+    include_odds: bool,
+    include_results: bool,
+) -> None:
+    """Run after fixtures sync returns — keeps the HTTP response snappy."""
+    if _odds_followup_lock.locked():
+        logger.info("Odds/results follow-up already running; skip duplicate")
+        return
+    async with _odds_followup_lock:
+        try:
+            async with FootballFetcher() as fetcher:
+                if include_odds:
+                    try:
+                        await fetcher.sync_odds_for_dates(
+                            day_list,
+                            refresh_existing=True,
+                            league_ids=selected,
+                        )
+                    except Exception as exc:
+                        logger.warning("include_odds batch failed: %s", exc)
+                if include_results:
+                    try:
+                        await fetcher.capture_finished_results(lookback_days=2)
+                    except Exception as exc:
+                        logger.warning("include_results capture failed: %s", exc)
+        except Exception as exc:
+            logger.warning("sync follow-up failed: %s", exc, exc_info=True)
 
 
 def _set_response_headers(response: Response, data_source: str, max_age: int = 120) -> None:
@@ -71,13 +105,24 @@ def _league_name(fixture: Fixture) -> str:
     return settings.league_display_name(fixture.league_id, fallback)
 
 
+def _team_display_name(name: str | None, team_id: int, fallback: str = "") -> str:
+    """Chinese when mapped; covers rows still stored in English before next sync."""
+    return team_name_zh(name, team_id) or fallback or (name or f"Team {team_id}")
+
+
 def _list_analysis_from_fixture(
     fixture: Fixture,
     stored: PreMatchData | None,
 ) -> AnalysisResponse:
     """Build list-row analysis without Redis/API — pure in-memory from ORM rows."""
-    home_name = fixture.home_team.name if fixture.home_team else f"Team {fixture.home_team_id}"
-    away_name = fixture.away_team.name if fixture.away_team else f"Team {fixture.away_team_id}"
+    home_name = _team_display_name(
+        fixture.home_team.name if fixture.home_team else None,
+        fixture.home_team_id,
+    )
+    away_name = _team_display_name(
+        fixture.away_team.name if fixture.away_team else None,
+        fixture.away_team_id,
+    )
     league_name = _league_name(fixture)
 
     odds: dict | None = None
@@ -251,8 +296,14 @@ async def get_today_fixtures(
                 league_name=_league_name(fixture),
                 home_team_id=fixture.home_team_id,
                 away_team_id=fixture.away_team_id,
-                home_team_name=fixture.home_team.name if fixture.home_team else "",
-                away_team_name=fixture.away_team.name if fixture.away_team else "",
+                home_team_name=_team_display_name(
+                    fixture.home_team.name if fixture.home_team else None,
+                    fixture.home_team_id,
+                ),
+                away_team_name=_team_display_name(
+                    fixture.away_team.name if fixture.away_team else None,
+                    fixture.away_team_id,
+                ),
                 fixture_date=fixture.date,
                 status=fixture.status,
                 home_goals=fixture.home_goals,
@@ -338,8 +389,14 @@ async def get_fixture_results(
                 league_name=_league_name(fx),
                 home_team_id=fx.home_team_id,
                 away_team_id=fx.away_team_id,
-                home_team_name=fx.home_team.name if fx.home_team else "",
-                away_team_name=fx.away_team.name if fx.away_team else "",
+                home_team_name=_team_display_name(
+                    fx.home_team.name if fx.home_team else None,
+                    fx.home_team_id,
+                ),
+                away_team_name=_team_display_name(
+                    fx.away_team.name if fx.away_team else None,
+                    fx.away_team_id,
+                ),
                 fixture_date=fx.date,
                 status=fx.status,
                 status_short=getattr(fx, "status_short", None),
@@ -390,6 +447,7 @@ async def get_results_accuracy_history(
 
 @router.post("/sync", response_model=SyncFixturesResponse)
 async def sync_fixtures(
+    background_tasks: BackgroundTasks,
     days: int | None = Query(
         default=None,
         ge=1,
@@ -470,23 +528,6 @@ async def sync_fixtures(
                     force=True,
                     league_ids=selected,
                 )
-
-                if include_odds:
-                    try:
-                        await asyncio.sleep(3.0)
-                        await fetcher.sync_odds_for_dates(
-                            day_list,
-                            refresh_existing=True,
-                            league_ids=selected,
-                        )
-                    except Exception as exc:
-                        logger.warning("include_odds batch failed: %s", exc)
-
-                if include_results:
-                    try:
-                        await fetcher.capture_finished_results(lookback_days=2)
-                    except Exception as exc:
-                        logger.warning("include_results capture failed: %s", exc)
         except ApiKeyNotConfiguredError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except HTTPException:
@@ -496,12 +537,25 @@ async def sync_fixtures(
             raise HTTPException(status_code=503, detail=f"同步失败：{exc}") from exc
 
         _last_sync_monotonic = time.monotonic()
+        # Odds/results are the slow path (per-fixture rate limits). Finish fixtures
+        # first so the UI unblocks; boards catch up in the background.
+        if include_odds or include_results:
+            background_tasks.add_task(
+                _sync_odds_and_results_followup,
+                day_list,
+                selected,
+                include_odds=include_odds,
+                include_results=include_results,
+            )
+        msg = "赛程已刷新"
+        if include_odds:
+            msg += "，盘口后台更新中"
         return SyncFixturesResponse(
             status="ok",
             fixtures_saved=saved,
             days=window,
             date=start.isoformat(),
-            message="刷新成功",
+            message=msg,
             retry_after_seconds=_SYNC_COOLDOWN_SECONDS,
         )
 
@@ -597,8 +651,14 @@ async def get_fixture_analysis(
         league_name=_league_name(fixture),
         home_team_id=fixture.home_team_id,
         away_team_id=fixture.away_team_id,
-        home_team_name=fixture.home_team.name if fixture.home_team else "",
-        away_team_name=fixture.away_team.name if fixture.away_team else "",
+        home_team_name=_team_display_name(
+            fixture.home_team.name if fixture.home_team else None,
+            fixture.home_team_id,
+        ),
+        away_team_name=_team_display_name(
+            fixture.away_team.name if fixture.away_team else None,
+            fixture.away_team_id,
+        ),
         fixture_date=fixture.date,
         status=fixture.status,
         home_goals=fixture.home_goals,

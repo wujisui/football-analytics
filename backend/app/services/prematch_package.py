@@ -8,6 +8,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.services.api_utils import extract_items, first_value
+from app.services.team_names import localize_match_teams, localize_matches_block
 
 logger = logging.getLogger(__name__)
 
@@ -69,24 +70,30 @@ def summarize_form_payload(payload: dict[str, Any], team_id: int, limit: int = 2
             if ht_home is not None and ht_away is not None
             else None
         )
+        home_id = first_value(item, [["teams", "home", "id"], ["homeTeam", "id"]])
+        away_id = first_value(item, [["teams", "away", "id"], ["awayTeam", "id"]])
+        home_name = first_value(item, [["teams", "home", "name"], ["homeTeam", "name"]], "")
+        away_name = first_value(item, [["teams", "away", "name"], ["awayTeam", "name"]], "")
         matches.append(
-            {
-                "fixture_id": first_value(item, [["fixture", "id"], ["id"]]),
-                "date": first_value(item, [["fixture", "date"], ["date"]]),
-                "home": first_value(item, [["teams", "home", "name"], ["homeTeam", "name"]], ""),
-                "away": first_value(item, [["teams", "away", "name"], ["awayTeam", "name"]], ""),
-                "home_id": first_value(item, [["teams", "home", "id"], ["homeTeam", "id"]]),
-                "away_id": first_value(item, [["teams", "away", "id"], ["awayTeam", "id"]]),
-                "score": (
-                    f"{first_value(item, [['goals', 'home'], ['score', 'home']], '-')}"
-                    f"-{first_value(item, [['goals', 'away'], ['score', 'away']], '-')}"
-                ),
-                "score_ht": score_ht,
-                "league_id": first_value(item, [["league", "id"]]),
-                "league_name": first_value(item, [["league", "name"]], "") or "",
-                "league_country": first_value(item, [["league", "country"]], "") or "",
-                "result": result,
-            }
+            localize_match_teams(
+                {
+                    "fixture_id": first_value(item, [["fixture", "id"], ["id"]]),
+                    "date": first_value(item, [["fixture", "date"], ["date"]]),
+                    "home": home_name or "",
+                    "away": away_name or "",
+                    "home_id": home_id,
+                    "away_id": away_id,
+                    "score": (
+                        f"{first_value(item, [['goals', 'home'], ['score', 'home']], '-')}"
+                        f"-{first_value(item, [['goals', 'away'], ['score', 'away']], '-')}"
+                    ),
+                    "score_ht": score_ht,
+                    "league_id": first_value(item, [["league", "id"]]),
+                    "league_name": first_value(item, [["league", "name"]], "") or "",
+                    "league_country": first_value(item, [["league", "country"]], "") or "",
+                    "result": result,
+                }
+            )
         )
 
     # Season payloads are chronological; keep the most recent finished matches.
@@ -140,27 +147,29 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
             else None
         )
         matches.append(
-            {
-                "fixture_id": first_value(item, [["fixture", "id"], ["id"]]),
-                "date": first_value(item, [["fixture", "date"], ["date"]]),
-                "home": first_value(item, [["teams", "home", "name"]], ""),
-                "away": first_value(item, [["teams", "away", "name"]], ""),
-                "home_id": first_value(item, [["teams", "home", "id"]]),
-                "away_id": first_value(item, [["teams", "away", "id"]]),
-                "score": f"{home_goals}-{away_goals}",
-                "score_ht": score_ht,
-                "league_id": first_value(item, [["league", "id"]]),
-                "league_name": first_value(item, [["league", "name"]], "") or "",
-                "league_country": first_value(item, [["league", "country"]], "") or "",
-                "outcome_for_current_home": outcome,
-                "result": (
-                    "W"
-                    if outcome == "home"
-                    else "L"
-                    if outcome == "away"
-                    else "D"
-                ),
-            }
+            localize_match_teams(
+                {
+                    "fixture_id": first_value(item, [["fixture", "id"], ["id"]]),
+                    "date": first_value(item, [["fixture", "date"], ["date"]]),
+                    "home": first_value(item, [["teams", "home", "name"]], "") or "",
+                    "away": first_value(item, [["teams", "away", "name"]], "") or "",
+                    "home_id": first_value(item, [["teams", "home", "id"]]),
+                    "away_id": first_value(item, [["teams", "away", "id"]]),
+                    "score": f"{home_goals}-{away_goals}",
+                    "score_ht": score_ht,
+                    "league_id": first_value(item, [["league", "id"]]),
+                    "league_name": first_value(item, [["league", "name"]], "") or "",
+                    "league_country": first_value(item, [["league", "country"]], "") or "",
+                    "outcome_for_current_home": outcome,
+                    "result": (
+                        "W"
+                        if outcome == "home"
+                        else "L"
+                        if outcome == "away"
+                        else "D"
+                    ),
+                }
+            )
         )
 
     matches.sort(key=lambda m: str(m.get("date") or ""), reverse=True)
@@ -669,9 +678,15 @@ def package_from_record(record: Any) -> dict[str, Any]:
         "odds_opening": odds_opening,
         "lineups": lineups if lineups else {"available": False, "home": None, "away": None},
         "injuries": injuries if injuries else {"available": False, "home": [], "away": []},
-        "head_to_head": loads_json(getattr(record, "h2h_json", None), {"played": 0, "matches": []}),
-        "home_form": loads_json(getattr(record, "home_form_json", None), {"played": 0, "matches": []}),
-        "away_form": loads_json(getattr(record, "away_form_json", None), {"played": 0, "matches": []}),
+        "head_to_head": localize_matches_block(
+            loads_json(getattr(record, "h2h_json", None), {"played": 0, "matches": []})
+        ),
+        "home_form": localize_matches_block(
+            loads_json(getattr(record, "home_form_json", None), {"played": 0, "matches": []})
+        ),
+        "away_form": localize_matches_block(
+            loads_json(getattr(record, "away_form_json", None), {"played": 0, "matches": []})
+        ),
         "standings": loads_json(
             getattr(record, "standings_json", None),
             {"available": False},

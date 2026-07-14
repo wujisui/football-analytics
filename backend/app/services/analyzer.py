@@ -16,6 +16,7 @@ from app.models.team import Team
 from app.services.api_utils import extract_items, first_value
 from app.services.cache import TTL_ANALYSIS, analysis_cache_key, get_cache_service
 from app.services.fetcher import FootballFetcher
+from app.services.team_names import team_name_zh
 from app.services.prematch_package import (
     dumps_json,
     loads_json,
@@ -558,8 +559,12 @@ class AnalyzerService:
         home_team = fixture.home_team or await self.session.get(Team, fixture.home_team_id)
         away_team = fixture.away_team or await self.session.get(Team, fixture.away_team_id)
         league = fixture.league or await self.session.get(League, fixture.league_id)
-        home_name = home_team.name if home_team else f"Team {fixture.home_team_id}"
-        away_name = away_team.name if away_team else f"Team {fixture.away_team_id}"
+        home_name = team_name_zh(
+            home_team.name if home_team else None, fixture.home_team_id
+        ) or f"Team {fixture.home_team_id}"
+        away_name = team_name_zh(
+            away_team.name if away_team else None, fixture.away_team_id
+        ) or f"Team {fixture.away_team_id}"
         league_name = league.name if league else f"League {fixture.league_id}"
 
         stored = await self._get_fresh_pre_match(fixture_id, fixture)
@@ -669,8 +674,12 @@ class AnalyzerService:
         away_team = fixture.away_team or await self.session.get(Team, fixture.away_team_id)
         league = fixture.league or await self.session.get(League, fixture.league_id)
 
-        home_name = home_team.name if home_team else f"Team {fixture.home_team_id}"
-        away_name = away_team.name if away_team else f"Team {fixture.away_team_id}"
+        home_name = team_name_zh(
+            home_team.name if home_team else None, fixture.home_team_id
+        ) or f"Team {fixture.home_team_id}"
+        away_name = team_name_zh(
+            away_team.name if away_team else None, fixture.away_team_id
+        ) or f"Team {fixture.away_team_id}"
         league_name = league.name if league else f"League {fixture.league_id}"
         season = league.season if league and league.season else str(datetime.now().year)
 

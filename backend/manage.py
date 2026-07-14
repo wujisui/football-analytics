@@ -165,6 +165,17 @@ async def run_scheduler_loop() -> None:
         shutdown_scheduler()
 
 
+async def run_backfill_team_names() -> None:
+    """Rewrite teams.name to Chinese for every mapped club/national team."""
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.team_names import backfill_team_names
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        updated = await backfill_team_names(session)
+    print(f"Updated {updated} team display name(s) to Chinese.")
+
+
 async def run_backfill_features() -> None:
     from app.core.database import AsyncSessionLocal, init_db
     from app.services.ml_predictor import collect_training_rows
@@ -253,6 +264,10 @@ def main() -> None:
     subparsers.add_parser("list-tasks", help="List registered scheduler tasks")
     subparsers.add_parser("run-scheduler", help="Run scheduler in foreground for debugging")
     subparsers.add_parser(
+        "backfill-team-names",
+        help="Rewrite teams.name to Chinese from the built-in id/name map",
+    )
+    subparsers.add_parser(
         "backfill-features",
         help="Build match_features from finished fixtures + pre_match packages",
     )
@@ -299,6 +314,7 @@ def main() -> None:
         "cache-stats": run_cache_stats,
         "list-tasks": run_list_tasks,
         "run-scheduler": run_scheduler_loop,
+        "backfill-team-names": run_backfill_team_names,
         "backfill-features": run_backfill_features,
         "train-model": run_train_model,
         "model-status": run_model_status,

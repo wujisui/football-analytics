@@ -13,6 +13,7 @@ from app.models.fixture import Fixture
 from app.models.league import League
 from app.models.team import Team
 from app.services.api_utils import parse_remaining_requests
+from app.services.team_names import backfill_team_names, team_name_zh
 from app.services.cache import (
     TTL_FIXTURES_TODAY,
     TTL_HEADTOHEAD,
@@ -279,12 +280,13 @@ class FootballFetcher:
         logo_url: str | None = None,
     ) -> Team:
         assert self.session is not None
+        display_name = team_name_zh(name, team_id) or name
         team = await self.session.get(Team, team_id)
         if team is None:
-            team = Team(id=team_id, name=name, logo_url=logo_url)
+            team = Team(id=team_id, name=display_name, logo_url=logo_url)
             self.session.add(team)
         else:
-            team.name = name
+            team.name = display_name
             if logo_url is not None:
                 team.logo_url = logo_url
         return team
@@ -847,7 +849,14 @@ class FootballFetcher:
                 fetch_teams=total == 0,
             )
 
-        logger.info("Saved %s fixtures total for %s (force=%s).", total, date_str, force)
+        renamed = await backfill_team_names(self.session)
+        logger.info(
+            "Saved %s fixtures total for %s (force=%s, teams_renamed=%s).",
+            total,
+            date_str,
+            force,
+            renamed,
+        )
         return total
 
     async def fetch_today_fixtures(self, *, force: bool = False) -> int:
@@ -945,7 +954,7 @@ class FootballFetcher:
                     exc_info=True,
                 )
             if index + 1 < len(league_items):
-                await asyncio.sleep(0.45)
+                await asyncio.sleep(0.25)
 
         if blocked_ids:
             cursor = start
@@ -962,13 +971,16 @@ class FootballFetcher:
                 if cursor <= end:
                     await asyncio.sleep(0.35)
 
+        renamed = await backfill_team_names(self.session)
         logger.info(
-            "Saved %s fixtures across leagues for %s..%s (blocked_fallback=%s, force=%s).",
+            "Saved %s fixtures across leagues for %s..%s "
+            "(blocked_fallback=%s, force=%s, teams_renamed=%s).",
             total,
             date_from,
             date_to,
             sorted(blocked_ids),
             force,
+            renamed,
         )
         return total
 
@@ -1331,7 +1343,7 @@ class FootballFetcher:
                 parsed = parse_odds_payload(raw)
                 if not parsed.get("available"):
                     logger.info("No official odds yet for fixture %s", fixture_id)
-                    await asyncio.sleep(1.2)
+                    await asyncio.sleep(0.45)
                     continue
                 await self._upsert_odds_and_recompute(
                     fixture_id, parsed, raw, set_opening=set_opening
@@ -1340,7 +1352,8 @@ class FootballFetcher:
             except Exception as exc:
                 logger.warning("Fixture odds %s failed: %s", fixture_id, exc)
             if index + 1 < take:
-                await asyncio.sleep(2.0)
+                # Free-plan friendly pacing; 2s made force-sync feel like 1–2 min.
+                await asyncio.sleep(0.55)
 
         # Midday: promote existing 即时盘 → 初盘 when opening was never frozen
         # (e.g. board first arrived via manual sync).
