@@ -53,24 +53,63 @@ function goNav(name: 'home' | 'results') {
           <span class="brand-subtitle">赛前分析 · 人机协同</span>
         </div>
 
-        <nav class="app-nav" aria-label="主导航">
+        <div class="header-actions">
+          <nav class="app-nav" aria-label="主导航">
+            <div class="nav-seg" role="group" aria-label="页面切换">
+              <button
+                type="button"
+                class="nav-seg-btn"
+                :class="{ active: activeNav === 'home' }"
+                @click="goNav('home')"
+              >
+                赛前
+              </button>
+              <button
+                type="button"
+                class="nav-seg-btn"
+                :class="{ active: activeNav === 'results' }"
+                @click="goNav('results')"
+              >
+                赛果
+              </button>
+            </div>
+          </nav>
+
           <button
             type="button"
-            class="nav-link"
-            :class="{ active: activeNav === 'home' }"
-            @click="goNav('home')"
+            class="theme-toggle"
+            :title="isDark ? '切换到浅色' : '切换到深色'"
+            :aria-label="isDark ? '切换到浅色' : '切换到深色'"
+            @click="toggleTheme"
           >
-            赛前
+            <svg
+              v-if="isDark"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M12.1 2a9.9 9.9 0 0 0-1.1.06 8 8 0 1 0 10.94 10.94A9.95 9.95 0 0 1 12.1 2z"
+              />
+            </svg>
+            <svg
+              v-else
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5a1 1 0 0 1 1 1v1.5a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm0 17.5a1 1 0 0 1 1 1V22a1 1 0 1 1-2 0v-1.5a1 1 0 0 1 1-1zM3 11a1 1 0 1 0 0 2h1.5a1 1 0 1 0 0-2H3zm16.5 0a1 1 0 1 0 0 2H21a1 1 0 1 0 0-2h-1.5zM5.64 5.64a1 1 0 0 1 1.41 0l1.06 1.06a1 1 0 1 1-1.41 1.41L5.64 7.05a1 1 0 0 1 0-1.41zm10.25 10.25a1 1 0 0 1 1.41 0l1.06 1.06a1 1 0 0 1-1.41 1.41l-1.06-1.06a1 1 0 0 1 0-1.41zM5.64 18.36a1 1 0 0 1 0-1.41l1.06-1.06a1 1 0 1 1 1.41 1.41l-1.06 1.06a1 1 0 0 1-1.41 0zm10.25-10.25a1 1 0 0 1 0-1.41l1.06-1.06a1 1 0 1 1 1.41 1.41l-1.06 1.06a1 1 0 0 1-1.41 0z"
+              />
+            </svg>
           </button>
-          <button
-            type="button"
-            class="nav-link"
-            :class="{ active: activeNav === 'results' }"
-            @click="goNav('results')"
-          >
-            赛果
-          </button>
-        </nav>
+        </div>
       </n-layout-header>
 
       <n-layout-content
@@ -82,42 +121,6 @@ function goNav(name: 'home' | 'results') {
       >
         <router-view />
       </n-layout-content>
-
-      <!-- Bottom-right theme toggle (avoids header edge clipping). -->
-      <button
-        type="button"
-        class="theme-fab"
-        :title="isDark ? '切换到浅色' : '切换到深色'"
-        :aria-label="isDark ? '切换到浅色' : '切换到深色'"
-        @click="toggleTheme"
-      >
-        <svg
-          v-if="isDark"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          width="20"
-          height="20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            d="M12.1 2a9.9 9.9 0 0 0-1.1.06 8 8 0 1 0 10.94 10.94A9.95 9.95 0 0 1 12.1 2z"
-          />
-        </svg>
-        <svg
-          v-else
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          width="20"
-          height="20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5a1 1 0 0 1 1 1v1.5a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm0 17.5a1 1 0 0 1 1 1V22a1 1 0 1 1-2 0v-1.5a1 1 0 0 1 1-1zM3 11a1 1 0 1 0 0 2h1.5a1 1 0 1 0 0-2H3zm16.5 0a1 1 0 1 0 0 2H21a1 1 0 1 0 0-2h-1.5zM5.64 5.64a1 1 0 0 1 1.41 0l1.06 1.06a1 1 0 1 1-1.41 1.41L5.64 7.05a1 1 0 0 1 0-1.41zm10.25 10.25a1 1 0 0 1 1.41 0l1.06 1.06a1 1 0 0 1-1.41 1.41l-1.06-1.06a1 1 0 0 1 0-1.41zM5.64 18.36a1 1 0 0 1 0-1.41l1.06-1.06a1 1 0 1 1 1.41 1.41l-1.06 1.06a1 1 0 0 1-1.41 0zm10.25-10.25a1 1 0 0 1 0-1.41l1.06-1.06a1 1 0 1 1 1.41 1.41l-1.06 1.06a1 1 0 0 1-1.41 0z"
-          />
-        </svg>
-      </button>
     </n-layout>
     </n-message-provider>
   </n-config-provider>
@@ -174,68 +177,95 @@ function goNav(name: 'home' | 'results') {
   white-space: nowrap;
 }
 
-.app-nav {
+.header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
   flex-shrink: 0;
+  gap: 10px;
   margin-left: 8px;
 }
 
-.nav-link {
+.app-nav {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.nav-seg {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 10px;
+  border: 1px solid var(--fa-border);
+  background: var(--fa-bg-soft);
+}
+
+.nav-seg-btn {
   appearance: none;
   border: none;
   background: transparent;
-  color: inherit;
-  opacity: 0.62;
+  color: var(--fa-text-secondary);
   font-size: 13px;
   font-weight: 600;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 6px 14px;
+  border-radius: 7px;
   cursor: pointer;
   flex-shrink: 0;
   white-space: nowrap;
+  line-height: 1.2;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.nav-link:hover {
-  opacity: 0.9;
-  background: color-mix(in srgb, currentColor 8%, transparent);
+.nav-seg-btn:hover {
+  color: var(--fa-text);
+  background: color-mix(in srgb, var(--fa-text) 6%, transparent);
 }
 
-.nav-link.active {
-  opacity: 1;
-  background: color-mix(in srgb, currentColor 12%, transparent);
+.nav-seg-btn.active {
+  color: var(--fa-text-strong, var(--fa-text));
+  background: var(--fa-bg-elevated);
+  box-shadow: 0 1px 3px var(--fa-hover-shadow);
 }
 
-.theme-fab {
+.nav-seg-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  outline-offset: 1px;
+}
+
+.theme-toggle {
   appearance: none;
-  position: fixed;
-  z-index: 1000;
-  right: max(20px, env(safe-area-inset-right, 0px));
-  bottom: max(20px, env(safe-area-inset-bottom, 0px));
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 34px;
+  height: 34px;
   margin: 0;
   padding: 0;
   border: 1px solid var(--fa-border);
-  border-radius: 50%;
-  background: var(--fa-bg-elevated);
+  border-radius: 10px;
+  background: var(--fa-bg-soft);
   color: var(--fa-text-secondary);
-  box-shadow: 0 4px 14px var(--fa-hover-shadow);
   cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
-.theme-fab:hover {
+.theme-toggle:hover {
   color: var(--fa-text-strong);
   border-color: var(--fa-hover-border);
+  background: var(--fa-bg-elevated);
 }
 
-.theme-fab:focus-visible {
+.theme-toggle:focus-visible {
   outline: 2px solid color-mix(in srgb, currentColor 35%, transparent);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .app-body {
@@ -259,16 +289,18 @@ function goNav(name: 'home' | 'results') {
     display: none;
   }
 
-  .nav-link {
-    padding: 5px 8px;
+  .nav-seg-btn {
+    padding: 5px 11px;
     font-size: 12px;
   }
 
-  .theme-fab {
-    width: 42px;
-    height: 42px;
-    right: max(16px, env(safe-area-inset-right, 0px));
-    bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  .header-actions {
+    gap: 8px;
+  }
+
+  .theme-toggle {
+    width: 32px;
+    height: 32px;
   }
 }
 </style>
