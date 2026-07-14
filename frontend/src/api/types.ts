@@ -89,7 +89,11 @@ export interface FormMatch {
   date?: string | null
   home: string
   away: string
+  home_id?: number | null
+  away_id?: number | null
   score: string
+  /** Halftime score e.g. "0-1"; absent on older cached rows. */
+  score_ht?: string | null
   league_id?: number | null
   league_name?: string | null
   league_country?: string | null

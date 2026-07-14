@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import type { FormMatch, PrematchPackage } from '@/api/types'
-import {
-  formCharClass,
-  formCharsZh,
-  formatDateShort,
-  resultTagType,
-  resultToZh,
-} from '@/utils/format'
-import { leagueNameZh } from '@/utils/leagueNames'
+import MatchStatsSummary from '@/components/detail/MatchStatsSummary.vue'
+import MatchStatsTable from '@/components/detail/MatchStatsTable.vue'
+import { useMediaQuery } from '@/composables/useMediaQuery'
+import type { PrematchPackage } from '@/api/types'
+import { formCharClass, formCharsZh } from '@/utils/format'
 import { teamNameZh } from '@/utils/teamNames'
 
 const props = defineProps<{
@@ -20,8 +16,12 @@ const props = defineProps<{
   pkg: PrematchPackage | null
 }>()
 
-/** Display count only — backend stores up to 20; free plan may return fewer. */
-const displayLimit = ref(10)
+/** Match former CSS: 1fr 1fr above 900px, stack below. */
+const isFormNarrow = useMediaQuery('(max-width: 900px)')
+const formCols = computed(() => (isFormNarrow.value ? 1 : 2))
+
+const h2hLimit = ref(10)
+const formLimit = ref(10)
 const limitOptions = [
   { label: '近 5 场', value: 5 },
   { label: '近 8 场', value: 8 },
@@ -33,262 +33,128 @@ const limitOptions = [
 const homeZh = computed(() => teamNameZh(props.homeTeamName, props.homeTeamId))
 const awayZh = computed(() => teamNameZh(props.awayTeamName, props.awayTeamId))
 
-const h2h = computed(() => props.pkg?.head_to_head ?? null)
 const h2hMatches = computed(
-  () => h2h.value?.matches?.slice(0, displayLimit.value) ?? [],
+  () => props.pkg?.head_to_head?.matches?.slice(0, h2hLimit.value) ?? [],
 )
-const h2hSummary = computed(() => {
-  const matches = h2hMatches.value
-  return {
-    played: matches.length,
-    home_wins: matches.filter((m) => m.outcome_for_current_home === 'home').length,
-    draws: matches.filter((m) => m.outcome_for_current_home === 'draw').length,
-    away_wins: matches.filter((m) => m.outcome_for_current_home === 'away').length,
-  }
-})
-const homeForm = computed(() => props.pkg?.home_form ?? null)
-const awayForm = computed(() => props.pkg?.away_form ?? null)
 const homeRecent = computed(
-  () => homeForm.value?.matches?.slice(0, displayLimit.value) ?? [],
+  () => props.pkg?.home_form?.matches?.slice(0, formLimit.value) ?? [],
 )
 const awayRecent = computed(
-  () => awayForm.value?.matches?.slice(0, displayLimit.value) ?? [],
+  () => props.pkg?.away_form?.matches?.slice(0, formLimit.value) ?? [],
 )
-
-function formSliceSummary(matches: FormMatch[]) {
-  return {
-    wins: matches.filter((m) => m.result === 'W').length,
-    draws: matches.filter((m) => m.result === 'D').length,
-    losses: matches.filter((m) => m.result === 'L').length,
-  }
-}
-
-const homeSliceSummary = computed(() => formSliceSummary(homeRecent.value))
-const awaySliceSummary = computed(() => formSliceSummary(awayRecent.value))
+const homeForm = computed(() => props.pkg?.home_form ?? null)
+const awayForm = computed(() => props.pkg?.away_form ?? null)
 
 const hasAny = computed(
   () =>
-    (h2h.value?.played ?? 0) > 0 ||
-    (homeForm.value?.matches?.length ?? 0) > 0 ||
-    (awayForm.value?.matches?.length ?? 0) > 0,
+    (props.pkg?.head_to_head?.matches?.length ?? 0) > 0 ||
+    (props.pkg?.home_form?.matches?.length ?? 0) > 0 ||
+    (props.pkg?.away_form?.matches?.length ?? 0) > 0,
 )
-
-function competitionLabel(m: FormMatch): string {
-  return leagueNameZh(m.league_name, {
-    leagueId: m.league_id,
-    country: m.league_country,
-  })
-}
-
-function h2hResultLabel(m: FormMatch): string {
-  const o = m.outcome_for_current_home
-  if (o === 'home') return '主胜'
-  if (o === 'away') return '客胜'
-  if (o === 'draw') return '平'
-  return resultToZh(m.result)
-}
-
-function h2hResultType(m: FormMatch): 'success' | 'warning' | 'error' | 'default' {
-  const label = h2hResultLabel(m)
-  if (label === '主胜') return 'success'
-  if (label === '平') return 'warning'
-  if (label === '客胜') return 'error'
-  return resultTagType(m.result)
-}
 </script>
 
 <template>
-  <div class="h2h-tab">
-    <n-empty
-      v-if="!hasAny"
-      description="暂无交战与近期战绩（免费套餐历史赛季约 2022–2024）"
-    />
+  <n-empty v-if="!hasAny" description="暂无交战与近期战绩" />
 
-    <template v-else>
-      <div class="toolbar">
-        <span class="toolbar-label">展示场次</span>
+  <n-space v-else vertical :size="12">
+    <n-space vertical :size="12">
+      <n-flex justify="space-between" align="center" :size="12">
+        <n-flex align="center" :size="8">
+          <span class="title-bar" aria-hidden="true" />
+          <n-text strong style="font-size: 15px">历史交锋</n-text>
+        </n-flex>
+        <n-flex align="center" :size="8">
+          <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
+          <n-select
+            v-model:value="h2hLimit"
+            size="small"
+            :options="limitOptions"
+            :consistent-menu-width="false"
+            style="width: 120px"
+          />
+        </n-flex>
+      </n-flex>
+      <MatchStatsSummary :matches="h2hMatches" :focus-team-id="homeTeamId" />
+      <MatchStatsTable
+        :matches="h2hMatches"
+        :focus-team-id="homeTeamId"
+        empty-description="双方暂无直接交锋记录"
+      />
+    </n-space>
+
+    <n-flex class="section-band" justify="space-between" align="center" :size="12">
+      <n-flex align="center" :size="8">
+        <span class="title-bar" aria-hidden="true" />
+        <n-text strong style="font-size: 15px">近期战绩</n-text>
+      </n-flex>
+      <n-flex align="center" :size="8">
+        <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
         <n-select
-          v-model:value="displayLimit"
+          v-model:value="formLimit"
           size="small"
           :options="limitOptions"
           :consistent-menu-width="false"
           style="width: 120px"
         />
-        <span class="hint inline">
-          后端最多存 20 场；交锋窗口约 2022–2024（免费套餐）
-        </span>
-      </div>
+      </n-flex>
+    </n-flex>
 
-      <section class="block">
-        <h3 class="block-title">双方交锋</h3>
-        <template v-if="h2h && h2h.played > 0">
-          <div class="summary-bar">
-            近 {{ h2hSummary.played }} 次（库内 {{ h2h.played }}）：
-            <strong>{{ homeZh }}</strong>
-            {{ h2hSummary.home_wins }} 胜 /
-            {{ h2hSummary.draws }} 平 /
-            <strong>{{ awayZh }}</strong>
-            {{ h2hSummary.away_wins }} 胜
-          </div>
-          <ul class="list">
-            <li
-              v-for="(m, idx) in h2hMatches"
-              :key="`h2h-${m.fixture_id ?? idx}`"
-              class="row"
-              :class="{ latest: idx === 0 }"
-            >
-              <span class="date">{{ formatDateShort(m.date || '') }}</span>
-              <n-tag v-if="competitionLabel(m)" size="tiny" :bordered="false" type="info">
-                {{ competitionLabel(m) }}
-              </n-tag>
-              <span class="teams">
-                {{ teamNameZh(m.home) }} vs {{ teamNameZh(m.away) }}
-              </span>
-              <span class="score">{{ m.score }}</span>
-              <n-tag size="tiny" :type="h2hResultType(m)" :bordered="false">
-                {{ h2hResultLabel(m) }}
-              </n-tag>
-              <n-tag v-if="idx === 0" size="tiny" type="info" :bordered="false">最近</n-tag>
-            </li>
-          </ul>
-        </template>
-        <n-empty v-else description="双方暂无直接交锋记录，下方展示各自近期对阵" size="small" />
-      </section>
-
-      <div class="split">
-        <section class="block">
-          <h3 class="block-title">{{ homeZh }} · 近期战绩</h3>
-          <div v-if="homeForm?.form" class="badges">
+    <n-grid :cols="formCols" :x-gap="16" :y-gap="16">
+      <n-gi>
+        <n-space vertical :size="8">
+          <n-text strong>{{ homeZh }}</n-text>
+          <n-flex v-if="homeForm?.form" class="badges" :size="6" :wrap="false">
             <span
-              v-for="(zh, i) in formCharsZh(homeForm.form, displayLimit)"
+              v-for="(zh, i) in formCharsZh(homeForm.form, formLimit)"
               :key="i"
               class="badge"
               :class="formCharClass(zh)"
             >
               {{ zh }}
             </span>
-          </div>
-          <p v-if="homeRecent.length" class="summary">
-            {{ homeSliceSummary.wins }}胜 {{ homeSliceSummary.draws }}平
-            {{ homeSliceSummary.losses }}负 · 展示 {{ homeRecent.length }} /
-            {{ homeForm?.played ?? 0 }}
-          </p>
-          <ul v-if="homeRecent.length" class="list">
-            <li
-              v-for="(m, idx) in homeRecent"
-              :key="`hf-${m.fixture_id ?? idx}`"
-              class="row"
-            >
-              <span class="date">{{ formatDateShort(m.date || '') }}</span>
-              <n-tag v-if="competitionLabel(m)" size="tiny" :bordered="false" type="info">
-                {{ competitionLabel(m) }}
-              </n-tag>
-              <span class="teams">
-                {{ teamNameZh(m.home) }} vs {{ teamNameZh(m.away) }}
-              </span>
-              <span class="score">{{ m.score }}</span>
-              <n-tag size="tiny" :type="resultTagType(m.result)" :bordered="false">
-                {{ resultToZh(m.result) }}
-              </n-tag>
-            </li>
-          </ul>
-          <n-empty v-else description="暂无近期赛果" size="small" />
-        </section>
-
-        <section class="block">
-          <h3 class="block-title">{{ awayZh }} · 近期战绩</h3>
-          <div v-if="awayForm?.form" class="badges">
+          </n-flex>
+          <MatchStatsSummary :matches="homeRecent" :focus-team-id="homeTeamId" />
+          <MatchStatsTable :matches="homeRecent" :focus-team-id="homeTeamId" />
+        </n-space>
+      </n-gi>
+      <n-gi>
+        <n-space vertical :size="8">
+          <n-text strong>{{ awayZh }}</n-text>
+          <n-flex v-if="awayForm?.form" class="badges" :size="6" :wrap="false">
             <span
-              v-for="(zh, i) in formCharsZh(awayForm.form, displayLimit)"
+              v-for="(zh, i) in formCharsZh(awayForm.form, formLimit)"
               :key="i"
               class="badge"
               :class="formCharClass(zh)"
             >
               {{ zh }}
             </span>
-          </div>
-          <p v-if="awayRecent.length" class="summary">
-            {{ awaySliceSummary.wins }}胜 {{ awaySliceSummary.draws }}平
-            {{ awaySliceSummary.losses }}负 · 展示 {{ awayRecent.length }} /
-            {{ awayForm?.played ?? 0 }}
-          </p>
-          <ul v-if="awayRecent.length" class="list">
-            <li
-              v-for="(m, idx) in awayRecent"
-              :key="`af-${m.fixture_id ?? idx}`"
-              class="row"
-            >
-              <span class="date">{{ formatDateShort(m.date || '') }}</span>
-              <n-tag v-if="competitionLabel(m)" size="tiny" :bordered="false" type="info">
-                {{ competitionLabel(m) }}
-              </n-tag>
-              <span class="teams">
-                {{ teamNameZh(m.home) }} vs {{ teamNameZh(m.away) }}
-              </span>
-              <span class="score">{{ m.score }}</span>
-              <n-tag size="tiny" :type="resultTagType(m.result)" :bordered="false">
-                {{ resultToZh(m.result) }}
-              </n-tag>
-            </li>
-          </ul>
-          <n-empty v-else description="暂无近期赛果" size="small" />
-        </section>
-      </div>
-    </template>
-  </div>
+          </n-flex>
+          <MatchStatsSummary :matches="awayRecent" :focus-team-id="awayTeamId" />
+          <MatchStatsTable :matches="awayRecent" :focus-team-id="awayTeamId" />
+        </n-space>
+      </n-gi>
+    </n-grid>
+  </n-space>
 </template>
 
 <style scoped>
-.h2h-tab {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.toolbar-label {
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-}
-
-.block-title {
-  margin: 0 0 6px;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.hint {
-  margin: 0 0 10px;
-  font-size: 12px;
-  color: var(--fa-text-faint);
-}
-
-.hint.inline {
-  margin: 0;
-}
-
-.summary-bar {
-  padding: 12px 14px;
+.section-band {
+  padding: 10px 12px;
   background: var(--fa-bg-soft);
-  border-radius: 6px;
-  font-size: 14px;
-  color: var(--fa-text);
-  line-height: 1.5;
-  margin-bottom: 10px;
 }
 
+.title-bar {
+  width: 3px;
+  height: 14px;
+  border-radius: 1px;
+  background: #c23b3b;
+  flex-shrink: 0;
+}
+
+/* W/D/L chips — business viz (allowed outside Naive). */
 .badges {
-  display: flex;
-  gap: 6px;
-  flex-wrap: nowrap;
   overflow-x: auto;
-  margin-bottom: 8px;
   padding-bottom: 2px;
 }
 
@@ -296,8 +162,6 @@ function h2hResultType(m: FormMatch): 'success' | 'warning' | 'error' | 'default
   min-width: 26px;
   width: 26px;
   height: 26px;
-  padding: 0;
-  flex-shrink: 0;
   border-radius: 4px;
   display: inline-flex;
   align-items: center;
@@ -306,10 +170,11 @@ function h2hResultType(m: FormMatch): 'success' | 'warning' | 'error' | 'default
   font-weight: 700;
   color: #fff;
   background: #999;
+  flex-shrink: 0;
 }
 
 .badge.w {
-  background: #18a058;
+  background: #c23b3b;
 }
 
 .badge.d {
@@ -317,65 +182,6 @@ function h2hResultType(m: FormMatch): 'success' | 'warning' | 'error' | 'default
 }
 
 .badge.l {
-  background: #d03050;
-}
-
-.summary {
-  margin: 0 0 10px;
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-}
-
-.split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--fa-border);
-  border-radius: 6px;
-  background: var(--fa-bg-elevated);
-  font-size: 13px;
-}
-
-.row.latest {
-  border-color: var(--fa-highlight-border);
-  background: var(--fa-highlight-bg);
-}
-
-.date {
-  color: var(--fa-text-faint);
-  min-width: 96px;
-}
-
-.teams {
-  flex: 1;
-  min-width: 140px;
-}
-
-.score {
-  font-weight: 700;
-  min-width: 40px;
-}
-
-@media (max-width: 900px) {
-  .split {
-    grid-template-columns: 1fr;
-  }
+  background: #3b6fc2;
 }
 </style>

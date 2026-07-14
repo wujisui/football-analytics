@@ -29,7 +29,7 @@ const activeTab = ref<TabKey>('record')
 const visited = ref<Set<TabKey>>(new Set(['record']))
 
 const tabs: { name: TabKey; label: string; short: string }[] = [
-  { name: 'record', label: '战绩与交锋', short: '战绩' },
+  { name: 'record', label: '统计', short: '统计' },
   { name: 'stats', label: '赛季数据', short: '数据' },
   { name: 'lineup', label: '伤病与阵容', short: '阵容' },
   { name: 'prediction', label: '我的预测', short: '预测' },

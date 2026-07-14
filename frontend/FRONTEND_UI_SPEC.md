@@ -108,7 +108,7 @@
 n-layout-content（全屏滚动）
 ├── BasicInfo：n-breadcrumb + n-page-header（对阵 / 联赛 / 时间）
 └── TabsContainer（n-tabs）
-      ├── 战绩与交锋 H2HTab（双方交锋 + 双方近期战绩）
+      ├── 统计 H2HTab（历史交锋 + 主客近期战绩，MatchStatsTable）
       ├── 赛季数据 StatsTab
       ├── 伤病与阵容 LineupTab
       └── 我的预测 PredictionTab
@@ -134,7 +134,7 @@ n-layout-content（全屏滚动）
 
 | Tab   | 内容                                                                                                                    |
 |-------|-----------------------------------------------------------------------------------------------------------------------|
-| 战绩与交锋 | **双方交锋**（日期、赛事级别、对阵、比分；免费套餐历史约 2022–2024）+ **主/客近期战绩**（W/D/L、赛事级别）；无直接交锋时仍展示双方近况。免费套餐无法拉取 2025/2026 赛季历史，近况以套餐内最近完赛为准 |
+| 统计 | 无外层 card；历史交锋 / 近期战绩色带分隔；`MatchStatsSummary` + **`n-data-table`（MatchStatsTable）**；近期主客 `n-grid` 左右分栏 |
 | 赛季数据  | 在独立 stats 接口就绪前，可用近况估算胜率、场均进/失球；可附带 1X2 赔率参考；需标明数据来源局限                                                                |
 | 伤病与阵容 | 双方伤病列表；首发 / 替补 / 阵型（无数据时空态）                                                                                           |
 | 我的预测  | 算法原始胜平负 + 推荐；主观意见输入；提交后展示融合对比（差异高亮）                                                                                   |
@@ -208,7 +208,9 @@ frontend/src/
 │   └── detail/
 │       ├── BasicInfo.vue
 │       ├── TabsContainer.vue
-│       ├── H2HTab.vue          # 战绩与交锋（合并原近期战绩）
+│       ├── H2HTab.vue             # 统计页编排
+│       ├── MatchStatsSummary.vue  # 共N场 + 胜率/进失汇总
+│       ├── MatchStatsTable.vue    # 对阵统计表（matches + focusTeamId）
 │       ├── StatsTab.vue
 │       ├── LineupTab.vue
 │       ├── PredictionTab.vue

@@ -72,9 +72,6 @@ function goLeague() {
           </n-tag>
           <span class="kickoff">{{ formatDateTime(fixture.fixture_date) }}</span>
         </div>
-        <p v-if="fixture.home_rank != null || fixture.away_rank != null" class="rank-hint">
-          排名为本赛事积分榜位置（如欧协联小组/联赛阶段），不是各自国内联赛排名
-        </p>
       </template>
     </n-page-header>
   </div>
@@ -102,12 +99,6 @@ function goLeague() {
 .kickoff {
   font-size: 13px;
   color: var(--fa-text-secondary);
-}
-
-.rank-hint {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--fa-text-faint);
 }
 
 :deep(.n-breadcrumb-item .n-breadcrumb-item__link) {

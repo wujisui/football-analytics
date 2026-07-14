@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import type { FixtureResponse, FormMatch, FormPackage, PrematchPackage } from '@/api/types'
 import { toPercent } from '@/utils/format'
 import { teamNameZh } from '@/utils/teamNames'
@@ -47,6 +48,9 @@ function teamGoalAvgs(
   return { scored: scored / n, conceded: conceded / n }
 }
 
+const isStatsNarrow = useMediaQuery('(max-width: 720px)')
+const statsCols = computed(() => (isStatsNarrow.value ? 1 : 2))
+
 const homeWinRate = computed(() => winRate(props.pkg?.home_form))
 const awayWinRate = computed(() => winRate(props.pkg?.away_form))
 
@@ -77,117 +81,56 @@ function pctLabel(n: number | null): string {
 </script>
 
 <template>
-  <div class="stats-tab">
-    <p class="hint">
-      以下指标由近况场次估算（后端暂无独立赛季统计接口）。完整主客场赛季数据待后续接入。
-    </p>
-
+  <n-space vertical :size="14">
     <template v-if="hasAny">
-      <div class="grid">
-        <n-card size="small" :title="teamNameZh(fixture.home_team_name, fixture.home_team_id)">
-          <div class="metric">
-            <div class="label">近况胜率</div>
-            <div class="value">{{ pctLabel(homeWinRate) }}</div>
-            <n-progress
-              v-if="homeWinRate != null"
-              type="line"
-              :percentage="Math.round(homeWinRate * 100)"
-              :show-indicator="false"
-              status="success"
-            />
-          </div>
-          <div class="metric">
-            <div class="label">场均进球（近况）</div>
-            <div class="value">{{ fmtAvg(homeGoals.scored) }}</div>
-          </div>
-          <div class="metric">
-            <div class="label">场均失球（近况）</div>
-            <div class="value">{{ fmtAvg(homeGoals.conceded) }}</div>
-          </div>
-        </n-card>
+      <n-grid :cols="statsCols" :x-gap="14" :y-gap="14">
+        <n-gi>
+          <n-card size="small" :title="teamNameZh(fixture.home_team_name, fixture.home_team_id)">
+            <n-space vertical :size="14">
+              <div>
+                <n-statistic label="近况胜率" :value="pctLabel(homeWinRate)" />
+                <n-progress
+                  v-if="homeWinRate != null"
+                  type="line"
+                  :percentage="Math.round(homeWinRate * 100)"
+                  :show-indicator="false"
+                  status="success"
+                  style="margin-top: 6px"
+                />
+              </div>
+              <n-statistic label="场均进球（近况）" :value="fmtAvg(homeGoals.scored)" />
+              <n-statistic label="场均失球（近况）" :value="fmtAvg(homeGoals.conceded)" />
+            </n-space>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card size="small" :title="teamNameZh(fixture.away_team_name, fixture.away_team_id)">
+            <n-space vertical :size="14">
+              <div>
+                <n-statistic label="近况胜率" :value="pctLabel(awayWinRate)" />
+                <n-progress
+                  v-if="awayWinRate != null"
+                  type="line"
+                  :percentage="Math.round(awayWinRate * 100)"
+                  :show-indicator="false"
+                  style="margin-top: 6px"
+                />
+              </div>
+              <n-statistic label="场均进球（近况）" :value="fmtAvg(awayGoals.scored)" />
+              <n-statistic label="场均失球（近况）" :value="fmtAvg(awayGoals.conceded)" />
+            </n-space>
+          </n-card>
+        </n-gi>
+      </n-grid>
 
-        <n-card size="small" :title="teamNameZh(fixture.away_team_name, fixture.away_team_id)">
-          <div class="metric">
-            <div class="label">近况胜率</div>
-            <div class="value">{{ pctLabel(awayWinRate) }}</div>
-            <n-progress
-              v-if="awayWinRate != null"
-              type="line"
-              :percentage="Math.round(awayWinRate * 100)"
-              :show-indicator="false"
-            />
-          </div>
-          <div class="metric">
-            <div class="label">场均进球（近况）</div>
-            <div class="value">{{ fmtAvg(awayGoals.scored) }}</div>
-          </div>
-          <div class="metric">
-            <div class="label">场均失球（近况）</div>
-            <div class="value">{{ fmtAvg(awayGoals.conceded) }}</div>
-          </div>
-        </n-card>
-      </div>
-
-      <n-card
-        v-if="pkg?.standings?.available"
-        size="small"
-        title="本赛事排名"
-      >
-        <p class="hint" style="margin: 0">
+      <n-card v-if="pkg?.standings?.available" size="small" title="本赛事排名">
+        <n-text>
           主 {{ pkg.standings.home_rank ?? '—' }} /
           客 {{ pkg.standings.away_rank ?? '—' }}
           <template v-if="pkg.standings.group">（{{ pkg.standings.group }}）</template>
-        </p>
+        </n-text>
       </n-card>
     </template>
     <n-empty v-else description="暂无可用统计数据" />
-  </div>
+  </n-space>
 </template>
-
-<style scoped>
-.stats-tab {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.hint {
-  margin: 0;
-  font-size: 12px;
-  color: var(--fa-text-faint);
-  line-height: 1.5;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.metric {
-  margin-bottom: 14px;
-}
-
-.metric:last-child {
-  margin-bottom: 0;
-}
-
-.label {
-  font-size: 12px;
-  color: var(--fa-text-muted);
-  margin-bottom: 4px;
-}
-
-.value {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--fa-text-strong);
-  margin-bottom: 6px;
-}
-
-@media (max-width: 720px) {
-  .grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
