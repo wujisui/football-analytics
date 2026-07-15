@@ -5,7 +5,7 @@ import FixtureList from '@/components/FixtureList.vue'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
-import { parseApiDate } from '@/utils/format'
+import { parseApiDate, toLocalDayKey } from '@/utils/format'
 
 defineOptions({ name: 'Predictions' })
 
@@ -33,15 +33,6 @@ function isActiveFixture(status: string): boolean {
   return ACTIVE_STATUSES.has(status.toLowerCase())
 }
 
-function localDayKey(iso: string): string {
-  const d = parseApiDate(iso)
-  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 const trackedFixtures = computed(() =>
   allFixtures.value.filter(
     (f) => trackedIdSet.value.has(f.league_id) && isActiveFixture(f.status),
@@ -50,14 +41,14 @@ const trackedFixtures = computed(() =>
 
 const availableDayKeys = computed(() => {
   const keys = new Set<string>()
-  for (const f of trackedFixtures.value) keys.add(localDayKey(f.fixture_date))
+  for (const f of trackedFixtures.value) keys.add(toLocalDayKey(f.fixture_date))
   return keys
 })
 
 const displayedFixtures = computed(() => {
   let list = trackedFixtures.value
   if (selectedDay.value) {
-    list = list.filter((f) => localDayKey(f.fixture_date) === selectedDay.value)
+    list = list.filter((f) => toLocalDayKey(f.fixture_date) === selectedDay.value)
   }
   return list
     .slice()
@@ -69,9 +60,7 @@ const displayedFixtures = computed(() => {
 })
 
 function isDayDisabled(ts: number): boolean {
-  const d = new Date(ts)
-  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  return !availableDayKeys.value.has(key)
+  return !availableDayKeys.value.has(toLocalDayKey(new Date(ts)))
 }
 
 const emptyText = computed(() => {

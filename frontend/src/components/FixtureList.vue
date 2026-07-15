@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import type { FixtureResponse } from '@/api/types'
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import FixtureCard from '@/components/FixtureCard.vue'
-import { formatDate, parseApiDate } from '@/utils/format'
+import { formatDate, toLocalDayKey } from '@/utils/format'
 
 const props = withDefaults(
   defineProps<{
@@ -22,13 +22,6 @@ type DayGroup = {
   fixtures: FixtureResponse[]
 }
 
-function localDayKey(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 function daySectionLabel(sampleIso: string): string {
   const pretty = formatDate(sampleIso)
   return pretty || sampleIso.slice(0, 10)
@@ -37,10 +30,7 @@ function daySectionLabel(sampleIso: string): string {
 const dayGroups = computed((): DayGroup[] => {
   const map = new Map<string, FixtureResponse[]>()
   for (const f of props.fixtures) {
-    const d = parseApiDate(f.fixture_date)
-    const key = Number.isNaN(d.getTime())
-      ? String(f.fixture_date).slice(0, 10)
-      : localDayKey(d)
+    const key = toLocalDayKey(f.fixture_date)
     const bucket = map.get(key)
     if (bucket) bucket.push(f)
     else map.set(key, [f])

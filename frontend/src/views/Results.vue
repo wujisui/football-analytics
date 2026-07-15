@@ -19,7 +19,13 @@ import ResultsFilterTrigger, {
 } from '@/components/ResultsFilterTrigger.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useSyncCooldown } from '@/composables/useSyncCooldown'
-import { formatDateTime, leagueTagColor, statusLabel, statusTagType } from '@/utils/format'
+import {
+  formatDateTime,
+  leagueTagColor,
+  statusLabel,
+  statusTagType,
+  toLocalDayKey,
+} from '@/utils/format'
 import { leagueNameZh } from '@/utils/leagueNames'
 
 const ALL_HIT_KEYS: ResultsHitKey[] = ['score', 'result', 'ou', 'btts']
@@ -60,17 +66,10 @@ function phoneListScrollListenTo(): HTMLElement {
   return listScrollListenTo(phoneListShellRef.value)
 }
 
-function localISODate(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 function yesterdayLocalISO(): string {
   const d = new Date()
   d.setDate(d.getDate() - 1)
-  return localISODate(d)
+  return toLocalDayKey(d)
 }
 
 const selectedDate = ref(yesterdayLocalISO())
