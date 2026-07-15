@@ -173,7 +173,7 @@ python manage.py model-status     # 查看标签数与当前 multifactor / ml
 | GET | `/fixtures/today`                 | 赛程列表；可选 `league_id`、`date`、`days`（默认仅当天） |
 | POST | `/fixtures/sync`                 | 强制同步赛程（绕过日缓存）；可选 `days` / `date`；约 90s 冷却 |
 | GET | `/fixtures/results`               | 按日查赛果 + 当日预测命中；必填 `date=YYYY-MM-DD` |
-| GET | `/fixtures/results/history`       | 历史准确率汇总 + 按日序列；可选 `days`（默认 30） |
+| GET | `/fixtures/results/history`       | 历史准确率汇总 + 按日序列；`days=0`（默认）全部本地样本，`>0` 为近 N 日 |
 | GET | `/fixtures/{fixture_id}/analysis` | 单场比赛详细分析                     |
 
 **注意**：`league_id` 是联赛 ID（如英超 `39`），`fixture_id` 是具体比赛 ID，二者不同。查英超今日比赛应使用：

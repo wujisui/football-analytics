@@ -53,6 +53,7 @@
   {"name": "厄甲", "id": 242, "country": "Ecuador", "region": "南美"},
   {"name": "乌拉圭甲", "id": 268, "country": "Uruguay", "region": "南美"},
   {"name": "巴拉圭甲", "id": 250, "country": "Paraguay", "region": "南美"},
+  {"name": "玻利甲", "id": 344, "country": "Bolivia", "region": "南美"},
 
   {"name": "美职联", "id": 253, "country": "USA", "region": "北美"},
   {"name": "墨超", "id": 262, "country": "Mexico", "region": "北美"},
@@ -60,6 +61,7 @@
   {"name": "中超", "id": 169, "country": "China", "region": "亚洲"},
   {"name": "日职联", "id": 98, "country": "Japan", "region": "亚洲"},
   {"name": "韩K联", "id": 292, "country": "South-Korea", "region": "亚洲"},
+  {"name": "韩国杯", "id": 294, "country": "South-Korea", "region": "亚洲"},
   {"name": "澳超", "id": 188, "country": "Australia", "region": "亚洲"},
   {"name": "沙特联", "id": 307, "country": "Saudi-Arabia", "region": "亚洲"},
   {"name": "阿联酋联", "id": 301, "country": "United-Arab-Emirates", "region": "亚洲"},

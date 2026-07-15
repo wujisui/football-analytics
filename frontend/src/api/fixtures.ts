@@ -36,6 +36,8 @@ export async function syncFixtures(options?: {
   date?: string
   includeResults?: boolean
   leagueIds?: number[]
+  /** When true, backend skips the ~90s sync cooldown. */
+  skipCooldown?: boolean
 }): Promise<SyncFixturesResult> {
   const { data } = await apiClient.post<SyncFixturesResult>('/fixtures/sync', null, {
     params: {
@@ -43,6 +45,7 @@ export async function syncFixtures(options?: {
       date: options?.date,
       include_results: options?.includeResults ?? true,
       league_ids: options?.leagueIds,
+      skip_cooldown: options?.skipCooldown ? true : undefined,
     },
     // Fixtures return first; odds/results continue in a server background task.
     timeout: 90_000,
@@ -112,6 +115,8 @@ export interface AccuracyDayPoint {
 
 export interface ResultsHistoryResponse {
   days: number
+  /** true = no lookback cap; all local finished samples */
+  all_time?: boolean
   start_date: string
   end_date: string
   overall: ResultsAccuracy
@@ -138,12 +143,13 @@ export async function fetchResults(date: string, leagueId?: number): Promise<Res
 
 /** Historical prediction accuracy + daily series for charts. */
 export async function fetchResultsHistory(options?: {
+  /** 0 / omit = all local finished samples; >0 = last N days */
   days?: number
   leagueId?: number
 }): Promise<ResultsHistoryResponse> {
   const { data } = await apiClient.get<ResultsHistoryResponse>('/fixtures/results/history', {
     params: {
-      days: options?.days ?? 30,
+      days: options?.days ?? 0,
       league_id: options?.leagueId,
     },
   })

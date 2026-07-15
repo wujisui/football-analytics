@@ -41,9 +41,12 @@ const BY_ID: Record<number, string> = {
   170: '中甲',
   171: '足协杯',
   203: '土超',
+  242: '厄甲',
   253: '美职联',
   292: '韩K联',
+  294: '韩国杯',
   307: '沙特联',
+  344: '玻利甲',
   848: '欧协联',
 }
 
@@ -89,6 +92,7 @@ const BY_NAME: Record<string, string> = {
   'UEFA Nations League': '欧国联',
   'Scottish Premiership': '苏超',
   'Pro League': '比甲',
+  'Liga Pro': '厄甲',
   'Super Lig': '土超',
   'Saudi Pro League': '沙特联',
   'Major League Soccer': '美职联',
@@ -98,6 +102,7 @@ const BY_NAME: Record<string, string> = {
   'A-League': '澳超',
   'J1 League': '日职联',
   'K League 1': '韩K联',
+  'Korea Cup': '韩国杯',
   'Chinese Super League': '中超',
   'Super League': '中超',
   'China League One': '中甲',
@@ -116,6 +121,10 @@ const BY_NAME_COUNTRY: Record<string, string> = {
   'Super League|China': '中超',
   'FA Cup|China': '足协杯',
   'FA Cup|England': '足总杯',
+  'FA Cup|South-Korea': '韩国杯',
+  'FA Cup|South Korea': '韩国杯',
+  'Korea Cup|South-Korea': '韩国杯',
+  'Korea Cup|South Korea': '韩国杯',
   'Serie A|Brazil': '巴甲',
   'Serie A|Italy': '意甲',
   'Serie B|Italy': '意乙',
@@ -125,6 +134,9 @@ const BY_NAME_COUNTRY: Record<string, string> = {
   'Pro League|Belgium': '比甲',
   'Pro League|Saudi-Arabia': '沙特联',
   'Pro League|Saudi Arabia': '沙特联',
+  'Liga Pro|Ecuador': '厄甲',
+  'Primera División|Bolivia': '玻利甲',
+  'Division Profesional|Bolivia': '玻利甲',
 }
 
 function normCountry(country?: string | null): string {

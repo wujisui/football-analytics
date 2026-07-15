@@ -1,14 +1,36 @@
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 
 import type { SyncFixturesResult } from '@/api/fixtures'
 
 /** Keep in sync with backend `_SYNC_COOLDOWN_SECONDS`. */
 export const SYNC_COOLDOWN_SECONDS = 90
 
+const STORAGE_KEY = 'fa_sync_cooldown_enabled'
+
+function readCooldownEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw === null) return true
+    return raw !== '0' && raw !== 'false'
+  } catch {
+    return true
+  }
+}
+
 /** Shared across Home / Results — backend sync cooldown is process-wide. */
 const cooldownLeft = ref(0)
+/** When false, sync buttons ignore local + server cooldown (quota risk). */
+const cooldownEnabled = ref(readCooldownEnabled())
 let timer: ReturnType<typeof setInterval> | null = null
 let subscribers = 0
+
+watch(cooldownEnabled, (on) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, on ? '1' : '0')
+  } catch {
+    /* ignore quota / private mode */
+  }
+})
 
 function clearTimer() {
   if (timer != null) {
@@ -36,7 +58,7 @@ function startCooldown(seconds: number) {
 
 /**
  * Global force-sync cooldown (matches backend ~90s).
- * After any sync response, disable the button until the timer ends.
+ * Toggle ``cooldownEnabled`` off to allow rapid sync (still hits official API).
  */
 export function useSyncCooldown() {
   subscribers += 1
@@ -49,22 +71,35 @@ export function useSyncCooldown() {
     }
   })
 
-  const inCooldown = computed(() => cooldownLeft.value > 0)
+  const inCooldown = computed(
+    () => cooldownEnabled.value && cooldownLeft.value > 0,
+  )
 
   /**
-   * Apply server sync response: always start local cooldown.
+   * Apply server sync response: start local cooldown when protection is on.
    * @returns true if the request was blocked (already cooling on server)
    */
   function applySyncResult(result: SyncFixturesResult): boolean {
+    const blocked = result.status === 'cooldown'
+    if (!cooldownEnabled.value) {
+      if (!blocked) cooldownLeft.value = 0
+      return blocked
+    }
     const seconds =
       result.retry_after_seconds ??
-      (result.status === 'cooldown' ? cooldownLeft.value || SYNC_COOLDOWN_SECONDS : SYNC_COOLDOWN_SECONDS)
+      (blocked ? cooldownLeft.value || SYNC_COOLDOWN_SECONDS : SYNC_COOLDOWN_SECONDS)
     startCooldown(seconds)
-    return result.status === 'cooldown'
+    return blocked
+  }
+
+  function setCooldownEnabled(on: boolean) {
+    cooldownEnabled.value = on
   }
 
   return {
     cooldownLeft,
+    cooldownEnabled,
+    setCooldownEnabled,
     inCooldown,
     applySyncResult,
   }

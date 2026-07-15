@@ -157,7 +157,21 @@ def _list_analysis_from_fixture(
     if odds and isinstance(odds, dict) and odds.get("available") and ready:
         confidence = "中" if confidence == "低" else confidence
 
-    leans = derive_prediction_leans(probs, odds if isinstance(odds, dict) else None)
+    # Prefer frozen pre-kickoff snapshot so algorithm changes do not rewrite history.
+    frozen_rec = (getattr(stored, "recommendation", None) or "").strip() if stored else ""
+    if stored and frozen_rec and frozen_rec != "待分析":
+        recommendation = frozen_rec
+        goal_lean = getattr(stored, "goal_lean", None) or "大小球：待分析"
+        both_score_lean = getattr(stored, "both_score_lean", None) or "双方进球：待分析"
+        score_hint = getattr(stored, "score_hint", None) or "待分析"
+        handicap_lean = getattr(stored, "handicap_lean", None) or "缺少盘口数据分析"
+    else:
+        leans = derive_prediction_leans(probs, odds if isinstance(odds, dict) else None)
+        recommendation = get_recommendation(probs) if ready else "待分析"
+        goal_lean = leans["goal_lean"] if ready else "大小球：待分析"
+        both_score_lean = leans["both_score_lean"] if ready else "双方进球：待分析"
+        score_hint = leans["score_hint"] if ready else "待分析"
+        handicap_lean = leans["handicap_lean"]
 
     return AnalysisResponse(
         fixture_id=fixture.id,
@@ -173,11 +187,11 @@ def _list_analysis_from_fixture(
             away_win_prob=probs["away"] if ready else None,
         ),
         confidence=confidence,
-        recommendation=get_recommendation(probs) if ready else "待分析",
-        goal_lean=leans["goal_lean"] if ready else "大小球：待分析",
-        both_score_lean=leans["both_score_lean"] if ready else "双方进球：待分析",
-        score_hint=leans["score_hint"] if ready else "待分析",
-        handicap_lean=leans["handicap_lean"],
+        recommendation=recommendation,
+        goal_lean=goal_lean,
+        both_score_lean=both_score_lean,
+        score_hint=score_hint,
+        handicap_lean=handicap_lean,
         data_source="database",
         analyzed_at=analyzed_at,
         cache_status="miss",
@@ -359,13 +373,18 @@ async def get_fixture_results(
         )
         .order_by(Fixture.date)
     )
+    # Same allow-list as homepage (configured + reference catalog).
+    fetchable = settings.fetchable_league_ids()
     if league_id is not None:
-        stmt = stmt.where(Fixture.league_id == league_id)
+        stmt = stmt.where(Fixture.league_id == league_id) if league_id in fetchable else None
     else:
-        stmt = stmt.where(Fixture.league_id.in_(list(settings.LEAGUE_IDS.values())))
+        stmt = stmt.where(Fixture.league_id.in_(list(fetchable) or [-1]))
 
-    result = await db.execute(stmt)
-    fixtures = list(result.scalars().all())
+    if stmt is None:
+        fixtures = []
+    else:
+        result = await db.execute(stmt)
+        fixtures = list(result.scalars().all())
     stored_by_id = await load_stored_by_fixture_ids(db, [f.id for f in fixtures])
 
     items: list[ResultFixtureResponse] = []
@@ -431,15 +450,22 @@ async def get_fixture_results(
 @router.get("/results/history", response_model=ResultsHistoryResponse)
 async def get_results_accuracy_history(
     response: Response,
-    days: int = Query(default=30, ge=7, le=90, description="统计窗口天数（截至昨天）"),
+    days: int = Query(
+        default=0,
+        ge=0,
+        le=3650,
+        description="0=全部本地已完场样本（历史总）；>0 为可选近 N 日窗口",
+    ),
     league_id: int | None = Query(default=None, description="按联赛 ID 过滤"),
     db: AsyncSession = Depends(get_db),
 ) -> ResultsHistoryResponse:
     """历史预测准确率汇总 + 按日序列（供折线图）。只读本地库。"""
     settings = get_settings()
-    league_ids = (
-        [league_id] if league_id is not None else list(settings.LEAGUE_IDS.values())
-    )
+    fetchable = settings.fetchable_league_ids()
+    if league_id is not None:
+        league_ids = [league_id] if league_id in fetchable else []
+    else:
+        league_ids = list(fetchable)
     payload = await build_history_accuracy(db, days=days, league_ids=league_ids)
     _set_response_headers(response, "database", max_age=120)
     return ResultsHistoryResponse.model_validate(payload)
@@ -471,6 +497,10 @@ async def sync_fixtures(
         default=None,
         description="仅同步勾选的联赛 ID；默认全部 config/leagues.json",
     ),
+    skip_cooldown: bool = Query(
+        default=False,
+        description="跳过约 90 秒冷却（前端关闭「冷却保护」时）；仍消耗官方配额",
+    ),
 ) -> SyncFixturesResponse:
     """
     强制从官方拉取赛程并写入本地库（绕过 Redis/SQLite 日缓存）。
@@ -484,7 +514,10 @@ async def sync_fixtures(
 
     async with _sync_lock:
         now = time.monotonic()
-        if _last_sync_monotonic is not None:
+        if (
+            not skip_cooldown
+            and _last_sync_monotonic is not None
+        ):
             elapsed = now - _last_sync_monotonic
             if elapsed < _SYNC_COOLDOWN_SECONDS:
                 retry = int(_SYNC_COOLDOWN_SECONDS - elapsed)
