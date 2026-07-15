@@ -2,13 +2,19 @@
 import { computed } from 'vue'
 
 import type { FixtureResponse } from '@/api/types'
+import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import FixtureCard from '@/components/FixtureCard.vue'
 import { formatDate, parseApiDate } from '@/utils/format'
 
-const props = defineProps<{
-  fixtures: FixtureResponse[]
-  emptyDescription?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    fixtures: FixtureResponse[]
+    emptyDescription?: string
+    /** full = odds+prediction card; prediction = algorithm card only */
+    mode?: 'full' | 'prediction'
+  }>(),
+  { mode: 'full' },
+)
 
 type DayGroup = {
   key: string
@@ -72,11 +78,22 @@ const dayGroups = computed((): DayGroup[] => {
           </n-text>
         </n-flex>
         <n-space vertical :size="14" class="day-cards">
-          <FixtureCard
-            v-for="fixture in group.fixtures"
-            :key="fixture.fixture_id"
-            :fixture="fixture"
-          />
+          <template v-if="mode === 'prediction'">
+            <AlgorithmPredictionCard
+              v-for="fixture in group.fixtures"
+              :key="fixture.fixture_id"
+              :fixture="fixture"
+              standalone
+              from="predictions"
+            />
+          </template>
+          <template v-else>
+            <FixtureCard
+              v-for="fixture in group.fixtures"
+              :key="fixture.fixture_id"
+              :fixture="fixture"
+            />
+          </template>
         </n-space>
       </section>
     </template>

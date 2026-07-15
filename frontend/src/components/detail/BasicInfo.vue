@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
 import {
@@ -10,44 +10,93 @@ import {
   statusLabel,
   statusTagType,
 } from '@/utils/format'
-import { homeRouteWithLeague, writeHomeLeagueFilter } from '@/utils/homeLeagueFilter'
+import {
+  detailBackRoute,
+  detailRootLabel,
+  parseDetailFrom,
+} from '@/utils/detailNav'
+import { writeHomeLeagueFilter } from '@/utils/homeLeagueFilter'
 import { leagueNameZh } from '@/utils/leagueNames'
 
 const props = defineProps<{
   fixture: FixtureResponse
 }>()
 
+const route = useRoute()
 const router = useRouter()
 
-const matchTitle = computed(() => {
-  const hr = rankBracket(props.fixture.home_rank)
-  const ar = rankBracket(props.fixture.away_rank)
-  const homeName = props.fixture.home_team_name || '—'
-  const awayName = props.fixture.away_team_name || '—'
-  const home = hr ? `${hr} ${homeName}` : homeName
-  const away = ar ? `${awayName} ${ar}` : awayName
-  return `${home} VS ${away}`
+const from = computed(() => parseDetailFrom(route.query.from))
+const fromDate = computed(() =>
+  typeof route.query.date === 'string' ? route.query.date : null,
+)
+const rootLabel = computed(() => detailRootLabel(from.value))
+
+const leagueLabel = computed(() =>
+  leagueNameZh(props.fixture.league_name, { leagueId: props.fixture.league_id }),
+)
+
+const scoreText = computed(() => {
+  const h = props.fixture.home_goals
+  const a = props.fixture.away_goals
+  if (h == null || a == null) return null
+  return `${h}:${a}`
 })
 
-function goHome() {
-  router.push(homeRouteWithLeague())
+const homeLabel = computed(() => {
+  const hr = rankBracket(props.fixture.home_rank)
+  const homeName = props.fixture.home_team_name || '—'
+  return hr ? `${hr} ${homeName}` : homeName
+})
+
+const awayLabel = computed(() => {
+  const ar = rankBracket(props.fixture.away_rank)
+  const awayName = props.fixture.away_team_name || '—'
+  return ar ? `${awayName} ${ar}` : awayName
+})
+
+/** Breadcrumb / title: show local score between teams when available. */
+const matchTitle = computed(() => {
+  if (scoreText.value) {
+    return `${homeLabel.value} ${scoreText.value} ${awayLabel.value}`
+  }
+  return `${homeLabel.value} VS ${awayLabel.value}`
+})
+
+function goBack() {
+  void router.push(
+    detailBackRoute(from.value, {
+      date: fromDate.value,
+    }),
+  )
 }
 
 function goLeague() {
+  if (from.value !== 'home') {
+    goBack()
+    return
+  }
   writeHomeLeagueFilter(props.fixture.league_id)
-  router.push(homeRouteWithLeague(props.fixture.league_id))
+  void router.push(detailBackRoute('home', { leagueId: props.fixture.league_id }))
 }
 </script>
 
 <template>
   <div class="basic-info">
     <n-breadcrumb>
-      <n-breadcrumb-item @click="goHome">赛前赛事</n-breadcrumb-item>
-      <n-breadcrumb-item @click="goLeague">{{ leagueNameZh(fixture.league_name) }}</n-breadcrumb-item>
-      <n-breadcrumb-item>{{ matchTitle }}</n-breadcrumb-item>
+      <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
+      <n-breadcrumb-item @click="goLeague">{{ leagueLabel }}</n-breadcrumb-item>
+      <n-breadcrumb-item>
+        <n-tooltip v-if="scoreText" placement="bottom">
+          <template #trigger>
+            <span class="crumb-match">{{ matchTitle }}</span>
+          </template>
+          本地比分（非实时）
+        </n-tooltip>
+        <span v-else class="crumb-match">{{ matchTitle }}</span>
+      </n-breadcrumb-item>
     </n-breadcrumb>
 
-    <n-page-header :title="matchTitle" @back="goHome">
+    <n-page-header :title="matchTitle" @back="goBack">
       <template #subtitle>
         <div class="subtitle-row">
           <n-tag
@@ -58,7 +107,7 @@ function goLeague() {
               textColor: leagueTagColor(fixture.league_id),
             }"
           >
-            {{ leagueNameZh(fixture.league_name) }}
+            {{ leagueLabel }}
           </n-tag>
           <n-tag size="small" :type="statusTagType(fixture.status)" :bordered="false">
             {{ statusLabel(fixture.status) }}
@@ -92,6 +141,10 @@ function goLeague() {
 .kickoff {
   font-size: 13px;
   color: var(--fa-text-secondary);
+}
+
+.crumb-match {
+  font-variant-numeric: tabular-nums;
 }
 
 :deep(.n-breadcrumb-item .n-breadcrumb-item__link) {

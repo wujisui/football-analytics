@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { MoonOutline, SunnyOutline } from '@vicons/ionicons5'
 import {
   NConfigProvider,
+  NIcon,
   NLayout,
   NLayoutContent,
   NLayoutHeader,
@@ -8,18 +10,21 @@ import {
   zhCN,
   dateZhCN,
 } from 'naive-ui'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
 import { homeRouteWithLeague } from '@/utils/homeLeagueFilter'
 
 const route = useRoute()
 const router = useRouter()
+const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
 
 const activeNav = computed(() => {
   if (route.name === 'results') return 'results'
+  if (route.name === 'predictions') return 'predictions'
   return 'home'
 })
 
@@ -27,7 +32,7 @@ function goHome() {
   void router.push(homeRouteWithLeague())
 }
 
-function goNav(name: 'home' | 'results') {
+function goNav(name: 'home' | 'predictions' | 'results') {
   if (route.name === name) return
   if (name === 'home') {
     goHome()
@@ -35,6 +40,15 @@ function goNav(name: 'home' | 'results') {
   }
   void router.push({ name })
 }
+
+/** Phone home already shows prediction-only cards; hide Predictions entry there. */
+watch(
+  [isPhone, () => route.name],
+  ([phone, name]) => {
+    if (phone && name === 'predictions') goHome()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -74,6 +88,15 @@ function goNav(name: 'home' | 'results') {
                 赛前
               </button>
               <button
+                v-if="!isPhone"
+                type="button"
+                class="nav-seg-btn"
+                :class="{ active: activeNav === 'predictions' }"
+                @click="goNav('predictions')"
+              >
+                预测
+              </button>
+              <button
                 type="button"
                 class="nav-seg-btn"
                 :class="{ active: activeNav === 'results' }"
@@ -84,40 +107,19 @@ function goNav(name: 'home' | 'results') {
             </div>
           </nav>
 
-          <button
-            type="button"
-            class="theme-toggle"
-            :title="isDark ? '切换到浅色' : '切换到深色'"
-            :aria-label="isDark ? '切换到浅色' : '切换到深色'"
-            @click="toggleTheme"
-          >
-            <svg
-              v-if="isDark"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                d="M12.1 2a9.9 9.9 0 0 0-1.1.06 8 8 0 1 0 10.94 10.94A9.95 9.95 0 0 1 12.1 2z"
-              />
-            </svg>
-            <svg
-              v-else
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5a1 1 0 0 1 1 1v1.5a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm0 17.5a1 1 0 0 1 1 1V22a1 1 0 1 1-2 0v-1.5a1 1 0 0 1 1-1zM3 11a1 1 0 1 0 0 2h1.5a1 1 0 1 0 0-2H3zm16.5 0a1 1 0 1 0 0 2H21a1 1 0 1 0 0-2h-1.5zM5.64 5.64a1 1 0 0 1 1.41 0l1.06 1.06a1 1 0 1 1-1.41 1.41L5.64 7.05a1 1 0 0 1 0-1.41zm10.25 10.25a1 1 0 0 1 1.41 0l1.06 1.06a1 1 0 0 1-1.41 1.41l-1.06-1.06a1 1 0 0 1 0-1.41zM5.64 18.36a1 1 0 0 1 0-1.41l1.06-1.06a1 1 0 1 1 1.41 1.41l-1.06 1.06a1 1 0 0 1-1.41 0zm10.25-10.25a1 1 0 0 1 0-1.41l1.06-1.06a1 1 0 1 1 1.41 1.41l-1.06 1.06a1 1 0 0 1-1.41 0z"
-              />
-            </svg>
-          </button>
+          <n-tooltip placement="bottom">
+            <template #trigger>
+              <button
+                type="button"
+                class="theme-toggle"
+                :aria-label="isDark ? '切换到浅色' : '切换到深色'"
+                @click="toggleTheme"
+              >
+                <n-icon :size="18" :component="isDark ? MoonOutline : SunnyOutline" />
+              </button>
+            </template>
+            {{ isDark ? '切换到浅色' : '切换到深色' }}
+          </n-tooltip>
         </div>
       </n-layout-header>
 
@@ -130,7 +132,7 @@ function goNav(name: 'home' | 'results') {
       >
         <!-- Keep Home alive so list scroll / filter UI survive detail round-trips. -->
         <router-view v-slot="{ Component }">
-          <keep-alive :include="['Home']">
+          <keep-alive :include="['Home', 'Predictions']">
             <component :is="Component" />
           </keep-alive>
         </router-view>
@@ -304,7 +306,7 @@ function goNav(name: 'home' | 'results') {
   }
 
   .nav-seg-btn {
-    padding: 5px 11px;
+    padding: 5px 9px;
     font-size: 12px;
   }
 

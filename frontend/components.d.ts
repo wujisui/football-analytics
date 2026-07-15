@@ -8,6 +8,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AccuracyHistoryChart: typeof import('./src/components/AccuracyHistoryChart.vue')['default']
+    AlgorithmPredictionCard: typeof import('./src/components/AlgorithmPredictionCard.vue')['default']
     BasicInfo: typeof import('./src/components/detail/BasicInfo.vue')['default']
     BriefingTab: typeof import('./src/components/detail/BriefingTab.vue')['default']
     FixtureCard: typeof import('./src/components/FixtureCard.vue')['default']
@@ -19,6 +20,7 @@ declare module 'vue' {
     MatchStatsSummary: typeof import('./src/components/detail/MatchStatsSummary.vue')['default']
     MatchStatsTable: typeof import('./src/components/detail/MatchStatsTable.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
+    NBackTop: typeof import('naive-ui')['NBackTop']
     NBreadcrumb: typeof import('naive-ui')['NBreadcrumb']
     NBreadcrumbItem: typeof import('naive-ui')['NBreadcrumbItem']
     NButton: typeof import('naive-ui')['NButton']
@@ -37,6 +39,7 @@ declare module 'vue' {
     NGi: typeof import('naive-ui')['NGi']
     NGrid: typeof import('naive-ui')['NGrid']
     NH4: typeof import('naive-ui')['NH4']
+    NIcon: typeof import('naive-ui')['NIcon']
     NInput: typeof import('naive-ui')['NInput']
     NLayout: typeof import('naive-ui')['NLayout']
     NLayoutContent: typeof import('naive-ui')['NLayoutContent']
@@ -55,6 +58,7 @@ declare module 'vue' {
     NSpace: typeof import('naive-ui')['NSpace']
     NSpin: typeof import('naive-ui')['NSpin']
     NStatistic: typeof import('naive-ui')['NStatistic']
+    NSwitch: typeof import('naive-ui')['NSwitch']
     NTable: typeof import('naive-ui')['NTable']
     NTabPane: typeof import('naive-ui')['NTabPane']
     NTabs: typeof import('naive-ui')['NTabs']

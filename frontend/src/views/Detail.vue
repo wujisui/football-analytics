@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import BasicInfo from '@/components/detail/BasicInfo.vue'
 import TabsContainer from '@/components/detail/TabsContainer.vue'
 import { useFixtureAnalysis } from '@/composables/useFixtureAnalysis'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone } from '@/composables/useMediaQuery'
-import { homeRouteWithLeague } from '@/utils/homeLeagueFilter'
+import {
+  detailBackRoute,
+  detailRootLabel,
+  parseDetailFrom,
+} from '@/utils/detailNav'
 
 const props = defineProps<{
   fixtureId: string
 }>()
 
+const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
 const contentStyle = computed(
@@ -35,8 +40,18 @@ const preview = computed(
 const headerFixture = computed(() => data.value ?? preview.value)
 const contentLoading = computed(() => loading.value || !data.value)
 
-function goHome() {
-  router.push(homeRouteWithLeague())
+const from = computed(() => parseDetailFrom(route.query.from))
+const rootLabel = computed(() => detailRootLabel(from.value))
+const fromDate = computed(() =>
+  typeof route.query.date === 'string' ? route.query.date : null,
+)
+
+function goBack() {
+  void router.push(
+    detailBackRoute(from.value, {
+      date: fromDate.value,
+    }),
+  )
 }
 
 onMounted(() => {
@@ -63,7 +78,7 @@ watch(
         <BasicInfo v-if="headerFixture" :fixture="headerFixture" />
         <div v-else class="basic-info-skel">
           <n-breadcrumb>
-            <n-breadcrumb-item @click="goHome">赛前赛事</n-breadcrumb-item>
+            <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
             <n-breadcrumb-item>
               <n-skeleton text :width="72" :sharp="false" />
             </n-breadcrumb-item>

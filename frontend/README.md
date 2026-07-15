@@ -38,7 +38,8 @@ npm run preview   # 预览构建产物
 
 | 路径 | 组件 | 说明 |
 |------|------|------|
-| `/` | `Home` | 默认全部未开赛；左侧联赛本地筛选 |
+| `/` | `Home` | 默认全部未开赛；左侧联赛本地筛选；手机端卡片只展示算法预测 |
+| `/predictions` | `Predictions` | 预测列表（复用 `AlgorithmPredictionCard`） |
 | `/fixture/:fixtureId` | `Detail` | 顶部基本信息 + Tabs（战绩/交锋/统计/阵容/预测） |
 
 旧路径 `/leagues/:id`、`/fixtures/:id` 会重定向到新路由。
