@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FilterOutline } from '@vicons/ionicons5'
 import { computed, ref, watch } from 'vue'
 
 export type ResultsHitKey = 'result' | 'score' | 'ou' | 'btts'
@@ -77,16 +78,7 @@ function confirm() {
         aria-label="筛选赛果"
       >
         <template #icon>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            width="14"
-            height="14"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" />
-          </svg>
+          <n-icon :component="FilterOutline" :size="14" />
         </template>
         筛选
       </n-button>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { RefreshOutline } from '@vicons/ionicons5'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
+import { useRoute, useRouter } from 'vue-router'
 
 import {
   fetchResults,
@@ -20,7 +22,6 @@ import { useSyncCooldown } from '@/composables/useSyncCooldown'
 import { formatDateTime, leagueTagColor, statusLabel, statusTagType } from '@/utils/format'
 import { leagueNameZh } from '@/utils/leagueNames'
 
-const HISTORY_DAYS = 30
 const ALL_HIT_KEYS: ResultsHitKey[] = ['score', 'result', 'ou', 'btts']
 const HIT_FIELD: Record<ResultsHitKey, keyof ResultFixture> = {
   result: 'result_hit',
@@ -31,7 +32,33 @@ const HIT_FIELD: Record<ResultsHitKey, keyof ResultFixture> = {
 
 const isPhone = useIsPhone()
 const message = useMessage()
-const { cooldownLeft, inCooldown, applySyncResult } = useSyncCooldown()
+const route = useRoute()
+const router = useRouter()
+const {
+  cooldownLeft,
+  cooldownEnabled,
+  inCooldown,
+  applySyncResult,
+} = useSyncCooldown()
+
+const desktopListShellRef = ref<HTMLElement | null>(null)
+const phoneListShellRef = ref<HTMLElement | null>(null)
+
+/** Scroll container for n-back-top (n-scrollbar internals). */
+function listScrollListenTo(shell: HTMLElement | null): HTMLElement {
+  return (
+    (shell?.querySelector('.n-scrollbar-container') as HTMLElement | null) ??
+    document.documentElement
+  )
+}
+
+function desktopListScrollListenTo(): HTMLElement {
+  return listScrollListenTo(desktopListShellRef.value)
+}
+
+function phoneListScrollListenTo(): HTMLElement {
+  return listScrollListenTo(phoneListShellRef.value)
+}
 
 function localISODate(d: Date): string {
   const y = d.getFullYear()
@@ -159,10 +186,21 @@ const emptyText = computed(() => {
 
 const subtitle = computed(() => hint.value || undefined)
 
+/** Sample count only — not tied to the day picker. */
+const historySampleCount = computed(
+  () => history.value?.overall?.fixtures_with_prediction ?? 0,
+)
+
 const historyRangeLabel = computed(() => {
-  if (!history.value) return `近 ${HISTORY_DAYS} 日汇总`
-  if (!history.value.series.length) return `近 ${HISTORY_DAYS} 日 · 暂无预测样本`
-  return `${history.value.start_date} ~ ${history.value.end_date}`
+  if (!history.value) return '全部入库'
+  if (!historySampleCount.value) return '暂无已预测完场'
+  const { start_date: start, end_date: end } = history.value
+  if (start && end) {
+    return start === end
+      ? `已预测 ${historySampleCount.value} 场（${start}）`
+      : `已预测 ${historySampleCount.value} 场（${start} ~ ${end}）`
+  }
+  return `已预测 ${historySampleCount.value} 场`
 })
 
 const hasChartData = computed(
@@ -219,6 +257,14 @@ function hitLabel(hit: boolean | null | undefined): string {
   return '—'
 }
 
+function goDetail(fixtureId: number) {
+  void router.push({
+    name: 'fixture-detail',
+    params: { fixtureId },
+    query: { from: 'results', date: selectedDate.value },
+  })
+}
+
 async function loadDayResults() {
   if (!selectedDate.value) {
     fixtures.value = []
@@ -245,12 +291,8 @@ async function loadDayResults() {
 async function loadHistory() {
   historyLoading.value = true
   try {
-    const single =
-      filterLeagueIds.value.length === 1 ? filterLeagueIds.value[0] : undefined
-    history.value = await fetchResultsHistory({
-      days: HISTORY_DAYS,
-      leagueId: single,
-    })
+    // All local finished samples — independent of day picker / day filters.
+    history.value = await fetchResultsHistory({ days: 0 })
   } catch {
     history.value = null
   } finally {
@@ -271,10 +313,18 @@ async function syncDay() {
     const result = await syncFixtures({
       date: selectedDate.value,
       includeResults: true,
+      skipCooldown: !cooldownEnabled.value,
     })
     const blocked = applySyncResult(result)
-    if (blocked) return
-    message.success(`刷新成功，${cooldownLeft.value} 秒后可再次刷新`)
+    if (blocked) {
+      message.warning(result.message || '同步冷却中')
+      return
+    }
+    message.success(
+      cooldownEnabled.value
+        ? `刷新成功，${cooldownLeft.value} 秒后可再次刷新`
+        : result.message || '刷新成功',
+    )
     await Promise.all([loadDayResults(), loadHistory()])
   } catch (err) {
     error.value = err instanceof Error ? err.message : '同步失败'
@@ -290,16 +340,17 @@ watch(selectedDate, () => {
   void loadDayResults()
 })
 
-watch(
-  filterLeagueIds,
-  () => {
-    void loadHistory()
-  },
-  { deep: true },
-)
-
 onMounted(() => {
-  void loadDayResults()
+  const qDate = route.query.date
+  if (
+    typeof qDate === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(qDate) &&
+    qDate !== selectedDate.value
+  ) {
+    selectedDate.value = qDate
+  } else {
+    void loadDayResults()
+  }
   void loadHistory()
 })
 </script>
@@ -326,6 +377,19 @@ onMounted(() => {
             size="small"
             @update:formatted-value="onDateChange"
           />
+          <n-tooltip placement="bottom">
+            <template #trigger>
+              <n-switch v-model:value="cooldownEnabled" size="small">
+                <template #checked>冷却</template>
+                <template #unchecked>冷却</template>
+              </n-switch>
+            </template>
+            {{
+              cooldownEnabled
+                ? '冷却保护已开：同步后约 90 秒内不可再刷'
+                : '冷却已关：可连续同步（仍消耗官方配额）'
+            }}
+          </n-tooltip>
           <n-button
             size="small"
             type="primary"
@@ -333,7 +397,10 @@ onMounted(() => {
             :disabled="syncing || inCooldown"
             @click="syncDay"
           >
-            {{ inCooldown ? '刷新冷却中' : '同步赛果' }}
+            <template #icon>
+              <n-icon :component="RefreshOutline" :size="16" />
+            </template>
+            {{ inCooldown ? '同步冷却中' : '同步赛果' }}
           </n-button>
         </n-space>
       </n-space>
@@ -374,100 +441,120 @@ onMounted(() => {
         >
           <n-button size="small" type="primary" @click="loadDayResults">重试</n-button>
         </n-alert>
-        <n-scrollbar style="flex: 1; min-height: 0;" trigger="hover">
-          <div style="padding: 4px 14px 16px;">
-            <n-spin :show="loading || syncing">
-              <n-empty
-                v-if="!loading && !filteredFixtures.length"
-                :description="emptyText"
-                style="padding: 40px 12px;"
-              />
-              <n-list v-else style="background: transparent;">
-                <n-list-item v-for="fx in filteredFixtures" :key="fx.fixture_id">
-                  <n-thing>
-                    <template #header>
-                      <n-space :size="6" align="center" wrap>
+        <div ref="desktopListShellRef" class="results-list-shell">
+          <n-scrollbar style="height: 100%;" trigger="hover">
+            <div style="padding: 4px 14px 16px;">
+              <n-spin :show="loading || syncing">
+                <n-empty
+                  v-if="!loading && !filteredFixtures.length"
+                  :description="emptyText"
+                  style="padding: 40px 12px;"
+                />
+                <n-list v-else style="background: transparent;">
+                  <n-list-item v-for="fx in filteredFixtures" :key="fx.fixture_id">
+                    <n-thing>
+                      <template #header>
+                        <n-space :size="6" align="center" wrap>
+                          <n-tag
+                            size="small"
+                            :bordered="false"
+                            :color="{
+                              color: `${leagueTagColor(fx.league_id)}18`,
+                              textColor: leagueTagColor(fx.league_id),
+                            }"
+                          >
+                            {{ leagueNameZh(fx.league_name) }}
+                          </n-tag>
+                          <span style="font-size: 12px; color: var(--fa-text-secondary);">
+                            {{ formatDateTime(fx.fixture_date) }}
+                          </span>
+                        </n-space>
+                      </template>
+                      <template #header-extra>
                         <n-tag
                           size="small"
+                          :type="statusTagType(fx.status, fx.status_short)"
                           :bordered="false"
-                          :color="{
-                            color: `${leagueTagColor(fx.league_id)}18`,
-                            textColor: leagueTagColor(fx.league_id),
-                          }"
                         >
-                          {{ leagueNameZh(fx.league_name) }}
+                          {{ statusLabel(fx.status, fx.status_short) }}
                         </n-tag>
-                        <span style="font-size: 12px; color: var(--fa-text-secondary);">
-                          {{ formatDateTime(fx.fixture_date) }}
-                        </span>
-                      </n-space>
-                    </template>
-                    <template #header-extra>
-                      <n-tag
-                        size="small"
-                        :type="statusTagType(fx.status, fx.status_short)"
-                        :bordered="false"
+                      </template>
+                      <n-grid :cols="3" :x-gap="8" style="align-items: center; font-weight: 600;">
+                        <n-gi style="text-align: right; font-size: 13px;">
+                          {{ fx.home_team_name }}
+                        </n-gi>
+                        <n-gi style="text-align: center; font-variant-numeric: tabular-nums;">
+                          <n-tooltip placement="top">
+                            <template #trigger>
+                              <button
+                                type="button"
+                                class="score-link"
+                                aria-label="查看复盘详情"
+                                @click="goDetail(fx.fixture_id)"
+                              >
+                                {{ scoreText(fx) }}
+                              </button>
+                            </template>
+                            查看复盘详情
+                          </n-tooltip>
+                          <div v-if="extraScoreLine(fx)" class="score-extra">
+                            {{ extraScoreLine(fx) }}
+                          </div>
+                        </n-gi>
+                        <n-gi style="font-size: 13px;">
+                          {{ fx.away_team_name }}
+                        </n-gi>
+                      </n-grid>
+                      <n-space
+                        v-if="fx.has_prediction"
+                        vertical
+                        :size="4"
+                        style="margin-top: 8px;"
                       >
-                        {{ statusLabel(fx.status, fx.status_short) }}
-                      </n-tag>
-                    </template>
-                    <n-grid :cols="3" :x-gap="8" style="align-items: center; font-weight: 600;">
-                      <n-gi style="text-align: right; font-size: 13px;">
-                        {{ fx.home_team_name }}
-                      </n-gi>
-                      <n-gi style="text-align: center; font-variant-numeric: tabular-nums;">
-                        <div>{{ scoreText(fx) }}</div>
-                        <div
-                          v-if="extraScoreLine(fx)"
-                          style="font-size: 11px; font-weight: 500; color: var(--fa-text-secondary); margin-top: 2px;"
-                        >
-                          {{ extraScoreLine(fx) }}
-                        </div>
-                      </n-gi>
-                      <n-gi style="font-size: 13px;">
-                        {{ fx.away_team_name }}
-                      </n-gi>
-                    </n-grid>
-                    <n-space
-                      v-if="fx.has_prediction"
-                      vertical
-                      :size="4"
-                      style="margin-top: 8px;"
-                    >
-                      <n-text depth="3" style="font-size: 11px;">
-                        {{ fx.recommendation || '—' }}
-                        · {{ fx.score_hint || '—' }}
-                        · {{ fx.goal_lean || '—' }}
-                        · {{ fx.both_score_lean || '—' }}
+                        <n-text depth="3" style="font-size: 11px;">
+                          {{ fx.recommendation || '—' }}
+                          · {{ fx.score_hint || '—' }}
+                          · {{ fx.goal_lean || '—' }}
+                          · {{ fx.both_score_lean || '—' }}
+                        </n-text>
+                      <n-space :size="6" wrap>
+                        <n-tag size="small" :type="hitTagType(fx.result_hit)" :bordered="false">
+                          胜平负 {{ hitLabel(fx.result_hit) }}
+                        </n-tag>
+                        <n-tag size="small" :type="hitTagType(fx.score_hit)" :bordered="false">
+                          比分 {{ hitLabel(fx.score_hit) }}
+                        </n-tag>
+                        <n-tag size="small" :type="hitTagType(fx.ou_hit)" :bordered="false">
+                          大小 {{ hitLabel(fx.ou_hit) }}
+                        </n-tag>
+                        <n-tag size="small" :type="hitTagType(fx.btts_hit)" :bordered="false">
+                          双方进球 {{ hitLabel(fx.btts_hit) }}
+                        </n-tag>
+                      </n-space>
+                      </n-space>
+                      <n-text
+                        v-else
+                        depth="3"
+                        style="display: block; margin-top: 6px; font-size: 11px;"
+                      >
+                        无赛前预测
                       </n-text>
-                    <n-space :size="6" wrap>
-                      <n-tag size="small" :type="hitTagType(fx.result_hit)" :bordered="false">
-                        胜平负 {{ hitLabel(fx.result_hit) }}
-                      </n-tag>
-                      <n-tag size="small" :type="hitTagType(fx.score_hit)" :bordered="false">
-                        比分 {{ hitLabel(fx.score_hit) }}
-                      </n-tag>
-                      <n-tag size="small" :type="hitTagType(fx.ou_hit)" :bordered="false">
-                        大小 {{ hitLabel(fx.ou_hit) }}
-                      </n-tag>
-                      <n-tag size="small" :type="hitTagType(fx.btts_hit)" :bordered="false">
-                        双方进球 {{ hitLabel(fx.btts_hit) }}
-                      </n-tag>
-                    </n-space>
-                    </n-space>
-                    <n-text
-                      v-else
-                      depth="3"
-                      style="display: block; margin-top: 6px; font-size: 11px;"
-                    >
-                      无赛前预测
-                    </n-text>
-                  </n-thing>
-                </n-list-item>
-              </n-list>
-            </n-spin>
-          </div>
-        </n-scrollbar>
+                    </n-thing>
+                  </n-list-item>
+                </n-list>
+              </n-spin>
+            </div>
+          </n-scrollbar>
+          <n-back-top
+            v-if="!isPhone && desktopListShellRef"
+            class="results-back-top"
+            :to="desktopListShellRef"
+            :listen-to="desktopListScrollListenTo"
+            :visibility-height="240"
+            :right="16"
+            :bottom="16"
+          />
+        </div>
       </n-layout-sider>
 
       <!-- 右侧：当日 / 历史 / 图表（不滚，压缩适配高度） -->
@@ -494,49 +581,75 @@ onMounted(() => {
               />
             </div>
           </template>
-          <n-scrollbar style="max-height: 100%;" trigger="hover">
-            <div style="padding: 8px 12px 12px;">
-              <n-spin :show="loading || syncing">
-                <n-empty
-                  v-if="!loading && !filteredFixtures.length"
-                  :description="emptyText"
-                  style="padding: 24px 12px;"
-                />
-                <n-list v-else>
-                  <n-list-item v-for="fx in filteredFixtures" :key="fx.fixture_id">
-                    <n-thing>
-                      <template #header>
-                        {{ fx.home_team_name }}
-                        {{ scoreText(fx) }}
-                        {{ fx.away_team_name }}
-                        <n-text
-                          v-if="extraScoreLine(fx)"
-                          depth="3"
-                          style="display: block; font-size: 11px; font-weight: 400;"
-                        >
-                          {{ extraScoreLine(fx) }}
-                        </n-text>
-                      </template>
-                      <n-space v-if="fx.has_prediction" :size="6" wrap>
-                        <n-tag size="small" :type="hitTagType(fx.result_hit)" :bordered="false">
-                          胜平负 {{ hitLabel(fx.result_hit) }}
-                        </n-tag>
-                        <n-tag size="small" :type="hitTagType(fx.score_hit)" :bordered="false">
-                          比分 {{ hitLabel(fx.score_hit) }}
-                        </n-tag>
-                        <n-tag size="small" :type="hitTagType(fx.ou_hit)" :bordered="false">
-                          大小 {{ hitLabel(fx.ou_hit) }}
-                        </n-tag>
-                        <n-tag size="small" :type="hitTagType(fx.btts_hit)" :bordered="false">
-                          双方进球 {{ hitLabel(fx.btts_hit) }}
-                        </n-tag>
-                      </n-space>
-                    </n-thing>
-                  </n-list-item>
-                </n-list>
-              </n-spin>
-            </div>
-          </n-scrollbar>
+          <div ref="phoneListShellRef" class="results-list-shell phone">
+            <n-scrollbar
+              style="max-height: 100%; height: 100%;"
+              trigger="hover"
+            >
+              <div style="padding: 8px 12px 12px;">
+                <n-spin :show="loading || syncing">
+                  <n-empty
+                    v-if="!loading && !filteredFixtures.length"
+                    :description="emptyText"
+                    style="padding: 24px 12px;"
+                  />
+                  <n-list v-else>
+                    <n-list-item v-for="fx in filteredFixtures" :key="fx.fixture_id">
+                      <n-thing>
+                        <template #header>
+                          {{ fx.home_team_name }}
+                          <n-tooltip placement="top">
+                            <template #trigger>
+                              <button
+                                type="button"
+                                class="score-link"
+                                aria-label="查看复盘详情"
+                                @click="goDetail(fx.fixture_id)"
+                              >
+                                {{ scoreText(fx) }}
+                              </button>
+                            </template>
+                            查看复盘详情
+                          </n-tooltip>
+                          {{ fx.away_team_name }}
+                          <n-text
+                            v-if="extraScoreLine(fx)"
+                            depth="3"
+                            style="display: block; font-size: 11px; font-weight: 400;"
+                          >
+                            {{ extraScoreLine(fx) }}
+                          </n-text>
+                        </template>
+                        <n-space v-if="fx.has_prediction" :size="6" wrap>
+                          <n-tag size="small" :type="hitTagType(fx.result_hit)" :bordered="false">
+                            胜平负 {{ hitLabel(fx.result_hit) }}
+                          </n-tag>
+                          <n-tag size="small" :type="hitTagType(fx.score_hit)" :bordered="false">
+                            比分 {{ hitLabel(fx.score_hit) }}
+                          </n-tag>
+                          <n-tag size="small" :type="hitTagType(fx.ou_hit)" :bordered="false">
+                            大小 {{ hitLabel(fx.ou_hit) }}
+                          </n-tag>
+                          <n-tag size="small" :type="hitTagType(fx.btts_hit)" :bordered="false">
+                            双方进球 {{ hitLabel(fx.btts_hit) }}
+                          </n-tag>
+                        </n-space>
+                      </n-thing>
+                    </n-list-item>
+                  </n-list>
+                </n-spin>
+              </div>
+            </n-scrollbar>
+            <n-back-top
+              v-if="isPhone && phoneListShellRef"
+              class="results-back-top"
+              :to="phoneListShellRef"
+              :listen-to="phoneListScrollListenTo"
+              :visibility-height="240"
+              :right="12"
+              :bottom="12"
+            />
+          </div>
         </n-card>
 
         <n-grid :cols="isPhone ? 1 : 2" :x-gap="10" :y-gap="10" style="flex-shrink: 0;">
@@ -576,7 +689,14 @@ onMounted(() => {
               style="background: var(--fa-bg-elevated); height: 100%;"
             >
               <template #header-extra>
-                <n-text depth="3" style="font-size: 12px;">{{ historyRangeLabel }}</n-text>
+                <n-tooltip placement="bottom">
+                  <template #trigger>
+                    <n-text depth="3" style="font-size: 12px;">
+                      {{ historyRangeLabel }}
+                    </n-text>
+                  </template>
+                  本地库全部已预测完场，与顶部日期无关
+                </n-tooltip>
               </template>
               <n-spin :show="historyLoading">
                 <n-grid :cols="2" :x-gap="8" :y-gap="8">
@@ -607,7 +727,18 @@ onMounted(() => {
           content-style="flex: 1; min-height: 0; height: 100%; padding: 8px 12px 12px; display: flex; flex-direction: column;"
         >
           <template #header-extra>
-            <n-text depth="3" style="font-size: 12px;">仅含有预测样本的日期</n-text>
+            <n-tooltip placement="bottom">
+              <template #trigger>
+                <n-text depth="3" style="font-size: 12px;">
+                  {{
+                    historySampleCount
+                      ? `有预测样本 ${historySampleCount} 场`
+                      : '仅含有预测样本的日期'
+                  }}
+                </n-text>
+              </template>
+              与顶部日期无关
+            </n-tooltip>
           </template>
           <n-spin
             :show="historyLoading"
@@ -630,6 +761,21 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.results-list-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.results-list-shell.phone {
+  height: 100%;
+}
+
+/* n-back-top defaults to viewport-fixed; keep it inside the left list panel. */
+.results-list-shell :deep(.results-back-top) {
+  position: absolute !important;
+}
+
 .chart-card {
   display: flex;
   flex-direction: column;
@@ -655,5 +801,36 @@ onMounted(() => {
   min-height: 0;
   width: 100%;
   height: 100%;
+}
+
+.score-link {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.score-link:hover {
+  color: var(--fa-highlight-text);
+}
+
+.score-link:focus-visible {
+  outline: 2px solid var(--fa-highlight-border);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.score-extra {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fa-text-secondary);
 }
 </style>

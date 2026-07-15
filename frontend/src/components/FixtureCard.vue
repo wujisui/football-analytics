@@ -2,19 +2,18 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
+import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import type { FixtureResponse } from '@/api/types'
+import { useIsPhone } from '@/composables/useMediaQuery'
 import {
   formatDate,
   formatOdd,
   formatTime,
-  hasRealProbabilities,
   leagueTagColor,
   rankBracket,
   statusLabel,
   statusTagType,
-  toPercent,
 } from '@/utils/format'
-import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { leagueNameZh } from '@/utils/leagueNames'
 
 const props = defineProps<{
@@ -22,21 +21,7 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-
-const prediction = computed(() => snapshotFromAnalysis(props.fixture.analysis))
-const predictionReady = computed(() =>
-  hasRealProbabilities(
-    props.fixture.analysis.probabilities,
-    prediction.value.recommendation,
-  ),
-)
-const recommendationPending = computed(
-  () => !predictionReady.value || prediction.value.recommendation === '待分析',
-)
-const handicapPending = computed(() => {
-  const text = prediction.value.handicap_lean || ''
-  return !text || text.includes('缺少盘口') || text.includes('待分析')
-})
+const isPhone = useIsPhone()
 
 const odds = computed(() => props.fixture.odds_snippet)
 const ah = computed(() => odds.value?.asian_handicap ?? null)
@@ -56,10 +41,12 @@ const ahLines = computed(() => {
   return []
 })
 
-/** Plain names for odds / prediction headers (no rank brackets). */
+/** Main AH line (backend already sorts even-money first). */
+const ahMain = computed(() => ahLines.value[0] ?? null)
+const ahExtraCount = computed(() => Math.max(0, ahLines.value.length - 1))
+
 const homeName = computed(() => props.fixture.home_team_name || '—')
 const awayName = computed(() => props.fixture.away_team_name || '—')
-const matchupTitle = computed(() => `${homeName.value} vs ${awayName.value}`)
 
 const homeLabel = computed(() => {
   const rank = rankBracket(props.fixture.home_rank)
@@ -71,25 +58,17 @@ const awayLabel = computed(() => {
   return rank ? `${awayName.value} ${rank}` : awayName.value
 })
 
-const probs = computed(() => {
-  if (!predictionReady.value) return []
-  return [
-    { key: 'home', label: '主胜', value: prediction.value.home_win_prob },
-    { key: 'draw', label: '平局', value: prediction.value.draw_prob },
-    { key: 'away', label: '客胜', value: prediction.value.away_win_prob },
-  ]
-})
-
 function goDetail() {
   router.push({
     name: 'fixture-detail',
     params: { fixtureId: props.fixture.fixture_id },
+    query: { from: 'home' },
   })
 }
 </script>
 
 <template>
-  <article class="fixture-card">
+  <article class="fixture-card" :class="{ 'phone-compact': isPhone }">
     <header class="card-head">
       <n-tag
         size="small"
@@ -99,7 +78,7 @@ function goDetail() {
           textColor: leagueTagColor(fixture.league_id),
         }"
       >
-        {{ leagueNameZh(fixture.league_name) }}
+        {{ leagueNameZh(fixture.league_name, { leagueId: fixture.league_id }) }}
       </n-tag>
       <span class="kickoff">
         {{ formatDate(fixture.fixture_date) }} {{ formatTime(fixture.fixture_date) }}
@@ -109,22 +88,26 @@ function goDetail() {
       </n-tag>
     </header>
 
-    <div class="matchup">
+    <div v-if="!isPhone" class="matchup">
       <span class="team home">{{ homeLabel }}</span>
-      <button
-        type="button"
-        class="vs"
-        title="查看详细分析"
-        aria-label="查看详细分析"
-        @click="goDetail"
-      >
-        VS
-      </button>
+      <n-tooltip placement="top">
+        <template #trigger>
+          <button
+            type="button"
+            class="vs"
+            aria-label="查看详细分析"
+            @click="goDetail"
+          >
+            VS
+          </button>
+        </template>
+        查看详细分析
+      </n-tooltip>
       <span class="team away">{{ awayLabel }}</span>
     </div>
 
-    <div class="summary-grid">
-      <section class="zone odds-zone">
+    <div class="summary-grid" :class="{ 'predict-only': isPhone }">
+      <section v-if="!isPhone" class="zone odds-zone">
         <h3 class="zone-title">赛前盘口</h3>
         <template v-if="hasMarkets">
           <div class="markets">
@@ -140,18 +123,54 @@ function goDetail() {
               <span class="market-col mid">{{ formatOdd(mw.draw) }}</span>
               <span class="market-col">{{ formatOdd(mw.away) }}</span>
             </div>
-            <template v-if="ahLines.length">
-              <div
-                v-for="(row, idx) in ahLines"
-                :key="`ah-${row.line}-${idx}`"
-                class="market-row"
-              >
-                <span class="market-label">{{ idx === 0 ? '让球' : '' }}</span>
-                <span class="market-col">{{ formatOdd(row.home) }}</span>
-                <span class="market-col mid line">{{ row.line || '—' }}</span>
-                <span class="market-col">{{ formatOdd(row.away) }}</span>
-              </div>
-            </template>
+            <div v-if="ahMain" class="market-row">
+              <span class="market-label">
+                让球
+                <span v-if="ahExtraCount > 0" class="ah-more">+{{ ahExtraCount }}</span>
+              </span>
+              <span class="market-col">{{ formatOdd(ahMain.home) }}</span>
+              <span class="market-col mid line">
+                <n-popover
+                  v-if="ahExtraCount > 0"
+                  trigger="hover"
+                  placement="bottom"
+                  :show-arrow="false"
+                  :delay="120"
+                  raw
+                >
+                  <template #trigger>
+                    <span
+                      class="ah-line-trigger"
+                      tabindex="0"
+                      role="button"
+                      :aria-label="`主盘 ${ahMain.line}，另有 ${ahExtraCount} 条让球盘`"
+                    >
+                      {{ ahMain.line || '—' }}
+                    </span>
+                  </template>
+                  <div class="fixture-ah-popover">
+                    <div class="market-row market-head">
+                      <span class="market-label">让球</span>
+                      <span class="market-col">{{ homeName }}</span>
+                      <span class="market-col mid">盘口</span>
+                      <span class="market-col">{{ awayName }}</span>
+                    </div>
+                    <div
+                      v-for="(row, idx) in ahLines"
+                      :key="`ah-pop-${row.line}-${idx}`"
+                      class="market-row"
+                    >
+                      <span class="market-label" />
+                      <span class="market-col">{{ formatOdd(row.home) }}</span>
+                      <span class="market-col mid line">{{ row.line || '—' }}</span>
+                      <span class="market-col">{{ formatOdd(row.away) }}</span>
+                    </div>
+                  </div>
+                </n-popover>
+                <template v-else>{{ ahMain.line || '—' }}</template>
+              </span>
+              <span class="market-col">{{ formatOdd(ahMain.away) }}</span>
+            </div>
             <div v-if="ou" class="market-row">
               <span class="market-label">大小</span>
               <span class="market-col">{{ formatOdd(ou.home) }}</span>
@@ -163,54 +182,7 @@ function goDetail() {
         <p v-else class="odds-empty">暂无盘口（打开详情拉取后显示）</p>
       </section>
 
-      <section class="zone predict-zone">
-        <h3 class="zone-title">
-          算法预测
-          <span class="zone-matchup">{{ matchupTitle }}</span>
-        </h3>
-        <div class="rec-row">
-          <span class="rec-label">推荐</span>
-          <n-tag
-            :type="recommendationPending ? 'default' : 'primary'"
-            size="small"
-          >
-            {{ prediction.recommendation }}
-          </n-tag>
-          <n-tag
-            :type="handicapPending ? 'default' : 'warning'"
-            size="small"
-            class="rec-tag"
-          >
-            {{ prediction.handicap_lean || '缺少盘口数据分析' }}
-          </n-tag>
-        </div>
-        <div v-if="predictionReady" class="prob-row">
-          <div v-for="p in probs" :key="p.key" class="prob-item">
-            <span class="prob-label">{{ p.label }}</span>
-            <span class="prob-value">{{ toPercent(p.value) }}</span>
-            <n-progress
-              type="line"
-              :percentage="Math.round(p.value * 100)"
-              :show-indicator="false"
-              :height="6"
-              processing
-            />
-          </div>
-        </div>
-        <p v-else class="predict-empty">暂无有效胜平负概率（缺近况或盘口）</p>
-        <div v-if="predictionReady" class="lean-row">
-          <n-tag size="small" :bordered="false">{{ prediction.goal_lean }}</n-tag>
-          <n-tag size="small" :bordered="false">{{ prediction.both_score_lean }}</n-tag>
-          <n-tag size="small" :bordered="false" type="info">
-            参考比分 {{ prediction.score_hint }}
-          </n-tag>
-        </div>
-        <div v-else-if="!handicapPending" class="lean-row">
-          <n-tag size="small" :bordered="false" type="warning">
-            {{ prediction.handicap_lean }}
-          </n-tag>
-        </div>
-      </section>
+      <AlgorithmPredictionCard :fixture="fixture" :link-to-detail="isPhone" />
     </div>
   </article>
 </template>
@@ -268,48 +240,40 @@ function goDetail() {
 
 .vs {
   appearance: none;
-  border: 1px solid var(--fa-hover-border);
-  background: var(--fa-bg-soft);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--fa-text-strong);
-  font-size: 12px;
+  font: inherit;
+  font-size: 13px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   line-height: 1;
-  padding: 8px 12px;
-  border-radius: 999px;
   cursor: pointer;
   flex-shrink: 0;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-thickness: 1.5px;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: color 0.15s ease;
 }
 
 .vs:hover {
-  background: var(--fa-highlight-bg);
-  border-color: var(--fa-highlight-border);
   color: var(--fa-highlight-text);
-  box-shadow: 0 1px 6px var(--fa-hover-shadow);
-}
-
-.vs:active {
-  transform: scale(0.96);
 }
 
 .vs:focus-visible {
   outline: 2px solid var(--fa-highlight-border);
   outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .summary-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  align-items: stretch;
+}
+
+.summary-grid.predict-only {
+  grid-template-columns: 1fr;
 }
 
 .zone {
@@ -317,6 +281,13 @@ function goDetail() {
   border-radius: 6px;
   padding: 12px;
   min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.odds-zone {
+  display: flex;
+  flex-direction: column;
 }
 
 .zone-title {
@@ -324,76 +295,6 @@ function goDetail() {
   font-size: 13px;
   font-weight: 600;
   color: var(--fa-text-secondary);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 10px;
-}
-
-.zone-matchup {
-  font-weight: 500;
-  color: var(--fa-text);
-  font-size: 12px;
-}
-
-.rec-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.rec-label {
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-  flex-shrink: 0;
-}
-
-.rec-tag {
-  max-width: 100%;
-  white-space: normal;
-  height: auto;
-  line-height: 1.4;
-  padding: 2px 8px;
-}
-
-.prob-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.prob-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.prob-label {
-  font-size: 12px;
-  color: var(--fa-text-faint);
-}
-
-.prob-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--fa-text-strong);
-  font-variant-numeric: tabular-nums;
-}
-
-.lean-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.predict-empty {
-  margin: 0 0 8px;
-  font-size: 13px;
-  color: var(--fa-text-faint);
 }
 
 .markets {
@@ -446,6 +347,30 @@ function goDetail() {
   color: var(--fa-text-faint);
 }
 
+.ah-line-trigger {
+  display: inline-block;
+  min-width: 100%;
+  cursor: default;
+  border-radius: 3px;
+  outline: none;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.ah-line-trigger:hover,
+.ah-line-trigger:focus-visible {
+  background: var(--fa-bg-elevated);
+}
+
+.ah-more {
+  margin-left: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--fa-accent, #2080f0);
+  vertical-align: middle;
+}
+
 .odds-empty {
   margin: 0;
   font-size: 12px;
@@ -454,7 +379,7 @@ function goDetail() {
 }
 
 @media (max-width: 900px) {
-  .summary-grid {
+  .summary-grid:not(.predict-only) {
     grid-template-columns: 1fr;
   }
 
@@ -470,24 +395,74 @@ function goDetail() {
   .team {
     font-size: 14px;
   }
-
-  .market-head .market-col {
-    font-size: 11px;
-  }
-
-  .lean-row {
-    gap: 6px;
-  }
 }
 
-@media (max-width: 480px) {
-  .card-head {
+@media (max-width: 767px) {
+  .phone-compact .card-head {
     gap: 6px;
   }
 
-  .kickoff {
-    flex: 1 1 100%;
-    order: 3;
+  .phone-compact .kickoff {
+    flex: 1 1 auto;
   }
+}
+</style>
+
+<!-- Popover content is teleported; keep class names unique to this feature. -->
+<style>
+.fixture-ah-popover {
+  min-width: 280px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fa-border);
+  background: var(--fa-bg-elevated);
+  box-shadow: 0 8px 24px var(--fa-hover-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fa-text-secondary);
+}
+
+.fixture-ah-popover .market-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 52px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.fixture-ah-popover .market-head {
+  margin-bottom: 2px;
+  color: var(--fa-text-faint);
+  font-size: 11px;
+}
+
+.fixture-ah-popover .market-label {
+  text-align: left;
+  color: var(--fa-text-faint);
+}
+
+.fixture-ah-popover .market-col {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--fa-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fixture-ah-popover .market-col.mid {
+  color: var(--fa-text-secondary);
+}
+
+.fixture-ah-popover .market-col.line {
+  font-weight: 700;
+  color: var(--fa-accent, #2080f0);
+}
+
+.fixture-ah-popover .market-head .market-col {
+  font-weight: 500;
+  color: var(--fa-text-faint);
 }
 </style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FilterOutline } from '@vicons/ionicons5'
 import { computed, ref, watch } from 'vue'
 
 import type { LeagueFilterOption } from '@/api/leagues'
@@ -37,6 +38,10 @@ const configuredOptions = computed(() =>
   props.options.filter((o) => o.tier === 'configured'),
 )
 
+const extraOptions = computed(() =>
+  props.options.filter((o) => o.tier === 'extra'),
+)
+
 function labelOf(opt: LeagueFilterOption): string {
   const name = leagueNameZh(opt.league_name)
   const n = opt.fixtures_count
@@ -67,45 +72,66 @@ function confirm() {
     :show-arrow="false"
   >
     <template #trigger>
-      <n-button
-        size="tiny"
-        quaternary
-        class="league-filter-btn"
-        :class="{ 'is-icon-only': iconOnly }"
-        :type="filterActive ? 'primary' : 'default'"
-        :title="iconOnly ? '联赛筛选' : undefined"
-        aria-label="筛选联赛"
-      >
-        <template #icon>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            width="14"
-            height="14"
-            fill="currentColor"
-            aria-hidden="true"
+      <n-tooltip :disabled="!iconOnly" placement="right">
+        <template #trigger>
+          <n-button
+            size="tiny"
+            quaternary
+            class="league-filter-btn"
+            :class="{ 'is-icon-only': iconOnly }"
+            :type="filterActive ? 'primary' : 'default'"
+            aria-label="筛选联赛"
           >
-            <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" />
-          </svg>
+            <template #icon>
+              <n-icon :component="FilterOutline" :size="14" />
+            </template>
+            <span v-if="!iconOnly">筛选</span>
+          </n-button>
         </template>
-        <span v-if="!iconOnly">筛选</span>
-      </n-button>
+        联赛筛选
+      </n-tooltip>
     </template>
     <div class="league-filter-panel">
       <n-scrollbar style="max-height: min(360px, 55vh);">
         <n-checkbox-group v-model:value="draft">
-          <n-flex :size="[10, 6]" :wrap="true">
-            <n-checkbox
-              v-for="opt in options"
-              :key="opt.league_id"
-              :value="opt.league_id"
-              :label="labelOf(opt)"
-            />
-          </n-flex>
+          <div class="sections-row">
+            <div class="section">
+              <div class="section-title">联赛</div>
+              <n-space vertical :size="6">
+                <n-checkbox
+                  v-for="opt in configuredOptions"
+                  :key="opt.league_id"
+                  :value="opt.league_id"
+                  :label="labelOf(opt)"
+                />
+              </n-space>
+              <n-empty
+                v-if="!configuredOptions.length"
+                description="暂无配置联赛"
+                style="padding: 8px 0;"
+              />
+            </div>
+            <div class="section">
+              <div class="section-title">其他联赛</div>
+              <n-space vertical :size="6">
+                <n-checkbox
+                  v-for="opt in extraOptions"
+                  :key="opt.league_id"
+                  :value="opt.league_id"
+                  :label="labelOf(opt)"
+                />
+              </n-space>
+              <n-empty
+                v-if="!extraOptions.length"
+                description="暂无其他联赛"
+                style="padding: 8px 0;"
+              />
+            </div>
+          </div>
         </n-checkbox-group>
         <n-empty
           v-if="!options.length"
-          description="今日暂无匹配联赛（可强制刷新后再试）"
+          description="今日暂无匹配联赛（可同步赛程后再试）"
           style="padding: 16px 0;"
         />
       </n-scrollbar>
@@ -144,10 +170,29 @@ function confirm() {
 }
 
 .league-filter-panel {
-  width: min(340px, 86vw);
+  width: min(360px, 86vw);
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.sections-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.section {
+  flex: 1;
+  min-width: 0;
+}
+
+.section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fa-text-muted);
+  margin-bottom: 6px;
 }
 
 .actions {

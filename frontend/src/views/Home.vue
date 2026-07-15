@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 
 import FixtureList from '@/components/FixtureList.vue'
+import { RefreshOutline } from '@vicons/ionicons5'
+
 import LeagueFilterTrigger from '@/components/LeagueFilterTrigger.vue'
 import LeagueMenu from '@/components/LeagueMenu.vue'
 import { syncFixtures } from '@/api/fixtures'
@@ -39,7 +41,12 @@ const {
   loadHomeFixtures,
 } = useHomeFixtures()
 
-const { cooldownLeft, inCooldown, applySyncResult } = useSyncCooldown()
+const {
+  cooldownLeft,
+  cooldownEnabled,
+  inCooldown,
+  applySyncResult,
+} = useSyncCooldown()
 const {
   catalog,
   trackedIds,
@@ -55,6 +62,16 @@ const selectedDay = ref<string | null>(null)
 const siderCollapsed = ref(false)
 const leagueDrawerShow = ref(false)
 const syncing = ref(false)
+const listShellRef = ref<HTMLElement | null>(null)
+
+/** Scroll container for n-back-top (n-scrollbar internals). */
+function listScrollListenTo(): HTMLElement {
+  return (
+    (listShellRef.value?.querySelector(
+      '.n-scrollbar-container',
+    ) as HTMLElement | null) ?? document.documentElement
+  )
+}
 
 function localDayKey(dateStr: string): string {
   const d = parseApiDate(dateStr)
@@ -67,7 +84,7 @@ function localDayKey(dateStr: string): string {
 
 /** Disable only the refresh control — list stays interactive during sync. */
 const refreshDisabled = computed(() => syncing.value || inCooldown.value)
-const refreshLabel = computed(() => (inCooldown.value ? '刷新冷却中' : '强制刷新'))
+const refreshLabel = computed(() => (inCooldown.value ? '同步冷却中' : '同步赛程'))
 
 const trackedIdSet = computed(() => new Set(trackedIds.value))
 const filterLeagueOptions = computed(() => allFilterOptions())
@@ -157,7 +174,7 @@ function isHomeDayDisabled(ts: number): boolean {
 
 const emptyText = computed(() => {
   if (!filterLeagueOptions.value.length && !trackedFixtures.value.length) {
-    return '暂无匹配联赛，可先点「强制刷新」拉取配置联赛'
+    return '暂无匹配联赛，可先点「同步赛程」拉取配置联赛'
   }
   if (!trackedIds.value.length) {
     return '请先在「筛选」中勾选要关注的联赛'
@@ -241,8 +258,12 @@ async function runSync(leagueIds: number[], opts?: { days?: number; date?: strin
       date: opts?.date ?? homeWindowStartDate(),
       includeResults: true,
       leagueIds,
+      skipCooldown: !cooldownEnabled.value,
     })
-    if (applySyncResult(result)) return false
+    if (applySyncResult(result)) {
+      message.warning(result.message || '同步冷却中')
+      return false
+    }
     message.success(result.message || `已同步 ${leagueIds.length} 个联赛`)
     await Promise.all([loadFilterOptions({ discover: true }), loadAll(true)])
     // Odds finish in a backend follow-up; refresh list once they have time to land.
@@ -402,8 +423,8 @@ onActivated(() => {
       <n-layout-header bordered class="home-toolbar" style="flex-shrink: 0;">
         <div class="toolbar-top">
           <n-button
-            type="primary"
             size="small"
+            secondary
             class="league-trigger"
             @click="leagueDrawerShow = true"
           >
@@ -413,30 +434,34 @@ onActivated(() => {
             <n-breadcrumb-item @click="selectLeague(null)">赛前赛事</n-breadcrumb-item>
             <n-breadcrumb-item>{{ breadcrumbFilter }}</n-breadcrumb-item>
           </n-breadcrumb>
-          <n-button
-            size="small"
-            secondary
-            class="refresh-btn"
-            :loading="syncing"
-            :disabled="refreshDisabled"
-            @click="forceRefresh"
-          >
-            <template #icon>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                width="14"
-                height="14"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path
-                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L14 10h6V4l-2.35 2.35z"
-                />
-              </svg>
-            </template>
-            {{ refreshLabel }}
-          </n-button>
+          <n-space :size="8" align="center" class="refresh-cluster">
+            <n-tooltip placement="bottom">
+              <template #trigger>
+                <n-switch v-model:value="cooldownEnabled" size="small">
+                  <template #checked>冷却</template>
+                  <template #unchecked>冷却</template>
+                </n-switch>
+              </template>
+              {{
+                cooldownEnabled
+                  ? '冷却保护已开：同步后约 90 秒内不可再刷'
+                  : '冷却已关：可连续同步（仍消耗官方配额）'
+              }}
+            </n-tooltip>
+            <n-button
+              type="primary"
+              size="small"
+              class="refresh-btn"
+              :loading="syncing"
+              :disabled="refreshDisabled"
+              @click="forceRefresh"
+            >
+              <template #icon>
+                <n-icon :component="RefreshOutline" :size="16" />
+              </template>
+              {{ refreshLabel }}
+            </n-button>
+          </n-space>
         </div>
 
         <n-page-header :title="listTitle" class="page-header">
@@ -458,32 +483,38 @@ onActivated(() => {
         </n-page-header>
       </n-layout-header>
 
-      <n-layout-content
-        class="home-content"
-        :native-scrollbar="false"
-        :scrollbar-props="{ trigger: 'hover' }"
-        :content-style="
-          isPhone
-            ? 'padding: 12px 12px 20px; box-sizing: border-box;'
-            : 'padding: 16px 20px 24px; box-sizing: border-box;'
-        "
-        style="flex: 1; min-height: 0;"
-      >
-        <n-alert v-if="error" type="error" :title="error" class="state">
-          <n-button size="small" type="primary" @click="loadAll(true)">重试</n-button>
-        </n-alert>
+      <div ref="listShellRef" class="home-content home-list-shell">
+        <n-scrollbar
+          class="home-list-scroll"
+          trigger="hover"
+          :content-style="
+            isPhone
+              ? 'padding: 12px 12px 20px; box-sizing: border-box;'
+              : 'padding: 16px 20px 24px; box-sizing: border-box;'
+          "
+        >
+          <n-alert v-if="error" type="error" :title="error" class="state">
+            <n-button size="small" type="primary" @click="loadAll(true)">重试</n-button>
+          </n-alert>
 
-        <!-- Only block list on cold load; force-refresh is background sync. -->
-        <n-spin v-else :show="loading && !allFixtures.length">
-          <div class="spin-body">
-            <FixtureList
-              v-if="!loading || allFixtures.length"
-              :fixtures="displayedFixtures"
-              :empty-description="emptyText"
-            />
-          </div>
-        </n-spin>
-      </n-layout-content>
+          <!-- Only block list on cold load; force-refresh is background sync. -->
+          <n-spin v-else :show="loading && !allFixtures.length">
+            <div class="spin-body">
+              <FixtureList
+                v-if="!loading || allFixtures.length"
+                :fixtures="displayedFixtures"
+                :empty-description="emptyText"
+              />
+            </div>
+          </n-spin>
+        </n-scrollbar>
+        <n-back-top
+          :listen-to="listScrollListenTo"
+          :visibility-height="240"
+          :right="20"
+          :bottom="24"
+        />
+      </div>
     </n-layout>
   </n-layout>
 
@@ -577,6 +608,18 @@ onActivated(() => {
   flex: 1;
   min-height: 0;
   background: var(--fa-bg);
+}
+
+.home-list-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-list-scroll {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 
 .spin-body {
