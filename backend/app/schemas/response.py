@@ -361,7 +361,8 @@ class AccuracyDayPointResponse(BaseModel):
 
 
 class ResultsHistoryResponse(BaseModel):
-    days: int
+    days: int = Field(description="样本跨度天数；all_time 时为首末日跨度")
+    all_time: bool = Field(default=False, description="是否统计全部本地完场样本")
     start_date: str
     end_date: str
     overall: ResultsAccuracyResponse
@@ -472,10 +473,25 @@ def analysis_to_response(analysis) -> AnalysisResponse:
     }
     probs = resolve_match_probabilities(raw, odds if isinstance(odds, dict) else None)
     ready = not is_flat_prior(probs)
-    leans = derive_prediction_leans(
-        probs,
-        odds if isinstance(odds, dict) else None,
-    )
+
+    # Prefer snapshot frozen at last pre-kickoff analysis (audit / learning).
+    frozen = bool(getattr(analysis, "leans_frozen", False))
+    if frozen:
+        recommendation = analysis.recommendation or "待分析"
+        goal_lean = getattr(analysis, "goal_lean", None) or "大小球：待分析"
+        both_score_lean = getattr(analysis, "both_score_lean", None) or "双方进球：待分析"
+        score_hint = getattr(analysis, "score_hint", None) or "待分析"
+        handicap_lean = getattr(analysis, "handicap_lean", None) or "缺少盘口数据分析"
+    else:
+        leans = derive_prediction_leans(
+            probs,
+            odds if isinstance(odds, dict) else None,
+        )
+        recommendation = get_recommendation(probs) if ready else "待分析"
+        goal_lean = leans["goal_lean"] if ready else "大小球：待分析"
+        both_score_lean = leans["both_score_lean"] if ready else "双方进球：待分析"
+        score_hint = leans["score_hint"] if ready else "待分析"
+        handicap_lean = leans["handicap_lean"]
 
     return AnalysisResponse(
         fixture_id=analysis.fixture_id,
@@ -491,11 +507,11 @@ def analysis_to_response(analysis) -> AnalysisResponse:
             away_win_prob=probs["away"] if ready else None,
         ),
         confidence=analysis.confidence,
-        recommendation=get_recommendation(probs) if ready else "待分析",
-        goal_lean=leans["goal_lean"] if ready else "大小球：待分析",
-        both_score_lean=leans["both_score_lean"] if ready else "双方进球：待分析",
-        score_hint=leans["score_hint"] if ready else "待分析",
-        handicap_lean=leans["handicap_lean"],
+        recommendation=recommendation,
+        goal_lean=goal_lean,
+        both_score_lean=both_score_lean,
+        score_hint=score_hint,
+        handicap_lean=handicap_lean,
         data_source=analysis.data_source,
         analyzed_at=analysis.analyzed_at,
         cache_status=analysis.cache_status,

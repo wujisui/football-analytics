@@ -31,7 +31,9 @@ from app.services.prematch_package import (
     summarize_h2h_payload,
 )
 from app.services.ttl_policy import (
+    PREDICTION_EXAM_FIELDS,
     is_finished_status,
+    is_prediction_exam_locked,
     refresh_ttl_seconds,
     should_stop_api_refresh,
 )
@@ -79,6 +81,12 @@ class AnalysisResult:
     analyzed_at: datetime
     cache_status: str = "miss"
     package: dict[str, Any] | None = None
+    # Frozen at last pre-kickoff analysis — prefer these over live recompute.
+    goal_lean: str | None = None
+    both_score_lean: str | None = None
+    score_hint: str | None = None
+    handicap_lean: str | None = None
+    leans_frozen: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -188,15 +196,18 @@ class AnalyzerService:
         record = result.scalar_one_or_none()
         package = package or {}
 
+        fixture = await self.session.get(Fixture, fixture_id)
+        exam_locked = bool(
+            fixture
+            and is_prediction_exam_locked(fixture.date, fixture.status)
+        )
+
         lineups = package.get("lineups") or {}
         home_lineup = lineups.get("home") or {}
         away_lineup = lineups.get("away") or {}
         injuries = package.get("injuries") or {}
 
-        fields = {
-            "home_win_prob": home_win_prob,
-            "draw_prob": draw_prob,
-            "away_win_prob": away_win_prob,
+        fields: dict[str, Any] = {
             "home_formation": home_lineup.get("formation"),
             "away_formation": away_lineup.get("formation"),
             "injuries_home": dumps_json(injuries.get("home")),
@@ -228,31 +239,42 @@ class AnalyzerService:
         elif record is None:
             fields["odds_json"] = dumps_json({"available": False})
 
-        # Freeze recommendation / leans at analysis time for results audit.
-        from app.services.prediction import build_prediction_snapshot
+        # Exam lock: after kickoff never write/overwrite prediction snapshot.
+        # Pre-kickoff may refresh with the current algorithm.
+        if not exam_locked:
+            from app.services.prediction import build_prediction_snapshot
 
-        odds_for_snap = rehydrate_odds_markets(
-            odds_pkg
-            or (
-                loads_json(record.odds_json, {"available": False})
-                if record and record.odds_json
-                else {"available": False}
+            odds_for_snap = rehydrate_odds_markets(
+                odds_pkg
+                or (
+                    loads_json(record.odds_json, {"available": False})
+                    if record and record.odds_json
+                    else {"available": False}
+                )
             )
-        )
-        snap = build_prediction_snapshot(
-            {
-                "home": home_win_prob,
-                "draw": draw_prob,
-                "away": away_win_prob,
-            },
-            odds_for_snap if isinstance(odds_for_snap, dict) else None,
-            features=features,
-        )
-        fields["recommendation"] = snap.get("recommendation")
-        fields["score_hint"] = snap.get("score_hint")
-        fields["goal_lean"] = snap.get("goal_lean")
-        fields["both_score_lean"] = snap.get("both_score_lean")
-        fields["handicap_lean"] = snap.get("handicap_lean")
+            snap = build_prediction_snapshot(
+                {
+                    "home": home_win_prob,
+                    "draw": draw_prob,
+                    "away": away_win_prob,
+                },
+                odds_for_snap if isinstance(odds_for_snap, dict) else None,
+                features=features,
+            )
+            fields["home_win_prob"] = home_win_prob
+            fields["draw_prob"] = draw_prob
+            fields["away_win_prob"] = away_win_prob
+            fields["recommendation"] = snap.get("recommendation")
+            fields["score_hint"] = snap.get("score_hint")
+            fields["goal_lean"] = snap.get("goal_lean")
+            fields["both_score_lean"] = snap.get("both_score_lean")
+            fields["handicap_lean"] = snap.get("handicap_lean")
+        else:
+            logger.info(
+                "Prediction exam locked for fixture %s — skip overwrite of %s",
+                fixture_id,
+                ", ".join(PREDICTION_EXAM_FIELDS),
+            )
 
         if record is None:
             record = PreMatchData(fixture_id=fixture_id, **fields)
@@ -262,7 +284,7 @@ class AnalyzerService:
                 if value is not None:
                     setattr(record, key, value)
 
-        if features is not None:
+        if features is not None and not exam_locked:
             from app.services.ml_predictor import persist_match_features
 
             await persist_match_features(
@@ -297,6 +319,8 @@ class AnalyzerService:
         if analyzed_at.tzinfo is None:
             analyzed_at = analyzed_at.replace(tzinfo=timezone.utc)
 
+        frozen_rec = (getattr(stored, "recommendation", None) or "").strip()
+        has_frozen = bool(frozen_rec and frozen_rec != "待分析")
         return AnalysisResult(
             fixture_id=fixture.id,
             home_team_name=home_name,
@@ -308,11 +332,16 @@ class AnalyzerService:
             draw_prob=probs["draw"],
             away_win_prob=probs["away"],
             confidence=confidence,
-            recommendation=get_recommendation(probs),
+            recommendation=frozen_rec if has_frozen else get_recommendation(probs),
             data_source="database",
             analyzed_at=analyzed_at,
             cache_status="miss",
             package=package_from_record(stored),
+            goal_lean=getattr(stored, "goal_lean", None),
+            both_score_lean=getattr(stored, "both_score_lean", None),
+            score_hint=getattr(stored, "score_hint", None),
+            handicap_lean=getattr(stored, "handicap_lean", None),
+            leans_frozen=has_frozen,
         )
 
     async def _collect_prematch_package(
@@ -499,12 +528,14 @@ class AnalyzerService:
         stored = result.scalar_one_or_none()
         if stored is None:
             return None
-        if None in (stored.home_win_prob, stored.draw_prob, stored.away_win_prob):
-            return None
 
-        # Kickoff passed / finished: freeze — never re-hit API for this fixture.
+        # Kickoff passed / finished: freeze — serve any local row (H2H/form/odds
+        # may exist even when model probs were never written).
         if should_stop_api_refresh(fixture.date, fixture.status):
             return stored
+
+        if None in (stored.home_win_prob, stored.draw_prob, stored.away_win_prob):
+            return None
 
         ttl = self._analysis_refresh_ttl(fixture)
         if ttl is None:
@@ -620,6 +651,8 @@ class AnalyzerService:
         if cached is not None and "payload" in cached:
             payload = cached["payload"]
             package = payload.get("package") if include_package else None
+            fixture_date = datetime.fromisoformat(payload["fixture_date"])
+            frozen = should_stop_api_refresh(fixture_date, payload.get("status"))
             # Detail view needs form/h2h; skip empty packages left by free-plan last= failures.
             package_useful = False
             package_stale = False
@@ -641,19 +674,24 @@ class AnalyzerService:
                     home_form.get("played")
                     or away_form.get("played")
                     or h2h_pkg.get("played")
+                    or (home_form.get("matches") or [])
+                    or (away_form.get("matches") or [])
+                    or (h2h_pkg.get("matches") or [])
                     or (package.get("odds") or {}).get("available")
                     or (package.get("lineups") or {}).get("available")
                     or standings.get("available")
                 )
-            if include_package and (not package_useful or package_stale):
-                pass
-            else:
+            # Refresh when package empty/stale — except after kickoff, keep useful local stats.
+            need_refresh = include_package and (
+                not package_useful or package_stale
+            ) and not (frozen and package_useful)
+            if not need_refresh:
                 return AnalysisResult(
                     fixture_id=payload["fixture_id"],
                     home_team_name=payload["home_team_name"],
                     away_team_name=payload["away_team_name"],
                     league_name=payload["league_name"],
-                    fixture_date=datetime.fromisoformat(payload["fixture_date"]),
+                    fixture_date=fixture_date,
                     status=payload["status"],
                     home_win_prob=payload["home_win_prob"],
                     draw_prob=payload["draw_prob"],
@@ -750,23 +788,33 @@ class AnalyzerService:
                     )
                     return result
 
-        # After kickoff: if we somehow have no stored analysis, still do not call API.
+        # After kickoff: never call API — return local package (统计/盘口) if any.
         if should_stop_api_refresh(fixture.date, fixture.status):
             pre_match = await self.session.execute(
                 select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
             )
             stored = pre_match.scalar_one_or_none()
-            if stored and None not in (
-                stored.home_win_prob,
-                stored.draw_prob,
-                stored.away_win_prob,
-            ):
-                return self._result_from_pre_match(
-                    fixture, home_name, away_name, league_name, stored, confidence="低"
+            if stored is not None:
+                has_model = None not in (
+                    stored.home_win_prob,
+                    stored.draw_prob,
+                    stored.away_win_prob,
                 )
+                result = self._result_from_pre_match(
+                    fixture,
+                    home_name,
+                    away_name,
+                    league_name,
+                    stored,
+                    confidence="中" if has_model else "低",
+                )
+                if not include_package:
+                    result.package = None
+                await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
+                return result
             raise ValueError(
-                f"Fixture {fixture_id} has kicked off/finished and has no local analysis. "
-                "Prepare data before kickoff next time."
+                f"比赛 {fixture_id} 已开赛/结束，本地无赛前数据（含交锋近况）。"
+                "请在开赛前打开详情完成准备。"
             )
 
         sources_ok = 0
@@ -941,6 +989,21 @@ class AnalyzerService:
         if prediction.source == "ml" and completeness >= 0.5:
             confidence = get_confidence_level(max(completeness, 0.8))
 
+        from app.services.prediction import build_prediction_snapshot
+
+        odds_for_snap = None
+        if include_package and isinstance(package, dict):
+            odds_for_snap = package.get("odds")
+        snap = build_prediction_snapshot(
+            {
+                "home": round(probs["home"], 4),
+                "draw": round(probs["draw"], 4),
+                "away": round(probs["away"], 4),
+            },
+            odds_for_snap if isinstance(odds_for_snap, dict) else None,
+            features=prediction.features,
+        )
+
         result = AnalysisResult(
             fixture_id=fixture_id,
             home_team_name=home_name,
@@ -952,13 +1015,19 @@ class AnalyzerService:
             draw_prob=round(probs["draw"], 4),
             away_win_prob=round(probs["away"], 4),
             confidence=confidence,
-            recommendation=get_recommendation(probs, features=prediction.features),
+            recommendation=snap.get("recommendation")
+            or get_recommendation(probs, features=prediction.features),
             data_source=data_source if prediction.source == "form_fallback" else (
                 f"{data_source}+{prediction.source}"
             ),
             analyzed_at=datetime.now(timezone.utc),
             cache_status="miss",
             package=package if include_package else None,
+            goal_lean=snap.get("goal_lean"),
+            both_score_lean=snap.get("both_score_lean"),
+            score_hint=snap.get("score_hint"),
+            handicap_lean=snap.get("handicap_lean"),
+            leans_frozen=True,
         )
 
         await self._save_pre_match_data(

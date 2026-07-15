@@ -88,6 +88,37 @@ def should_stop_api_refresh(
     return False
 
 
+# Exam fields: once kickoff has passed, these must never be rewritten
+# (rewriting after the fact = grading with answers known).
+PREDICTION_EXAM_FIELDS: tuple[str, ...] = (
+    "home_win_prob",
+    "draw_prob",
+    "away_win_prob",
+    "recommendation",
+    "score_hint",
+    "goal_lean",
+    "both_score_lean",
+    "handicap_lean",
+)
+
+
+def is_prediction_exam_locked(
+    fixture_date: datetime | None,
+    status: str | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """True → refuse to write/overwrite prediction snapshot fields."""
+    return should_stop_api_refresh(fixture_date, status=status, now=now)
+
+
+def has_exam_prediction_snapshot(record: object | None) -> bool:
+    """True when a real (non-placeholder) recommendation was already stored."""
+    if record is None:
+        return False
+    rec = (getattr(record, "recommendation", None) or "").strip()
+    return bool(rec and rec != "待分析")
+
+
 def refresh_ttl_seconds(
     fixture_date: datetime | None,
     *,

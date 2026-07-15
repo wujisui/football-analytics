@@ -1020,7 +1020,10 @@ class FootballFetcher:
             select(Fixture).where(
                 Fixture.date >= start,
                 Fixture.date <= cutoff,
-                Fixture.league_id.in_(list(self.settings.LEAGUE_IDS.values())),
+                # Include reference-catalog leagues (same as homepage sync).
+                Fixture.league_id.in_(
+                    list(self.settings.fetchable_league_ids()) or [-1]
+                ),
                 or_(
                     Fixture.status.in_(["pending", "live"]),
                     Fixture.home_goals.is_(None),
@@ -1033,11 +1036,20 @@ class FootballFetcher:
             logger.info("capture_finished_results: nothing to update.")
             return 0
 
-        dates = sorted({fx.date.date() for fx in fixtures})
+        by_day: dict[date, set[int]] = {}
+        for fx in fixtures:
+            by_day.setdefault(fx.date.date(), set()).add(fx.league_id)
+
         total = 0
-        for day in dates:
+        for day, league_ids in sorted(by_day.items()):
             try:
-                total += await self.fetch_fixtures_for_date(day, force=True)
+                # Pass the leagues that actually need FT backfill (incl. reference
+                # catalog like 厄甲); default None would only sync leagues.json.
+                total += await self.fetch_fixtures_for_date(
+                    day,
+                    force=True,
+                    league_ids=sorted(league_ids),
+                )
             except Exception as exc:
                 logger.error(
                     "capture_finished_results failed for %s: %s",
@@ -1047,7 +1059,7 @@ class FootballFetcher:
                 )
         logger.info(
             "capture_finished_results updated %s date(s), fixtures_touched≈%s",
-            len(dates),
+            len(by_day),
             total,
         )
         await self._label_match_features_for_finished()
@@ -1161,11 +1173,13 @@ class FootballFetcher:
         """Write 即时盘; optionally freeze 初盘 once (midday scheduled sync)."""
         from sqlalchemy import select
 
+        from app.models.fixture import Fixture
         from app.models.pre_match_data import PreMatchData
         from app.services.cache import analysis_cache_key
         from app.services.ml_predictor import persist_match_features, predict_probabilities
         from app.services.prediction import build_prediction_snapshot, implied_probs_from_odds
         from app.services.prematch_package import dumps_json, loads_json, rehydrate_odds_markets
+        from app.services.ttl_policy import is_prediction_exam_locked
 
         assert self.session is not None
         captured_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -1174,11 +1188,51 @@ class FootballFetcher:
         odds_pkg = rehydrate_odds_markets(parsed)
 
         async with self._db_lock:
+            fixture = await self.session.get(Fixture, fixture_id)
+            exam_locked = bool(
+                fixture
+                and is_prediction_exam_locked(fixture.date, fixture.status)
+            )
             row = (
                 await self.session.execute(
                     select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
                 )
             ).scalar_one_or_none()
+
+            opening_text: str | None = None
+            if set_opening and parsed.get("available"):
+                existing_open = (
+                    loads_json(getattr(row, "odds_opening_json", None), {})
+                    if row is not None
+                    else {}
+                )
+                if not existing_open.get("available"):
+                    opening_text = dumps_json(
+                        {**parsed, "role": "opening", "captured_at": captured_at}
+                    )
+
+            # After kickoff: odds board may still update; prediction exam fields must not.
+            if exam_locked:
+                if row is None:
+                    row = PreMatchData(
+                        fixture_id=fixture_id,
+                        odds_json=odds_text,
+                        odds_opening_json=opening_text,
+                    )
+                    self.session.add(row)
+                else:
+                    row.odds_json = odds_text
+                    if opening_text is not None:
+                        row.odds_opening_json = opening_text
+                row.updated_at = datetime.now(timezone.utc)
+                await self.session.commit()
+                await self.cache.delete(analysis_cache_key(fixture_id))
+                await self.cache.set(odds_cache_key(fixture_id), raw, TTL_HEADTOHEAD)
+                logger.info(
+                    "Odds updated for fixture %s but prediction exam locked — snapshot unchanged",
+                    fixture_id,
+                )
+                return
 
             package: dict[str, Any] = {
                 "odds": odds_pkg,
@@ -1198,18 +1252,6 @@ class FootballFetcher:
                     probs = implied
 
             snap = build_prediction_snapshot(probs, odds_pkg, features=pred.features)
-
-            opening_text: str | None = None
-            if set_opening and parsed.get("available"):
-                existing_open = (
-                    loads_json(getattr(row, "odds_opening_json", None), {})
-                    if row is not None
-                    else {}
-                )
-                if not existing_open.get("available"):
-                    opening_text = dumps_json(
-                        {**parsed, "role": "opening", "captured_at": captured_at}
-                    )
 
             if row is None:
                 row = PreMatchData(

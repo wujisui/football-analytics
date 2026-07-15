@@ -12,11 +12,9 @@ from sqlalchemy.orm import selectinload
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.services.prediction import (
-    build_prediction_snapshot,
     evaluate_prediction_vs_score,
     summarize_accuracy,
 )
-from app.services.prematch_package import loads_json, rehydrate_odds_markets
 
 
 def evaluate_fixture_prediction(
@@ -43,33 +41,26 @@ def evaluate_fixture_prediction(
     ):
         return payload
 
-    probs = {
-        "home": stored.home_win_prob,
-        "draw": stored.draw_prob,
-        "away": stored.away_win_prob,
-    }
-    odds = rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
-    snap = build_prediction_snapshot(probs, odds if isinstance(odds, dict) else None)
-
-    # Prefer frozen snapshot written at analysis time; fall back to recompute.
-    recommendation = getattr(stored, "recommendation", None) or snap["recommendation"]
-    score_hint = getattr(stored, "score_hint", None) or snap["score_hint"]
-    goal_lean = getattr(stored, "goal_lean", None) or snap["goal_lean"]
-    both_score_lean = getattr(stored, "both_score_lean", None) or snap["both_score_lean"]
-    has_prediction = recommendation != "待分析" and score_hint != "待分析"
+    # Audit uses only the frozen exam snapshot — never recompute with today's algorithm.
+    recommendation = (getattr(stored, "recommendation", None) or "").strip()
+    score_hint = (getattr(stored, "score_hint", None) or "").strip()
+    goal_lean = (getattr(stored, "goal_lean", None) or "").strip()
+    both_score_lean = (getattr(stored, "both_score_lean", None) or "").strip()
+    if not recommendation or recommendation == "待分析":
+        return payload
+    if not score_hint or score_hint == "待分析":
+        # Older rows may lack score_hint; still count 1X2 / O/U / BTTS if present.
+        score_hint = ""
 
     payload.update(
         {
-            "has_prediction": has_prediction,
+            "has_prediction": True,
             "recommendation": recommendation,
-            "score_hint": score_hint,
-            "goal_lean": goal_lean,
-            "both_score_lean": both_score_lean,
+            "score_hint": score_hint or None,
+            "goal_lean": goal_lean or None,
+            "both_score_lean": both_score_lean or None,
         }
     )
-
-    if not has_prediction:
-        return payload
 
     hits = evaluate_prediction_vs_score(
         home_goals=fixture.home_goals,
@@ -103,22 +94,23 @@ async def load_stored_by_fixture_ids(
 async def fetch_finished_fixtures(
     db: AsyncSession,
     *,
-    start: date,
+    start: date | None,
     end: date,
     league_ids: list[int],
 ) -> list[Fixture]:
-    start_dt = datetime.combine(start, datetime.min.time())
     end_dt = datetime.combine(end, datetime.max.time())
+    filters = [
+        Fixture.date <= end_dt,
+        Fixture.status == "finished",
+        Fixture.league_id.in_(league_ids or [-1]),
+        Fixture.home_goals.is_not(None),
+        Fixture.away_goals.is_not(None),
+    ]
+    if start is not None:
+        filters.append(Fixture.date >= datetime.combine(start, datetime.min.time()))
     stmt = (
         select(Fixture)
-        .where(
-            Fixture.date >= start_dt,
-            Fixture.date <= end_dt,
-            Fixture.status == "finished",
-            Fixture.league_id.in_(league_ids),
-            Fixture.home_goals.is_not(None),
-            Fixture.away_goals.is_not(None),
-        )
+        .where(*filters)
         .options(
             selectinload(Fixture.home_team),
             selectinload(Fixture.away_team),
@@ -142,12 +134,18 @@ async def build_history_accuracy(
     end_day: date | None = None,
 ) -> dict[str, Any]:
     """
-    Overall + per-day accuracy for the last `days` calendar days ending at end_day
-    (default: yesterday).
+    Overall + per-day accuracy for finished fixtures with scores.
+
+    ``days <= 0`` (default) → **all** local finished fixtures (true historical total).
+    ``days > 0`` → optional lookback ending at ``end_day`` (default: today).
     """
-    window = max(1, min(days, 90))
-    end = end_day or (date.today() - timedelta(days=1))
-    start = end - timedelta(days=window - 1)
+    end = end_day or date.today()
+    if days and days > 0:
+        window = max(1, min(int(days), 3650))
+        start: date | None = end - timedelta(days=window - 1)
+    else:
+        window = 0
+        start = None
 
     fixtures = await fetch_finished_fixtures(
         db, start=start, end=end, league_ids=league_ids
@@ -195,12 +193,22 @@ async def build_history_accuracy(
         )
 
     overall = summarize_accuracy(overall_rows)
-    series_start = series[0]["date"] if series else start.isoformat()
+    series_start = series[0]["date"] if series else (start.isoformat() if start else end.isoformat())
     series_end = series[-1]["date"] if series else end.isoformat()
+    # Echo requested window; 0 means all-time. For display, also expose sample span.
+    span_days = window
+    if window == 0 and series:
+        try:
+            span_days = (
+                date.fromisoformat(series_end) - date.fromisoformat(series_start)
+            ).days + 1
+        except ValueError:
+            span_days = 0
     return {
-        "days": window,
+        "days": span_days if window == 0 else window,
         "start_date": series_start,
         "end_date": series_end,
         "overall": overall,
         "series": series,
+        "all_time": window == 0,
     }
