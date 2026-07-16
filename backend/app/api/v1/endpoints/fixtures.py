@@ -102,7 +102,7 @@ def _set_response_headers(response: Response, data_source: str, max_age: int = 1
 def _league_name(fixture: Fixture) -> str:
     settings = get_settings()
     fallback = fixture.league.name if fixture.league else ""
-    return settings.league_display_name(fixture.league_id, fallback)
+    return settings.reference_display_name(fixture.league_id, fallback)
 
 
 def _team_display_name(name: str | None, team_id: int, fallback: str = "") -> str:
