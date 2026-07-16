@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { MenuOption } from 'naive-ui'
-import { NBadge } from 'naive-ui'
-import { computed, h, type VNodeChild } from 'vue'
+import { ChevronForwardOutline, SearchOutline } from '@vicons/ionicons5'
+import { computed, ref } from 'vue'
 
+import { fuzzyIncludes } from '@/utils/fuzzySearch'
 import type { LeagueSummaryResponse } from '@/api/types'
 import { leagueTagColor } from '@/utils/format'
 import { leagueNameZh } from '@/utils/leagueNames'
@@ -20,9 +20,7 @@ const emit = defineEmits<{
   select: [leagueId: number | null]
 }>()
 
-const activeKey = computed(() =>
-  props.selectedLeagueId == null ? 'all' : String(props.selectedLeagueId),
-)
+const searchQuery = ref('')
 
 function abbrOf(name: string): string {
   const trimmed = name.trim()
@@ -31,203 +29,241 @@ function abbrOf(name: string): string {
   return (m?.[0] ?? trimmed[0]).toUpperCase()
 }
 
-function allIcon(): VNodeChild {
-  return h(
-    'span',
-    {
-      class: 'menu-chip all',
-      'aria-hidden': 'true',
-    },
-    [
-      h(
-        'svg',
-        {
-          viewBox: '0 0 24 24',
-          width: '15',
-          height: '15',
-          fill: 'none',
-          stroke: 'currentColor',
-          'stroke-width': '2',
-          'stroke-linecap': 'round',
-        },
-        [
-          h('rect', { x: '3', y: '3', width: '7', height: '7', rx: '1.5' }),
-          h('rect', { x: '14', y: '3', width: '7', height: '7', rx: '1.5' }),
-          h('rect', { x: '3', y: '14', width: '7', height: '7', rx: '1.5' }),
-          h('rect', { x: '14', y: '14', width: '7', height: '7', rx: '1.5' }),
-        ],
-      ),
-    ],
-  )
-}
+const sortedLeagues = computed(() =>
+  [...props.leagues].sort((a, b) =>
+    leagueNameZh(a.league_name).localeCompare(leagueNameZh(b.league_name), 'zh'),
+  ),
+)
 
-function leagueIcon(name: string, color: string): VNodeChild {
-  return h(
-    'span',
-    {
-      class: 'menu-chip',
-      style: {
-        background: `${color}18`,
-        color,
-        borderColor: `${color}40`,
-      },
-      'aria-hidden': 'true',
-    },
-    abbrOf(name),
-  )
-}
-
-/** Collapsed only: one soft badge on the chip when count > 0. */
-function collapsedIcon(count: number, child: VNodeChild): VNodeChild {
-  if (count <= 0) return child
-  return h(
-    NBadge,
-    {
-      value: count,
-      max: 99,
-      showZero: false,
-      type: 'info',
-      offset: [-4, 2],
-    },
-    { default: () => child },
-  )
-}
-
-function expandedLabel(name: string, count: number): () => VNodeChild {
-  return () =>
-    h('div', { class: 'menu-label-row' }, [
-      h('span', { class: 'menu-name' }, name),
-      count > 0
-        ? h('span', { class: 'menu-count' }, String(count))
-        : null,
-    ])
-}
-
-const menuOptions = computed<MenuOption[]>(() => {
-  const collapsed = !!props.collapsed
-
-  const all: MenuOption = {
-    key: 'all',
-    label: collapsed ? '全部' : expandedLabel('全部', props.totalPending),
-    icon: () =>
-      collapsed
-        ? collapsedIcon(props.totalPending, allIcon())
-        : allIcon(),
-  }
-
-  const items = props.leagues.map((league) => {
-    const count = props.pendingCountByLeague.get(league.league_id) || 0
-    const color = leagueTagColor(league.league_id)
+const filteredLeagues = computed(() => {
+  const q = searchQuery.value.trim()
+  if (!q) return sortedLeagues.value
+  return sortedLeagues.value.filter((league) => {
     const name = leagueNameZh(league.league_name)
-    const chip = leagueIcon(name, color)
-    return {
-      key: String(league.league_id),
-      label: collapsed
-        ? name
-        : expandedLabel(name, count),
-      icon: () => (collapsed ? collapsedIcon(count, chip) : chip),
-    } satisfies MenuOption
+    const country = league.country || ''
+    return fuzzyIncludes(name, q) || fuzzyIncludes(country, q)
   })
-
-  return [all, ...items]
 })
 
-function onUpdateValue(key: string) {
-  if (key === 'all') {
-    emit('select', null)
-    return
-  }
-  emit('select', Number(key))
+const showAllRow = computed(() => {
+  const q = searchQuery.value.trim()
+  if (!q) return true
+  return fuzzyIncludes('全部', q)
+})
+
+function selectAll() {
+  emit('select', null)
+}
+
+function selectLeague(leagueId: number) {
+  emit('select', leagueId)
+}
+
+function countOf(leagueId: number): number {
+  return props.pendingCountByLeague.get(leagueId) || 0
 }
 </script>
 
 <template>
   <div class="league-menu" :class="{ collapsed }">
-    <div class="menu-title">
-      <span v-if="!collapsed" class="menu-title-text">联赛筛选</span>
-      <div class="menu-title-actions">
+    <div class="lm-toolbar">
+      <n-input
+        v-if="!collapsed"
+        v-model:value="searchQuery"
+        class="lm-search"
+        size="small"
+        placeholder="搜索联赛或国家"
+        clearable
+      >
+        <template #prefix>
+          <n-icon :component="SearchOutline" :size="14" />
+        </template>
+      </n-input>
+      <div class="lm-toolbar-actions">
         <slot name="filter" />
       </div>
     </div>
 
-    <n-spin :show="!!loading">
+    <n-spin :show="!!loading" class="lm-body">
       <n-empty
         v-if="!loading && leagues.length === 0"
         description="暂无联赛"
         size="small"
-        class="menu-empty"
+        class="lm-empty"
       />
-      <n-menu
-        v-else
-        :value="activeKey"
-        :options="menuOptions"
-        :collapsed="!!collapsed"
-        :collapsed-width="64"
-        :collapsed-icon-size="28"
-        :icon-size="28"
-        :root-indent="collapsed ? 0 : 12"
-        :indent="12"
-        @update:value="onUpdateValue"
-      />
+      <n-scrollbar v-else class="lm-scroll">
+        <div class="lm-list" role="list">
+          <button
+            v-if="showAllRow"
+            type="button"
+            role="listitem"
+            class="lm-row"
+            :class="{ active: selectedLeagueId == null }"
+            :title="collapsed ? `全部 (${totalPending})` : undefined"
+            @click="selectAll"
+          >
+            <span class="lm-chip lm-chip-all" aria-hidden="true">全</span>
+            <span v-if="!collapsed" class="lm-name">全部</span>
+            <span v-if="!collapsed" class="lm-meta">
+              <span v-if="totalPending > 0" class="lm-count">{{ totalPending }}</span>
+              <n-icon :component="ChevronForwardOutline" :size="14" class="lm-chevron" />
+            </span>
+          </button>
+
+          <button
+            v-for="league in filteredLeagues"
+            :key="league.league_id"
+            type="button"
+            role="listitem"
+            class="lm-row"
+            :class="{ active: selectedLeagueId === league.league_id }"
+            :title="collapsed ? leagueNameZh(league.league_name) : undefined"
+            @click="selectLeague(league.league_id)"
+          >
+            <span
+              class="lm-chip"
+              :style="{
+                background: `${leagueTagColor(league.league_id)}18`,
+                color: leagueTagColor(league.league_id),
+                borderColor: `${leagueTagColor(league.league_id)}40`,
+              }"
+              aria-hidden="true"
+            >
+              {{ abbrOf(leagueNameZh(league.league_name)) }}
+            </span>
+            <span v-if="!collapsed" class="lm-name">{{ leagueNameZh(league.league_name) }}</span>
+            <span v-if="!collapsed" class="lm-meta">
+              <span v-if="countOf(league.league_id) > 0" class="lm-count">
+                {{ countOf(league.league_id) }}
+              </span>
+              <n-icon :component="ChevronForwardOutline" :size="14" class="lm-chevron" />
+            </span>
+          </button>
+
+          <div
+            v-if="!loading && !showAllRow && filteredLeagues.length === 0"
+            class="lm-no-match"
+          >
+            无匹配联赛
+          </div>
+        </div>
+      </n-scrollbar>
     </n-spin>
   </div>
 </template>
 
 <style scoped>
 .league-menu {
-  padding: 12px 0 16px;
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  box-sizing: border-box;
+  min-height: 0;
+  background: var(--fa-bg-elevated);
 }
 
-.league-menu.collapsed {
-  padding: 10px 0 16px;
-}
-
-.menu-title {
+.lm-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fa-text-muted);
-  padding: 0 12px 10px 20px;
-  letter-spacing: 0.04em;
-  min-height: 28px;
+  gap: 6px;
+  padding: 10px 8px 8px;
+  flex-shrink: 0;
 }
 
-.league-menu.collapsed .menu-title {
-  padding: 0 0 10px;
+.league-menu.collapsed .lm-toolbar {
   justify-content: center;
+  padding: 10px 4px 8px;
 }
 
-.menu-title-text {
+.lm-search {
   flex: 1;
   min-width: 0;
 }
 
-.menu-title-actions {
-  flex-shrink: 0;
+.lm-toolbar-actions {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
-.menu-empty {
-  padding: 24px 12px;
+.lm-body {
+  flex: 1;
+  min-height: 0;
 }
 
-.menu-label-row {
+.lm-scroll {
+  height: 100%;
+}
+
+.lm-list {
+  padding: 0 8px 12px;
+}
+
+.lm-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  min-width: 0;
-  padding-right: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fa-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
-.menu-name {
+.league-menu.collapsed .lm-row {
+  justify-content: center;
+  padding: 8px 4px;
+}
+
+.lm-row:hover:not(.active) {
+  background: color-mix(in srgb, var(--fa-text) 7%, transparent);
+}
+
+.lm-row.active {
+  color: var(--n-primary-color, #18a058);
+  background: color-mix(in srgb, var(--n-primary-color, #18a058) 14%, transparent);
+}
+
+.lm-row.active .lm-name {
+  font-weight: 600;
+  color: inherit;
+}
+
+.lm-row.active .lm-meta,
+.lm-row.active .lm-count,
+.lm-row.active .lm-chevron {
+  color: inherit;
+  opacity: 1;
+}
+
+.lm-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--fa-border);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.lm-chip-all {
+  background: var(--fa-bg-soft);
+  color: var(--fa-text-secondary);
+}
+
+.lm-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -235,81 +271,39 @@ function onUpdateValue(key: string) {
   white-space: nowrap;
 }
 
-.menu-count {
-  flex-shrink: 0;
-  min-width: 1.25em;
-  padding: 0 6px;
-  height: 20px;
-  line-height: 20px;
-  border-radius: 999px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fa-text-secondary);
-  background: var(--fa-bg-soft);
-}
-
-:deep(.menu-chip) {
+.lm-meta {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
+  gap: 4px;
   flex-shrink: 0;
-  border-radius: 8px;
-  border: 1px solid var(--fa-border);
-  background: var(--fa-bg-soft);
-  color: var(--fa-text);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-  box-sizing: border-box;
+  color: var(--fa-text-muted);
 }
 
-:deep(.menu-chip.all) {
-  color: var(--fa-text-secondary);
+.lm-count {
+  min-width: 1.2em;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-:deep(.menu-chip.all svg) {
-  width: 15px;
-  height: 15px;
-  display: block;
-  flex-shrink: 0;
+.lm-chevron {
+  opacity: 0.55;
 }
 
-:deep(.n-menu .n-menu-item-content) {
-  padding-right: 12px !important;
+.lm-row.active .lm-chip-all {
+  color: inherit;
+  border-color: color-mix(in srgb, var(--n-primary-color, #18a058) 35%, transparent);
+  background: color-mix(in srgb, var(--n-primary-color, #18a058) 10%, transparent);
 }
 
-:deep(.n-menu-item-content__icon) {
-  margin-right: 10px !important;
-  width: 28px !important;
-  height: 28px !important;
-  min-width: 28px !important;
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px !important;
+.lm-empty {
+  padding: 24px 12px;
 }
 
-.league-menu.collapsed :deep(.n-menu .n-menu-item-content) {
-  padding-right: 0 !important;
-  justify-content: center;
-}
-
-.league-menu.collapsed :deep(.n-menu-item-content__icon) {
-  margin-right: 0 !important;
-  width: 28px !important;
-  height: 28px !important;
-}
-
-:deep(.n-badge .n-badge-sup) {
-  font-size: 10px;
-  padding: 0 4px;
-  height: 16px;
-  line-height: 16px;
-  box-shadow: none;
+.lm-no-match {
+  padding: 16px 14px;
+  font-size: 12px;
+  color: var(--fa-text-muted);
+  text-align: center;
 }
 </style>

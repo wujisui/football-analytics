@@ -45,6 +45,7 @@ html[data-theme='dark'] {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --fa-page-max-width: 1520px;
 }
 
 * {
@@ -82,4 +83,91 @@ button {
 
 .app-safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Centered content band — same max width as detail page */
+.fa-page-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--fa-bg);
+}
+
+.fa-page-shell {
+  position: relative;
+  width: 100%;
+  max-width: var(--fa-page-max-width);
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Side borders only on page body — header uses the same max width without borders. */
+.fa-page-frame > .fa-page-shell {
+  border-inline: 1px solid var(--fa-border);
+}
+
+.app-header-inner {
+  border-inline: none;
+}
+
+/* Shared in-page toolbar (Home / Results / etc.) */
+.fa-page-toolbar {
+  flex-shrink: 0;
+  height: auto;
+  padding: 10px 12px 8px;
+  background: var(--fa-bg-elevated);
+  position: relative;
+  z-index: 2;
+}
+
+.fa-page-toolbar .fa-page-toolbar-header {
+  margin-top: 4px;
+}
+
+@media (min-width: 768px) {
+  .fa-page-toolbar {
+    padding: 12px 20px 8px;
+  }
+}
+
+.fa-toolbar-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fa-toolbar-crumb {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fa-toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.fa-toolbar-date {
+  width: 148px;
+  min-width: 132px;
+}
+
+.fa-toolbar-search {
+  width: 200px;
+  min-width: 160px;
+  max-width: min(240px, 36vw);
+}
+
+.fa-page-toolbar-header :deep(.n-page-header-wrapper) {
+  align-items: center;
 }

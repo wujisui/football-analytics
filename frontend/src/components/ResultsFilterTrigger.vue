@@ -54,6 +54,11 @@ function selectAll() {
   draftHits.value = [...allHitKeys.value]
 }
 
+function invertLeagues() {
+  const selected = new Set(draftLeagues.value)
+  draftLeagues.value = allLeagueIds.value.filter((id) => !selected.has(id))
+}
+
 function confirm() {
   emit('confirm', {
     leagueIds: [...draftLeagues.value],
@@ -125,6 +130,9 @@ function confirm() {
       <n-space justify="end" :size="8" class="actions">
         <n-button size="tiny" :disabled="!leagueOptions.length" @click="selectAll">
           全选
+        </n-button>
+        <n-button size="tiny" :disabled="!leagueOptions.length" @click="invertLeagues">
+          反选
         </n-button>
         <n-button
           size="tiny"

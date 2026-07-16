@@ -1,13 +1,13 @@
 /**
  * Competition display names (API-Sports English → 中文).
- * Prefer league_id, then name+country, then bare name. Unmapped → as-is.
+ * Prefer backend/catalog 中文名，再 league_id，再 name+country，最后 bare name。
  */
 
 /** Stable API-Sports league ids → 中文 */
 const BY_ID: Record<number, string> = {
   1: '世界杯',
   2: '欧冠',
-  3: '欧联',
+  3: '欧罗巴',
   4: '欧洲杯',
   5: '欧国联',
   9: '美洲杯',
@@ -47,6 +47,7 @@ const BY_ID: Record<number, string> = {
   294: '韩国杯',
   307: '沙特联',
   344: '玻利甲',
+  369: '乌兹超',
   848: '欧协联',
 }
 
@@ -73,7 +74,7 @@ const BY_NAME: Record<string, string> = {
   Eredivisie: '荷甲',
   'Primeira Liga': '葡超',
   'UEFA Champions League': '欧冠',
-  'UEFA Europa League': '欧联',
+  'UEFA Europa League': '欧罗巴',
   'UEFA Europa Conference League': '欧协联',
   'UEFA Super Cup': '欧洲超级杯',
   'AFC Champions League': '亚冠',
@@ -104,7 +105,6 @@ const BY_NAME: Record<string, string> = {
   'K League 1': '韩K联',
   'Korea Cup': '韩国杯',
   'Chinese Super League': '中超',
-  'Super League': '中超',
   'China League One': '中甲',
   'China League Two': '中乙',
   CFA: '足协杯',
@@ -119,6 +119,8 @@ const BY_NAME_COUNTRY: Record<string, string> = {
   'League One|China': '中甲',
   'League Two|China': '中乙',
   'Super League|China': '中超',
+  'Super League|Uzbekistan': '乌兹超',
+  'Super League|Switzerland': '瑞士超',
   'FA Cup|China': '足协杯',
   'FA Cup|England': '足总杯',
   'FA Cup|South-Korea': '韩国杯',
@@ -130,7 +132,6 @@ const BY_NAME_COUNTRY: Record<string, string> = {
   'Serie B|Italy': '意乙',
   'League One|England': '英甲',
   'League Two|England': '英乙',
-  'Super League|Switzerland': '瑞士超',
   'Pro League|Belgium': '比甲',
   'Pro League|Saudi-Arabia': '沙特联',
   'Pro League|Saudi Arabia': '沙特联',
@@ -147,11 +148,17 @@ export function leagueNameZh(
   name?: string | null,
   opts?: { leagueId?: number | null; country?: string | null },
 ): string {
+  if (!name) {
+    if (opts?.leagueId != null && BY_ID[opts.leagueId]) {
+      return BY_ID[opts.leagueId]
+    }
+    return ''
+  }
+  const trimmed = name.trim()
+  if (/[\u4e00-\u9fff]/.test(trimmed)) return trimmed
   if (opts?.leagueId != null && BY_ID[opts.leagueId]) {
     return BY_ID[opts.leagueId]
   }
-  if (!name) return ''
-  const trimmed = name.trim()
   const country = normCountry(opts?.country)
   if (country) {
     const keyed = BY_NAME_COUNTRY[`${trimmed}|${country}`]

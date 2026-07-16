@@ -58,6 +58,13 @@ function selectAll() {
   draft.value = props.options.map((o) => o.league_id)
 }
 
+function invertSelection() {
+  const selected = new Set(draft.value)
+  draft.value = props.options
+    .map((o) => o.league_id)
+    .filter((id) => !selected.has(id))
+}
+
 function confirm() {
   emit('confirm', [...draft.value])
   show.value = false
@@ -146,6 +153,9 @@ function confirm() {
         </n-button>
         <n-button size="tiny" :disabled="!options.length" @click="selectAll">
           全选
+        </n-button>
+        <n-button size="tiny" :disabled="!options.length" @click="invertSelection">
+          反选
         </n-button>
         <n-button
           size="tiny"
