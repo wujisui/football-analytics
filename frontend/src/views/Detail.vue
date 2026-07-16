@@ -5,7 +5,6 @@ import { useRoute, useRouter } from 'vue-router'
 import BasicInfo from '@/components/detail/BasicInfo.vue'
 import TabsContainer from '@/components/detail/TabsContainer.vue'
 import { useFixtureAnalysis } from '@/composables/useFixtureAnalysis'
-import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import {
   detailBackRoute,
@@ -30,14 +29,6 @@ const contentStyle = computed(
 const fixtureIdNumber = computed(() => Number(props.fixtureId))
 const { data, loading, error, ensureLoaded, reload, reset } =
   useFixtureAnalysis(fixtureIdNumber)
-const { allFixtures } = useHomeFixtures()
-
-/** List-row snapshot so breadcrumb / header paint before /analysis returns. */
-const preview = computed(
-  () =>
-    allFixtures.value.find((f) => f.fixture_id === fixtureIdNumber.value) ?? null,
-)
-const headerFixture = computed(() => data.value ?? preview.value)
 const contentLoading = computed(() => loading.value || !data.value)
 
 const from = computed(() => parseDetailFrom(route.query.from))
@@ -68,14 +59,15 @@ watch(
 </script>
 
 <template>
-  <n-layout class="detail-layout" position="absolute">
+  <div class="fa-page-frame">
+  <n-layout class="detail-layout fa-page-shell">
     <n-layout-content
       class="detail-content"
       :native-scrollbar="false"
       :content-style="contentStyle"
     >
       <div class="detail-body">
-        <BasicInfo v-if="headerFixture" :fixture="headerFixture" />
+        <BasicInfo v-if="data" :fixture="data" />
         <div v-else class="basic-info-skel">
           <n-breadcrumb>
             <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
@@ -92,7 +84,7 @@ watch(
 
         <TabsContainer
           class="tabs-fill"
-          :fixture="headerFixture"
+          :fixture="data"
           :pkg="data?.analysis.package ?? null"
           :loading="contentLoading"
           :error="error"
@@ -101,11 +93,11 @@ watch(
       </div>
     </n-layout-content>
   </n-layout>
+  </div>
 </template>
 
 <style scoped>
 .detail-layout {
-  inset: 0;
   height: 100%;
   background: var(--fa-bg);
 }
@@ -122,8 +114,6 @@ watch(
   flex-direction: column;
   gap: 12px;
   width: 100%;
-  max-width: 1520px;
-  margin: 0 auto;
   box-sizing: border-box;
   overflow: hidden;
   padding-bottom: env(safe-area-inset-bottom, 0px);

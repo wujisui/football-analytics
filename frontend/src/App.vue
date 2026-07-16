@@ -65,18 +65,19 @@ watch(
       content-style="display: flex; flex-direction: column; height: 100%;"
     >
       <n-layout-header bordered class="app-header" style="flex-shrink: 0;">
-        <div
-          class="brand"
-          role="link"
-          tabindex="0"
-          @click="goHome"
-          @keydown.enter="goHome"
-        >
-          <span class="brand-title">Football Analytics</span>
-          <span class="brand-subtitle">赛前分析 · 人机协同</span>
-        </div>
+        <div class="app-header-inner">
+          <div
+            class="brand"
+            role="link"
+            tabindex="0"
+            @click="goHome"
+            @keydown.enter="goHome"
+          >
+            <span class="brand-title">Football Analytics</span>
+            <span class="brand-subtitle">赛前分析 · 人机协同</span>
+          </div>
 
-        <div class="header-actions">
+          <div class="header-actions">
           <nav class="app-nav" aria-label="主导航">
             <div class="nav-seg" role="group" aria-label="页面切换">
               <button
@@ -120,6 +121,7 @@ watch(
             </template>
             {{ isDark ? '切换到浅色' : '切换到深色' }}
           </n-tooltip>
+          </div>
         </div>
       </n-layout-header>
 
@@ -151,15 +153,25 @@ watch(
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: center;
   height: 56px;
-  /* border-box: content-box + width:100% would overflow and clip the right nav */
   box-sizing: border-box;
   padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) 0
     max(16px, env(safe-area-inset-left, 0px));
   flex-shrink: 0;
   overflow: hidden;
+  background: var(--fa-bg-elevated);
+}
+
+.app-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: var(--fa-page-max-width);
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .brand {

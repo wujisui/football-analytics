@@ -15,6 +15,7 @@ import {
   statusTagType,
 } from '@/utils/format'
 import { leagueNameZh } from '@/utils/leagueNames'
+import { FIXTURE_DETAIL_TOOLTIP } from '@/utils/detailNav'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -95,13 +96,13 @@ function goDetail() {
           <button
             type="button"
             class="vs"
-            aria-label="查看详细分析"
+            :aria-label="FIXTURE_DETAIL_TOOLTIP"
             @click="goDetail"
           >
             VS
           </button>
         </template>
-        查看详细分析
+        {{ FIXTURE_DETAIL_TOOLTIP }}
       </n-tooltip>
       <span class="team away">{{ awayLabel }}</span>
     </div>

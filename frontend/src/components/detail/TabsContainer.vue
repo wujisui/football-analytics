@@ -45,7 +45,7 @@ const tabItems = computed(() =>
   })),
 )
 
-/** Full /analysis settled — preview fixture alone is not enough for tab bodies. */
+/** Full /analysis settled — loading shell alone is not enough for tab bodies. */
 const ready = computed(
   () => !!props.fixture && !props.loading && !props.error,
 )
