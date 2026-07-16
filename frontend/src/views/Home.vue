@@ -4,22 +4,26 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 
 import FixtureList from '@/components/FixtureList.vue'
-import { RefreshOutline } from '@vicons/ionicons5'
+import ListBackTop from '@/components/ListBackTop.vue'
+import PageToolbarActions from '@/components/PageToolbarActions.vue'
+import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 
 import LeagueFilterTrigger from '@/components/LeagueFilterTrigger.vue'
 import LeagueMenu from '@/components/LeagueMenu.vue'
 import { syncFixtures } from '@/api/fixtures'
 import type { LeagueSummaryResponse } from '@/api/types'
+import { markDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone, useIsTabletDown } from '@/composables/useMediaQuery'
 import { useSyncCooldown } from '@/composables/useSyncCooldown'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
-import { parseApiDate, toLocalDayKey } from '@/utils/format'
+import { parseApiDate } from '@/utils/format'
 import {
   readHomeLeagueFilter,
   writeHomeLeagueFilter,
 } from '@/utils/homeLeagueFilter'
 import { leagueNameZh } from '@/utils/leagueNames'
+import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
 
 defineOptions({ name: 'Home' })
 
@@ -30,9 +34,6 @@ const isPhone = useIsPhone()
 const isTabletDown = useIsTabletDown()
 
 const {
-  LOOKAHEAD_DAYS,
-  homeWindowDays,
-  homeWindowStartDate,
   todayDate,
   allFixtures,
   windowLabel,
@@ -42,8 +43,6 @@ const {
 } = useHomeFixtures()
 
 const {
-  cooldownLeft,
-  cooldownEnabled,
   inCooldown,
   applySyncResult,
 } = useSyncCooldown()
@@ -57,25 +56,15 @@ const {
 } = useTrackedLeagues()
 
 const selectedLeagueId = ref<number | null>(null)
-/** Local calendar day `yyyy-MM-dd`; null = all days in the home window. */
-const selectedDay = ref<string | null>(null)
+/** Local calendar day `yyyy-MM-dd`; default today, sync on change. */
+const selectedDay = ref(todayDate())
+const teamSearch = ref('')
 const siderCollapsed = ref(false)
 const leagueDrawerShow = ref(false)
 const syncing = ref(false)
 const listShellRef = ref<HTMLElement | null>(null)
 
-/** Scroll container for n-back-top (n-scrollbar internals). */
-function listScrollListenTo(): HTMLElement {
-  return (
-    (listShellRef.value?.querySelector(
-      '.n-scrollbar-container',
-    ) as HTMLElement | null) ?? document.documentElement
-  )
-}
-
-/** Disable only the refresh control — list stays interactive during sync. */
-const refreshDisabled = computed(() => syncing.value || inCooldown.value)
-const refreshLabel = computed(() => (inCooldown.value ? '同步冷却中' : '同步赛程'))
+const contentLoading = computed(() => loading.value || syncing.value)
 
 const trackedIdSet = computed(() => new Set(trackedIds.value))
 const filterLeagueOptions = computed(() => allFilterOptions())
@@ -135,47 +124,37 @@ const leagueFilteredFixtures = computed(() => {
   return list
 })
 
-const availableDayKeys = computed(() => {
-  const keys = new Set<string>()
-  for (const f of leagueFilteredFixtures.value) {
-    keys.add(toLocalDayKey(f.fixture_date))
-  }
-  return keys
-})
-
-const displayedFixtures = computed(() => {
-  let list = leagueFilteredFixtures.value
-  if (selectedDay.value) {
-    list = list.filter((f) => toLocalDayKey(f.fixture_date) === selectedDay.value)
-  }
-  return list
+const sortedFixtures = computed(() =>
+  leagueFilteredFixtures.value
     .slice()
     .sort(
       (a, b) =>
         parseApiDate(a.fixture_date).getTime() -
         parseApiDate(b.fixture_date).getTime(),
-    )
-})
+    ),
+)
 
-function isHomeDayDisabled(ts: number): boolean {
-  return !availableDayKeys.value.has(toLocalDayKey(new Date(ts)))
-}
+const displayedFixtures = computed(() =>
+  filterByTeamQuery(sortedFixtures.value, teamSearch.value),
+)
 
 const emptyText = computed(() => {
   if (!filterLeagueOptions.value.length && !trackedFixtures.value.length) {
-    return '暂无匹配联赛，可先点「同步赛程」拉取配置联赛'
+    return '暂无匹配联赛，正在拉取配置联赛赛程…'
   }
   if (!trackedIds.value.length) {
     return '请先在「筛选」中勾选要关注的联赛'
   }
-  if (selectedDay.value && !displayedFixtures.value.length) {
+  if (!displayedFixtures.value.length && !teamSearch.value.trim()) {
     return `${selectedDay.value} 暂无未完赛赛事`
   }
+  const teamHint = teamSearchEmptyHint(teamSearch.value)
+  if (teamHint && sortedFixtures.value.length) return teamHint
   if (selectedLeagueId.value == null) {
-    return `近 ${LOOKAHEAD_DAYS} 日勾选联赛暂无未完赛赛事`
+    return `${selectedDay.value} 勾选联赛暂无未完赛赛事`
   }
   const name = leagueNameZh(selectedLeague.value?.league_name) || '该联赛'
-  return `近 ${LOOKAHEAD_DAYS} 日暂无${name}未完赛赛事`
+  return `${selectedDay.value} 暂无${name}未完赛赛事`
 })
 
 const listTitle = computed(() =>
@@ -222,63 +201,64 @@ function syncLeagueFromRoute() {
   }
 }
 
-async function loadAll(force = false) {
+function leagueIdsForSync(): number[] {
+  return trackedIds.value.length > 0
+    ? trackedIds.value
+    : catalog.value.map((l) => l.league_id)
+}
+
+async function loadDayLocal(force = false) {
   try {
-    await loadHomeFixtures({ force })
+    await loadHomeFixtures({ force, date: selectedDay.value, days: 1 })
     syncLeagueFromRoute()
   } catch {
     // error already set in composable
   }
 }
 
-async function runSync(leagueIds: number[], opts?: { days?: number; date?: string }) {
-  if (!leagueIds.length) {
-    message.warning('请至少勾选一个联赛')
-    return false
-  }
-  if (inCooldown.value) {
-    message.warning(`同步冷却中，请 ${cooldownLeft.value} 秒后再试`)
-    return false
-  }
+async function runSync(
+  leagueIds: number[],
+  opts?: { days?: number; date?: string },
+) {
+  if (!leagueIds.length) return false
+  if (inCooldown.value) return false
   syncing.value = true
   try {
     const result = await syncFixtures({
-      days: opts?.days ?? homeWindowDays(),
-      date: opts?.date ?? homeWindowStartDate(),
+      days: opts?.days ?? 1,
+      date: opts?.date ?? selectedDay.value,
       includeResults: true,
       leagueIds,
-      skipCooldown: !cooldownEnabled.value,
     })
-    if (applySyncResult(result)) {
-      message.warning(result.message || '同步冷却中')
-      return false
-    }
-    message.success(result.message || `已同步 ${leagueIds.length} 个联赛`)
-    await Promise.all([loadFilterOptions({ discover: true }), loadAll(true)])
-    // Odds finish in a backend follow-up; refresh list once they have time to land.
+    if (applySyncResult(result)) return false
+    markDayAutoSynced(opts?.date ?? selectedDay.value)
+    await Promise.all([loadFilterOptions({ discover: true }), loadDayLocal(true)])
     window.setTimeout(() => {
-      void loadAll(true)
+      void loadDayLocal(true)
     }, 12_000)
     return true
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : '同步失败')
-    await loadAll(true)
+  } catch {
+    await loadDayLocal(true)
     return false
   } finally {
     syncing.value = false
   }
 }
 
-async function forceRefresh() {
-  const ids =
-    trackedIds.value.length > 0
-      ? trackedIds.value
-      : catalog.value.map((l) => l.league_id)
-  if (!ids.length) {
-    message.warning('联赛目录为空，请检查 config/leagues.json')
-    return
+async function refreshDayData() {
+  const day = selectedDay.value
+  const ids = leagueIdsForSync()
+
+  await loadDayLocal(false)
+
+  if (!ids.length) return
+  if (!shouldAutoSyncDay(day, allFixtures.value.length > 0)) return
+
+  const synced = await runSync(ids, { date: day, days: 1 })
+  markDayAutoSynced(day)
+  if (!synced) {
+    await loadDayLocal(false)
   }
-  await runSync(ids)
 }
 
 async function confirmFilter(ids: number[]) {
@@ -300,7 +280,11 @@ async function confirmFilter(ids: number[]) {
     return !!opt && !opt.locally_loaded
   })
   if (needFetch.length) {
-    await runSync(needFetch, { days: 1, date: todayDate() })
+    const synced = await runSync(needFetch, {
+      days: 1,
+      date: selectedDay.value,
+    })
+    if (synced) markDayAutoSynced(selectedDay.value)
   }
 }
 
@@ -341,10 +325,8 @@ watch(
   },
 )
 
-watch(availableDayKeys, (keys) => {
-  if (selectedDay.value && !keys.has(selectedDay.value)) {
-    selectedDay.value = null
-  }
+watch(selectedDay, () => {
+  void refreshDayData()
 })
 
 onMounted(async () => {
@@ -353,8 +335,7 @@ onMounted(async () => {
   } catch {
     if (filterOptionsError.value) message.warning(filterOptionsError.value)
   }
-  // force once on cold start; later remounts can reuse in-memory cache via loadAll(false)
-  void loadAll(!allFixtures.value.length)
+  await refreshDayData()
 })
 
 onActivated(() => {
@@ -365,10 +346,10 @@ onActivated(() => {
 
 <template>
   <!-- Lock page height like Results: toolbar stays put; only the list scrolls. -->
+  <div class="fa-page-frame">
   <n-layout
     :has-sider="!isPhone"
-    class="home-layout"
-    position="absolute"
+    class="home-layout fa-page-shell"
     content-style="height: 100%;"
   >
     <n-layout-sider
@@ -409,9 +390,10 @@ onActivated(() => {
       style="height: 100%; flex: 1; min-height: 0; min-width: 0;"
       content-style="display: flex; flex-direction: column; height: 100%; overflow: hidden;"
     >
-      <n-layout-header bordered class="home-toolbar" style="flex-shrink: 0;">
-        <div class="toolbar-top">
+      <n-layout-header bordered class="fa-page-toolbar" style="flex-shrink: 0;">
+        <div class="fa-toolbar-top">
           <n-button
+            v-if="isPhone"
             size="small"
             secondary
             class="league-trigger"
@@ -419,55 +401,20 @@ onActivated(() => {
           >
             联赛
           </n-button>
-          <n-breadcrumb class="crumb">
+          <n-breadcrumb class="fa-toolbar-crumb">
             <n-breadcrumb-item @click="selectLeague(null)">赛前赛事</n-breadcrumb-item>
             <n-breadcrumb-item>{{ breadcrumbFilter }}</n-breadcrumb-item>
           </n-breadcrumb>
-          <n-space :size="8" align="center" class="refresh-cluster">
-            <n-tooltip placement="bottom">
-              <template #trigger>
-                <n-switch v-model:value="cooldownEnabled" size="small">
-                  <template #checked>冷却</template>
-                  <template #unchecked>冷却</template>
-                </n-switch>
-              </template>
-              {{
-                cooldownEnabled
-                  ? '冷却保护已开：同步后约 90 秒内不可再刷'
-                  : '冷却已关：可连续同步（仍消耗官方配额）'
-              }}
-            </n-tooltip>
-            <n-button
-              type="primary"
-              size="small"
-              class="refresh-btn"
-              :loading="syncing"
-              :disabled="refreshDisabled"
-              @click="forceRefresh"
-            >
-              <template #icon>
-                <n-icon :component="RefreshOutline" :size="16" />
-              </template>
-              {{ refreshLabel }}
-            </n-button>
-          </n-space>
+          <PageToolbarActions v-model:date="selectedDay" />
         </div>
 
-        <n-page-header :title="listTitle" class="page-header">
+        <n-page-header :title="listTitle" class="fa-page-toolbar-header">
           <template #subtitle>
             <span v-if="windowLabel" class="window-meta">{{ windowLabel }}</span>
             <span class="window-meta">未完赛 {{ displayedFixtures.length }} 场</span>
           </template>
           <template #extra>
-            <n-date-picker
-              v-model:formatted-value="selectedDay"
-              value-format="yyyy-MM-dd"
-              type="date"
-              size="small"
-              clearable
-              placeholder="全部日期"
-              :is-date-disabled="isHomeDayDisabled"
-            />
+            <PageToolbarSearch v-model="teamSearch" />
           </template>
         </n-page-header>
       </n-layout-header>
@@ -483,31 +430,25 @@ onActivated(() => {
           "
         >
           <n-alert v-if="error" type="error" :title="error" class="state">
-            <n-button size="small" type="primary" @click="loadAll(true)">重试</n-button>
+            <n-button size="small" type="primary" @click="loadDayLocal(true)">重试</n-button>
           </n-alert>
 
-          <!-- Only block list on cold load; force-refresh is background sync. -->
-          <n-spin v-else :show="loading && !allFixtures.length">
+          <n-spin v-else :show="contentLoading">
             <div class="spin-body">
               <FixtureList
-                v-if="!loading || allFixtures.length"
                 :fixtures="displayedFixtures"
                 :empty-description="emptyText"
               />
             </div>
           </n-spin>
         </n-scrollbar>
-        <n-back-top
-          :listen-to="listScrollListenTo"
-          :visibility-height="240"
-          :right="20"
-          :bottom="24"
-        />
+        <ListBackTop :shell="listShellRef" />
       </div>
     </n-layout>
   </n-layout>
 
   <n-drawer
+    v-if="isPhone"
     v-model:show="leagueDrawerShow"
     placement="left"
     :width="300"
@@ -536,11 +477,11 @@ onActivated(() => {
       </LeagueMenu>
     </n-drawer-content>
   </n-drawer>
+  </div>
 </template>
 
 <style scoped>
 .home-layout {
-  inset: 0;
   height: 100%;
   overflow: hidden;
   background: var(--fa-bg);
@@ -552,40 +493,8 @@ onActivated(() => {
   overflow: hidden;
 }
 
-.home-toolbar {
-  height: auto;
-  padding: 10px 12px 8px;
-  background: var(--fa-bg-elevated);
-  flex-shrink: 0;
-  position: relative;
-  z-index: 2;
-}
-
-.toolbar-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
 .league-trigger {
-  display: none;
   flex-shrink: 0;
-}
-
-.crumb {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.refresh-btn {
-  flex-shrink: 0;
-  font-weight: 600;
-}
-
-.page-header {
-  margin-top: 6px;
 }
 
 .window-meta + .window-meta::before {
@@ -621,17 +530,5 @@ onActivated(() => {
 
 :deep(.n-breadcrumb-item:first-child .n-breadcrumb-item__link) {
   cursor: pointer;
-}
-
-@media (min-width: 768px) {
-  .home-toolbar {
-    padding: 12px 20px 8px;
-  }
-}
-
-@media (max-width: 767px) {
-  .league-trigger {
-    display: inline-flex;
-  }
 }
 </style>

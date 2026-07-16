@@ -36,8 +36,6 @@ export async function syncFixtures(options?: {
   date?: string
   includeResults?: boolean
   leagueIds?: number[]
-  /** When true, backend skips the ~90s sync cooldown. */
-  skipCooldown?: boolean
 }): Promise<SyncFixturesResult> {
   const { data } = await apiClient.post<SyncFixturesResult>('/fixtures/sync', null, {
     params: {
@@ -45,7 +43,6 @@ export async function syncFixtures(options?: {
       date: options?.date,
       include_results: options?.includeResults ?? true,
       league_ids: options?.leagueIds,
-      skip_cooldown: options?.skipCooldown ? true : undefined,
     },
     // Fixtures return first; odds/results continue in a server background task.
     timeout: 90_000,

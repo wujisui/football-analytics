@@ -1,30 +1,33 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
+import PageToolbarActions from '@/components/PageToolbarActions.vue'
+import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 import FixtureList from '@/components/FixtureList.vue'
+import ListBackTop from '@/components/ListBackTop.vue'
+import { syncFixtures } from '@/api/fixtures'
+import { markDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { useSyncCooldown } from '@/composables/useSyncCooldown'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
-import { parseApiDate, toLocalDayKey } from '@/utils/format'
+import { parseApiDate } from '@/utils/format'
+import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
 
 defineOptions({ name: 'Predictions' })
 
 const isPhone = useIsPhone()
-const { LOOKAHEAD_DAYS, allFixtures, windowLabel, loading, error, loadHomeFixtures } =
+const { todayDate, allFixtures, windowLabel, loading, error, loadHomeFixtures } =
   useHomeFixtures()
-const { trackedIds, loadFilterOptions } = useTrackedLeagues()
+const { catalog, trackedIds, loadFilterOptions } = useTrackedLeagues()
+const { inCooldown, applySyncResult } = useSyncCooldown()
 
-const selectedDay = ref<string | null>(null)
+const selectedDay = ref(todayDate())
+const teamSearch = ref('')
+const syncing = ref(false)
 const listShellRef = ref<HTMLElement | null>(null)
 
-/** Scroll container for n-back-top (n-scrollbar internals). */
-function listScrollListenTo(): HTMLElement {
-  return (
-    (listShellRef.value?.querySelector(
-      '.n-scrollbar-container',
-    ) as HTMLElement | null) ?? document.documentElement
-  )
-}
+const contentLoading = computed(() => loading.value || syncing.value)
 
 const trackedIdSet = computed(() => new Set(trackedIds.value))
 const ACTIVE_STATUSES = new Set(['pending', 'live'])
@@ -39,78 +42,112 @@ const trackedFixtures = computed(() =>
   ),
 )
 
-const availableDayKeys = computed(() => {
-  const keys = new Set<string>()
-  for (const f of trackedFixtures.value) keys.add(toLocalDayKey(f.fixture_date))
-  return keys
-})
-
-const displayedFixtures = computed(() => {
-  let list = trackedFixtures.value
-  if (selectedDay.value) {
-    list = list.filter((f) => toLocalDayKey(f.fixture_date) === selectedDay.value)
-  }
-  return list
+const sortedFixtures = computed(() =>
+  trackedFixtures.value
     .slice()
     .sort(
       (a, b) =>
         parseApiDate(a.fixture_date).getTime() -
         parseApiDate(b.fixture_date).getTime(),
-    )
-})
+    ),
+)
 
-function isDayDisabled(ts: number): boolean {
-  return !availableDayKeys.value.has(toLocalDayKey(new Date(ts)))
-}
+const displayedFixtures = computed(() =>
+  filterByTeamQuery(sortedFixtures.value, teamSearch.value),
+)
 
 const emptyText = computed(() => {
   if (!trackedIds.value.length) return '请先在赛前页「筛选」中勾选联赛'
-  if (selectedDay.value && !displayedFixtures.value.length) {
-    return `${selectedDay.value} 暂无预测`
+  if (!displayedFixtures.value.length && !teamSearch.value.trim()) {
+    return `${selectedDay.value} 暂无未完赛预测`
   }
-  return `近 ${LOOKAHEAD_DAYS} 日暂无未完赛预测`
+  const teamHint = teamSearchEmptyHint(teamSearch.value)
+  if (teamHint && sortedFixtures.value.length) return teamHint
+  return `${selectedDay.value} 暂无未完赛预测`
 })
+
+function leagueIdsForSync(): number[] {
+  return trackedIds.value.length > 0
+    ? trackedIds.value
+    : catalog.value.map((l) => l.league_id)
+}
+
+async function loadDayLocal(force = false) {
+  try {
+    await loadHomeFixtures({ force, date: selectedDay.value, days: 1 })
+  } catch {
+    // error already set
+  }
+}
+
+async function refreshDayData() {
+  const day = selectedDay.value
+  await loadDayLocal(false)
+
+  const ids = leagueIdsForSync()
+  if (!ids.length || !shouldAutoSyncDay(day, allFixtures.value.length > 0)) return
+  if (inCooldown.value) return
+
+  syncing.value = true
+  try {
+    const result = await syncFixtures({
+      date: day,
+      days: 1,
+      includeResults: true,
+      leagueIds: ids,
+    })
+    applySyncResult(result)
+    markDayAutoSynced(day)
+    await loadDayLocal(true)
+  } catch {
+    markDayAutoSynced(day)
+  } finally {
+    syncing.value = false
+  }
+}
 
 const listPad = computed(() =>
   isPhone.value ? '12px 12px 20px' : '16px 20px 24px',
 )
 
+watch(selectedDay, () => {
+  void refreshDayData()
+})
+
 onMounted(async () => {
   try {
-    await Promise.all([loadFilterOptions(), loadHomeFixtures()])
+    await loadFilterOptions()
   } catch {
     // error already set
   }
+  await refreshDayData()
 })
 </script>
 
 <template>
   <!-- Lock height like Home: toolbar stays put; only the list scrolls. -->
+  <div class="fa-page-frame">
   <n-layout
-    class="pred-layout"
-    position="absolute"
+    class="pred-layout fa-page-shell"
     content-style="display: flex; flex-direction: column; height: 100%; overflow: hidden;"
   >
-    <n-layout-header bordered class="pred-toolbar" style="flex-shrink: 0;">
-      <div class="pred-shell">
-        <n-page-header title="预测列表" class="page-header">
-          <template #subtitle>
-            <span v-if="windowLabel" class="window-meta">{{ windowLabel }}</span>
-            <span class="window-meta">{{ displayedFixtures.length }} 场</span>
-          </template>
-          <template #extra>
-            <n-date-picker
-              v-model:formatted-value="selectedDay"
-              value-format="yyyy-MM-dd"
-              type="date"
-              size="small"
-              clearable
-              placeholder="全部日期"
-              :is-date-disabled="isDayDisabled"
-            />
-          </template>
-        </n-page-header>
+    <n-layout-header bordered class="fa-page-toolbar" style="flex-shrink: 0;">
+      <div class="fa-toolbar-top">
+        <n-breadcrumb class="fa-toolbar-crumb">
+          <n-breadcrumb-item>预测</n-breadcrumb-item>
+          <n-breadcrumb-item>{{ selectedDay }}</n-breadcrumb-item>
+        </n-breadcrumb>
+        <PageToolbarActions v-model:date="selectedDay" />
       </div>
+      <n-page-header title="预测列表" class="fa-page-toolbar-header">
+        <template #subtitle>
+          <span v-if="windowLabel" class="window-meta">{{ windowLabel }}</span>
+          <span class="window-meta">{{ displayedFixtures.length }} 场</span>
+        </template>
+        <template #extra>
+          <PageToolbarSearch v-model="teamSearch" />
+        </template>
+      </n-page-header>
     </n-layout-header>
 
     <div ref="listShellRef" class="pred-list-shell">
@@ -119,60 +156,29 @@ onMounted(async () => {
         trigger="hover"
         :content-style="`padding: ${listPad}; box-sizing: border-box;`"
       >
-        <div class="pred-shell">
           <n-alert v-if="error" type="error" :title="error" class="state">
-            <n-button size="small" type="primary" @click="loadHomeFixtures({ force: true })">
+            <n-button size="small" type="primary" @click="loadDayLocal(true)">
               重试
             </n-button>
           </n-alert>
-          <n-spin v-else :show="loading && !allFixtures.length">
+          <n-spin v-else :show="contentLoading">
             <FixtureList
-              v-if="!loading || allFixtures.length"
               mode="prediction"
               :fixtures="displayedFixtures"
               :empty-description="emptyText"
             />
           </n-spin>
-        </div>
       </n-scrollbar>
-      <n-back-top
-        v-if="listShellRef"
-        class="pred-back-top"
-        :to="listShellRef"
-        :listen-to="listScrollListenTo"
-        :visibility-height="240"
-        :right="16"
-        :bottom="20"
-      />
+      <ListBackTop :shell="listShellRef" />
     </div>
   </n-layout>
+  </div>
 </template>
 
 <style scoped>
 .pred-layout {
-  inset: 0;
   height: 100%;
   background: var(--fa-bg);
-}
-
-.pred-toolbar {
-  height: auto;
-  padding: 10px 12px 8px;
-  background: var(--fa-bg-elevated);
-  flex-shrink: 0;
-  position: relative;
-  z-index: 2;
-}
-
-/* Keep prediction cards at a readable column width on wide screens. */
-.pred-shell {
-  width: 100%;
-  max-width: 720px;
-  margin: 0 auto;
-}
-
-.page-header {
-  margin-top: 0;
 }
 
 .window-meta + .window-meta::before {
@@ -195,18 +201,7 @@ onMounted(async () => {
   height: 100%;
 }
 
-/* Keep back-top inside the list pane (not viewport-fixed far right). */
-.pred-list-shell :deep(.pred-back-top) {
-  position: absolute !important;
-}
-
 .state {
   margin-bottom: 12px;
-}
-
-@media (min-width: 768px) {
-  .pred-toolbar {
-    padding: 12px 20px 10px;
-  }
 }
 </style>
