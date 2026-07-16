@@ -12,10 +12,9 @@ import LeagueFilterTrigger from '@/components/LeagueFilterTrigger.vue'
 import LeagueMenu from '@/components/LeagueMenu.vue'
 import { syncFixtures } from '@/api/fixtures'
 import type { LeagueSummaryResponse } from '@/api/types'
-import { markDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
+import { markDayAutoSynced, isDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone, useIsTabletDown } from '@/composables/useMediaQuery'
-import { useSyncCooldown } from '@/composables/useSyncCooldown'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
 import { parseApiDate } from '@/utils/format'
 import {
@@ -42,10 +41,6 @@ const {
   loadHomeFixtures,
 } = useHomeFixtures()
 
-const {
-  inCooldown,
-  applySyncResult,
-} = useSyncCooldown()
 const {
   catalog,
   trackedIds,
@@ -139,6 +134,14 @@ const displayedFixtures = computed(() =>
 )
 
 const emptyText = computed(() => {
+  if (error.value) return ''
+  if (
+    isDayAutoSynced(selectedDay.value) &&
+    !allFixtures.value.length &&
+    !contentLoading.value
+  ) {
+    return `${selectedDay.value} 当日没有比赛数据`
+  }
   if (!filterLeagueOptions.value.length && !trackedFixtures.value.length) {
     return '暂无匹配联赛，正在拉取配置联赛赛程…'
   }
@@ -221,23 +224,20 @@ async function runSync(
   opts?: { days?: number; date?: string },
 ) {
   if (!leagueIds.length) return false
-  if (inCooldown.value) return false
   syncing.value = true
   try {
-    const result = await syncFixtures({
+    await syncFixtures({
       days: opts?.days ?? 1,
       date: opts?.date ?? selectedDay.value,
       includeResults: true,
       leagueIds,
     })
-    if (applySyncResult(result)) return false
     markDayAutoSynced(opts?.date ?? selectedDay.value)
     await Promise.all([loadFilterOptions({ discover: true }), loadDayLocal(true)])
-    window.setTimeout(() => {
-      void loadDayLocal(true)
-    }, 12_000)
     return true
-  } catch {
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : '获取失败')
+    markDayAutoSynced(opts?.date ?? selectedDay.value)
     await loadDayLocal(true)
     return false
   } finally {
@@ -429,8 +429,11 @@ onActivated(() => {
               : 'padding: 16px 20px 24px; box-sizing: border-box;'
           "
         >
-          <n-alert v-if="error" type="error" :title="error" class="state">
-            <n-button size="small" type="primary" @click="loadDayLocal(true)">重试</n-button>
+          <n-alert v-if="error" type="error" title="获取失败" class="state">
+            <n-space align="center" :size="12">
+              <span>{{ error }}</span>
+              <n-button size="small" type="primary" @click="loadDayLocal(true)">重试</n-button>
+            </n-space>
           </n-alert>
 
           <n-spin v-else :show="contentLoading">

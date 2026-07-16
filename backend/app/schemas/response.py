@@ -377,14 +377,11 @@ class ResultsResponse(BaseModel):
 
 
 class SyncFixturesResponse(BaseModel):
-    status: str = Field(..., description="ok / cooldown")
+    status: str = Field(..., description="ok")
     fixtures_saved: int = Field(default=0, description="写入/更新的场次数")
     days: int = Field(default=1, description="同步窗口天数")
     date: str | None = Field(default=None, description="单日同步时的日期")
     message: str = Field(default="")
-    retry_after_seconds: int | None = Field(
-        default=None, description="冷却剩余秒数（status=cooldown 时）"
-    )
 
 
 class LeagueCatalogItemResponse(BaseModel):

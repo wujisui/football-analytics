@@ -1,9 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 import asyncio
 import logging
-import time
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -55,9 +54,6 @@ from app.services.team_names import team_name_zh
 router = APIRouter(prefix="/fixtures", tags=["fixtures"])
 logger = logging.getLogger(__name__)
 
-# Protect free-tier quota: force sync cannot spam official API.
-_SYNC_COOLDOWN_SECONDS = 90
-_last_sync_monotonic: float | None = None
 _sync_lock = asyncio.Lock()
 _odds_followup_lock = asyncio.Lock()
 
@@ -68,8 +64,9 @@ async def _sync_odds_and_results_followup(
     *,
     include_odds: bool,
     include_results: bool,
+    odds_budget: int = 40,
 ) -> None:
-    """Run after fixtures sync returns — keeps the HTTP response snappy."""
+    """Run after fixtures are saved — keeps odds aligned with the same sync request."""
     if _odds_followup_lock.locked():
         logger.info("Odds/results follow-up already running; skip duplicate")
         return
@@ -82,6 +79,7 @@ async def _sync_odds_and_results_followup(
                             day_list,
                             refresh_existing=True,
                             league_ids=selected,
+                            budget=odds_budget,
                         )
                     except Exception as exc:
                         logger.warning("include_odds batch failed: %s", exc)
@@ -473,7 +471,6 @@ async def get_results_accuracy_history(
 
 @router.post("/sync", response_model=SyncFixturesResponse)
 async def sync_fixtures(
-    background_tasks: BackgroundTasks,
     days: int | None = Query(
         default=None,
         ge=1,
@@ -497,39 +494,16 @@ async def sync_fixtures(
         default=None,
         description="仅同步勾选的联赛 ID；默认全部 config/leagues.json",
     ),
-    skip_cooldown: bool = Query(
-        default=False,
-        description="跳过约 90 秒冷却（前端关闭「冷却保护」时）；仍消耗官方配额",
-    ),
 ) -> SyncFixturesResponse:
     """
     强制从官方拉取赛程并写入本地库（绕过 Redis/SQLite 日缓存）。
 
-    首页「刷新」应调用本接口，再读 `/fixtures/today`。
-    赛程按勾选联赛（或全部目录联赛）窗口拉取；
-    赔率：缺盘补全，强制刷新时覆盖已有盘口并本地重算胜平负（非实时轮询）。
+    选中日本地无数据时由前端自动调用；再读 `/fixtures/today`。
+    赛程与盘口在同一请求内顺序完成（非后台补拉）。
     """
-    global _last_sync_monotonic
     settings = get_settings()
 
     async with _sync_lock:
-        now = time.monotonic()
-        if (
-            not skip_cooldown
-            and _last_sync_monotonic is not None
-        ):
-            elapsed = now - _last_sync_monotonic
-            if elapsed < _SYNC_COOLDOWN_SECONDS:
-                retry = int(_SYNC_COOLDOWN_SECONDS - elapsed)
-                return SyncFixturesResponse(
-                    status="cooldown",
-                    fixtures_saved=0,
-                    days=days or 1,
-                    date=date_str,
-                    message=f"同步过于频繁，请 {retry} 秒后再试（保护 API 配额）",
-                    retry_after_seconds=retry,
-                )
-
         try:
             if date_str:
                 try:
@@ -569,27 +543,23 @@ async def sync_fixtures(
             logger.error("sync_fixtures failed: %s", exc, exc_info=True)
             raise HTTPException(status_code=503, detail=f"同步失败：{exc}") from exc
 
-        _last_sync_monotonic = time.monotonic()
-        # Odds/results are the slow path (per-fixture rate limits). Finish fixtures
-        # first so the UI unblocks; boards catch up in the background.
         if include_odds or include_results:
-            background_tasks.add_task(
-                _sync_odds_and_results_followup,
+            await _sync_odds_and_results_followup(
                 day_list,
                 selected,
                 include_odds=include_odds,
                 include_results=include_results,
+                odds_budget=100,
             )
         msg = "赛程已刷新"
         if include_odds:
-            msg += "，盘口后台更新中"
+            msg += "，盘口已同步"
         return SyncFixturesResponse(
             status="ok",
             fixtures_saved=saved,
             days=window,
             date=start.isoformat(),
             message=msg,
-            retry_after_seconds=_SYNC_COOLDOWN_SECONDS,
         )
 
 

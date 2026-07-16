@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useMessage } from 'naive-ui'
 
 import PageToolbarActions from '@/components/PageToolbarActions.vue'
 import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 import FixtureList from '@/components/FixtureList.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import { syncFixtures } from '@/api/fixtures'
-import { markDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
+import { markDayAutoSynced, isDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone } from '@/composables/useMediaQuery'
-import { useSyncCooldown } from '@/composables/useSyncCooldown'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
 import { parseApiDate } from '@/utils/format'
 import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
@@ -17,10 +17,10 @@ import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
 defineOptions({ name: 'Predictions' })
 
 const isPhone = useIsPhone()
+const message = useMessage()
 const { todayDate, allFixtures, windowLabel, loading, error, loadHomeFixtures } =
   useHomeFixtures()
 const { catalog, trackedIds, loadFilterOptions } = useTrackedLeagues()
-const { inCooldown, applySyncResult } = useSyncCooldown()
 
 const selectedDay = ref(todayDate())
 const teamSearch = ref('')
@@ -57,6 +57,14 @@ const displayedFixtures = computed(() =>
 )
 
 const emptyText = computed(() => {
+  if (error.value) return ''
+  if (
+    isDayAutoSynced(selectedDay.value) &&
+    !allFixtures.value.length &&
+    !contentLoading.value
+  ) {
+    return `${selectedDay.value} 当日没有比赛数据`
+  }
   if (!trackedIds.value.length) return '请先在赛前页「筛选」中勾选联赛'
   if (!displayedFixtures.value.length && !teamSearch.value.trim()) {
     return `${selectedDay.value} 暂无未完赛预测`
@@ -86,21 +94,21 @@ async function refreshDayData() {
 
   const ids = leagueIdsForSync()
   if (!ids.length || !shouldAutoSyncDay(day, allFixtures.value.length > 0)) return
-  if (inCooldown.value) return
 
   syncing.value = true
   try {
-    const result = await syncFixtures({
+    await syncFixtures({
       date: day,
       days: 1,
       includeResults: true,
       leagueIds: ids,
     })
-    applySyncResult(result)
     markDayAutoSynced(day)
     await loadDayLocal(true)
-  } catch {
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : '获取失败')
     markDayAutoSynced(day)
+    await loadDayLocal(true)
   } finally {
     syncing.value = false
   }
@@ -156,10 +164,13 @@ onMounted(async () => {
         trigger="hover"
         :content-style="`padding: ${listPad}; box-sizing: border-box;`"
       >
-          <n-alert v-if="error" type="error" :title="error" class="state">
-            <n-button size="small" type="primary" @click="loadDayLocal(true)">
-              重试
-            </n-button>
+          <n-alert v-if="error" type="error" title="获取失败" class="state">
+            <n-space align="center" :size="12">
+              <span>{{ error }}</span>
+              <n-button size="small" type="primary" @click="loadDayLocal(true)">
+                重试
+              </n-button>
+            </n-space>
           </n-alert>
           <n-spin v-else :show="contentLoading">
             <FixtureList

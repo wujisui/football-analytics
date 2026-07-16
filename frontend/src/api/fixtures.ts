@@ -27,7 +27,6 @@ export interface SyncFixturesResult {
   days: number
   date?: string | null
   message: string
-  retry_after_seconds?: number | null
 }
 
 /** Force re-fetch from official API into local DB (bypasses day cache). */
@@ -44,8 +43,8 @@ export async function syncFixtures(options?: {
       include_results: options?.includeResults ?? true,
       league_ids: options?.leagueIds,
     },
-    // Fixtures return first; odds/results continue in a server background task.
-    timeout: 90_000,
+    // Fixtures + per-fixture odds complete before response.
+    timeout: 180_000,
   })
   return data
 }

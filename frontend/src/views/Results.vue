@@ -22,15 +22,14 @@ import ResultsFilterTrigger, {
   type ResultsHitKey,
 } from '@/components/ResultsFilterTrigger.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
-import { useSyncCooldown } from '@/composables/useSyncCooldown'
+import { markDayAutoSynced, isDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
+import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import {
   formatDateTime,
   leagueTagColor,
   statusLabel,
   statusTagType,
 } from '@/utils/format'
-import { markDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
-import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { leagueNameZh } from '@/utils/leagueNames'
 import {
   resultExtraScoreLine,
@@ -50,10 +49,6 @@ const isPhone = useIsPhone()
 const message = useMessage()
 const route = useRoute()
 const router = useRouter()
-const {
-  inCooldown,
-  applySyncResult,
-} = useSyncCooldown()
 
 const desktopListShellRef = ref<HTMLElement | null>(null)
 const phoneListShellRef = ref<HTMLElement | null>(null)
@@ -177,6 +172,13 @@ const emptyText = computed(() => {
   if (fixtures.value.length && !listedFixtures.value.length) {
     return '当前筛选下无场次，可调整联赛 / 预测维度'
   }
+  if (
+    isDayAutoSynced(selectedDate.value) &&
+    !fixtures.value.length &&
+    !contentLoading.value
+  ) {
+    return `${selectedDate.value} 当日没有比赛数据`
+  }
   return `${selectedDate.value} 暂无已结束赛果`
 })
 
@@ -246,7 +248,7 @@ async function loadDayResults() {
     hint.value = data.total ? `共 ${data.total} 场` : ''
     syncFilterLeaguesToDay()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载失败'
+    error.value = err instanceof Error ? err.message : '获取失败'
     fixtures.value = []
     dayAccuracy.value = null
   } finally {
@@ -277,21 +279,19 @@ async function syncAndLoadDay() {
 
   const day = selectedDate.value
   if (!shouldAutoSyncDay(day, fixtures.value.length > 0)) return
-  if (inCooldown.value) return
 
   syncing.value = true
   error.value = ''
   hint.value = ''
   try {
-    const result = await syncFixtures({
+    await syncFixtures({
       date: day,
       days: 1,
       includeResults: true,
     })
-    applySyncResult(result)
     markDayAutoSynced(day)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '同步失败'
+    error.value = err instanceof Error ? err.message : '获取失败'
     markDayAutoSynced(day)
   } finally {
     syncing.value = false
@@ -545,10 +545,13 @@ onMounted(() => {
         <n-alert
           v-if="error"
           type="error"
-          :title="error"
+          title="获取失败"
           style="margin: 0 12px 8px; flex-shrink: 0;"
         >
-          <n-button size="small" type="primary" @click="loadDayResults()">重试</n-button>
+          <n-space align="center" :size="12">
+            <span>{{ error }}</span>
+            <n-button size="small" type="primary" @click="loadDayResults()">重试</n-button>
+          </n-space>
         </n-alert>
         <div ref="desktopListShellRef" class="results-list-shell">
           <n-scrollbar style="height: 100%;" trigger="hover">
