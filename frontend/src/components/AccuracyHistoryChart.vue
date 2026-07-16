@@ -23,13 +23,35 @@ function toPct(rate: number | null | undefined): number | null {
   return Number((rate * 100).toFixed(1))
 }
 
+function formatAxisTooltip(
+  params: Array<{
+    axisValue?: string
+    dataIndex?: number
+    marker?: string
+    seriesName?: string
+    value?: number | null
+  }>,
+): string {
+  if (!params.length) return ''
+  const idx = params[0].dataIndex ?? 0
+  const point = props.series[idx]
+  const dateLabel = point?.date ?? String(params[0].axisValue ?? '')
+  const matchCount = point?.fixtures_finished ?? 0
+  const header = `${dateLabel} ${matchCount}场`
+  const lines = params.map((item) => {
+    const value = item.value == null ? '—' : `${item.value}%`
+    return `${item.marker ?? ''}${item.seriesName ?? ''}: ${value}`
+  })
+  return [header, ...lines].join('<br/>')
+}
+
 const option = computed(() => {
   const dates = props.series.map((p) => p.date.slice(5)) // MM-DD
   return {
     color: ['#d03050', '#2080f0', '#f0a020', '#18a058'],
     tooltip: {
       trigger: 'axis',
-      valueFormatter: (v: number | null) => (v == null ? '—' : `${v}%`),
+      formatter: formatAxisTooltip,
     },
     legend: {
       top: 4,

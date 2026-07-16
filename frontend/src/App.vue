@@ -15,6 +15,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
+import { parseDetailFrom } from '@/utils/detailNav'
 import { homeRouteWithLeague } from '@/utils/homeLeagueFilter'
 
 const route = useRoute()
@@ -25,6 +26,11 @@ const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
 const activeNav = computed(() => {
   if (route.name === 'results') return 'results'
   if (route.name === 'predictions') return 'predictions'
+  if (route.name === 'fixture-detail') {
+    const from = parseDetailFrom(route.query.from)
+    if (from === 'results') return 'results'
+    if (from === 'predictions') return 'predictions'
+  }
   return 'home'
 })
 
