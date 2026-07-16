@@ -35,7 +35,6 @@ from app.services.ttl_policy import (
     is_finished_status,
     is_prediction_exam_locked,
     refresh_ttl_seconds,
-    should_stop_api_refresh,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,6 +113,72 @@ def get_recommendation(probs: dict[str, float], features: dict[str, float] | Non
     from app.services.prediction import get_recommendation as _rec
 
     return _rec(probs, features=features)
+
+
+def prematch_package_needs_refresh(
+    package: dict[str, Any],
+    *,
+    history_tag: str,
+) -> bool:
+    """True when detail /analysis should (re)fetch the prematch display package."""
+    h2h = package.get("head_to_head") or {}
+    home_form = package.get("home_form") or {}
+    away_form = package.get("away_form") or {}
+    standings = package.get("standings") or {}
+    briefing = package.get("briefing") or {}
+    odds = package.get("odds") or {}
+    lineups = package.get("lineups") or {}
+
+    stale = (
+        "fetched" not in h2h
+        or h2h.get("source") != history_tag
+        or home_form.get("source") != history_tag
+        or away_form.get("source") != history_tag
+        or not standings.get("fetched")
+        or (briefing and not briefing.get("fetched"))
+        or (not odds.get("available") and not odds.get("fetched"))
+    )
+    useful = bool(
+        home_form.get("played")
+        or away_form.get("played")
+        or h2h.get("played")
+        or (home_form.get("matches") or [])
+        or (away_form.get("matches") or [])
+        or (h2h.get("matches") or [])
+        or odds.get("available")
+        or lineups.get("available")
+        or standings.get("available")
+    )
+    return not useful or stale
+
+
+def prematch_package_needs_refresh_from_stored(
+    stored: PreMatchData,
+    *,
+    history_tag: str,
+) -> bool:
+    if not any(
+        (
+            stored.h2h_json,
+            stored.odds_json,
+            stored.lineups_json,
+            stored.home_form_json,
+            stored.away_form_json,
+            getattr(stored, "standings_json", None),
+            getattr(stored, "briefing_json", None),
+        )
+    ):
+        return True
+    package = {
+        "head_to_head": loads_json(stored.h2h_json, {}) or {},
+        "home_form": loads_json(stored.home_form_json, {}) or {},
+        "away_form": loads_json(stored.away_form_json, {}) or {},
+        "standings": loads_json(getattr(stored, "standings_json", None), {}) or {},
+        "briefing": loads_json(getattr(stored, "briefing_json", None), {}) or {},
+        "odds": loads_json(stored.odds_json, {"available": False}) or {},
+        "lineups": loads_json(stored.lineups_json, {}) or {},
+    }
+    return prematch_package_needs_refresh(package, history_tag=history_tag)
 
 
 def parse_team_form(payload: dict[str, Any], team_id: int) -> TeamFormStats:
@@ -421,9 +486,6 @@ class AnalyzerService:
             if local.get("fetched"):
                 package["odds"] = {"available": False, "fetched": True}
                 return
-            if should_stop_api_refresh(fixture.date, fixture.status):
-                package["odds"] = local
-                return
             try:
                 raw = await fetcher.fetch_odds(fixture.id, ttl=ttl)
                 parsed = rehydrate_odds_markets(parse_odds_payload(raw))
@@ -528,11 +590,6 @@ class AnalyzerService:
         stored = result.scalar_one_or_none()
         if stored is None:
             return None
-
-        # Kickoff passed / finished: freeze — serve any local row (H2H/form/odds
-        # may exist even when model probs were never written).
-        if should_stop_api_refresh(fixture.date, fixture.status):
-            return stored
 
         if None in (stored.home_win_prob, stored.draw_prob, stored.away_win_prob):
             return None
@@ -652,39 +709,13 @@ class AnalyzerService:
             payload = cached["payload"]
             package = payload.get("package") if include_package else None
             fixture_date = datetime.fromisoformat(payload["fixture_date"])
-            frozen = should_stop_api_refresh(fixture_date, payload.get("status"))
-            # Detail view needs form/h2h; skip empty packages left by free-plan last= failures.
-            package_useful = False
-            package_stale = False
-            if isinstance(package, dict):
-                h2h_pkg = package.get("head_to_head") or {}
-                home_form = package.get("home_form") or {}
-                away_form = package.get("away_form") or {}
-                # Pre-fix / failed summarize / old fetch strategy → refresh once.
-                standings = package.get("standings") or {}
-                history_tag = get_settings().history_source_tag
-                package_stale = (
-                    "fetched" not in h2h_pkg
-                    or h2h_pkg.get("source") != history_tag
-                    or home_form.get("source") != history_tag
-                    or away_form.get("source") != history_tag
-                    or not standings.get("fetched")
-                )
-                package_useful = bool(
-                    home_form.get("played")
-                    or away_form.get("played")
-                    or h2h_pkg.get("played")
-                    or (home_form.get("matches") or [])
-                    or (away_form.get("matches") or [])
-                    or (h2h_pkg.get("matches") or [])
-                    or (package.get("odds") or {}).get("available")
-                    or (package.get("lineups") or {}).get("available")
-                    or standings.get("available")
-                )
-            # Refresh when package empty/stale — except after kickoff, keep useful local stats.
             need_refresh = include_package and (
-                not package_useful or package_stale
-            ) and not (frozen and package_useful)
+                not isinstance(package, dict)
+                or prematch_package_needs_refresh(
+                    package,
+                    history_tag=get_settings().history_source_tag,
+                )
+            )
             if not need_refresh:
                 return AnalysisResult(
                     fixture_id=payload["fixture_id"],
@@ -726,54 +757,12 @@ class AnalyzerService:
         if settings.LOCAL_FIRST:
             stored = await self._get_fresh_pre_match(fixture_id, fixture)
             if stored is not None:
-                # Detail page needs form/h2h; odds-only rows used to short-circuit refresh.
-                home_form = loads_json(stored.home_form_json, {}) or {}
-                away_form = loads_json(stored.away_form_json, {}) or {}
-                h2h = loads_json(stored.h2h_json, {}) or {}
-                has_form_or_h2h = bool(
-                    home_form.get("played")
-                    or away_form.get("played")
-                    or h2h.get("played")
-                    or (home_form.get("matches") or [])
-                    or (away_form.get("matches") or [])
-                    or (h2h.get("matches") or [])
-                )
-                # Old/failed rows or pre-merge fetch strategy → one refresh.
-                standings = loads_json(getattr(stored, "standings_json", None), {}) or {}
-                briefing = loads_json(getattr(stored, "briefing_json", None), {}) or {}
-                odds_stored = loads_json(getattr(stored, "odds_json", None), {}) or {}
                 history_tag = get_settings().history_source_tag
-                odds_needs_fetch = not odds_stored.get("available") and not odds_stored.get(
-                    "fetched"
-                )
-                package_stale = (
-                    "fetched" not in h2h
-                    or h2h.get("source") != history_tag
-                    or home_form.get("source") != history_tag
-                    or away_form.get("source") != history_tag
-                    or not standings.get("fetched")
-                    or not briefing.get("fetched")
-                    or odds_needs_fetch
-                )
-                has_any_package = bool(
-                    stored.h2h_json
-                    or stored.odds_json
-                    or stored.lineups_json
-                    or stored.home_form_json
-                    or stored.away_form_json
-                    or getattr(stored, "standings_json", None)
-                    or getattr(stored, "briefing_json", None)
-                )
-                if (
-                    include_package
-                    and (
-                        not has_any_package
-                        or not has_form_or_h2h
-                        or package_stale
-                    )
-                    and not should_stop_api_refresh(fixture.date, fixture.status)
+                if include_package and prematch_package_needs_refresh_from_stored(
+                    stored,
+                    history_tag=history_tag,
                 ):
-                    pass  # fall through to refresh package before kickoff
+                    pass  # fall through — same detail path for all match states
                 else:
                     result = self._result_from_pre_match(
                         fixture, home_name, away_name, league_name, stored, confidence="中"
@@ -787,35 +776,6 @@ class AnalyzerService:
                         fixture.status,
                     )
                     return result
-
-        # After kickoff: never call API — return local package (统计/盘口) if any.
-        if should_stop_api_refresh(fixture.date, fixture.status):
-            pre_match = await self.session.execute(
-                select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
-            )
-            stored = pre_match.scalar_one_or_none()
-            if stored is not None:
-                has_model = None not in (
-                    stored.home_win_prob,
-                    stored.draw_prob,
-                    stored.away_win_prob,
-                )
-                result = self._result_from_pre_match(
-                    fixture,
-                    home_name,
-                    away_name,
-                    league_name,
-                    stored,
-                    confidence="中" if has_model else "低",
-                )
-                if not include_package:
-                    result.package = None
-                await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
-                return result
-            raise ValueError(
-                f"比赛 {fixture_id} 已开赛/结束，本地无赛前数据（含交锋近况）。"
-                "请在开赛前打开详情完成准备。"
-            )
 
         sources_ok = 0
         total_sources = 7
@@ -979,6 +939,50 @@ class AnalyzerService:
                 "losses": away_form.losses,
                 "form": "",
             }
+
+        exam_locked = is_prediction_exam_locked(fixture.date, fixture.status)
+        stored_row = (
+            await self.session.execute(
+                select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
+            )
+        ).scalar_one_or_none()
+        has_frozen_probs = bool(
+            stored_row
+            and None
+            not in (
+                stored_row.home_win_prob,
+                stored_row.draw_prob,
+                stored_row.away_win_prob,
+            )
+        )
+        if exam_locked and has_frozen_probs and stored_row is not None:
+            await self._save_pre_match_data(
+                fixture_id,
+                stored_row.home_win_prob,
+                stored_row.draw_prob,
+                stored_row.away_win_prob,
+                package=package if include_package else None,
+                features=None,
+                model_source=None,
+            )
+            refreshed = (
+                await self.session.execute(
+                    select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
+                )
+            ).scalar_one_or_none()
+            if refreshed is not None:
+                result = self._result_from_pre_match(
+                    fixture,
+                    home_name,
+                    away_name,
+                    league_name,
+                    refreshed,
+                    confidence="中",
+                )
+                if not include_package:
+                    result.package = None
+                await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
+                return result
 
         from app.services.ml_predictor import predict_probabilities
 

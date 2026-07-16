@@ -177,7 +177,7 @@ def fixture_detail_ttl(fixture_date: datetime | None, status: str | None = None)
 def describe_ttl_policy() -> dict[str, str]:
     return {
         "product": "pre-match analysis only (not live scores)",
-        "after_kickoff": "no API refresh; serve local DB forever until cleanup",
+        "after_kickoff": "prediction snapshot frozen; detail display package fetched on demand if missing",
         "far_>72h": f"analysis refresh every {TTL_ANALYSIS_FAR // 3600}h",
         "mid_24_72h": f"analysis refresh every {TTL_ANALYSIS_MID // 3600}h",
         "matchday_6_24h": f"analysis refresh every {TTL_ANALYSIS_MATCHDAY // 3600}h",
