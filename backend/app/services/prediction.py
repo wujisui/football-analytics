@@ -330,6 +330,22 @@ def _btts_yes(
     return score >= 0.0
 
 
+def _reconcile_btts_with_scores(
+    lines: list[tuple[int, int]],
+    model_btts: bool,
+) -> bool:
+    """Align BTTS lean with reference scorelines when they are unambiguous."""
+    if not lines:
+        return model_btts
+    any_both = any(h > 0 and a > 0 for h, a in lines)
+    all_one_sided = all(h == 0 or a == 0 for h, a in lines)
+    if any_both:
+        return True
+    if all_one_sided:
+        return False
+    return model_btts
+
+
 def _align_score_with_btts(
     lines: list[tuple[int, int]],
     *,
@@ -352,7 +368,7 @@ def _align_score_with_btts(
         elif not btts_yes and h > 0 and a > 0:
             key = _primary_1x2_key(probs)
             if key == "draw":
-                out.append((0, 0) if total <= 1 else (1, 1) if total <= 2 else _draw_scoreline(total))
+                out.append((0, 0))
             elif key == "home":
                 t = max(1, h + a)
                 out.append((t, 0) if t <= 3 else (t - 1, 0))
@@ -591,26 +607,45 @@ def _score_hints_for_recommendation(
     recommendation: str,
     probs: dict[str, float],
     total: int,
+    *,
+    btts_yes: bool,
+    ou_side: str,
 ) -> tuple[str, list[tuple[int, int]]]:
     """Build reference score(s) consistent with 胜平负推荐.
 
     双选时给多个比分（用 / 连接），避免「主胜/平却只给 2-0」这类打架。
+    平局：小球/双方否 → 0-0；大球/双方是 → 1-1、2-2 等对称比分。
     """
     rec = (recommendation or "").strip()
     outcomes = recommendation_outcomes(rec) or {_primary_1x2_key(probs)}
     lines: list[tuple[int, int]] = []
 
+    def _draw_ref() -> tuple[int, int]:
+        draw_total = total if total > 0 else 0
+        if ou_side == "over":
+            if draw_total < 2:
+                draw_total = 2
+            return _draw_scoreline(draw_total)
+        if not btts_yes:
+            return 0, 0
+        return _draw_scoreline(draw_total)
+
     if outcomes == {"draw"} or rec == "平局":
-        lines.append(_draw_scoreline(total if total > 0 else 0))
+        lines.append(_draw_ref())
     elif outcomes == {"home", "draw"} or "主队不败" in rec or rec.startswith("主胜/平"):
-        # 胜平：一记小胜 + 平局（0-0 / 1-1 / 2-2）
         lines.append((1, 0) if total <= 2 else (2, 1))
-        draw_total = 0 if total <= 0 else (2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1))
-        lines.append(_draw_scoreline(draw_total))
+        if btts_yes:
+            draw_total = 2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1)
+            lines.append(_draw_scoreline(draw_total))
+        else:
+            lines.append((0, 0))
     elif outcomes == {"away", "draw"} or "客队不败" in rec or rec.startswith("客胜/平"):
         lines.append((0, 1) if total <= 2 else (1, 2))
-        draw_total = 0 if total <= 0 else (2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1))
-        lines.append(_draw_scoreline(draw_total))
+        if btts_yes:
+            draw_total = 2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1)
+            lines.append(_draw_scoreline(draw_total))
+        else:
+            lines.append((0, 0))
     elif outcomes == {"home", "away"} or "防平" in rec:
         ht = max(1, total if total > 0 else 1)
         lines.append((1, 0) if ht <= 2 else (2, 1))
@@ -640,8 +675,8 @@ def derive_prediction_leans(
 ) -> dict[str, str]:
     """Derive O/U, BTTS, score and handicap leans from 1X2 + markets.
 
-    Priority for product accuracy: 1X2 → O/U → BTTS. Score is reference only
-    (hardest to hit) and must not drive BTTS.
+    Priority for product accuracy: 1X2 → O/U → BTTS. Reference scorelines are
+    reconciled with the BTTS lean so「1-1」never pairs with「双方进球：否」.
 
     Flat prior with local odds → use odds-implied 1X2 (no API).
     Flat prior and no usable odds → 待分析.
@@ -683,11 +718,16 @@ def derive_prediction_leans(
         normalized, ou_side=side, line=line, features=features
     )
     _, score_lines = _score_hints_for_recommendation(
-        recommendation, normalized, total
+        recommendation,
+        normalized,
+        total,
+        btts_yes=btts_yes,
+        ou_side=side,
     )
     score_lines = _align_score_with_btts(
         score_lines, btts_yes=btts_yes, probs=normalized, total=total
     )
+    btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
     score_hint = " / ".join(f"{h}-{a}" for h, a in score_lines) if score_lines else "待分析"
     return {
         "goal_lean": goal_lean,
