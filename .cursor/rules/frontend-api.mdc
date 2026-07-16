@@ -12,7 +12,7 @@ alwaysApply: false
 - `/leagues` 与 `/fixtures/today` 只读本地库（列表不做官方 API 分析）；可选 `date`、`days`、`league_id`
 - 首页列表用模块级缓存（`useHomeFixtures`）：详情返回 5 分钟内不重复请求；点「强制刷新」先 `POST /fixtures/sync`（绕过日缓存打官方）再重拉列表。切换联赛只做前端过滤，不打接口
 - 赛果：`GET /fixtures/results?date=`（当日列表 + 准确率）；`GET /fixtures/results/history?days=0`（默认全部本地完场样本 + 按日序列；`days>0` 为近 N 日）；「同步赛果」→ `POST /fixtures/sync?date=...`
-- 完整赛前分析仅在详情 `/fixtures/{id}/analysis`；空数据时先跑 sync / `fetch-leagues` / `fetch-upcoming`
+- 详情统一走 `/fixtures/{fixture_id}/analysis`（首页/赛果/预测入口相同）；空数据时先跑 sync / `fetch-leagues` / `fetch-upcoming`
 - `league_id`（联赛）与 `fixture_id`（比赛）不要混用
 - 不在前端存放或请求 API-Sports / RapidAPI Key
 - UI 栈：Vue 3 + TS + Vite + Naive UI + ECharts；页面交互见 `frontend/FRONTEND_UI_SPEC.md`；组件优先见 `frontend-ui.mdc`
