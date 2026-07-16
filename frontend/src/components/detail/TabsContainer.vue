@@ -8,8 +8,9 @@ import PredictionTab from '@/components/detail/PredictionTab.vue'
 import StatsTab from '@/components/detail/StatsTab.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import type { FixtureResponse, PrematchPackage } from '@/api/types'
+import type { DetailTab } from '@/utils/detailNav'
 
-type TabKey = 'record' | 'stats' | 'lineup' | 'briefing' | 'prediction'
+type TabKey = DetailTab
 
 const props = defineProps<{
   /** Null while deep-link cold load — tab chrome still renders. */
@@ -17,6 +18,8 @@ const props = defineProps<{
   pkg: PrematchPackage | null
   loading?: boolean
   error?: string
+  /** Deep-link from route query `tab`. */
+  initialTab?: TabKey | null
 }>()
 
 defineEmits<{
@@ -26,9 +29,13 @@ defineEmits<{
 const isPhone = useIsPhone()
 const tabsSize = computed(() => (isPhone.value ? 'small' : 'medium'))
 
-const activeTab = ref<TabKey>('record')
+function defaultTab(): TabKey {
+  return props.initialTab ?? 'record'
+}
+
+const activeTab = ref<TabKey>(defaultTab())
 /** Mount tab content only after first visit (lazy UI); data already from /analysis. */
-const visited = ref<Set<TabKey>>(new Set(['record']))
+const visited = ref<Set<TabKey>>(new Set([defaultTab()]))
 
 const tabs: { name: TabKey; label: string; short: string }[] = [
   { name: 'record', label: '统计', short: '统计' },
@@ -61,8 +68,17 @@ function onTabChange(name: string) {
 watch(
   () => props.fixture?.fixture_id,
   () => {
-    activeTab.value = 'record'
-    visited.value = new Set(['record'])
+    const tab = defaultTab()
+    activeTab.value = tab
+    visited.value = new Set([tab])
+  },
+)
+
+watch(
+  () => props.initialTab,
+  (tab) => {
+    if (!tab || !props.fixture) return
+    onTabChange(tab)
   },
 )
 </script>

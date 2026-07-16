@@ -10,6 +10,7 @@ import {
   detailBackRoute,
   detailRootLabel,
   parseDetailFrom,
+  parseDetailTab,
 } from '@/utils/detailNav'
 
 const props = defineProps<{
@@ -36,6 +37,7 @@ const rootLabel = computed(() => detailRootLabel(from.value))
 const fromDate = computed(() =>
   typeof route.query.date === 'string' ? route.query.date : null,
 )
+const initialTab = computed(() => parseDetailTab(route.query.tab))
 
 function goBack() {
   void router.push(
@@ -88,6 +90,7 @@ watch(
           :pkg="data?.analysis.package ?? null"
           :loading="contentLoading"
           :error="error"
+          :initial-tab="initialTab"
           @retry="reload"
         />
       </div>

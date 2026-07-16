@@ -2,6 +2,7 @@ import { ref } from 'vue'
 
 import { fetchTodayFixtures } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
+import { oddsPackageToSnippet } from '@/utils/oddsDisplay'
 
 /** Reuse list data across page remounts (detail → back) within this TTL. */
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -76,7 +77,7 @@ async function loadHomeFixtures(options?: {
       loadedAt.value = Date.now()
       loadedKey = cacheKey(date, days)
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '加载失败'
+      error.value = err instanceof Error ? err.message : '获取失败'
       throw err
     } finally {
       loading.value = false
@@ -87,6 +88,25 @@ async function loadHomeFixtures(options?: {
   return inflight
 }
 
+/** Merge detail fetch into home list cache (odds_snippet, ranks). */
+export function patchFixtureFromDetail(fixture: FixtureResponse): void {
+  const idx = allFixtures.value.findIndex((f) => f.fixture_id === fixture.fixture_id)
+  if (idx < 0) return
+
+  const prev = allFixtures.value[idx]
+  const snippet =
+    fixture.odds_snippet ??
+    oddsPackageToSnippet(fixture.analysis?.package?.odds ?? null)
+
+  const next: FixtureResponse = {
+    ...prev,
+    home_rank: fixture.home_rank ?? prev.home_rank,
+    away_rank: fixture.away_rank ?? prev.away_rank,
+    odds_snippet: snippet ?? prev.odds_snippet,
+  }
+  allFixtures.value = allFixtures.value.map((row, i) => (i === idx ? next : row))
+}
+
 export function useHomeFixtures() {
   return {
     todayDate,
@@ -95,5 +115,6 @@ export function useHomeFixtures() {
     loading,
     error,
     loadHomeFixtures,
+    patchFixtureFromDetail,
   }
 }
