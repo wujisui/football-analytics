@@ -68,6 +68,7 @@ declare module 'vue' {
     PageToolbarSearch: typeof import('./src/components/PageToolbarSearch.vue')['default']
     PredictionResult: typeof import('./src/components/detail/PredictionResult.vue')['default']
     PredictionTab: typeof import('./src/components/detail/PredictionTab.vue')['default']
+    PreMatchOddsTable: typeof import('./src/components/PreMatchOddsTable.vue')['default']
     ProbabilityChart: typeof import('./src/components/ProbabilityChart.vue')['default']
     ResultHitTags: typeof import('./src/components/ResultHitTags.vue')['default']
     ResultsFilterTrigger: typeof import('./src/components/ResultsFilterTrigger.vue')['default']

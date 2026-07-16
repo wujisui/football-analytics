@@ -4,16 +4,16 @@ import { useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
 import { hasRealProbabilities, toPercent } from '@/utils/format'
+import { fixtureDetailRoute } from '@/utils/detailNav'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 
 const props = withDefaults(
   defineProps<{
     fixture: FixtureResponse
-    /** Elevated card for the predictions list; embedded zone inside FixtureCard. */
+    /** Elevated card for the predictions list. */
     standalone?: boolean
     /** Navigate to fixture detail on click (standalone implies true). */
     linkToDetail?: boolean
-    /** Breadcrumb back target on detail. */
     from?: 'home' | 'predictions'
   }>(),
   { standalone: false, linkToDetail: false, from: 'home' },
@@ -53,11 +53,17 @@ const probs = computed(() => {
 
 function goDetail() {
   if (!canNavigate.value) return
-  void router.push({
-    name: 'fixture-detail',
-    params: { fixtureId: props.fixture.fixture_id },
-    query: { from: props.from },
-  })
+  void router.push(fixtureDetailRoute(props.fixture.fixture_id, { from: props.from }))
+}
+
+function goBriefing(event: MouseEvent) {
+  event.stopPropagation()
+  void router.push(
+    fixtureDetailRoute(props.fixture.fixture_id, {
+      from: props.from,
+      tab: 'briefing',
+    }),
+  )
 }
 </script>
 
@@ -75,11 +81,10 @@ function goDetail() {
     @click="goDetail"
     @keydown.enter="goDetail"
   >
-    <h3 class="zone-title">
-      算法预测
-      <span class="zone-matchup">{{ matchupTitle }}</span>
-    </h3>
     <div class="rec-row">
+      <n-button text type="primary" size="small" class="zone-matchup" @click="goBriefing">
+        {{ matchupTitle }}
+      </n-button>
       <span class="rec-label">推荐</span>
       <n-tag :type="recommendationPending ? 'default' : 'primary'" size="small">
         {{ prediction.recommendation }}
@@ -158,29 +163,21 @@ function goDetail() {
   outline-offset: 2px;
 }
 
-.zone-title {
-  margin: 0 0 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fa-text-secondary);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 10px;
-}
-
-.zone-matchup {
-  font-weight: 500;
-  color: var(--fa-text);
-  font-size: 12px;
-}
-
 .rec-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.zone-matchup {
+  max-width: 100%;
+  white-space: normal;
+  height: auto;
+  line-height: 1.4;
+  padding: 0 2px;
+  flex-shrink: 0;
 }
 
 .rec-label {
