@@ -17,15 +17,16 @@ const RESULT_ZH: Record<string, string> = {
 }
 
 const STATUS_SHORT_LABEL: Record<string, string> = {
-  AET: '加时结束',
-  PEN: '点球决胜',
   FT: '完场',
+  AET: '完场',
+  PEN: '完场',
+  ET: '完场',
 }
 
 const STATUS_META: Record<string, { label: string; tag: NaiveTagType }> = {
   pending: { label: '未开始', tag: 'info' },
   live: { label: '进行中', tag: 'warning' },
-  finished: { label: '已结束', tag: 'success' },
+  finished: { label: '完场', tag: 'success' },
   postponed: { label: '延期', tag: 'error' },
   cancelled: { label: '取消', tag: 'error' },
 }
@@ -215,7 +216,9 @@ export function statusTagType(
   statusShort?: string | null,
 ): NaiveTagType {
   const short = (statusShort || '').toUpperCase()
-  if (short === 'AET' || short === 'PEN') return 'warning'
+  if (short && STATUS_SHORT_LABEL[short]) {
+    return STATUS_META.finished?.tag ?? 'default'
+  }
   return STATUS_META[status.toLowerCase()]?.tag ?? 'default'
 }
 
