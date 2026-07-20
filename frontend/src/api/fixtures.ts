@@ -141,11 +141,14 @@ export async function fetchResults(date: string, leagueId?: number): Promise<Res
 export async function fetchResultsHistory(options?: {
   /** 0 / omit = all local finished samples; >0 = last N days */
   days?: number
+  /** Series cutoff date YYYY-MM-DD; defaults to today on backend */
+  endDate?: string
   leagueId?: number
 }): Promise<ResultsHistoryResponse> {
   const { data } = await apiClient.get<ResultsHistoryResponse>('/fixtures/results/history', {
     params: {
       days: options?.days ?? 0,
+      end_date: options?.endDate,
       league_id: options?.leagueId,
     },
   })

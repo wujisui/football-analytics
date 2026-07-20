@@ -2,7 +2,7 @@
 import { FilterOutline } from '@vicons/ionicons5'
 import { computed, ref, watch } from 'vue'
 
-export type ResultsHitKey = 'result' | 'score' | 'ou' | 'btts'
+import type { ResultsHitKey } from '@/utils/resultsPageState'
 
 export interface ResultsLeagueOption {
   league_id: number

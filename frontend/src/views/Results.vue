@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -17,11 +17,11 @@ import ListBackTop from '@/components/ListBackTop.vue'
 import PageToolbarActions from '@/components/PageToolbarActions.vue'
 import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 import ResultHitTags from '@/components/ResultHitTags.vue'
+import FavoriteButton from '@/components/FavoriteButton.vue'
 import ScoreDetailLink from '@/components/ScoreDetailLink.vue'
-import ResultsFilterTrigger, {
-  type ResultsHitKey,
-} from '@/components/ResultsFilterTrigger.vue'
+import ResultsFilterTrigger from '@/components/ResultsFilterTrigger.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 import { markDayAutoSynced, isDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import {
@@ -36,6 +36,13 @@ import {
   resultScoreText,
 } from '@/utils/resultsDisplay'
 import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
+import {
+  readResultsPageState,
+  writeResultsPageState,
+  type ResultsHitKey,
+} from '@/utils/resultsPageState'
+
+defineOptions({ name: 'Results' })
 
 const ALL_HIT_KEYS: ResultsHitKey[] = ['score', 'result', 'ou', 'btts']
 const HIT_FIELD: Record<ResultsHitKey, keyof ResultFixture> = {
@@ -49,11 +56,25 @@ const isPhone = useIsPhone()
 const message = useMessage()
 const route = useRoute()
 const router = useRouter()
+const { favoriteIds, syncFavoriteFromResult } = useFavoriteFixtures()
 
 const desktopListShellRef = ref<HTMLElement | null>(null)
 const phoneListShellRef = ref<HTMLElement | null>(null)
 
 const { todayDate } = useHomeFixtures()
+
+function clampToToday(dateStr: string): string {
+  const today = todayDate()
+  return dateStr > today ? today : dateStr
+}
+
+function isDateAfterToday(timestamp: number): boolean {
+  const picked = new Date(timestamp)
+  picked.setHours(0, 0, 0, 0)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return picked.getTime() > today.getTime()
+}
 
 const selectedDate = ref(todayDate())
 const fixtures = ref<ResultFixture[]>([])
@@ -127,9 +148,19 @@ const filteredFixtures = computed(() => {
   return list
 })
 
-const listedFixtures = computed(() =>
-  filterByTeamQuery(filteredFixtures.value, teamSearch.value),
-)
+const listedFixtures = computed(() => {
+  const list = filterByTeamQuery(filteredFixtures.value, teamSearch.value)
+  return [...list]
+    .map((fx, index) => ({ fx, index }))
+    .sort((a, b) => {
+      const aFav = favoriteIds.value.has(a.fx.fixture_id)
+      const bFav = favoriteIds.value.has(b.fx.fixture_id)
+      if (aFav !== bFav) return aFav ? -1 : 1
+      if (aFav && bFav) return a.fx.fixture_date.localeCompare(b.fx.fixture_date)
+      return a.index - b.index
+    })
+    .map(({ fx }) => fx)
+})
 
 function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
   const rows = list.map((fx) => ({
@@ -226,11 +257,29 @@ function resultStatusTagType(
 }
 
 function goDetail(fixtureId: number) {
+  writeResultsPageState({
+    date: selectedDate.value,
+    filterLeagueIds: filterLeagueIds.value,
+    filterHitKeys: filterHitKeys.value,
+    teamSearch: teamSearch.value,
+  })
   void router.push({
     name: 'fixture-detail',
     params: { fixtureId },
     query: { from: 'results', date: selectedDate.value },
   })
+}
+
+function applySavedFiltersIfAny() {
+  const saved = readResultsPageState()
+  if (!saved || saved.date !== selectedDate.value) return
+  if (saved.filterLeagueIds.length) {
+    filterLeagueIds.value = [...saved.filterLeagueIds]
+  }
+  if (saved.filterHitKeys.length) {
+    filterHitKeys.value = [...saved.filterHitKeys]
+  }
+  teamSearch.value = saved.teamSearch
 }
 
 async function loadDayResults() {
@@ -247,6 +296,11 @@ async function loadDayResults() {
     dayAccuracy.value = data.accuracy ?? null
     hint.value = data.total ? `共 ${data.total} 场` : ''
     syncFilterLeaguesToDay()
+    for (const fx of fixtures.value) {
+      if (favoriteIds.value.has(fx.fixture_id)) {
+        syncFavoriteFromResult(fx)
+      }
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '获取失败'
     fixtures.value = []
@@ -259,8 +313,8 @@ async function loadDayResults() {
 async function loadHistory() {
   historyLoading.value = true
   try {
-    // All local finished samples — independent of day picker / day filters.
-    history.value = await fetchResultsHistory({ days: 0 })
+    const cutoff = todayDate()
+    history.value = await fetchResultsHistory({ days: 0, endDate: cutoff })
   } catch {
     history.value = null
   } finally {
@@ -306,15 +360,20 @@ watch(selectedDate, () => {
   void syncAndLoadDay()
 })
 
+onActivated(() => {
+  applySavedFiltersIfAny()
+})
+
 onMounted(() => {
   const qDate = route.query.date
-  if (
-    typeof qDate === 'string' &&
-    /^\d{4}-\d{2}-\d{2}$/.test(qDate) &&
-    qDate !== selectedDate.value
-  ) {
-    selectedDate.value = qDate
-  } else {
+  if (typeof qDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(qDate)) {
+    const clamped = clampToToday(qDate)
+    if (clamped !== selectedDate.value) {
+      selectedDate.value = clamped
+    }
+  }
+  applySavedFiltersIfAny()
+  if (!fixtures.value.length) {
     void syncAndLoadDay()
   }
   void loadHistory()
@@ -333,7 +392,10 @@ onMounted(() => {
           <n-breadcrumb-item>赛果</n-breadcrumb-item>
           <n-breadcrumb-item>{{ selectedDate }}</n-breadcrumb-item>
         </n-breadcrumb>
-        <PageToolbarActions v-model:date="selectedDate" />
+        <PageToolbarActions
+          v-model:date="selectedDate"
+          :is-date-disabled="isDateAfterToday"
+        />
       </div>
       <n-page-header
         title="赛果与预测统计"
@@ -398,7 +460,7 @@ onMounted(() => {
                       {{ historyRangeLabel }}
                     </n-text>
                   </template>
-                  本地库全部已预测完场，与顶部日期无关
+                  本地库全部已预测完场，截止 {{ todayDate() }}
                 </n-tooltip>
               </template>
               <n-spin :show="historyLoading">
@@ -440,7 +502,7 @@ onMounted(() => {
                   }}
                 </n-text>
               </template>
-              与顶部日期无关
+              走势截止 {{ todayDate() }}，与顶部日期选择无关
             </n-tooltip>
           </template>
           <n-spin
@@ -495,12 +557,19 @@ onMounted(() => {
                     <n-list-item v-for="fx in listedFixtures" :key="fx.fixture_id">
                       <n-thing>
                         <template #header>
-                          {{ fx.home_team_name }}
-                          <ScoreDetailLink
-                            :label="resultScoreText(fx)"
-                            @click="goDetail(fx.fixture_id)"
-                          />
-                          {{ fx.away_team_name }}
+                          <n-space :size="6" align="center" wrap style="width: 100%;">
+                            <span>{{ fx.home_team_name }}</span>
+                            <ScoreDetailLink
+                              :label="resultScoreText(fx)"
+                              @click="goDetail(fx.fixture_id)"
+                            />
+                            <span>{{ fx.away_team_name }}</span>
+                            <FavoriteButton
+                              :fixture-id="fx.fixture_id"
+                              :result-fixture="fx"
+                              size="tiny"
+                            />
+                          </n-space>
                           <n-text
                             v-if="resultExtraScoreLine(fx)"
                             depth="3"
@@ -509,7 +578,27 @@ onMounted(() => {
                             {{ resultExtraScoreLine(fx) }}
                           </n-text>
                         </template>
-                        <ResultHitTags :fixture="fx" />
+                        <n-space
+                          v-if="fx.has_prediction"
+                          vertical
+                          :size="4"
+                          style="margin-top: 4px;"
+                        >
+                          <n-text depth="3" style="font-size: 11px;">
+                            {{ fx.recommendation || '—' }}
+                            · {{ fx.score_hint || '—' }}
+                            · {{ fx.goal_lean || '—' }}
+                            · {{ fx.both_score_lean || '—' }}
+                          </n-text>
+                          <ResultHitTags :fixture="fx" />
+                        </n-space>
+                        <n-text
+                          v-else
+                          depth="3"
+                          style="display: block; margin-top: 4px; font-size: 11px;"
+                        >
+                          无赛前预测
+                        </n-text>
                       </n-thing>
                     </n-list-item>
                   </n-list>
@@ -583,13 +672,20 @@ onMounted(() => {
                         </n-space>
                       </template>
                       <template #header-extra>
-                        <n-tag
-                          size="small"
-                          :type="resultStatusTagType(fx.status, fx.status_short)"
-                          :bordered="false"
-                        >
-                          {{ statusLabel(fx.status, fx.status_short) }}
-                        </n-tag>
+                        <n-space :size="4" align="center">
+                          <FavoriteButton
+                            :fixture-id="fx.fixture_id"
+                            :result-fixture="fx"
+                            size="tiny"
+                          />
+                          <n-tag
+                            size="small"
+                            :type="resultStatusTagType(fx.status, fx.status_short)"
+                            :bordered="false"
+                          >
+                            {{ statusLabel(fx.status, fx.status_short) }}
+                          </n-tag>
+                        </n-space>
                       </template>
                       <n-grid :cols="3" :x-gap="8" style="align-items: center; font-weight: 600;">
                         <n-gi style="text-align: right; font-size: 13px;">
