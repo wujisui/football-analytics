@@ -12,8 +12,10 @@ const props = withDefaults(
     iconOnly?: boolean
     filterActive?: boolean
     confirming?: boolean
+    /** Mobile drawer: modal + stacked layout so content is not clipped. */
+    drawerMode?: boolean
   }>(),
-  { iconOnly: false, filterActive: false, confirming: false },
+  { iconOnly: false, filterActive: false, confirming: false, drawerMode: false },
 )
 
 const emit = defineEmits<{
@@ -72,7 +74,111 @@ function confirm() {
 </script>
 
 <template>
+  <template v-if="drawerMode">
+    <n-tooltip :disabled="!iconOnly" placement="right">
+      <template #trigger>
+        <n-button
+          size="tiny"
+          quaternary
+          class="league-filter-btn"
+          :class="{ 'is-icon-only': iconOnly }"
+          :type="filterActive ? 'primary' : 'default'"
+          aria-label="筛选联赛"
+          @click="show = true"
+        >
+          <template #icon>
+            <n-icon :component="FilterOutline" :size="14" />
+          </template>
+          <span v-if="!iconOnly">筛选</span>
+        </n-button>
+      </template>
+      联赛筛选
+    </n-tooltip>
+
+    <n-modal
+      v-model:show="show"
+      preset="card"
+      title="联赛筛选"
+      :style="{ width: 'min(420px, 92vw)' }"
+      :segmented="{ content: true, footer: true }"
+    >
+      <div class="league-filter-panel drawer-mode">
+        <n-scrollbar style="max-height: min(420px, 62vh);">
+          <n-checkbox-group v-model:value="draft">
+            <div class="sections-row stacked">
+              <div class="section">
+                <div class="section-title">联赛</div>
+                <n-space vertical :size="6">
+                  <n-checkbox
+                    v-for="opt in configuredOptions"
+                    :key="opt.league_id"
+                    :value="opt.league_id"
+                    :label="labelOf(opt)"
+                  />
+                </n-space>
+                <n-empty
+                  v-if="!configuredOptions.length"
+                  description="暂无配置联赛"
+                  style="padding: 8px 0;"
+                />
+              </div>
+              <div class="section">
+                <div class="section-title">其他联赛</div>
+                <n-space vertical :size="6">
+                  <n-checkbox
+                    v-for="opt in extraOptions"
+                    :key="opt.league_id"
+                    :value="opt.league_id"
+                    :label="labelOf(opt)"
+                  />
+                </n-space>
+                <n-empty
+                  v-if="!extraOptions.length"
+                  description="暂无其他联赛"
+                  style="padding: 8px 0;"
+                />
+              </div>
+            </div>
+          </n-checkbox-group>
+          <n-empty
+            v-if="!options.length"
+            description="今日暂无匹配联赛（可同步赛程后再试）"
+            style="padding: 16px 0;"
+          />
+        </n-scrollbar>
+      </div>
+      <template #footer>
+        <n-space justify="end" class="actions" :size="8">
+          <n-button
+            size="small"
+            quaternary
+            :disabled="!configuredOptions.length"
+            @click="selectConfigured"
+          >
+            仅配置
+          </n-button>
+          <n-button size="small" :disabled="!options.length" @click="selectAll">
+            全选
+          </n-button>
+          <n-button size="small" :disabled="!options.length" @click="invertSelection">
+            反选
+          </n-button>
+          <n-button
+            size="small"
+            type="primary"
+            :loading="confirming"
+            :disabled="!options.length"
+            @click="confirm"
+          >
+            确认
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+  </template>
+
   <n-popover
+    v-else
     v-model:show="show"
     trigger="click"
     placement="bottom-end"
@@ -186,15 +292,25 @@ function confirm() {
   gap: 10px;
 }
 
+.league-filter-panel.drawer-mode {
+  width: 100%;
+}
+
 .sections-row {
   display: flex;
   align-items: flex-start;
   gap: 16px;
 }
 
+.sections-row.stacked {
+  flex-direction: column;
+  gap: 14px;
+}
+
 .section {
   flex: 1;
   min-width: 0;
+  width: 100%;
 }
 
 .section-title {

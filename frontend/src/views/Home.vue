@@ -4,8 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 
 import FixtureList from '@/components/FixtureList.vue'
+import HomeDateStrip from '@/components/HomeDateStrip.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
-import PageToolbarActions from '@/components/PageToolbarActions.vue'
 import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 
 import LeagueFilterTrigger from '@/components/LeagueFilterTrigger.vue'
@@ -23,6 +23,12 @@ import {
 } from '@/utils/homeLeagueFilter'
 import { leagueNameZh } from '@/utils/leagueNames'
 import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
+import {
+  homeDayCountLabel,
+  homeDayKind,
+  homeDayStatusHint,
+  isHomeFixtureVisible,
+} from '@/utils/homeDateStrip'
 
 defineOptions({ name: 'Home' })
 
@@ -35,14 +41,12 @@ const isTabletDown = useIsTabletDown()
 const {
   todayDate,
   allFixtures,
-  windowLabel,
   loading,
   error,
   loadHomeFixtures,
 } = useHomeFixtures()
 
 const {
-  catalog,
   trackedIds,
   filterOptionsError,
   setTrackedIds,
@@ -67,30 +71,27 @@ const filterOptionById = computed(
   () => new Map(filterLeagueOptions.value.map((o) => [o.league_id, o])),
 )
 
-const ACTIVE_STATUSES = new Set(['pending', 'live'])
+const selectedDayKind = computed(() => homeDayKind(selectedDay.value, todayDate()))
 
-function isActiveFixture(status: string): boolean {
-  return ACTIVE_STATUSES.has(status.toLowerCase())
-}
-
-const trackedFixtures = computed(() =>
+const dayFixtures = computed(() =>
   allFixtures.value.filter(
-    (f) => trackedIdSet.value.has(f.league_id) && isActiveFixture(f.status),
+    (f) =>
+      trackedIdSet.value.has(f.league_id) &&
+      isHomeFixtureVisible(f.status, selectedDay.value, todayDate()),
   ),
 )
 
 const pendingCountByLeague = computed(() => {
   const map = new Map<number, number>()
-  for (const f of trackedFixtures.value) {
+  for (const f of dayFixtures.value) {
     map.set(f.league_id, (map.get(f.league_id) || 0) + 1)
   }
   return map
 })
 
-/** Left menu derived only from tracked fixtures (+ filter option names). */
 const menuLeagues = computed((): LeagueSummaryResponse[] => {
   const map = new Map<number, LeagueSummaryResponse>()
-  for (const f of trackedFixtures.value) {
+  for (const f of dayFixtures.value) {
     const opt = filterOptionById.value.get(f.league_id)
     const count = pendingCountByLeague.value.get(f.league_id) || 0
     map.set(f.league_id, {
@@ -104,7 +105,7 @@ const menuLeagues = computed((): LeagueSummaryResponse[] => {
   return [...map.values()]
 })
 
-const totalPending = computed(() => trackedFixtures.value.length)
+const totalPending = computed(() => dayFixtures.value.length)
 
 const selectedLeague = computed(() => {
   if (selectedLeagueId.value == null) return null
@@ -112,7 +113,7 @@ const selectedLeague = computed(() => {
 })
 
 const leagueFilteredFixtures = computed(() => {
-  let list = trackedFixtures.value
+  let list = dayFixtures.value
   if (selectedLeagueId.value != null) {
     list = list.filter((f) => f.league_id === selectedLeagueId.value)
   }
@@ -135,6 +136,7 @@ const displayedFixtures = computed(() =>
 
 const emptyText = computed(() => {
   if (error.value) return ''
+  const statusHint = homeDayStatusHint(selectedDayKind.value)
   if (
     isDayAutoSynced(selectedDay.value) &&
     !allFixtures.value.length &&
@@ -142,26 +144,26 @@ const emptyText = computed(() => {
   ) {
     return `${selectedDay.value} 当日没有比赛数据`
   }
-  if (!filterLeagueOptions.value.length && !trackedFixtures.value.length) {
+  if (!filterLeagueOptions.value.length && !dayFixtures.value.length) {
     return '暂无匹配联赛，正在拉取配置联赛赛程…'
   }
   if (!trackedIds.value.length) {
     return '请先在「筛选」中勾选要关注的联赛'
   }
   if (!displayedFixtures.value.length && !teamSearch.value.trim()) {
-    return `${selectedDay.value} 暂无未完赛赛事`
+    return `${selectedDay.value} 暂无${statusHint}赛事`
   }
   const teamHint = teamSearchEmptyHint(teamSearch.value)
   if (teamHint && sortedFixtures.value.length) return teamHint
   if (selectedLeagueId.value == null) {
-    return `${selectedDay.value} 勾选联赛暂无未完赛赛事`
+    return `${selectedDay.value} 勾选联赛暂无${statusHint}赛事`
   }
   const name = leagueNameZh(selectedLeague.value?.league_name) || '该联赛'
-  return `${selectedDay.value} 暂无${name}未完赛赛事`
+  return `${selectedDay.value} 暂无${name}${statusHint}赛事`
 })
 
-const listTitle = computed(() =>
-  selectedLeague.value ? leagueNameZh(selectedLeague.value.league_name) : '全部比赛',
+const dayCountLabel = computed(() =>
+  homeDayCountLabel(selectedDayKind.value, displayedFixtures.value.length),
 )
 
 const breadcrumbFilter = computed(() =>
@@ -204,10 +206,8 @@ function syncLeagueFromRoute() {
   }
 }
 
-function leagueIdsForSync(): number[] {
-  return trackedIds.value.length > 0
-    ? trackedIds.value
-    : catalog.value.map((l) => l.league_id)
+function leagueIdsForSync(): number[] | undefined {
+  return trackedIds.value.length ? trackedIds.value : undefined
 }
 
 async function loadDayLocal(force = false) {
@@ -220,10 +220,9 @@ async function loadDayLocal(force = false) {
 }
 
 async function runSync(
-  leagueIds: number[],
+  leagueIds: number[] | undefined,
   opts?: { days?: number; date?: string },
 ) {
-  if (!leagueIds.length) return false
   syncing.value = true
   try {
     await syncFixtures({
@@ -247,18 +246,21 @@ async function runSync(
 
 async function refreshDayData() {
   const day = selectedDay.value
-  const ids = leagueIdsForSync()
 
   await loadDayLocal(false)
 
-  if (!ids.length) return
   if (!shouldAutoSyncDay(day, allFixtures.value.length > 0)) return
 
-  const synced = await runSync(ids, { date: day, days: 1 })
-  markDayAutoSynced(day)
-  if (!synced) {
-    await loadDayLocal(false)
+  await runSync(leagueIdsForSync(), { date: day, days: 1 })
+}
+
+async function reloadFilterAndDay() {
+  try {
+    await loadFilterOptions({ date: selectedDay.value, discover: true })
+  } catch {
+    if (filterOptionsError.value) message.warning(filterOptionsError.value)
   }
+  await refreshDayData()
 }
 
 async function confirmFilter(ids: number[]) {
@@ -280,11 +282,10 @@ async function confirmFilter(ids: number[]) {
     return !!opt && !opt.locally_loaded
   })
   if (needFetch.length) {
-    const synced = await runSync(needFetch, {
+    await runSync(needFetch, {
       days: 1,
       date: selectedDay.value,
     })
-    if (synced) markDayAutoSynced(selectedDay.value)
   }
 }
 
@@ -326,16 +327,11 @@ watch(
 )
 
 watch(selectedDay, () => {
-  void refreshDayData()
+  void reloadFilterAndDay()
 })
 
-onMounted(async () => {
-  try {
-    await loadFilterOptions({ discover: true })
-  } catch {
-    if (filterOptionsError.value) message.warning(filterOptionsError.value)
-  }
-  await refreshDayData()
+onMounted(() => {
+  void reloadFilterAndDay()
 })
 
 onActivated(() => {
@@ -405,18 +401,14 @@ onActivated(() => {
             <n-breadcrumb-item @click="selectLeague(null)">赛前赛事</n-breadcrumb-item>
             <n-breadcrumb-item>{{ breadcrumbFilter }}</n-breadcrumb-item>
           </n-breadcrumb>
-          <PageToolbarActions v-model:date="selectedDay" />
         </div>
 
-        <n-page-header :title="listTitle" class="fa-page-toolbar-header">
-          <template #subtitle>
-            <span v-if="windowLabel" class="window-meta">{{ windowLabel }}</span>
-            <span class="window-meta">未完赛 {{ displayedFixtures.length }} 场</span>
-          </template>
-          <template #extra>
-            <PageToolbarSearch v-model="teamSearch" />
-          </template>
-        </n-page-header>
+        <HomeDateStrip v-model="selectedDay" />
+
+        <div class="home-list-meta">
+          <span class="day-stat">{{ dayCountLabel }}</span>
+          <PageToolbarSearch v-model="teamSearch" />
+        </div>
       </n-layout-header>
 
       <div ref="listShellRef" class="home-content home-list-shell">
@@ -441,6 +433,7 @@ onActivated(() => {
               <FixtureList
                 :fixtures="displayedFixtures"
                 :empty-description="emptyText"
+                :group-by-day="false"
               />
             </div>
           </n-spin>
@@ -454,11 +447,12 @@ onActivated(() => {
     v-if="isPhone"
     v-model:show="leagueDrawerShow"
     placement="left"
-    :width="300"
+    width="88%"
     to="body"
     display-directive="show"
+    class="league-drawer"
   >
-    <n-drawer-content title="联赛" closable :native-scrollbar="false">
+    <n-drawer-content title="联赛" closable :native-scrollbar="false" body-content-style="padding: 0; height: 100%; display: flex; flex-direction: column;">
       <LeagueMenu
         :leagues="menuLeagues"
         :selected-league-id="selectedLeagueId"
@@ -470,6 +464,7 @@ onActivated(() => {
       >
         <template #filter>
           <LeagueFilterTrigger
+            drawer-mode
             :options="filterLeagueOptions"
             :tracked-ids="trackedIds"
             :filter-active="filterActive"
@@ -500,9 +495,26 @@ onActivated(() => {
   flex-shrink: 0;
 }
 
-.window-meta + .window-meta::before {
-  content: ' · ';
-  color: var(--fa-text-faint);
+:deep(.league-drawer .n-drawer-body-content-wrapper) {
+  height: 100%;
+}
+
+:deep(.league-drawer .league-menu) {
+  height: 100%;
+}
+
+.home-list-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 4px;
+}
+
+.day-stat {
+  font-size: 13px;
+  color: var(--fa-text-secondary);
+  white-space: nowrap;
 }
 
 .home-content {

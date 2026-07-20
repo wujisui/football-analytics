@@ -12,8 +12,10 @@ const props = withDefaults(
     emptyDescription?: string
     /** full = odds+prediction card; prediction = algorithm card only */
     mode?: 'full' | 'prediction'
+    /** Date section bands (07/17 周五); off for single-day home list. */
+    groupByDay?: boolean
   }>(),
-  { mode: 'full' },
+  { mode: 'full', groupByDay: true },
 )
 
 type DayGroup = {
@@ -28,6 +30,7 @@ function daySectionLabel(sampleIso: string): string {
 }
 
 const dayGroups = computed((): DayGroup[] => {
+  if (!props.groupByDay) return []
   const map = new Map<string, FixtureResponse[]>()
   for (const f of props.fixtures) {
     const key = toLocalDayKey(f.fixture_date)
@@ -52,7 +55,7 @@ const dayGroups = computed((): DayGroup[] => {
       :description="emptyDescription || '近期暂无该联赛赛事'"
       class="empty"
     />
-    <template v-else>
+    <template v-else-if="groupByDay">
       <section
         v-for="group in dayGroups"
         :key="group.key"
@@ -87,6 +90,24 @@ const dayGroups = computed((): DayGroup[] => {
         </n-space>
       </section>
     </template>
+    <n-space v-else vertical :size="14" class="day-cards">
+      <template v-if="mode === 'prediction'">
+        <AlgorithmPredictionCard
+          v-for="fixture in fixtures"
+          :key="fixture.fixture_id"
+          :fixture="fixture"
+          standalone
+          from="predictions"
+        />
+      </template>
+      <template v-else>
+        <FixtureCard
+          v-for="fixture in fixtures"
+          :key="fixture.fixture_id"
+          :fixture="fixture"
+        />
+      </template>
+    </n-space>
   </div>
 </template>
 

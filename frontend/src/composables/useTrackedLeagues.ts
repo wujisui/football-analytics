@@ -46,7 +46,7 @@ function allFilterOptions(): LeagueFilterOption[] {
   return [...data.configured, ...data.extra]
 }
 
-/** Prune preference to current options; default = configured (default_checked) only. */
+/** Prune preference to current options; default = all default_checked leagues. */
 function syncTrackedWithFilterOptions() {
   const options = allFilterOptions()
   const allow = new Set(options.map((o) => o.league_id))

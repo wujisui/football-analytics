@@ -3,6 +3,9 @@ import { ref } from 'vue'
 import { fetchTodayFixtures } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
 import { oddsPackageToSnippet } from '@/utils/oddsDisplay'
+import { todayDate } from '@/utils/homeDateStrip'
+
+export { todayDate }
 
 /** Reuse list data across page remounts (detail → back) within this TTL. */
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -14,19 +17,6 @@ const loading = ref(false)
 const error = ref('')
 let loadedKey = ''
 let inflight: Promise<void> | null = null
-
-function isoDate(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-export function todayDate(): string {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  return isoDate(d)
-}
 
 function cacheKey(date: string, days: number): string {
   return `${date}|${days}`
@@ -42,7 +32,7 @@ function cacheFresh(date: string, days: number): boolean {
 
 function formatWindowLabel(startDate: string, days: number): string {
   const today = todayDate()
-  if (days === 1 && startDate === today) return `${startDate}`
+  if (days === 1 && startDate === today) return startDate
   return days > 1 ? `${startDate} 起 ${days} 天` : startDate
 }
 

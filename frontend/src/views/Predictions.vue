@@ -20,7 +20,7 @@ const isPhone = useIsPhone()
 const message = useMessage()
 const { todayDate, allFixtures, windowLabel, loading, error, loadHomeFixtures } =
   useHomeFixtures()
-const { catalog, trackedIds, loadFilterOptions } = useTrackedLeagues()
+const { trackedIds, loadFilterOptions } = useTrackedLeagues()
 
 const selectedDay = ref(todayDate())
 const teamSearch = ref('')
@@ -74,10 +74,8 @@ const emptyText = computed(() => {
   return `${selectedDay.value} 暂无未完赛预测`
 })
 
-function leagueIdsForSync(): number[] {
-  return trackedIds.value.length > 0
-    ? trackedIds.value
-    : catalog.value.map((l) => l.league_id)
+function leagueIdsForSync(): number[] | undefined {
+  return trackedIds.value.length ? trackedIds.value : undefined
 }
 
 async function loadDayLocal(force = false) {
@@ -93,7 +91,7 @@ async function refreshDayData() {
   await loadDayLocal(false)
 
   const ids = leagueIdsForSync()
-  if (!ids.length || !shouldAutoSyncDay(day, allFixtures.value.length > 0)) return
+  if (!shouldAutoSyncDay(day, allFixtures.value.length > 0)) return
 
   syncing.value = true
   try {
