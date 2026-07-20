@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MoonOutline, SunnyOutline } from '@vicons/ionicons5'
+import { MoonOutline, StarOutline, SunnyOutline } from '@vicons/ionicons5'
 import {
   NConfigProvider,
   NIcon,
@@ -14,7 +14,9 @@ import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { useFavoritesDrawer } from '@/composables/useFavoritesDrawer'
 import { useTheme } from '@/composables/useTheme'
+import FavoritesDrawer from '@/components/FavoritesDrawer.vue'
 import { parseDetailFrom } from '@/utils/detailNav'
 import { homeRouteWithLeague } from '@/utils/homeLeagueFilter'
 
@@ -22,12 +24,15 @@ const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
+const { show: favoritesDrawerShow, toggle: toggleFavoritesDrawer } = useFavoritesDrawer()
 
 const activeNav = computed(() => {
+  if (favoritesDrawerShow.value) return 'favorites'
   if (route.name === 'results') return 'results'
   if (route.name === 'predictions') return 'predictions'
   if (route.name === 'fixture-detail') {
     const from = parseDetailFrom(route.query.from)
+    if (from === 'favorites') return 'favorites'
     if (from === 'results') return 'results'
     if (from === 'predictions') return 'predictions'
   }
@@ -39,6 +44,7 @@ function goHome() {
 }
 
 function goNav(name: 'home' | 'predictions' | 'results') {
+  if (favoritesDrawerShow.value) toggleFavoritesDrawer()
   if (route.name === name) return
   if (name === 'home') {
     goHome()
@@ -111,6 +117,16 @@ watch(
               >
                 赛果
               </button>
+              <button
+                type="button"
+                class="nav-seg-btn nav-seg-btn-icon"
+                :class="{ active: activeNav === 'favorites' }"
+                aria-label="收藏"
+                @click="toggleFavoritesDrawer"
+              >
+                <n-icon :size="16" :component="StarOutline" />
+                <span v-if="!isPhone" class="nav-seg-label">收藏</span>
+              </button>
             </div>
           </nav>
 
@@ -140,12 +156,13 @@ watch(
       >
         <!-- Keep Home alive so list scroll / filter UI survive detail round-trips. -->
         <router-view v-slot="{ Component }">
-          <keep-alive :include="['Home', 'Predictions']">
+          <keep-alive :include="['Home', 'Predictions', 'Results']">
             <component :is="Component" />
           </keep-alive>
         </router-view>
       </n-layout-content>
     </n-layout>
+    <FavoritesDrawer />
     </n-message-provider>
   </n-config-provider>
 </template>
@@ -263,6 +280,17 @@ watch(
   color: var(--fa-text-strong, var(--fa-text));
   background: var(--fa-bg-elevated);
   box-shadow: 0 1px 3px var(--fa-hover-shadow);
+}
+
+.nav-seg-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 10px;
+}
+
+.nav-seg-label {
+  font-size: 13px;
 }
 
 .nav-seg-btn:focus-visible {

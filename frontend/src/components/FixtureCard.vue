@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
+import FavoriteButton from '@/components/FavoriteButton.vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import type { FixtureResponse } from '@/api/types'
 import { useIsPhone } from '@/composables/useMediaQuery'
@@ -37,6 +38,13 @@ const awayLabel = computed(() => {
   return rank ? `${awayName.value} ${rank}` : awayName.value
 })
 
+const scoreText = computed(() => {
+  const h = props.fixture.home_goals
+  const a = props.fixture.away_goals
+  if (h == null || a == null) return null
+  return `${h}:${a}`
+})
+
 function goDetail() {
   void router.push(fixtureDetailRoute(props.fixture.fixture_id, { from: 'home' }))
 }
@@ -61,6 +69,11 @@ function goDetail() {
       <n-tag size="small" :type="statusTagType(fixture.status)" :bordered="false">
         {{ statusLabel(fixture.status) }}
       </n-tag>
+      <FavoriteButton
+        :fixture-id="fixture.fixture_id"
+        :fixture="fixture"
+        size="tiny"
+      />
     </header>
 
     <div v-if="!isPhone" class="matchup">
@@ -70,14 +83,29 @@ function goDetail() {
           <button
             type="button"
             class="vs"
+            :class="{ score: scoreText }"
             :aria-label="FIXTURE_DETAIL_TOOLTIP"
             @click="goDetail"
           >
-            VS
+            {{ scoreText ?? 'VS' }}
           </button>
         </template>
         {{ FIXTURE_DETAIL_TOOLTIP }}
       </n-tooltip>
+      <span class="team away">{{ awayLabel }}</span>
+    </div>
+
+    <div v-else class="matchup phone-matchup">
+      <span class="team home">{{ homeLabel }}</span>
+      <button
+        type="button"
+        class="vs"
+        :class="{ score: scoreText }"
+        :aria-label="FIXTURE_DETAIL_TOOLTIP"
+        @click="goDetail"
+      >
+        {{ scoreText ?? 'VS' }}
+      </button>
       <span class="team away">{{ awayLabel }}</span>
     </div>
 
@@ -172,6 +200,20 @@ function goDetail() {
   outline: 2px solid var(--fa-highlight-border);
   outline-offset: 2px;
   border-radius: 2px;
+}
+
+.vs.score {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.phone-matchup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 2px 0;
 }
 
 .summary-grid {

@@ -2,7 +2,7 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import { homeRouteWithLeague } from '@/utils/homeLeagueFilter'
 
-export type DetailFrom = 'home' | 'results' | 'predictions'
+export type DetailFrom = 'home' | 'results' | 'predictions' | 'favorites'
 
 export type DetailTab = 'record' | 'stats' | 'lineup' | 'briefing' | 'prediction'
 
@@ -10,7 +10,7 @@ export type DetailTab = 'record' | 'stats' | 'lineup' | 'briefing' | 'prediction
 export const FIXTURE_DETAIL_TOOLTIP = '查看详细分析'
 
 export function parseDetailFrom(raw: unknown): DetailFrom {
-  if (raw === 'results' || raw === 'predictions') return raw
+  if (raw === 'results' || raw === 'predictions' || raw === 'favorites') return raw
   return 'home'
 }
 
@@ -45,6 +45,7 @@ export function fixtureDetailRoute(
 export function detailRootLabel(from: DetailFrom): string {
   if (from === 'results') return '赛果'
   if (from === 'predictions') return '预测'
+  if (from === 'favorites') return '收藏'
   return '赛前赛事'
 }
 
@@ -62,6 +63,9 @@ export function detailBackRoute(
   }
   if (from === 'predictions') {
     return { name: 'predictions' }
+  }
+  if (from === 'favorites') {
+    return homeRouteWithLeague()
   }
   // Omit leagueId → restore session filter; pass id for「联赛」crumb.
   if (opts && 'leagueId' in opts) {

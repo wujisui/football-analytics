@@ -24,6 +24,10 @@ const router = createRouter({
       component: Results,
     },
     {
+      path: '/favorites',
+      redirect: { name: 'home' },
+    },
+    {
       path: '/fixture/:fixtureId',
       name: 'fixture-detail',
       component: Detail,

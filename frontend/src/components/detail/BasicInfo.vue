@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import FavoriteButton from '@/components/FavoriteButton.vue'
 import type { FixtureResponse } from '@/api/types'
 import {
   formatDateTime,
@@ -114,6 +115,9 @@ function goLeague() {
           </n-tag>
           <span class="kickoff">{{ formatDateTime(fixture.fixture_date) }}</span>
         </div>
+      </template>
+      <template #extra>
+        <FavoriteButton :fixture-id="fixture.fixture_id" :fixture="fixture" />
       </template>
     </n-page-header>
   </div>
