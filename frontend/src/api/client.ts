@@ -8,6 +8,10 @@ export const apiClient = axios.create({
   timeout: 15000,
   // FastAPI list query expects league_ids=1&league_ids=2 (not league_ids[]=).
   paramsSerializer: { indexes: null },
+  headers: {
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+  },
 })
 
 export const analysisClient = axios.create({

@@ -181,6 +181,11 @@ def prematch_package_needs_refresh_from_stored(
     return prematch_package_needs_refresh(package, history_tag=history_tag)
 
 
+def package_needs_odds_fetch(package: dict[str, Any]) -> bool:
+    odds = package.get("odds") or {}
+    return not odds.get("available") and not odds.get("fetched")
+
+
 def parse_team_form(payload: dict[str, Any], team_id: int) -> TeamFormStats:
     stats = TeamFormStats()
     finished_statuses = {"FT", "AET", "PEN"}
@@ -244,6 +249,12 @@ class AnalyzerService:
         except Exception as exc:
             logger.warning("Failed to fetch form for team %s: %s", team_id, exc)
             return TeamFormStats()
+
+    async def _get_stored_pre_match_row(self, fixture_id: int) -> PreMatchData | None:
+        result = await self.session.execute(
+            select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
+        )
+        return result.scalar_one_or_none()
 
     async def _save_pre_match_data(
         self,
@@ -409,14 +420,8 @@ class AnalyzerService:
             leans_frozen=has_frozen,
         )
 
-    async def _collect_prematch_package(
-        self,
-        fetcher: FootballFetcher,
-        fixture: Fixture,
-        ttl: int,
-    ) -> dict[str, Any]:
-        """Fetch package pieces in parallel (each failure is isolated)."""
-        package: dict[str, Any] = {
+    def _empty_prematch_package(self) -> dict[str, Any]:
+        return {
             "odds": {"available": False},
             "odds_opening": {"available": False},
             "lineups": {"available": False, "home": None, "away": None},
@@ -427,6 +432,142 @@ class AnalyzerService:
             "standings": {"available": False},
             "briefing": {"available": False, "fetched": False},
         }
+
+    async def _fetch_odds_for_package(
+        self,
+        fetcher: FootballFetcher,
+        fixture: Fixture,
+        package: dict[str, Any],
+        ttl: int,
+    ) -> None:
+        """Pull one official odds board into ``package`` when local DB has none."""
+        result = await self.session.execute(
+            select(PreMatchData).where(PreMatchData.fixture_id == fixture.id)
+        )
+        stored = result.scalar_one_or_none()
+        local = (
+            rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
+            if stored and stored.odds_json
+            else {"available": False}
+        )
+        if local.get("available"):
+            package["odds"] = local
+            return
+        if local.get("fetched"):
+            package["odds"] = {"available": False, "fetched": True}
+            return
+        raw = await fetcher.fetch_odds(fixture.id, ttl=ttl)
+        parsed = rehydrate_odds_markets(parse_odds_payload(raw))
+        if parsed.get("available"):
+            package["odds"] = parsed
+        else:
+            package["odds"] = {"available": False, "fetched": True}
+
+    async def _early_fetch_and_store_odds(
+        self,
+        fixture: Fixture,
+        stored: PreMatchData | None,
+        ttl: int,
+    ) -> PreMatchData | None:
+        """One odds API call, persist immediately so list cards can refresh."""
+        package = package_from_record(stored) if stored else self._empty_prematch_package()
+        if not package_needs_odds_fetch(package):
+            return stored
+
+        async with FootballFetcher(session=self.session, cache=self.cache) as fetcher:
+            try:
+                await self._fetch_odds_for_package(fetcher, fixture, package, ttl)
+            except Exception as exc:
+                logger.warning(
+                    "Early odds fetch failed for fixture %s: %s", fixture.id, exc
+                )
+                return stored
+
+        odds = package.get("odds") or {}
+        if not odds.get("available") and not odds.get("fetched"):
+            return stored
+
+        from app.services.prediction import resolve_match_probabilities
+
+        if stored is not None and None not in (
+            stored.home_win_prob,
+            stored.draw_prob,
+            stored.away_win_prob,
+        ):
+            home_p = stored.home_win_prob
+            draw_p = stored.draw_prob
+            away_p = stored.away_win_prob
+        else:
+            probs = resolve_match_probabilities(
+                {"home": DEFAULT_PROB, "draw": DEFAULT_PROB, "away": DEFAULT_PROB},
+                odds if odds.get("available") else None,
+            )
+            home_p = probs["home"]
+            draw_p = probs["draw"]
+            away_p = probs["away"]
+
+        await self._save_pre_match_data(
+            fixture.id,
+            home_p,
+            draw_p,
+            away_p,
+            package=package,
+            features=None,
+            model_source=None,
+        )
+        await self.cache.delete(analysis_cache_key(fixture.id))
+        refreshed = await self._get_stored_pre_match_row(fixture.id)
+        return refreshed
+
+    async def _try_serve_after_early_odds(
+        self,
+        *,
+        fixture: Fixture,
+        fixture_id: int,
+        home_name: str,
+        away_name: str,
+        league_name: str,
+        cache_key: str,
+        refresh_ttl: int,
+    ) -> AnalysisResult | None:
+        """One odds API call + persist; return when list/detail can render immediately."""
+        stored_any = await self._get_stored_pre_match_row(fixture_id)
+        if stored_any is None or package_needs_odds_fetch(
+            package_from_record(stored_any)
+        ):
+            stored_any = (
+                await self._early_fetch_and_store_odds(fixture, stored_any, refresh_ttl)
+                or stored_any
+            )
+        if stored_any is None or None in (
+            stored_any.home_win_prob,
+            stored_any.draw_prob,
+            stored_any.away_win_prob,
+        ):
+            return None
+        odds_state = package_from_record(stored_any).get("odds") or {}
+        if not (odds_state.get("available") or odds_state.get("fetched")):
+            return None
+        result = self._result_from_pre_match(
+            fixture,
+            home_name,
+            away_name,
+            league_name,
+            stored_any,
+            confidence="中",
+        )
+        await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
+        logger.info("Analysis served after early odds for fixture %s", fixture_id)
+        return result
+
+    async def _collect_prematch_package(
+        self,
+        fetcher: FootballFetcher,
+        fixture: Fixture,
+        ttl: int,
+    ) -> dict[str, Any]:
+        """Fetch package pieces sequentially (AsyncSession-safe). Odds first."""
+        package = self._empty_prematch_package()
         league = fixture.league
         season = (
             league.season
@@ -464,35 +605,8 @@ class AnalyzerService:
             )
 
         async def _odds() -> None:
-            """Local board first; if missing, pull official /odds?fixture= once.
-
-            Empty official coverage is persisted as fetched=true so detail does
-            not retry-storm. Batch sync still refreshes boards for the window.
-            """
-            result = await self.session.execute(
-                select(PreMatchData).where(PreMatchData.fixture_id == fixture.id)
-            )
-            stored = result.scalar_one_or_none()
-            local = (
-                rehydrate_odds_markets(
-                    loads_json(stored.odds_json, {"available": False})
-                )
-                if stored and stored.odds_json
-                else {"available": False}
-            )
-            if local.get("available"):
-                package["odds"] = local
-                return
-            if local.get("fetched"):
-                package["odds"] = {"available": False, "fetched": True}
-                return
             try:
-                raw = await fetcher.fetch_odds(fixture.id, ttl=ttl)
-                parsed = rehydrate_odds_markets(parse_odds_payload(raw))
-                if parsed.get("available"):
-                    package["odds"] = parsed
-                else:
-                    package["odds"] = {"available": False, "fetched": True}
+                await self._fetch_odds_for_package(fetcher, fixture, package, ttl)
             except Exception:
                 package["odds"] = {"available": False, "fetched": True}
                 raise
@@ -541,13 +655,12 @@ class AnalyzerService:
                 }
                 raise
 
-        # Run sequentially: shared AsyncSession cannot safely serve concurrent awaits
-        # (parallel gather previously caused intermittent 500 on first detail open).
+        # Run sequentially: shared AsyncSession cannot safely serve concurrent awaits.
         for label, coro_factory in (
+            ("odds", _odds),
             ("H2H", _h2h),
             ("home_form", _home_form),
             ("away_form", _away_form),
-            ("odds", _odds),
             ("standings", _standings),
             ("lineups", _lineups),
             ("injuries", _injuries),
@@ -752,12 +865,27 @@ class AnalyzerService:
         league_name = league.name if league else f"League {fixture.league_id}"
         season = league.season if league and league.season else str(datetime.now().year)
 
-        # Local-first: reuse stored analysis until kickoff-based refresh is due.
         settings = get_settings()
+        refresh_ttl = self._analysis_refresh_ttl(fixture) or TTL_ANALYSIS
+
+        if include_package:
+            early = await self._try_serve_after_early_odds(
+                fixture=fixture,
+                fixture_id=fixture_id,
+                home_name=home_name,
+                away_name=away_name,
+                league_name=league_name,
+                cache_key=cache_key,
+                refresh_ttl=refresh_ttl,
+            )
+            if early is not None:
+                return early
+
+        # Local-first: reuse stored analysis until kickoff-based refresh is due.
         if settings.LOCAL_FIRST:
             stored = await self._get_fresh_pre_match(fixture_id, fixture)
             if stored is not None:
-                history_tag = get_settings().history_source_tag
+                history_tag = settings.history_source_tag
                 if include_package and prematch_package_needs_refresh_from_stored(
                     stored,
                     history_tag=history_tag,
@@ -784,7 +912,6 @@ class AnalyzerService:
 
         home_form = TeamFormStats()
         away_form = TeamFormStats()
-        refresh_ttl = self._analysis_refresh_ttl(fixture) or TTL_ANALYSIS
         api_budget = max(2.0, float(settings.ANALYSIS_API_BUDGET_SECONDS))
 
         async def _enrich_from_api() -> None:

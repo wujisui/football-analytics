@@ -2,7 +2,7 @@ import { ref } from 'vue'
 
 import { fetchTodayFixtures } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
-import { oddsPackageToSnippet } from '@/utils/oddsDisplay'
+import { oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 import { todayDate } from '@/utils/homeDateStrip'
 
 export { todayDate }
@@ -18,6 +18,10 @@ const error = ref('')
 let loadedKey = ''
 let inflight: Promise<void> | null = null
 
+/** Detail wrote odds/analysis to DB — refresh list when returning to Home. */
+let detailListDirty = false
+const pendingDetailPatches = new Map<number, FixtureResponse>()
+
 function cacheKey(date: string, days: number): string {
   return `${date}|${days}`
 }
@@ -30,18 +34,67 @@ function cacheFresh(date: string, days: number): boolean {
   )
 }
 
-function formatWindowLabel(startDate: string, days: number): string {
-  const today = todayDate()
-  if (days === 1 && startDate === today) return startDate
-  return days > 1 ? `${startDate} 起 ${days} 天` : startDate
+function mergeDetailIntoFixture(
+  prev: FixtureResponse,
+  detail: FixtureResponse,
+): FixtureResponse {
+  const snippet = oddsSnippetFromFixture(detail) ?? prev.odds_snippet
+  return {
+    ...prev,
+    home_rank: detail.home_rank ?? prev.home_rank,
+    away_rank: detail.away_rank ?? prev.away_rank,
+    odds_snippet: snippet,
+    analysis: detail.analysis ?? prev.analysis,
+  }
 }
 
-const windowLabel = ref(formatWindowLabel(todayDate(), DEFAULT_DAYS))
+function applyPendingPatches(): void {
+  if (!pendingDetailPatches.size || !allFixtures.value.length) return
+
+  let rows = allFixtures.value
+  let changed = false
+  for (const [fixtureId, detail] of pendingDetailPatches) {
+    const idx = rows.findIndex((f) => f.fixture_id === fixtureId)
+    if (idx < 0) continue
+    rows = rows.map((row, i) =>
+      i === idx ? mergeDetailIntoFixture(row, detail) : row,
+    )
+    pendingDetailPatches.delete(fixtureId)
+    changed = true
+  }
+  if (changed) allFixtures.value = rows
+}
+
+/**
+ * Merge detail analysis into the shared home/predictions list cache.
+ * Queues the patch when the list row is not loaded yet.
+ */
+export function patchFixtureFromDetail(detail: FixtureResponse): void {
+  detailListDirty = true
+  pendingDetailPatches.set(detail.fixture_id, detail)
+
+  const idx = allFixtures.value.findIndex((f) => f.fixture_id === detail.fixture_id)
+  if (idx < 0) return
+
+  allFixtures.value = allFixtures.value.map((row, i) =>
+    i === idx ? mergeDetailIntoFixture(row, detail) : row,
+  )
+  pendingDetailPatches.delete(detail.fixture_id)
+}
+
+/** Apply queued patches; reload local list only when a patch could not merge yet. */
+export function syncHomeListAfterDetail(date: string): void {
+  applyPendingPatches()
+  if (!detailListDirty) return
+  detailListDirty = false
+  if (pendingDetailPatches.size > 0) {
+    void loadHomeFixtures({ force: true, date, days: 1 })
+  }
+}
 
 /**
  * Load fixtures for a single calendar day from local API only.
- * Client filters by tracked league ids — do not narrow with league_ids here
- * (extras from the reference catalog must remain visible after sync).
+ * Client filters by tracked league ids — do not narrow with league_ids here.
  */
 async function loadHomeFixtures(options?: {
   force?: boolean
@@ -53,6 +106,7 @@ async function loadHomeFixtures(options?: {
 
   if (!options?.force && cacheFresh(date, days)) {
     loading.value = false
+    applyPendingPatches()
     return
   }
   if (inflight) return inflight
@@ -63,9 +117,9 @@ async function loadHomeFixtures(options?: {
     try {
       const fixturesData = await fetchTodayFixtures({ date, days })
       allFixtures.value = fixturesData.fixtures
-      windowLabel.value = formatWindowLabel(fixturesData.date, fixturesData.days)
       loadedAt.value = Date.now()
       loadedKey = cacheKey(date, days)
+      applyPendingPatches()
     } catch (err) {
       error.value = err instanceof Error ? err.message : '获取失败'
       throw err
@@ -78,33 +132,14 @@ async function loadHomeFixtures(options?: {
   return inflight
 }
 
-/** Merge detail fetch into home list cache (odds_snippet, ranks). */
-export function patchFixtureFromDetail(fixture: FixtureResponse): void {
-  const idx = allFixtures.value.findIndex((f) => f.fixture_id === fixture.fixture_id)
-  if (idx < 0) return
-
-  const prev = allFixtures.value[idx]
-  const snippet =
-    fixture.odds_snippet ??
-    oddsPackageToSnippet(fixture.analysis?.package?.odds ?? null)
-
-  const next: FixtureResponse = {
-    ...prev,
-    home_rank: fixture.home_rank ?? prev.home_rank,
-    away_rank: fixture.away_rank ?? prev.away_rank,
-    odds_snippet: snippet ?? prev.odds_snippet,
-  }
-  allFixtures.value = allFixtures.value.map((row, i) => (i === idx ? next : row))
-}
-
 export function useHomeFixtures() {
   return {
     todayDate,
     allFixtures,
-    windowLabel,
     loading,
     error,
     loadHomeFixtures,
     patchFixtureFromDetail,
+    syncHomeListAfterDetail,
   }
 }

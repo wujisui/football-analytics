@@ -1,4 +1,4 @@
-import type { FixtureOddsSnippet, LineOdds, OddsPackage } from '@/api/types'
+import type { FixtureOddsSnippet, LineOdds, OddsPackage, FixtureResponse } from '@/api/types'
 
 export type OddsLike = FixtureOddsSnippet | OddsPackage | null | undefined
 
@@ -34,4 +34,14 @@ export function oddsPackageToSnippet(
     asian_handicap: odds.asian_handicap,
     goals_ou: odds.goals_ou,
   }
+}
+
+/** Prefer list snippet; fall back to detail package odds. */
+export function oddsSnippetFromFixture(
+  fixture: Pick<FixtureResponse, 'odds_snippet' | 'analysis'>,
+): FixtureOddsSnippet | null {
+  return (
+    fixture.odds_snippet ??
+    oddsPackageToSnippet(fixture.analysis?.package?.odds ?? null)
+  )
 }

@@ -1,6 +1,9 @@
 import type { RouteLocationRaw } from 'vue-router'
 
-import { homeRouteWithLeague } from '@/utils/homeLeagueFilter'
+import {
+  fixturesRouteWithLeague,
+  homeRouteWithLeague,
+} from '@/utils/fixturesLeagueFilter'
 
 export type DetailFrom = 'home' | 'results' | 'predictions' | 'favorites'
 
@@ -56,13 +59,16 @@ export function detailBackRoute(
 ): RouteLocationRaw {
   if (from === 'results') {
     const date = opts?.date
-    return {
-      name: 'results',
-      query: typeof date === 'string' && date ? { date } : {},
-    }
+    const extra =
+      typeof date === 'string' && date ? { date } : undefined
+    return fixturesRouteWithLeague(
+      'results',
+      opts && 'leagueId' in opts ? opts.leagueId ?? null : undefined,
+      extra,
+    )
   }
   if (from === 'predictions') {
-    return { name: 'predictions' }
+    return fixturesRouteWithLeague('predictions')
   }
   if (from === 'favorites') {
     return homeRouteWithLeague()
