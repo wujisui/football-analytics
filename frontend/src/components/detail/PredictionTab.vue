@@ -5,8 +5,8 @@ import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import OpinionInput from '@/components/detail/OpinionInput.vue'
 import PredictionResult from '@/components/detail/PredictionResult.vue'
 import { adjustFixturePrediction } from '@/api/fixtures'
-import type { FixtureResponse, PredictionSnapshot } from '@/api/types'
-import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
+import type { FixtureResponse } from '@/api/types'
+import { snapshotFromAnalysis, snapshotFromApi, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import { formatDateTime } from '@/utils/format'
 import { hasOddsMarkets } from '@/utils/oddsDisplay'
 
@@ -30,15 +30,20 @@ const showAnyBoard = computed(() => showCurrent.value || showOpening.value)
 
 const homeName = computed(() => props.fixture.home_team_name || '—')
 const awayName = computed(() => props.fixture.away_team_name || '—')
+const isFinished = computed(
+  () => (props.fixture.status ?? '').toLowerCase() === 'finished',
+)
 
 async function submitOpinion() {
   if (!selectedFactors.value.length) return
   submitting.value = true
   adjustError.value = ''
   try {
-    adjusted.value = await adjustFixturePrediction(
-      props.fixture.fixture_id,
-      selectedFactors.value,
+    adjusted.value = snapshotFromApi(
+      await adjustFixturePrediction(
+        props.fixture.fixture_id,
+        selectedFactors.value,
+      ),
     )
     submittedFactors.value = [...selectedFactors.value]
   } catch (e) {
@@ -98,6 +103,8 @@ async function submitOpinion() {
     />
     <n-alert v-if="adjustError" type="error" :title="adjustError" />
     <PredictionResult
+      :fixture="fixture"
+      :is-finished="isFinished"
       :original="original"
       :adjusted="adjusted"
       :data-source="fixture.analysis.data_source"

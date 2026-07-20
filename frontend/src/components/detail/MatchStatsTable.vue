@@ -120,8 +120,8 @@ const columns = computed<DataTableColumns<FormMatch>>(() => [
   },
 ])
 
-function rowKey(row: FormMatch, index: number): string | number {
-  return row.fixture_id ?? `${row.date ?? ''}-${row.home}-${row.away}-${index}`
+function rowKey(row: FormMatch): string | number {
+  return row.fixture_id ?? `${row.date ?? ''}-${row.home}-${row.away}`
 }
 </script>
 

@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import ProbabilityChart from '@/components/ProbabilityChart.vue'
-import type { PredictionSnapshot } from '@/api/types'
-import { predictionDiffKeys } from '@/utils/opinionAdjust'
+import type { FixtureResponse } from '@/api/types'
+import { predictionDiffKeys, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import { toPercent } from '@/utils/format'
 
 const props = defineProps<{
+  fixture?: FixtureResponse
+  isFinished?: boolean
   original: PredictionSnapshot
   adjusted: PredictionSnapshot | null
   dataSource: string
@@ -44,7 +47,15 @@ function isPendingHandicap(text: string): boolean {
 
     <n-spin :show="!!comparing">
       <div class="compare-grid">
-        <n-card size="small" title="算法原始预测" class="panel">
+        <n-card
+          v-if="isFinished && fixture"
+          size="small"
+          title="赛前结果预测"
+          class="panel"
+        >
+          <AlgorithmPredictionCard :fixture="fixture" />
+        </n-card>
+        <n-card v-else size="small" title="算法原始预测" class="panel">
           <div class="rec">
             推荐
             <n-tag

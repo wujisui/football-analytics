@@ -29,6 +29,31 @@ export function predictionDiffKeys(
   return keys
 }
 
+/** Map adjust API payload → snapshot for compare UI. */
+export function snapshotFromApi(data: {
+  home_win_prob: number
+  draw_prob: number
+  away_win_prob: number
+  recommendation: string
+  goal_lean: string
+  both_score_lean: string
+  score_hint: string
+  handicap_lean: string
+}): PredictionSnapshot {
+  return snapshotFromAnalysis({
+    probabilities: {
+      home_win_prob: data.home_win_prob,
+      draw_prob: data.draw_prob,
+      away_win_prob: data.away_win_prob,
+    },
+    recommendation: data.recommendation,
+    goal_lean: data.goal_lean,
+    both_score_lean: data.both_score_lean,
+    score_hint: data.score_hint,
+    handicap_lean: data.handicap_lean,
+  })
+}
+
 /** Map analysis payload → snapshot for compare UI. */
 export function snapshotFromAnalysis(analysis: {
   probabilities: ProbabilitiesResponse
