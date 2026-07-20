@@ -16,6 +16,7 @@ from app.schemas.response import (
     LeaguesListResponse,
     LeagueSummaryResponse,
 )
+from app.services.league_names import league_name_zh
 from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
 
 router = APIRouter(prefix="/leagues", tags=["leagues"])
@@ -124,10 +125,17 @@ async def get_league_filter_options(
 
     def _name(league_id: int) -> str:
         if league_id in configured_ids:
-            return settings.league_display_name(league_id)
-        return settings.reference_display_name(
-            league_id,
-            str((discovery_meta.get(league_id) or {}).get("league_name") or ""),
+            raw = settings.league_display_name(league_id)
+        else:
+            raw = settings.reference_display_name(
+                league_id,
+                str((discovery_meta.get(league_id) or {}).get("league_name") or ""),
+            )
+        return league_name_zh(
+            raw,
+            league_id=league_id,
+            country=_country(league_id),
+            settings=settings,
         )
 
     def _count(league_id: int) -> int:

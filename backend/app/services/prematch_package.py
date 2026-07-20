@@ -8,7 +8,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.services.api_utils import extract_items, first_value
-from app.services.team_names import localize_match_teams, localize_matches_block
+from app.services.league_names import localize_match_row, localize_matches_block
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ def summarize_form_payload(payload: dict[str, Any], team_id: int, limit: int = 2
         home_name = first_value(item, [["teams", "home", "name"], ["homeTeam", "name"]], "")
         away_name = first_value(item, [["teams", "away", "name"], ["awayTeam", "name"]], "")
         matches.append(
-            localize_match_teams(
+            localize_match_row(
                 {
                     "fixture_id": first_value(item, [["fixture", "id"], ["id"]]),
                     "date": first_value(item, [["fixture", "date"], ["date"]]),
@@ -147,7 +147,7 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
             else None
         )
         matches.append(
-            localize_match_teams(
+            localize_match_row(
                 {
                     "fixture_id": first_value(item, [["fixture", "id"], ["id"]]),
                     "date": first_value(item, [["fixture", "date"], ["date"]]),

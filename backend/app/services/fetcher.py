@@ -13,6 +13,7 @@ from app.models.fixture import Fixture
 from app.models.league import League
 from app.models.team import Team
 from app.services.api_utils import parse_remaining_requests
+from app.services.league_names import league_name_zh
 from app.services.team_names import backfill_team_names, team_name_zh
 from app.services.cache import (
     TTL_FIXTURES_TODAY,
@@ -503,9 +504,12 @@ class FootballFetcher:
             if allowed_league_ids is not None and league_id not in allowed_league_ids:
                 continue
             try:
-                display_name = self.settings.reference_display_name(
-                    league_id,
-                    str(fixture.get("league_name") or f"League {league_id}"),
+                raw_league_name = str(fixture.get("league_name") or f"League {league_id}")
+                display_name = league_name_zh(
+                    raw_league_name,
+                    league_id=league_id,
+                    country=fixture.get("country"),
+                    settings=self.settings,
                 )
                 await self._upsert_league(
                     league_id,

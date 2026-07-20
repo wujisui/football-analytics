@@ -273,6 +273,7 @@ class FixtureResponse(BaseModel):
     status: str = Field(..., description="比赛状态")
     home_goals: int | None = Field(default=None, description="主队进球（常规时间 90'）")
     away_goals: int | None = Field(default=None, description="客队进球（常规时间 90'）")
+    league_country: str | None = Field(default=None, description="联赛所属国家/地区")
     analysis: AnalysisResponse = Field(..., description="赛前分析结果")
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
@@ -296,6 +297,7 @@ class ResultFixtureResponse(BaseModel):
     fixture_id: int
     league_id: int
     league_name: str
+    league_country: str | None = Field(default=None, description="联赛所属国家/地区")
     home_team_id: int
     away_team_id: int
     home_team_name: str

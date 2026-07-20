@@ -49,6 +49,7 @@ from app.services.results_accuracy import (
     evaluate_fixture_prediction,
     load_stored_by_fixture_ids,
 )
+from app.services.league_names import league_name_zh
 from app.services.team_names import team_name_zh
 
 router = APIRouter(prefix="/fixtures", tags=["fixtures"])
@@ -64,6 +65,7 @@ async def _sync_odds_and_results_followup(
     *,
     include_odds: bool,
     include_results: bool,
+    odds_refresh_existing: bool = True,
     odds_budget: int = 40,
 ) -> None:
     """Run after fixtures are saved — keeps odds aligned with the same sync request."""
@@ -77,7 +79,7 @@ async def _sync_odds_and_results_followup(
                     try:
                         await fetcher.sync_odds_for_dates(
                             day_list,
-                            refresh_existing=True,
+                            refresh_existing=odds_refresh_existing,
                             league_ids=selected,
                             budget=odds_budget,
                         )
@@ -97,10 +99,33 @@ def _set_response_headers(response: Response, data_source: str, max_age: int = 1
     response.headers["X-Data-Source"] = data_source
 
 
+def _set_no_cache_headers(response: Response, data_source: str) -> None:
+    """Mutable list/detail payloads must not be cached by the browser."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Data-Source"] = data_source
+
+
 def _league_name(fixture: Fixture) -> str:
     settings = get_settings()
     fallback = fixture.league.name if fixture.league else ""
-    return settings.reference_display_name(fixture.league_id, fallback)
+    return league_name_zh(
+        fallback,
+        league_id=fixture.league_id,
+        country=_league_country(fixture),
+        settings=settings,
+    )
+
+
+def _league_country(fixture: Fixture) -> str | None:
+    settings = get_settings()
+    if fixture.league_id in settings.LEAGUE_COUNTRIES:
+        return settings.LEAGUE_COUNTRIES[fixture.league_id]
+    if fixture.league_id in settings.REFERENCE_LEAGUE_COUNTRIES:
+        return settings.REFERENCE_LEAGUE_COUNTRIES[fixture.league_id]
+    if fixture.league and fixture.league.country and fixture.league.country != "Unknown":
+        return fixture.league.country
+    return None
 
 
 def _team_display_name(name: str | None, team_id: int, fallback: str = "") -> str:
@@ -304,6 +329,7 @@ async def get_today_fixtures(
                 fixture_id=fixture.id,
                 league_id=fixture.league_id,
                 league_name=_league_name(fixture),
+                league_country=_league_country(fixture),
                 home_team_id=fixture.home_team_id,
                 away_team_id=fixture.away_team_id,
                 home_team_name=_team_display_name(
@@ -325,7 +351,7 @@ async def get_today_fixtures(
             )
         )
 
-    _set_response_headers(response, "database")
+    _set_no_cache_headers(response, "database")
     return TodayFixturesResponse(
         date=base_date.isoformat(),
         days=window_days,
@@ -396,6 +422,7 @@ async def get_fixture_results(
                 fixture_id=fx.id,
                 league_id=fx.league_id,
                 league_name=_league_name(fx),
+                league_country=_league_country(fx),
                 home_team_id=fx.home_team_id,
                 away_team_id=fx.away_team_id,
                 home_team_name=_team_display_name(
@@ -497,6 +524,16 @@ async def sync_fixtures(
         default=True,
         description="拉取赛前赔率：缺盘补全；强制刷新时覆盖已有盘口并重算胜平负",
     ),
+    odds_refresh_existing: bool = Query(
+        default=True,
+        description="False 时仅补缺失盘口（联赛筛选入库更快）；True 时强制刷新已有盘",
+    ),
+    odds_budget: int = Query(
+        default=100,
+        ge=1,
+        le=200,
+        description="单次同步最多拉取多少场 fixture 盘口",
+    ),
     league_ids: list[int] | None = Query(
         default=None,
         description="仅同步勾选的联赛 ID；默认当日 API 返回的全部联赛",
@@ -550,11 +587,12 @@ async def sync_fixtures(
                 selected,
                 include_odds=include_odds,
                 include_results=include_results,
-                odds_budget=100,
+                odds_refresh_existing=odds_refresh_existing,
+                odds_budget=odds_budget,
             )
         msg = "赛程已刷新"
         if include_odds:
-            msg += "，盘口已同步"
+            msg += "，盘口已同步" if odds_refresh_existing else "，缺失盘口已补全"
         return SyncFixturesResponse(
             status="ok",
             fixtures_saved=saved,
@@ -637,7 +675,7 @@ async def get_fixture_analysis(
             detail=f"分析暂时失败，请重试：{exc}",
         ) from exc
 
-    _set_response_headers(response, analysis.data_source)
+    _set_no_cache_headers(response, analysis.data_source)
     package = analysis.package if isinstance(analysis.package, dict) else {}
     standings = package.get("standings") or {}
     odds = package.get("odds") or {}
@@ -653,6 +691,7 @@ async def get_fixture_analysis(
         fixture_id=fixture.id,
         league_id=fixture.league_id,
         league_name=_league_name(fixture),
+        league_country=_league_country(fixture),
         home_team_id=fixture.home_team_id,
         away_team_id=fixture.away_team_id,
         home_team_name=_team_display_name(

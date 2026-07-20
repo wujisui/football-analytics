@@ -786,16 +786,6 @@ def localize_match_teams(match: dict[str, Any]) -> dict[str, Any]:
     return match
 
 
-def localize_matches_block(block: dict[str, Any] | None) -> dict[str, Any]:
-    """Localize all match rows inside a form / H2H summary dict."""
-    if not isinstance(block, dict):
-        return {"played": 0, "matches": []}
-    matches = block.get("matches")
-    if isinstance(matches, list):
-        block = {**block, "matches": [localize_match_teams(dict(m)) for m in matches if isinstance(m, dict)]}
-    return block
-
-
 async def backfill_team_names(session: Any) -> int:
     """Rewrite ``teams.name`` for every row that has a Chinese mapping.
 
