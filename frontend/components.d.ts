@@ -66,7 +66,6 @@ declare module 'vue' {
     NThing: typeof import('naive-ui')['NThing']
     NTooltip: typeof import('naive-ui')['NTooltip']
     OpinionInput: typeof import('./src/components/detail/OpinionInput.vue')['default']
-    PageToolbarActions: typeof import('./src/components/PageToolbarActions.vue')['default']
     PageToolbarSearch: typeof import('./src/components/PageToolbarSearch.vue')['default']
     PredictionResult: typeof import('./src/components/detail/PredictionResult.vue')['default']
     PredictionTab: typeof import('./src/components/detail/PredictionTab.vue')['default']

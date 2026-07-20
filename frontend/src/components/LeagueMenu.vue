@@ -5,7 +5,7 @@ import { computed, ref } from 'vue'
 import { fuzzyIncludes } from '@/utils/fuzzySearch'
 import type { LeagueSummaryResponse } from '@/api/types'
 import { leagueTagColor } from '@/utils/format'
-import { leagueNameZh } from '@/utils/leagueNames'
+import { leagueLabel } from '@/utils/leagueNames'
 
 const props = defineProps<{
   leagues: LeagueSummaryResponse[]
@@ -31,7 +31,7 @@ function abbrOf(name: string): string {
 
 const sortedLeagues = computed(() =>
   [...props.leagues].sort((a, b) =>
-    leagueNameZh(a.league_name).localeCompare(leagueNameZh(b.league_name), 'zh'),
+    leagueLabel(a.league_name).localeCompare(leagueLabel(b.league_name), 'zh'),
   ),
 )
 
@@ -39,7 +39,7 @@ const filteredLeagues = computed(() => {
   const q = searchQuery.value.trim()
   if (!q) return sortedLeagues.value
   return sortedLeagues.value.filter((league) => {
-    const name = leagueNameZh(league.league_name)
+    const name = leagueLabel(league.league_name)
     const country = league.country || ''
     return fuzzyIncludes(name, q) || fuzzyIncludes(country, q)
   })
@@ -117,7 +117,7 @@ function countOf(leagueId: number): number {
             role="listitem"
             class="lm-row"
             :class="{ active: selectedLeagueId === league.league_id }"
-            :title="collapsed ? leagueNameZh(league.league_name) : undefined"
+            :title="collapsed ? leagueLabel(league.league_name) : undefined"
             @click="selectLeague(league.league_id)"
           >
             <span
@@ -129,9 +129,9 @@ function countOf(leagueId: number): number {
               }"
               aria-hidden="true"
             >
-              {{ abbrOf(leagueNameZh(league.league_name)) }}
+              {{ abbrOf(leagueLabel(league.league_name)) }}
             </span>
-            <span v-if="!collapsed" class="lm-name">{{ leagueNameZh(league.league_name) }}</span>
+            <span v-if="!collapsed" class="lm-name">{{ leagueLabel(league.league_name) }}</span>
             <span v-if="!collapsed" class="lm-meta">
               <span v-if="countOf(league.league_id) > 0" class="lm-count">
                 {{ countOf(league.league_id) }}

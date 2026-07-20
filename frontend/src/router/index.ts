@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import Detail from '@/views/Detail.vue'
+import FixturesShellLayout from '@/layouts/FixturesShellLayout.vue'
 import Home from '@/views/Home.vue'
 import Predictions from '@/views/Predictions.vue'
 import Results from '@/views/Results.vue'
@@ -10,18 +11,24 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'home',
-      component: Home,
-    },
-    {
-      path: '/predictions',
-      name: 'predictions',
-      component: Predictions,
-    },
-    {
-      path: '/results',
-      name: 'results',
-      component: Results,
+      component: FixturesShellLayout,
+      children: [
+        {
+          path: '',
+          name: 'home',
+          component: Home,
+        },
+        {
+          path: 'predictions',
+          name: 'predictions',
+          component: Predictions,
+        },
+        {
+          path: 'results',
+          name: 'results',
+          component: Results,
+        },
+      ],
     },
     {
       path: '/favorites',
@@ -33,7 +40,6 @@ const router = createRouter({
       component: Detail,
       props: true,
     },
-    // Backward-compatible redirects from previous MVP routes
     {
       path: '/leagues/:leagueId',
       redirect: (to) => ({
@@ -50,7 +56,6 @@ const router = createRouter({
     },
   ],
   scrollBehavior(_to, _from, savedPosition) {
-    // Prefer browser back/forward position; Home list scroll is kept via keep-alive.
     if (savedPosition) return savedPosition
     return false
   },

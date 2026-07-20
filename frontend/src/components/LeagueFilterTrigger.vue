@@ -3,7 +3,7 @@ import { FilterOutline } from '@vicons/ionicons5'
 import { computed, ref, watch } from 'vue'
 
 import type { LeagueFilterOption } from '@/api/leagues'
-import { leagueNameZh } from '@/utils/leagueNames'
+import { leagueLabel } from '@/utils/leagueNames'
 
 const props = withDefaults(
   defineProps<{
@@ -12,10 +12,12 @@ const props = withDefaults(
     iconOnly?: boolean
     filterActive?: boolean
     confirming?: boolean
+    /** 赛果页：仅展示完场联赛，隐藏「未入库」标记与配置分区。 */
+    finishedMode?: boolean
     /** Mobile drawer: modal + stacked layout so content is not clipped. */
     drawerMode?: boolean
   }>(),
-  { iconOnly: false, filterActive: false, confirming: false, drawerMode: false },
+  { iconOnly: false, filterActive: false, confirming: false, finishedMode: false, drawerMode: false },
 )
 
 const emit = defineEmits<{
@@ -37,18 +39,22 @@ watch(show, (open) => {
 })
 
 const configuredOptions = computed(() =>
-  props.options.filter((o) => o.tier === 'configured'),
+  props.finishedMode ? [] : props.options.filter((o) => o.tier === 'configured'),
 )
 
 const extraOptions = computed(() =>
-  props.options.filter((o) => o.tier === 'extra'),
+  props.finishedMode ? props.options : props.options.filter((o) => o.tier === 'extra'),
+)
+
+const extraSectionTitle = computed(() =>
+  props.finishedMode ? '完场联赛' : '其他联赛',
 )
 
 function labelOf(opt: LeagueFilterOption): string {
-  const name = leagueNameZh(opt.league_name)
+  const name = leagueLabel(opt.league_name)
   const n = opt.fixtures_count
   const suffix = n > 0 ? ` (${n})` : ''
-  const tag = opt.tier === 'extra' && !opt.locally_loaded ? ' · 未入库' : ''
+  const tag = opt.tier === 'extra' && !opt.locally_loaded && !props.finishedMode ? ' · 未入库' : ''
   return `${name}${suffix}${tag}`
 }
 
@@ -75,7 +81,7 @@ function confirm() {
 
 <template>
   <template v-if="drawerMode">
-    <n-tooltip :disabled="!iconOnly" placement="right">
+    <n-tooltip :disabled="!iconOnly" placement="right-end">
       <template #trigger>
         <n-button
           size="tiny"
@@ -106,7 +112,7 @@ function confirm() {
         <n-scrollbar style="max-height: min(420px, 62vh);">
           <n-checkbox-group v-model:value="draft">
             <div class="sections-row stacked">
-              <div class="section">
+              <div v-if="!finishedMode" class="section">
                 <div class="section-title">联赛</div>
                 <n-space vertical :size="6">
                   <n-checkbox
@@ -123,7 +129,7 @@ function confirm() {
                 />
               </div>
               <div class="section">
-                <div class="section-title">其他联赛</div>
+                <div class="section-title">{{ extraSectionTitle }}</div>
                 <n-space vertical :size="6">
                   <n-checkbox
                     v-for="opt in extraOptions"
@@ -134,7 +140,7 @@ function confirm() {
                 </n-space>
                 <n-empty
                   v-if="!extraOptions.length"
-                  description="暂无其他联赛"
+                  :description="finishedMode ? '当日暂无完场联赛' : '暂无其他联赛'"
                   style="padding: 8px 0;"
                 />
               </div>
@@ -142,7 +148,7 @@ function confirm() {
           </n-checkbox-group>
           <n-empty
             v-if="!options.length"
-            description="今日暂无匹配联赛（可同步赛程后再试）"
+            :description="finishedMode ? '当日暂无完场赛果' : '今日暂无匹配联赛（可同步赛程后再试）'"
             style="padding: 16px 0;"
           />
         </n-scrollbar>
@@ -150,6 +156,7 @@ function confirm() {
       <template #footer>
         <n-space justify="end" class="actions" :size="8">
           <n-button
+            v-if="!finishedMode"
             size="small"
             quaternary
             :disabled="!configuredOptions.length"
@@ -181,8 +188,9 @@ function confirm() {
     v-else
     v-model:show="show"
     trigger="click"
-    placement="bottom-end"
+    placement="right-start"
     :show-arrow="false"
+    to="body"
   >
     <template #trigger>
       <n-tooltip :disabled="!iconOnly" placement="right">
@@ -208,7 +216,7 @@ function confirm() {
       <n-scrollbar style="max-height: min(360px, 55vh);">
         <n-checkbox-group v-model:value="draft">
           <div class="sections-row">
-            <div class="section">
+            <div v-if="!finishedMode" class="section">
               <div class="section-title">联赛</div>
               <n-space vertical :size="6">
                 <n-checkbox
@@ -225,7 +233,7 @@ function confirm() {
               />
             </div>
             <div class="section">
-              <div class="section-title">其他联赛</div>
+              <div class="section-title">{{ extraSectionTitle }}</div>
               <n-space vertical :size="6">
                 <n-checkbox
                   v-for="opt in extraOptions"
@@ -236,7 +244,7 @@ function confirm() {
               </n-space>
               <n-empty
                 v-if="!extraOptions.length"
-                description="暂无其他联赛"
+                :description="finishedMode ? '当日暂无完场联赛' : '暂无其他联赛'"
                 style="padding: 8px 0;"
               />
             </div>
@@ -244,12 +252,13 @@ function confirm() {
         </n-checkbox-group>
         <n-empty
           v-if="!options.length"
-          description="今日暂无匹配联赛（可同步赛程后再试）"
+          :description="finishedMode ? '当日暂无完场赛果' : '今日暂无匹配联赛（可同步赛程后再试）'"
           style="padding: 16px 0;"
         />
       </n-scrollbar>
       <n-space justify="end" class="actions" :size="8">
         <n-button
+          v-if="!finishedMode"
           size="tiny"
           quaternary
           :disabled="!configuredOptions.length"

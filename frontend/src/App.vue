@@ -13,12 +13,12 @@ import {
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { useIsPhone } from '@/composables/useMediaQuery'
 import { useFavoritesDrawer } from '@/composables/useFavoritesDrawer'
+import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
 import FavoritesDrawer from '@/components/FavoritesDrawer.vue'
 import { parseDetailFrom } from '@/utils/detailNav'
-import { homeRouteWithLeague } from '@/utils/homeLeagueFilter'
+import { fixturesRouteWithLeague } from '@/utils/fixturesLeagueFilter'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,25 +39,19 @@ const activeNav = computed(() => {
   return 'home'
 })
 
-function goHome() {
-  void router.push(homeRouteWithLeague())
-}
-
 function goNav(name: 'home' | 'predictions' | 'results') {
   if (favoritesDrawerShow.value) toggleFavoritesDrawer()
   if (route.name === name) return
-  if (name === 'home') {
-    goHome()
-    return
-  }
-  void router.push({ name })
+  void router.push(fixturesRouteWithLeague(name))
 }
 
-/** Phone home already shows prediction-only cards; hide Predictions entry there. */
+/** Phone home already shows prediction cards; hide Predictions route there. */
 watch(
   [isPhone, () => route.name],
   ([phone, name]) => {
-    if (phone && name === 'predictions') goHome()
+    if (phone && name === 'predictions') {
+      void router.replace(fixturesRouteWithLeague('home'))
+    }
   },
   { immediate: true },
 )
@@ -82,8 +76,8 @@ watch(
             class="brand"
             role="link"
             tabindex="0"
-            @click="goHome"
-            @keydown.enter="goHome"
+            @click="goNav('home')"
+            @keydown.enter="goNav('home')"
           >
             <span class="brand-title">Football Analytics</span>
             <span class="brand-subtitle">赛前分析 · 人机协同</span>
@@ -125,7 +119,7 @@ watch(
                 @click="toggleFavoritesDrawer"
               >
                 <n-icon :size="16" :component="StarOutline" />
-                <span v-if="!isPhone" class="nav-seg-label">收藏</span>
+                <span class="nav-seg-label">收藏</span>
               </button>
             </div>
           </nav>
@@ -154,12 +148,7 @@ watch(
         content-style="height: 100%; overflow: hidden; position: relative;"
         style="flex: 1; min-height: 0;"
       >
-        <!-- Keep Home alive so list scroll / filter UI survive detail round-trips. -->
-        <router-view v-slot="{ Component }">
-          <keep-alive :include="['Home', 'Predictions', 'Results']">
-            <component :is="Component" />
-          </keep-alive>
-        </router-view>
+        <router-view />
       </n-layout-content>
     </n-layout>
     <FavoritesDrawer />
