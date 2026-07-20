@@ -15,7 +15,7 @@ import {
   statusLabel,
   statusTagType,
 } from '@/utils/format'
-import { leagueNameZh } from '@/utils/leagueNames'
+import { leagueLabel } from '@/utils/leagueNames'
 import { FIXTURE_DETAIL_TOOLTIP, fixtureDetailRoute } from '@/utils/detailNav'
 
 const props = defineProps<{
@@ -61,7 +61,7 @@ function goDetail() {
           textColor: leagueTagColor(fixture.league_id),
         }"
       >
-        {{ leagueNameZh(fixture.league_name, { leagueId: fixture.league_id }) }}
+        {{ leagueLabel(fixture.league_name) }}
       </n-tag>
       <span class="kickoff">
         {{ formatDate(fixture.fixture_date) }} {{ formatTime(fixture.fixture_date) }}

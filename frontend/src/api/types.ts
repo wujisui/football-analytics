@@ -228,6 +228,7 @@ export interface FixtureResponse {
   status: string
   home_goals?: number | null
   away_goals?: number | null
+  league_country?: string | null
   analysis: AnalysisResponse
   home_rank?: number | null
   away_rank?: number | null

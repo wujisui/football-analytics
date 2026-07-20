@@ -16,8 +16,8 @@ import {
   detailRootLabel,
   parseDetailFrom,
 } from '@/utils/detailNav'
-import { writeHomeLeagueFilter } from '@/utils/homeLeagueFilter'
-import { leagueNameZh } from '@/utils/leagueNames'
+import { writeFixturesLeagueFilter } from '@/utils/fixturesLeagueFilter'
+import { leagueLabel } from '@/utils/leagueNames'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -32,9 +32,7 @@ const fromDate = computed(() =>
 )
 const rootLabel = computed(() => detailRootLabel(from.value))
 
-const leagueLabel = computed(() =>
-  leagueNameZh(props.fixture.league_name, { leagueId: props.fixture.league_id }),
-)
+const leagueLabelText = computed(() => leagueLabel(props.fixture.league_name))
 
 const scoreText = computed(() => {
   const h = props.fixture.home_goals
@@ -76,7 +74,7 @@ function goLeague() {
     goBack()
     return
   }
-  writeHomeLeagueFilter(props.fixture.league_id)
+  writeFixturesLeagueFilter(props.fixture.league_id, 'prematch')
   void router.push(detailBackRoute('home', { leagueId: props.fixture.league_id }))
 }
 </script>
@@ -85,7 +83,7 @@ function goLeague() {
   <div class="basic-info">
     <n-breadcrumb>
       <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
-      <n-breadcrumb-item @click="goLeague">{{ leagueLabel }}</n-breadcrumb-item>
+      <n-breadcrumb-item @click="goLeague">{{ leagueLabelText }}</n-breadcrumb-item>
       <n-breadcrumb-item>
         <n-tooltip v-if="scoreText" placement="bottom">
           <template #trigger>
@@ -108,7 +106,7 @@ function goLeague() {
               textColor: leagueTagColor(fixture.league_id),
             }"
           >
-            {{ leagueLabel }}
+            {{ leagueLabelText }}
           </n-tag>
           <n-tag size="small" :type="statusTagType(fixture.status)" :bordered="false">
             {{ statusLabel(fixture.status) }}

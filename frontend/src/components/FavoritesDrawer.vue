@@ -8,7 +8,7 @@ import { useFavoritesDrawer } from '@/composables/useFavoritesDrawer'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { formatDateTime, leagueTagColor, statusLabel, statusTagType, toPercent } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'
-import { leagueNameZh } from '@/utils/leagueNames'
+import { leagueLabel } from '@/utils/leagueNames'
 
 const router = useRouter()
 const isPhone = useIsPhone()
@@ -151,7 +151,7 @@ function isPendingHandicap(text: string | undefined): boolean {
                       textColor: leagueTagColor(item.league_id),
                     }"
                   >
-                    {{ leagueNameZh(item.league_name, { leagueId: item.league_id }) }}
+                    {{ leagueLabel(item.league_name) }}
                   </n-tag>
                   <span class="kickoff">{{ formatDateTime(item.fixture_date) }}</span>
                 </n-space>

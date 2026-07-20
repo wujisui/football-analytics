@@ -4,7 +4,7 @@ import type { DataTableColumns } from 'naive-ui'
 
 import type { FormMatch } from '@/api/types'
 import { formatDateYyMmDd, resultToZh } from '@/utils/format'
-import { leagueNameZh } from '@/utils/leagueNames'
+import { leagueLabel } from '@/utils/leagueNames'
 
 const props = withDefaults(
   defineProps<{
@@ -17,10 +17,7 @@ const props = withDefaults(
 )
 
 function competitionLabel(m: FormMatch): string {
-  return leagueNameZh(m.league_name, {
-    leagueId: m.league_id,
-    country: m.league_country,
-  })
+  return leagueLabel(m.league_name)
 }
 
 function focusResultCode(m: FormMatch): string {

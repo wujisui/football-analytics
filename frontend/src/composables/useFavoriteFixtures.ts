@@ -12,6 +12,7 @@ export interface FavoriteFixtureRecord {
   away_team_name: string
   league_id: number
   league_name: string
+  league_country?: string | null
   fixture_date: string
   status?: string
   home_goals?: number | null
@@ -87,6 +88,8 @@ function readStored(): FavoriteFixtureRecord[] {
         away_team_name: String(item.away_team_name ?? ''),
         league_id: Number(item.league_id),
         league_name: String(item.league_name ?? ''),
+        league_country:
+          item.league_country == null ? null : String(item.league_country),
         fixture_date: String(item.fixture_date ?? ''),
         status: item.status != null ? String(item.status) : undefined,
         home_goals:
@@ -187,6 +190,7 @@ function recordFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord {
     away_team_name: fixture.away_team_name,
     league_id: fixture.league_id,
     league_name: fixture.league_name,
+    league_country: fixture.league_country ?? null,
     fixture_date: fixture.fixture_date,
     status: fixture.status,
     home_goals: fixture.home_goals,
@@ -203,6 +207,7 @@ function recordFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     away_team_name: fixture.away_team_name,
     league_id: fixture.league_id,
     league_name: fixture.league_name,
+    league_country: fixture.league_country ?? null,
     fixture_date: fixture.fixture_date,
     status: fixture.status,
     home_goals: fixture.home_goals,

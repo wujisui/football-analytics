@@ -34,6 +34,9 @@ export async function syncFixtures(options?: {
   days?: number
   date?: string
   includeResults?: boolean
+  includeOdds?: boolean
+  oddsRefreshExisting?: boolean
+  oddsBudget?: number
   leagueIds?: number[]
 }): Promise<SyncFixturesResult> {
   const { data } = await apiClient.post<SyncFixturesResult>('/fixtures/sync', null, {
@@ -41,10 +44,13 @@ export async function syncFixtures(options?: {
       days: options?.days,
       date: options?.date,
       include_results: options?.includeResults ?? true,
+      include_odds: options?.includeOdds ?? true,
+      odds_refresh_existing: options?.oddsRefreshExisting ?? true,
+      odds_budget: options?.oddsBudget,
       league_ids: options?.leagueIds,
     },
-    // Fixtures + per-fixture odds complete before response.
-    timeout: 180_000,
+    // Full sync can pull many fixture odds; filter-import uses a lighter profile.
+    timeout: options?.oddsRefreshExisting === false ? 90_000 : 180_000,
   })
   return data
 }
@@ -53,6 +59,7 @@ export interface ResultFixture {
   fixture_id: number
   league_id: number
   league_name: string
+  league_country?: string | null
   home_team_id: number
   away_team_id: number
   home_team_name: string
