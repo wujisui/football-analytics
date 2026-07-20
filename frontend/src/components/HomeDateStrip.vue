@@ -1,17 +1,39 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, watch } from 'vue'
 
-import { buildHomeDateTabs, todayDate } from '@/utils/homeDateStrip'
+import { buildHomeDateTabs, clampToLatest, clampToToday, todayDate } from '@/utils/homeDateStrip'
 
 const selected = defineModel<string>({ required: true })
 
+const props = withDefaults(
+  defineProps<{
+    /** Prematch pages: cannot pick dates before today. */
+    disableBeforeToday?: boolean
+    /** Results page: cannot pick dates after today. */
+    disableAfterToday?: boolean
+  }>(),
+  { disableBeforeToday: false, disableAfterToday: false },
+)
+
 const tabRefs = new Map<string, HTMLElement>()
 
-const tabs = computed(() => buildHomeDateTabs(todayDate()))
+const today = computed(() => todayDate())
+const tabs = computed(() => buildHomeDateTabs(today.value))
 
 function setTabRef(iso: string, el: HTMLElement | null) {
   if (el) tabRefs.set(iso, el)
   else tabRefs.delete(iso)
+}
+
+function isDisabled(iso: string): boolean {
+  if (props.disableBeforeToday && iso < today.value) return true
+  if (props.disableAfterToday && iso > today.value) return true
+  return false
+}
+
+function selectTab(iso: string) {
+  if (isDisabled(iso)) return
+  selected.value = iso
 }
 
 async function scrollActiveIntoView(behavior: ScrollBehavior = 'smooth') {
@@ -30,6 +52,22 @@ watch(
   },
 )
 
+watch(
+  () =>
+    [props.disableBeforeToday, props.disableAfterToday, selected.value] as const,
+  ([disablePast, disableFuture, day]) => {
+    let next = day
+    if (disablePast && next < today.value) {
+      next = clampToToday(next, today.value)
+    }
+    if (disableFuture && next > today.value) {
+      next = clampToLatest(next, today.value)
+    }
+    if (next !== selected.value) selected.value = next
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   void scrollActiveIntoView('auto')
 })
@@ -44,9 +82,10 @@ onMounted(() => {
       type="button"
       role="tab"
       class="date-tab"
-      :class="{ active: selected === tab.iso }"
+      :class="{ active: selected === tab.iso, disabled: isDisabled(tab.iso) }"
       :aria-selected="selected === tab.iso"
-      @click="selected = tab.iso"
+      :disabled="isDisabled(tab.iso)"
+      @click="selectTab(tab.iso)"
     >
       <span class="tab-top">{{ tab.topLabel }}</span>
       <span class="tab-bottom">{{ tab.bottomLabel }}</span>
@@ -90,7 +129,7 @@ onMounted(() => {
     color 0.15s ease;
 }
 
-.date-tab:hover:not(.active) {
+.date-tab:hover:not(.active):not(.disabled) {
   background: color-mix(in srgb, var(--fa-text) 6%, transparent);
   color: var(--fa-text);
 }
@@ -102,6 +141,16 @@ onMounted(() => {
 
 .date-tab.active .tab-bottom {
   font-weight: 700;
+}
+
+.date-tab.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.date-tab.disabled:hover {
+  background: transparent;
+  color: var(--fa-text-secondary);
 }
 
 .date-tab:focus-visible {

@@ -4,6 +4,7 @@ export const HOME_DATE_RADIUS = 7
 
 const WEEKDAY_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const FINISHED_STATUSES = new Set(['finished', 'cancelled', 'postponed'])
+const ACTIVE_STATUSES = new Set(['pending', 'live'])
 
 function parseIso(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number)
@@ -21,6 +22,16 @@ export function todayDate(): string {
   const d = new Date()
   d.setHours(0, 0, 0, 0)
   return isoDate(d)
+}
+
+/** Clamp calendar day to today when picking prematch dates. */
+export function clampToToday(iso: string, today: string = todayDate()): string {
+  return iso < today ? today : iso
+}
+
+/** Clamp calendar day to today when picking results dates (no future). */
+export function clampToLatest(iso: string, today: string = todayDate()): string {
+  return iso > today ? today : iso
 }
 
 export function addCalendarDays(iso: string, delta: number): string {
@@ -83,4 +94,16 @@ export function homeDayCountLabel(kind: HomeDayKind, count: number): string {
   if (kind === 'past') return `完场 ${count} 场`
   if (kind === 'future') return `未开赛 ${count} 场`
   return `当日 ${count} 场`
+}
+
+export function isPredictionsFixtureVisible(status: string): boolean {
+  return ACTIVE_STATUSES.has(status.toLowerCase())
+}
+
+export function predictionsDayCountLabel(count: number): string {
+  return `未完赛 ${count} 场`
+}
+
+export function resultsDayCountLabel(count: number): string {
+  return `完场 ${count} 场`
 }
