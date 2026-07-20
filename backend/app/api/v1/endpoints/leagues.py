@@ -53,10 +53,8 @@ async def get_league_filter_options(
 ) -> LeagueFilterOptionsResponse:
     """Home filter popover options for **today**.
 
-    - ``configured``: leagues.json ∩ 今日有赛 → default_checked=true
-    - ``extra``: leagues.example.json ∩ 今日有赛 − 配置集 → default_checked=false
-
-    Discovery uses at most one worldwide ``date=`` call per day (cached).
+    Discovery uses one worldwide ``fixtures?date=`` call per day (cached).
+    Every league returned by the API for that day is listed and default-checked.
     """
     settings = get_settings()
     if date_str:
@@ -68,16 +66,14 @@ async def get_league_filter_options(
         day = date.today()
 
     configured_ids = set(settings.LEAGUE_IDS.values())
-    reference_ids = set(settings.REFERENCE_LEAGUE_IDS.values())
 
-    # Local unfinished counts for today (any fetchable league already in DB).
+    # Local unfinished counts for today (any league already in DB).
     local_counts: dict[int, int] = {}
     local_stmt = (
         select(Fixture.league_id, func.count())
         .where(
             func.date(Fixture.date) == day,
             Fixture.status.in_(["pending", "live", "postponed"]),
-            Fixture.league_id.in_(list(settings.fetchable_league_ids()) or [-1]),
         )
         .group_by(Fixture.league_id)
     )
@@ -144,38 +140,22 @@ async def get_league_filter_options(
             return 0
 
     configured: list[LeagueFilterOptionResponse] = []
-    for name, league_id in settings.LEAGUE_IDS.items():
-        if league_id not in playing_ids:
-            continue
-        configured.append(
-            LeagueFilterOptionResponse(
-                league_id=league_id,
-                league_name=name,
-                country=_country(league_id),
-                fixtures_count=_count(league_id),
-                tier="configured",
-                default_checked=True,
-                locally_loaded=league_id in local_counts,
-            )
-        )
-
     extra: list[LeagueFilterOptionResponse] = []
     for league_id in sorted(playing_ids):
-        if league_id in configured_ids:
-            continue
-        if league_id not in reference_ids:
-            continue
-        extra.append(
-            LeagueFilterOptionResponse(
-                league_id=league_id,
-                league_name=_name(league_id),
-                country=_country(league_id),
-                fixtures_count=_count(league_id),
-                tier="extra",
-                default_checked=False,
-                locally_loaded=league_id in local_counts,
-            )
+        tier = "configured" if league_id in configured_ids else "extra"
+        option = LeagueFilterOptionResponse(
+            league_id=league_id,
+            league_name=_name(league_id),
+            country=_country(league_id),
+            fixtures_count=_count(league_id),
+            tier=tier,
+            default_checked=True,
+            locally_loaded=league_id in local_counts,
         )
+        if tier == "configured":
+            configured.append(option)
+        else:
+            extra.append(option)
 
     catalog = [
         LeagueCatalogItemResponse(

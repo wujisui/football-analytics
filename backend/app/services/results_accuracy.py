@@ -102,10 +102,11 @@ async def fetch_finished_fixtures(
     filters = [
         Fixture.date <= end_dt,
         Fixture.status == "finished",
-        Fixture.league_id.in_(league_ids or [-1]),
         Fixture.home_goals.is_not(None),
         Fixture.away_goals.is_not(None),
     ]
+    if league_ids:
+        filters.append(Fixture.league_id.in_(league_ids))
     if start is not None:
         filters.append(Fixture.date >= datetime.combine(start, datetime.min.time()))
     stmt = (

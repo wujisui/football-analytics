@@ -415,11 +415,11 @@ class LeagueFilterOptionResponse(BaseModel):
     fixtures_count: int = Field(0, description="当日场次（发现或本地）")
     tier: Literal["configured", "extra"] = Field(
         ...,
-        description="configured=leagues.json；extra=参考目录中今日有赛且非配置默认",
+        description="configured=leagues.json 显示名；extra=API 当日发现的其他联赛",
     )
     default_checked: bool = Field(
         ...,
-        description="配置联赛默认勾选；额外联赛默认不勾选",
+        description="筛选弹层默认勾选（当日 API 联赛全部默认勾选）",
     )
     locally_loaded: bool = Field(
         False,

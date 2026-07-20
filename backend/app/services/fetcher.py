@@ -574,34 +574,6 @@ class FootballFetcher:
             return season
         return str((hint_date or date.today()).year)
 
-    async def _configured_league_items(
-        self,
-        league_ids: list[int] | None = None,
-    ) -> list[tuple[str, int]]:
-        """Menu catalog entries, optionally narrowed to an allow-list.
-
-        When ``league_ids`` is set, allow configured **or** reference-catalog IDs
-        (home filter extras). Default (None) stays configured-only.
-        """
-        name_by_id: dict[int, str] = {
-            lid: name for name, lid in self.settings.REFERENCE_LEAGUE_IDS.items()
-        }
-        name_by_id.update(
-            {lid: name for name, lid in self.settings.LEAGUE_IDS.items()}
-        )
-        if league_ids is None:
-            return list(self.settings.LEAGUE_IDS.items())
-        allow = {int(x) for x in league_ids}
-        fetchable = self.settings.fetchable_league_ids()
-        unknown = allow - fetchable
-        if unknown:
-            logger.warning(
-                "Ignoring league_ids not in configured/reference catalog: %s",
-                sorted(unknown),
-            )
-        selected = sorted(allow & fetchable)
-        return [(name_by_id.get(lid, f"League {lid}"), lid) for lid in selected]
-
     async def discover_playing_leagues_for_date(
         self,
         day: date | None = None,
@@ -703,16 +675,12 @@ class FootballFetcher:
     async def _fetch_day_worldwide_filtered(
         self,
         day: date,
-        allowed: set[int],
+        allowed: set[int] | None,
         *,
         force: bool = False,
         fetch_teams: bool = True,
     ) -> int:
-        """Worldwide ``date=`` then keep only configured leagues.
-
-        Free plans often reject ``league+season`` for current seasons (e.g. WC
-        2026) but still allow a short rolling ``date=`` window.
-        """
+        """Worldwide ``date=``; optionally keep only ``allowed`` league IDs."""
         date_str = day.isoformat()
         cache_key = fixtures_cache_key(date_str)
         if force:
@@ -761,103 +729,36 @@ class FootballFetcher:
         force: bool = False,
         league_ids: list[int] | None = None,
     ) -> int:
-        """Fetch one calendar day for configured (or selected) left-menu leagues.
-
-        Prefers ``league + season + date``; falls back to worldwide ``date=``
-        when the free plan blocks current-season league queries (World Cup etc.).
-        """
+        """Fetch one calendar day via worldwide ``date=`` (all API leagues by default)."""
         assert self.session is not None
         day = (
             target_date
             if isinstance(target_date, date)
             else date.fromisoformat(str(target_date)[:10])
         )
-        date_str = day.isoformat()
-        league_items = await self._configured_league_items(league_ids)
-        if not league_items:
-            logger.warning("No leagues to fetch for date %s", date_str)
-            return 0
-        allowed = {lid for _, lid in league_items}
-        # Bust legacy worldwide day cache used by older builds.
+        allowed: set[int] | None = None
+        if league_ids is not None:
+            allowed = {int(x) for x in league_ids}
+            if not allowed:
+                logger.warning("No leagues to fetch for date %s", day.isoformat())
+                return 0
         if force:
-            await self.invalidate_fixtures_day_cache(date_str)
-
-        total = 0
-        blocked: list[tuple[str, int]] = []
-        for index, (league_name, league_id) in enumerate(league_items):
-            season = await self._resolve_league_season(league_id, day)
-            cache_key = fixtures_league_date_cache_key(league_id, date_str, season)
-            if force:
-                await self.cache.delete(cache_key)
-            try:
-                payload = await self._get_or_fetch(
-                    cache_key,
-                    TTL_FIXTURES_TODAY,
-                    "fetch_fixtures_for_date",
-                    lambda client, lid=league_id, s=season, d=date_str: (
-                        self.provider.fetch_fixtures_for_league(
-                            client,
-                            league_id=lid,
-                            season=s,
-                            date=d,
-                        )
-                    ),
-                )
-                if _api_payload_plan_or_season_blocked(payload):
-                    blocked.append((league_name, league_id))
-                    logger.warning(
-                        "League day query blocked date=%s league=%s(%s): %s",
-                        date_str,
-                        league_name,
-                        league_id,
-                        _api_payload_errors(payload),
-                    )
-                    continue
-                fixtures = self.provider.parse_fixtures(payload)
-                saved = await self._persist_fixtures(
-                    fixtures,
-                    allowed_league_ids=allowed,
-                    fetch_teams=(index == 0 and not blocked),
-                )
-                total += saved
-                logger.info(
-                    "Saved %s fixtures for %s league=%s(%s) season=%s force=%s",
-                    saved,
-                    date_str,
-                    league_name,
-                    league_id,
-                    season,
-                    force,
-                )
-            except Exception as exc:
-                logger.error(
-                    "Fixtures day=%s league=%s(%s) failed: %s",
-                    date_str,
-                    league_name,
-                    league_id,
-                    exc,
-                    exc_info=True,
-                )
-            if index + 1 < len(league_items):
-                await asyncio.sleep(0.35)
-
-        if blocked:
-            total += await self._fetch_day_worldwide_filtered(
-                day,
-                {lid for _, lid in blocked},
-                force=force,
-                fetch_teams=total == 0,
-            )
-
+            await self.invalidate_fixtures_day_cache(day.isoformat())
+        saved = await self._fetch_day_worldwide_filtered(
+            day,
+            allowed,
+            force=force,
+            fetch_teams=True,
+        )
         renamed = await backfill_team_names(self.session)
         logger.info(
-            "Saved %s fixtures total for %s (force=%s, teams_renamed=%s).",
-            total,
-            date_str,
+            "Saved %s fixtures for %s (force=%s, teams_renamed=%s).",
+            saved,
+            day.isoformat(),
             force,
             renamed,
         )
-        return total
+        return saved
 
     async def fetch_today_fixtures(self, *, force: bool = False) -> int:
         return await self.fetch_fixtures_for_date(date.today(), force=force)
@@ -870,115 +771,45 @@ class FootballFetcher:
         force: bool = False,
         league_ids: list[int] | None = None,
     ) -> int:
-        """Fetch ``[start, end]`` once per selected/configured league (``from``/``to``).
+        """Fetch ``[start, end]`` via worldwide ``date=`` (one call per day).
 
-        Leagues blocked by free-plan season limits fall back to per-day worldwide
-        ``date=`` filtered to those league IDs (within the provider's date window).
+        When ``league_ids`` is omitted, persist every league returned by the API.
         """
         assert self.session is not None
         if end < start:
             start, end = end, start
-        date_from = start.isoformat()
-        date_to = end.isoformat()
-        league_items = await self._configured_league_items(league_ids)
-        if not league_items:
-            logger.warning("No leagues to fetch for window %s..%s", date_from, date_to)
-            return 0
-        allowed = {lid for _, lid in league_items}
+        allowed: set[int] | None = None
+        if league_ids is not None:
+            allowed = {int(x) for x in league_ids}
+            if not allowed:
+                logger.warning(
+                    "No leagues to fetch for window %s..%s",
+                    start.isoformat(),
+                    end.isoformat(),
+                )
+                return 0
+
         total = 0
-        blocked_ids: set[int] = set()
-
-        for index, (league_name, league_id) in enumerate(league_items):
-            season = await self._resolve_league_season(league_id, start)
-            cache_key = fixtures_league_range_cache_key(
-                league_id, season, date_from, date_to
+        cursor = start
+        first = True
+        while cursor <= end:
+            total += await self._fetch_day_worldwide_filtered(
+                cursor,
+                allowed,
+                force=force,
+                fetch_teams=first,
             )
-            if force:
-                await self.cache.delete(cache_key)
-                cursor = start
-                while cursor <= end:
-                    await self.cache.delete(
-                        fixtures_league_date_cache_key(league_id, cursor.isoformat(), season)
-                    )
-                    await self.invalidate_fixtures_day_cache(cursor.isoformat())
-                    cursor += timedelta(days=1)
-            try:
-                payload = await self._get_or_fetch(
-                    cache_key,
-                    TTL_FIXTURES_TODAY,
-                    "fetch_fixtures_window",
-                    lambda client, lid=league_id, s=season: (
-                        self.provider.fetch_fixtures_for_league(
-                            client,
-                            league_id=lid,
-                            season=s,
-                            date_from=date_from,
-                            date_to=date_to,
-                        )
-                    ),
-                )
-                if _api_payload_plan_or_season_blocked(payload):
-                    blocked_ids.add(league_id)
-                    logger.warning(
-                        "League window query blocked %s..%s league=%s(%s): %s",
-                        date_from,
-                        date_to,
-                        league_name,
-                        league_id,
-                        _api_payload_errors(payload),
-                    )
-                    continue
-                fixtures = self.provider.parse_fixtures(payload)
-                saved = await self._persist_fixtures(
-                    fixtures,
-                    allowed_league_ids=allowed,
-                    fetch_teams=(index == 0 and not blocked_ids),
-                )
-                total += saved
-                logger.info(
-                    "Window %s..%s league=%s(%s) season=%s saved=%s force=%s",
-                    date_from,
-                    date_to,
-                    league_name,
-                    league_id,
-                    season,
-                    saved,
-                    force,
-                )
-            except Exception as exc:
-                logger.error(
-                    "Window fixtures league=%s(%s) failed: %s",
-                    league_name,
-                    league_id,
-                    exc,
-                    exc_info=True,
-                )
-            if index + 1 < len(league_items):
-                await asyncio.sleep(0.25)
-
-        if blocked_ids:
-            cursor = start
-            first = True
-            while cursor <= end:
-                total += await self._fetch_day_worldwide_filtered(
-                    cursor,
-                    blocked_ids,
-                    force=force,
-                    fetch_teams=first and total == 0,
-                )
-                first = False
-                cursor += timedelta(days=1)
-                if cursor <= end:
-                    await asyncio.sleep(0.35)
+            first = False
+            cursor += timedelta(days=1)
+            if cursor <= end:
+                await asyncio.sleep(0.35)
 
         renamed = await backfill_team_names(self.session)
         logger.info(
-            "Saved %s fixtures across leagues for %s..%s "
-            "(blocked_fallback=%s, force=%s, teams_renamed=%s).",
+            "Saved %s fixtures across %s..%s (force=%s, teams_renamed=%s).",
             total,
-            date_from,
-            date_to,
-            sorted(blocked_ids),
+            start.isoformat(),
+            end.isoformat(),
             force,
             renamed,
         )
@@ -1020,10 +851,6 @@ class FootballFetcher:
             select(Fixture).where(
                 Fixture.date >= start,
                 Fixture.date <= cutoff,
-                # Include reference-catalog leagues (same as homepage sync).
-                Fixture.league_id.in_(
-                    list(self.settings.fetchable_league_ids()) or [-1]
-                ),
                 or_(
                     Fixture.status.in_(["pending", "live"]),
                     Fixture.home_goals.is_(None),
@@ -1043,8 +870,6 @@ class FootballFetcher:
         total = 0
         for day, league_ids in sorted(by_day.items()):
             try:
-                # Pass the leagues that actually need FT backfill (incl. reference
-                # catalog like 厄甲); default None would only sync leagues.json.
                 total += await self.fetch_fixtures_for_date(
                     day,
                     force=True,
@@ -1323,25 +1148,27 @@ class FootballFetcher:
         from app.services.prematch_package import dumps_json, loads_json, parse_odds_payload
 
         assert self.session is not None
-        allowed = self.settings.fetchable_league_ids()
+        allowed_filter: set[int] | None = None
         if league_ids is not None:
-            allowed &= {int(x) for x in league_ids}
-        if not days or not allowed:
+            allowed_filter = {int(x) for x in league_ids}
+            if not allowed_filter:
+                return 0
+        if not days:
             return 0
 
         start = datetime.combine(min(days), datetime.min.time())
         end = datetime.combine(max(days), datetime.max.time())
         updated = 0
 
-        result = await self.session.execute(
-            select(Fixture).where(
-                Fixture.date >= start,
-                Fixture.date <= end,
-                Fixture.league_id.in_(list(allowed)),
-                # Pre-match only — do not chase live boards.
-                Fixture.status == "pending",
-            )
-        )
+        filters = [
+            Fixture.date >= start,
+            Fixture.date <= end,
+            Fixture.status == "pending",
+        ]
+        if allowed_filter is not None:
+            filters.append(Fixture.league_id.in_(list(allowed_filter)))
+
+        result = await self.session.execute(select(Fixture).where(*filters))
         fixtures = list(result.scalars().all())
         fixtures.sort(key=lambda fx: fx.date)
         odds_rows = (

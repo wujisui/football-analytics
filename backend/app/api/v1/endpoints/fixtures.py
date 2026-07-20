@@ -256,27 +256,18 @@ async def get_today_fixtures(
     start_dt = datetime.combine(base_date, datetime.min.time())
     end_dt = datetime.combine(end_date, datetime.max.time())
 
-    fetchable = settings.fetchable_league_ids()
-    allowed: set[int]
     if league_ids is not None:
-        allowed = {int(x) for x in league_ids} & fetchable
+        allowed = {int(x) for x in league_ids}
         if not allowed:
-            raise HTTPException(status_code=400, detail="league_ids 为空或不在可拉取目录中")
+            raise HTTPException(status_code=400, detail="league_ids 不能为空")
     else:
-        # Default list: configured + reference leagues already synced into local DB.
-        allowed = fetchable
-    if league_id is not None:
-        if league_id not in allowed:
-            allowed = set()
-        else:
-            allowed = {league_id}
+        allowed = None
 
     stmt = (
         select(Fixture)
         .where(
             Fixture.date >= start_dt,
             Fixture.date <= end_dt,
-            Fixture.league_id.in_(list(allowed) or [-1]),
         )
         .options(
             selectinload(Fixture.home_team),
@@ -285,6 +276,13 @@ async def get_today_fixtures(
         )
         .order_by(Fixture.date)
     )
+    if allowed is not None:
+        stmt = stmt.where(Fixture.league_id.in_(list(allowed)))
+    if league_id is not None:
+        if allowed is not None and league_id not in allowed:
+            stmt = stmt.where(Fixture.league_id.in_([-1]))
+        else:
+            stmt = stmt.where(Fixture.league_id == league_id)
 
     result = await db.execute(stmt)
     fixtures = list(result.scalars().all())
@@ -371,18 +369,12 @@ async def get_fixture_results(
         )
         .order_by(Fixture.date)
     )
-    # Same allow-list as homepage (configured + reference catalog).
-    fetchable = settings.fetchable_league_ids()
+    # Optional league filter only when client passes league_id.
     if league_id is not None:
-        stmt = stmt.where(Fixture.league_id == league_id) if league_id in fetchable else None
-    else:
-        stmt = stmt.where(Fixture.league_id.in_(list(fetchable) or [-1]))
+        stmt = stmt.where(Fixture.league_id == league_id)
 
-    if stmt is None:
-        fixtures = []
-    else:
-        result = await db.execute(stmt)
-        fixtures = list(result.scalars().all())
+    result = await db.execute(stmt)
+    fixtures = list(result.scalars().all())
     stored_by_id = await load_stored_by_fixture_ids(db, [f.id for f in fixtures])
 
     items: list[ResultFixtureResponse] = []
@@ -454,17 +446,32 @@ async def get_results_accuracy_history(
         le=3650,
         description="0=全部本地已完场样本（历史总）；>0 为可选近 N 日窗口",
     ),
+    end_date_str: str | None = Query(
+        default=None,
+        alias="end_date",
+        description="序列截止日 YYYY-MM-DD；默认今天，且不晚于今天",
+    ),
     league_id: int | None = Query(default=None, description="按联赛 ID 过滤"),
     db: AsyncSession = Depends(get_db),
 ) -> ResultsHistoryResponse:
     """历史预测准确率汇总 + 按日序列（供折线图）。只读本地库。"""
-    settings = get_settings()
-    fetchable = settings.fetchable_league_ids()
     if league_id is not None:
-        league_ids = [league_id] if league_id in fetchable else []
+        league_ids: list[int] = [league_id]
     else:
-        league_ids = list(fetchable)
-    payload = await build_history_accuracy(db, days=days, league_ids=league_ids)
+        league_ids = []
+    today = date.today()
+    end_day = today
+    if end_date_str:
+        try:
+            parsed = date.fromisoformat(end_date_str)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="end_date 格式应为 YYYY-MM-DD") from exc
+        if parsed > today:
+            raise HTTPException(status_code=422, detail="end_date 不能晚于今天")
+        end_day = parsed
+    payload = await build_history_accuracy(
+        db, days=days, league_ids=league_ids, end_day=end_day
+    )
     _set_response_headers(response, "database", max_age=120)
     return ResultsHistoryResponse.model_validate(payload)
 
@@ -492,7 +499,7 @@ async def sync_fixtures(
     ),
     league_ids: list[int] | None = Query(
         default=None,
-        description="仅同步勾选的联赛 ID；默认全部 config/leagues.json",
+        description="仅同步勾选的联赛 ID；默认当日 API 返回的全部联赛",
     ),
 ) -> SyncFixturesResponse:
     """
@@ -519,14 +526,8 @@ async def sync_fixtures(
             day_list = [start + timedelta(days=i) for i in range(window)]
 
             selected = league_ids
-            if selected is not None:
-                fetchable = settings.fetchable_league_ids()
-                selected = [lid for lid in selected if lid in fetchable]
-                if not selected:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="league_ids 为空或不在可拉取目录中（leagues.json / leagues.example.json）",
-                    )
+            if selected is not None and not selected:
+                raise HTTPException(status_code=400, detail="league_ids 不能为空")
 
             async with FootballFetcher() as fetcher:
                 saved = await fetcher.fetch_fixtures_window(
