@@ -46,6 +46,9 @@ html[data-theme='dark'] {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   --fa-page-max-width: 1520px;
+  --fa-content-inline: 12px;
+  --fa-content-block-start: 12px;
+  --fa-content-block-end: 20px;
 }
 
 * {
@@ -132,6 +135,12 @@ button {
   .fa-page-toolbar {
     padding: 12px 20px 8px;
   }
+
+  :root {
+    --fa-content-inline: 20px;
+    --fa-content-block-start: 16px;
+    --fa-content-block-end: 24px;
+  }
 }
 
 .fa-toolbar-top {
@@ -170,4 +179,33 @@ button {
 
 .fa-page-toolbar-header :deep(.n-page-header-wrapper) {
   align-items: center;
+}
+
+/* Main list / card band — align with .fa-page-toolbar horizontal padding */
+.fa-page-content-padding {
+  padding: var(--fa-content-block-start) var(--fa-content-inline)
+    var(--fa-content-block-end);
+  box-sizing: border-box;
+}
+
+.fa-page-list-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fa-page-list-scroll {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.fa-page-list-body {
+  min-height: 200px;
+}
+
+.fa-page-list-state {
+  margin-bottom: 12px;
 }

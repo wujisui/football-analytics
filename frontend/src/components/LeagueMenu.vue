@@ -156,17 +156,23 @@ function countOf(leagueId: number): number {
 .league-menu {
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
   background: var(--fa-bg-elevated);
 }
 
 .lm-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: stretch;
   gap: 6px;
   padding: 10px 8px 8px;
   flex-shrink: 0;
+  background: var(--fa-bg-elevated);
 }
 
 .league-menu.collapsed .lm-toolbar {
@@ -192,10 +198,28 @@ function countOf(leagueId: number): number {
 .lm-body {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lm-body :deep(.n-spin-container),
+.lm-body :deep(.n-spin-content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .lm-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.lm-scroll :deep(.n-scrollbar) {
   height: 100%;
+  max-height: 100%;
 }
 
 .lm-list {

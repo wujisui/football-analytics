@@ -435,7 +435,8 @@ onMounted(() => {
     content-style="display: flex; flex-direction: column; height: 100%; min-height: 0;"
   >
     <n-layout
-      content-style="display: flex; flex-direction: column; height: 100%; padding: 12px; gap: 10px; background: var(--fa-bg); box-sizing: border-box; min-height: 0;"
+      class="results-main"
+      content-style="display: flex; flex-direction: column; height: 100%; gap: 10px; background: var(--fa-bg); box-sizing: border-box; min-height: 0; padding: var(--fa-content-block-start) var(--fa-content-inline) var(--fa-content-block-end);"
     >
       <n-grid v-if="isResultsDay" :cols="isPhone ? 1 : 2" :x-gap="10" :y-gap="10" style="flex-shrink: 0;">
         <n-gi>
@@ -561,7 +562,7 @@ onMounted(() => {
         :class="{ phone: isPhone }"
       >
         <n-scrollbar style="height: 100%;" trigger="hover">
-          <div :style="isPhone ? 'padding: 8px 12px 20px;' : 'padding: 4px 14px 24px;'">
+          <div :class="isPhone ? 'schedule-list-inner phone' : 'schedule-list-inner'">
             <n-spin :show="contentLoading">
               <FixtureList
                 :fixtures="scheduleDisplayedFixtures"
@@ -666,7 +667,8 @@ onMounted(() => {
       content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
     >
       <div
-        style="padding: 10px 12px 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;"
+        class="results-sider-head"
+        style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;"
       >
         <n-text strong>{{ listTitle }}</n-text>
         <ResultsFilterTrigger
@@ -679,7 +681,8 @@ onMounted(() => {
         v-if="error"
         type="error"
         title="获取失败"
-        style="margin: 0 12px 8px; flex-shrink: 0;"
+        class="results-sider-alert"
+        style="flex-shrink: 0;"
       >
         <n-space align="center" :size="12">
           <span>{{ error }}</span>
@@ -688,7 +691,7 @@ onMounted(() => {
       </n-alert>
       <div ref="desktopListShellRef" class="results-list-shell">
         <n-scrollbar style="height: 100%;" trigger="hover">
-          <div style="padding: 4px 14px 16px;">
+          <div style="padding: 4px 0 16px;">
             <n-spin :show="contentLoading">
               <n-empty
                 v-if="!loading && !listedFixtures.length"
@@ -787,6 +790,22 @@ onMounted(() => {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+}
+
+.schedule-list-inner {
+  padding-top: 4px;
+}
+
+.schedule-list-inner.phone {
+  padding: 8px 0 20px;
+}
+
+.results-sider-head {
+  padding: 10px var(--fa-content-inline) 6px;
+}
+
+.results-sider-alert {
+  margin: 0 var(--fa-content-inline) 8px;
 }
 
 .schedule-list-shell {
