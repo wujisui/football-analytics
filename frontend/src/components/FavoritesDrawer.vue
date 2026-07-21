@@ -9,6 +9,7 @@ import { useIsPhone } from '@/composables/useMediaQuery'
 import { formatDateTime, leagueTagColor, statusLabel, statusTagType, toPercent } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'
 import { leagueLabel } from '@/utils/leagueNames'
+import { todayDate } from '@/utils/homeDateStrip'
 
 const router = useRouter()
 const isPhone = useIsPhone()
@@ -16,14 +17,12 @@ const { show, close } = useFavoritesDrawer()
 const { favorites, remove, favoriteHasPredictSnapshot, refreshFavoritePredictions } =
   useFavoriteFixtures()
 
-const filterDate = ref<string | null>(null)
+const filterDate = ref<string | null>(todayDate())
 const refreshing = ref(false)
 
 watch(show, (open) => {
-  if (!open) {
-    filterDate.value = null
-    return
-  }
+  if (!open) return
+  filterDate.value = todayDate()
   void refreshDrawerPredictions()
 })
 
@@ -39,14 +38,6 @@ async function refreshDrawerPredictions() {
 
 function fixtureDay(iso: string): string {
   return iso.slice(0, 10)
-}
-
-function isDateAfterToday(timestamp: number): boolean {
-  const picked = new Date(timestamp)
-  picked.setHours(0, 0, 0, 0)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return picked.getTime() > today.getTime()
 }
 
 const filteredFavorites = computed(() => {
@@ -114,7 +105,6 @@ function isPendingHandicap(text: string | undefined): boolean {
           size="small"
           clearable
           placeholder="按开赛日筛选"
-          :is-date-disabled="isDateAfterToday"
           style="flex: 1; min-width: 0;"
         />
         <n-button

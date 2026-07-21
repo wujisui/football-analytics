@@ -29,8 +29,16 @@ export interface SyncFixturesResult {
   message: string
 }
 
-/** Force re-fetch from official API into local DB (bypasses day cache). */
-export async function syncFixtures(options?: {
+export interface SyncFixturesStatus {
+  running: boolean
+  last_status?: string | null
+  last_message?: string
+  last_error?: string | null
+  fixtures_saved?: number
+  finished_at?: string | null
+}
+
+export type SyncFixturesOptions = {
   days?: number
   date?: string
   includeResults?: boolean
@@ -38,7 +46,14 @@ export async function syncFixtures(options?: {
   oddsRefreshExisting?: boolean
   oddsBudget?: number
   leagueIds?: number[]
-}): Promise<SyncFixturesResult> {
+  oddsOnly?: boolean
+  background?: boolean
+}
+
+/** Force re-fetch from official API into local DB (bypasses day cache). */
+export async function syncFixtures(
+  options?: SyncFixturesOptions,
+): Promise<SyncFixturesResult> {
   const { data } = await apiClient.post<SyncFixturesResult>('/fixtures/sync', null, {
     params: {
       days: options?.days,
@@ -48,10 +63,16 @@ export async function syncFixtures(options?: {
       odds_refresh_existing: options?.oddsRefreshExisting ?? true,
       odds_budget: options?.oddsBudget,
       league_ids: options?.leagueIds,
+      odds_only: options?.oddsOnly ?? false,
+      background: options?.background ?? true,
     },
-    // Full sync can pull many fixture odds; filter-import uses a lighter profile.
-    timeout: options?.oddsRefreshExisting === false ? 90_000 : 180_000,
+    timeout: 30_000,
   })
+  return data
+}
+
+export async function fetchSyncStatus(): Promise<SyncFixturesStatus> {
+  const { data } = await apiClient.get<SyncFixturesStatus>('/fixtures/sync/status')
   return data
 }
 

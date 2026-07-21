@@ -34,11 +34,12 @@ const {
   breadcrumbRoot,
   breadcrumbFilter,
   dayCountLabel,
-  syncing,
+  filterConfirming,
   confirmFilter,
   selectLeague,
   reloadPrematchDay,
   isResultsPage,
+  isScheduleFutureDay,
 } = useFixturesShell()
 
 watch(selectedDay, () => {
@@ -88,8 +89,8 @@ onActivated(() => {
               :tracked-ids="shellTrackedIds"
               :icon-only="siderCollapsed"
               :filter-active="shellFilterActive"
-              :confirming="syncing"
-              :finished-mode="isResultsPage"
+              :confirming="filterConfirming"
+              :finished-mode="isResultsPage && !isScheduleFutureDay"
               @confirm="confirmFilter"
             />
           </template>
@@ -121,9 +122,8 @@ onActivated(() => {
           </div>
 
           <HomeDateStrip
+            v-if="isResultsPage"
             v-model="selectedDay"
-            :disable-before-today="!isResultsPage"
-            :disable-after-today="isResultsPage"
           />
 
           <div class="shell-list-meta">
@@ -172,8 +172,8 @@ onActivated(() => {
               :options="shellFilterOptions"
               :tracked-ids="shellTrackedIds"
               :filter-active="shellFilterActive"
-              :confirming="syncing"
-              :finished-mode="isResultsPage"
+              :confirming="filterConfirming"
+              :finished-mode="isResultsPage && !isScheduleFutureDay"
               @confirm="confirmFilter"
             />
           </template>

@@ -16,14 +16,14 @@ const {
   contentLoading,
   homeDisplayedFixtures,
   homeEmptyText,
-  loadDayLocal,
-  selectedDay,
+  forceRefreshDay,
+  homeDay,
 } = useFixturesShell()
 
 const { error, syncHomeListAfterDetail } = useHomeFixtures()
 
 onActivated(() => {
-  syncHomeListAfterDetail(selectedDay.value)
+  syncHomeListAfterDetail(homeDay.value)
 })
 </script>
 
@@ -41,7 +41,7 @@ onActivated(() => {
       <n-alert v-if="error" type="error" title="获取失败" class="state">
         <n-space align="center" :size="12">
           <span>{{ error }}</span>
-          <n-button size="small" type="primary" @click="loadDayLocal(true)">重试</n-button>
+          <n-button size="small" type="primary" @click="forceRefreshDay()">重试</n-button>
         </n-space>
       </n-alert>
 
