@@ -163,7 +163,7 @@ function countOf(leagueId: number): number {
 
 .lm-toolbar {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 6px;
   padding: 10px 8px 8px;
   flex-shrink: 0;
@@ -181,8 +181,12 @@ function countOf(leagueId: number): number {
 
 .lm-toolbar-actions {
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   flex-shrink: 0;
+}
+
+.lm-toolbar-actions :deep(.league-filter-btn:not(.is-icon-only)) {
+  height: 100%;
 }
 
 .lm-body {

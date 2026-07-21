@@ -30,12 +30,25 @@ const draft = ref<number[]>([])
 watch(show, (open) => {
   if (!open) return
   const available = new Set(props.options.map((o) => o.league_id))
+  const defaults = props.options
+    .filter((o) => o.default_checked)
+    .map((o) => o.league_id)
+  const configured = props.options
+    .filter((o) => o.tier === 'configured')
+    .map((o) => o.league_id)
   const preferred = props.trackedIds.filter((id) => available.has(id))
+  if (
+    configured.length > 0 &&
+    !configured.some((id) => preferred.includes(id))
+  ) {
+    draft.value = defaults
+    return
+  }
   if (preferred.length) {
     draft.value = preferred
     return
   }
-  draft.value = props.options.filter((o) => o.default_checked).map((o) => o.league_id)
+  draft.value = defaults
 })
 
 const configuredOptions = computed(() =>
@@ -84,7 +97,7 @@ function confirm() {
     <n-tooltip :disabled="!iconOnly" placement="right-end">
       <template #trigger>
         <n-button
-          size="tiny"
+          size="small"
           quaternary
           class="league-filter-btn"
           :class="{ 'is-icon-only': iconOnly }"
@@ -187,30 +200,28 @@ function confirm() {
   <n-popover
     v-else
     v-model:show="show"
-    trigger="click"
+    trigger="hover"
+    :delay="80"
+    :duration="180"
     placement="right-start"
     :show-arrow="false"
+    display-directive="show"
     to="body"
   >
     <template #trigger>
-      <n-tooltip :disabled="!iconOnly" placement="right">
-        <template #trigger>
-          <n-button
-            size="tiny"
-            quaternary
-            class="league-filter-btn"
-            :class="{ 'is-icon-only': iconOnly }"
-            :type="filterActive ? 'primary' : 'default'"
-            aria-label="筛选联赛"
-          >
-            <template #icon>
-              <n-icon :component="FilterOutline" :size="14" />
-            </template>
-            <span v-if="!iconOnly">筛选</span>
-          </n-button>
+      <n-button
+        size="small"
+        quaternary
+        class="league-filter-btn"
+        :class="{ 'is-icon-only': iconOnly }"
+        :type="filterActive ? 'primary' : 'default'"
+        aria-label="筛选联赛"
+      >
+        <template #icon>
+          <n-icon :component="FilterOutline" :size="14" />
         </template>
-        联赛筛选
-      </n-tooltip>
+        <span v-if="!iconOnly">筛选</span>
+      </n-button>
     </template>
     <div class="league-filter-panel">
       <n-scrollbar style="max-height: min(360px, 55vh);">
@@ -287,9 +298,13 @@ function confirm() {
 </template>
 
 <style scoped>
+.league-filter-btn:not(.is-icon-only) {
+  padding-inline: 10px;
+}
+
 .league-filter-btn.is-icon-only {
-  width: 28px;
-  height: 28px;
+  width: var(--n-height-small);
+  height: var(--n-height-small);
   padding: 0;
   justify-content: center;
 }

@@ -49,15 +49,31 @@ function allFilterOptions(): LeagueFilterOption[] {
 /** Prune preference to current options; default = all default_checked leagues. */
 function syncTrackedWithFilterOptions() {
   const options = allFilterOptions()
+  if (!options.length) return
+
   const allow = new Set(options.map((o) => o.league_id))
   const defaults = options.filter((o) => o.default_checked).map((o) => o.league_id)
+  const configuredIds = options
+    .filter((o) => o.tier === 'configured')
+    .map((o) => o.league_id)
   const stored = readStoredIds()
-  if (stored?.length) {
-    const pruned = stored.filter((id) => allow.has(id))
-    if (pruned.length) {
-      setTrackedIds(pruned)
-      return
-    }
+
+  if (!stored?.length) {
+    setTrackedIds(defaults)
+    return
+  }
+
+  const pruned = stored.filter((id) => allow.has(id))
+  if (
+    configuredIds.length > 0 &&
+    !configuredIds.some((id) => pruned.includes(id))
+  ) {
+    setTrackedIds(defaults)
+    return
+  }
+  if (pruned.length) {
+    setTrackedIds(pruned)
+    return
   }
   setTrackedIds(defaults)
 }
