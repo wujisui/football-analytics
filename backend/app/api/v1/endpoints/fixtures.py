@@ -1,5 +1,4 @@
 from datetime import date, datetime, timedelta, timezone
-import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -25,6 +24,7 @@ from app.schemas.response import (
     ResultsHistoryResponse,
     ResultsResponse,
     SyncFixturesResponse,
+    SyncFixturesStatusResponse,
     TodayFixturesResponse,
     analysis_to_response,
 )
@@ -32,7 +32,13 @@ from app.services.analyzer import (
     DEFAULT_PROB,
     AnalyzerService,
 )
-from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
+from app.services.fetcher import ApiKeyNotConfiguredError
+from app.services.fixtures_sync import (
+    build_sync_params,
+    enqueue_fixtures_sync,
+    execute_fixtures_sync,
+    sync_status_response,
+)
 from app.services.prediction import (
     OPINION_FACTORS,
     adjust_probabilities_with_factors,
@@ -54,44 +60,6 @@ from app.services.team_names import team_name_zh
 
 router = APIRouter(prefix="/fixtures", tags=["fixtures"])
 logger = logging.getLogger(__name__)
-
-_sync_lock = asyncio.Lock()
-_odds_followup_lock = asyncio.Lock()
-
-
-async def _sync_odds_and_results_followup(
-    day_list: list[date],
-    selected: list[int] | None,
-    *,
-    include_odds: bool,
-    include_results: bool,
-    odds_refresh_existing: bool = True,
-    odds_budget: int = 40,
-) -> None:
-    """Run after fixtures are saved — keeps odds aligned with the same sync request."""
-    if _odds_followup_lock.locked():
-        logger.info("Odds/results follow-up already running; skip duplicate")
-        return
-    async with _odds_followup_lock:
-        try:
-            async with FootballFetcher() as fetcher:
-                if include_odds:
-                    try:
-                        await fetcher.sync_odds_for_dates(
-                            day_list,
-                            refresh_existing=odds_refresh_existing,
-                            league_ids=selected,
-                            budget=odds_budget,
-                        )
-                    except Exception as exc:
-                        logger.warning("include_odds batch failed: %s", exc)
-                if include_results:
-                    try:
-                        await fetcher.capture_finished_results(lookback_days=2)
-                    except Exception as exc:
-                        logger.warning("include_results capture failed: %s", exc)
-        except Exception as exc:
-            logger.warning("sync follow-up failed: %s", exc, exc_info=True)
 
 
 def _set_response_headers(response: Response, data_source: str, max_age: int = 120) -> None:
@@ -187,14 +155,28 @@ def _list_analysis_from_fixture(
         goal_lean = getattr(stored, "goal_lean", None) or "大小球：待分析"
         both_score_lean = getattr(stored, "both_score_lean", None) or "双方进球：待分析"
         score_hint = getattr(stored, "score_hint", None) or "待分析"
-        handicap_lean = getattr(stored, "handicap_lean", None) or "缺少盘口数据分析"
+        from app.services.prediction import resolve_handicap_bundle
+
+        handicap_lean, handicap_market_note = resolve_handicap_bundle(
+            odds if isinstance(odds, dict) else None,
+            recommendation,
+            probs if ready else None,
+            league_id=fixture.league_id,
+            stored=getattr(stored, "handicap_lean", None),
+            score_hint=score_hint,
+        )
     else:
-        leans = derive_prediction_leans(probs, odds if isinstance(odds, dict) else None)
+        leans = derive_prediction_leans(
+            probs,
+            odds if isinstance(odds, dict) else None,
+            league_id=fixture.league_id,
+        )
         recommendation = get_recommendation(probs) if ready else "待分析"
         goal_lean = leans["goal_lean"] if ready else "大小球：待分析"
         both_score_lean = leans["both_score_lean"] if ready else "双方进球：待分析"
         score_hint = leans["score_hint"] if ready else "待分析"
         handicap_lean = leans["handicap_lean"]
+        handicap_market_note = leans.get("handicap_market_note", "")
 
     return AnalysisResponse(
         fixture_id=fixture.id,
@@ -215,6 +197,7 @@ def _list_analysis_from_fixture(
         both_score_lean=both_score_lean,
         score_hint=score_hint,
         handicap_lean=handicap_lean,
+        handicap_market_note=handicap_market_note or "",
         data_source="database",
         analyzed_at=analyzed_at,
         cache_status="miss",
@@ -538,68 +521,50 @@ async def sync_fixtures(
         default=None,
         description="仅同步勾选的联赛 ID；默认当日 API 返回的全部联赛",
     ),
+    odds_only: bool = Query(
+        default=False,
+        description="仅批量补缺失盘口，不重新拉取赛程（本地已有赛程时省配额）",
+    ),
+    background: bool = Query(
+        default=True,
+        description="True 时立即返回并在后台同步（首页不阻塞）；False 时等待完成",
+    ),
 ) -> SyncFixturesResponse:
     """
-    强制从官方拉取赛程并写入本地库（绕过 Redis/SQLite 日缓存）。
+    从官方拉取赛程/盘口并写入本地库。
 
-    选中日本地无数据时由前端自动调用；再读 `/fixtures/today`。
-    赛程与盘口在同一请求内顺序完成（非后台补拉）。
+    默认 ``background=true``：立即返回，任务在服务端后台执行；前端读本地列表即可。
     """
-    settings = get_settings()
-
-    async with _sync_lock:
-        try:
-            if date_str:
-                try:
-                    start = date.fromisoformat(date_str)
-                except ValueError as exc:
-                    raise HTTPException(
-                        status_code=400, detail="date must be YYYY-MM-DD"
-                    ) from exc
-            else:
-                start = date.today()
-            window = days if days is not None else min(settings.FIXTURES_LOOKAHEAD_DAYS, 7)
-            window = max(1, min(window, 14))
-            day_list = [start + timedelta(days=i) for i in range(window)]
-
-            selected = league_ids
-            if selected is not None and not selected:
-                raise HTTPException(status_code=400, detail="league_ids 不能为空")
-
-            async with FootballFetcher() as fetcher:
-                saved = await fetcher.fetch_fixtures_window(
-                    day_list[0],
-                    day_list[-1],
-                    force=True,
-                    league_ids=selected,
-                )
-        except ApiKeyNotConfiguredError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.error("sync_fixtures failed: %s", exc, exc_info=True)
-            raise HTTPException(status_code=503, detail=f"同步失败：{exc}") from exc
-
-        if include_odds or include_results:
-            await _sync_odds_and_results_followup(
-                day_list,
-                selected,
-                include_odds=include_odds,
-                include_results=include_results,
-                odds_refresh_existing=odds_refresh_existing,
-                odds_budget=odds_budget,
-            )
-        msg = "赛程已刷新"
-        if include_odds:
-            msg += "，盘口已同步" if odds_refresh_existing else "，缺失盘口已补全"
-        return SyncFixturesResponse(
-            status="ok",
-            fixtures_saved=saved,
-            days=window,
-            date=start.isoformat(),
-            message=msg,
+    try:
+        params = build_sync_params(
+            date_str=date_str,
+            days=days,
+            include_results=include_results,
+            include_odds=include_odds,
+            odds_refresh_existing=odds_refresh_existing,
+            odds_budget=odds_budget,
+            league_ids=league_ids,
+            odds_only=odds_only,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if background:
+        return await enqueue_fixtures_sync(params)
+
+    try:
+        return await execute_fixtures_sync(params)
+    except ApiKeyNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("sync_fixtures failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=503, detail=f"同步失败：{exc}") from exc
+
+
+@router.get("/sync/status", response_model=SyncFixturesStatusResponse)
+async def get_fixtures_sync_status() -> SyncFixturesStatusResponse:
+    """Poll background ``POST /fixtures/sync`` completion."""
+    return sync_status_response()
 
 
 @router.get("/opinion-factors", response_model=OpinionFactorsResponse)
@@ -635,11 +600,16 @@ async def adjust_fixture_prediction(
         "draw": stored.draw_prob,
         "away": stored.away_win_prob,
     }
+    fixture = await db.get(Fixture, fixture_id)
     odds = rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
     known = {f["id"] for f in OPINION_FACTORS}
     factors = [f for f in body.factors if f in known]
     adjusted = adjust_probabilities_with_factors(base, factors)
-    snap = build_prediction_snapshot(adjusted, odds if isinstance(odds, dict) else None)
+    snap = build_prediction_snapshot(
+        adjusted,
+        odds if isinstance(odds, dict) else None,
+        league_id=fixture.league_id if fixture else None,
+    )
     return PredictionSnapshotResponse(**snap, factors=factors)
 
 
