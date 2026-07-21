@@ -92,7 +92,7 @@ watch(
                 :class="{ active: activeNav === 'home' }"
                 @click="goNav('home')"
               >
-                赛前
+                即时
               </button>
               <button
                 v-if="!isPhone"
@@ -109,7 +109,7 @@ watch(
                 :class="{ active: activeNav === 'results' }"
                 @click="goNav('results')"
               >
-                赛果
+                赛程
               </button>
               <button
                 type="button"
@@ -191,7 +191,9 @@ watch(
   flex-direction: column;
   cursor: pointer;
   outline: none;
-  flex: 1;
+  flex: 0 1 auto;
+  align-self: center;
+  max-width: 100%;
   min-width: 0;
 }
 
@@ -330,6 +332,10 @@ watch(
     padding-left: max(12px, env(safe-area-inset-left, 0px));
     padding-right: max(12px, env(safe-area-inset-right, 0px));
     gap: 8px;
+  }
+
+  .brand {
+    max-width: calc(100% - 220px);
   }
 
   .brand-title {
