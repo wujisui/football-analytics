@@ -1,8 +1,7 @@
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -16,6 +15,7 @@ from app.models.pre_match_data import PreMatchData
 from app.services.analyzer import AnalyzerService
 from app.services.api_utils import extract_items, first_value, map_fixture_status
 from app.services.fetcher import FootballFetcher
+from app.services.fixtures_sync import scheduled_fixtures_sync
 
 logger = logging.getLogger(__name__)
 
@@ -59,62 +59,14 @@ def get_task_status() -> dict[str, Any]:
     }
 
 
-async def midday_fixtures_sync() -> None:
-    """每天中午：强制从官方拉取近期窗口赛程（对齐首页），并补缺盘口。"""
-    settings = get_settings()
-    task_name = "midday_fixtures_sync"
+async def run_scheduled_fixtures_sync(task_name: str = "scheduled_fixtures_sync") -> None:
+    """Daily 06:00 / 12:00 / 18:00 — fixtures window + gap-fill odds."""
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
-    logger.info("Task midday_fixtures_sync started.")
-
+    logger.info("Task %s started.", task_name)
     try:
-        tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
-        today = datetime.now(tz).date()
-        window = max(1, min(int(settings.FIXTURES_LOOKAHEAD_DAYS), 14))
-        day_list: list[date] = [today + timedelta(days=i) for i in range(window)]
-
-        async with FootballFetcher() as fetcher:
-            saved = await fetcher.fetch_fixtures_window(
-                day_list[0],
-                day_list[-1],
-                force=True,
-            )
-            odds_updated = 0
-            try:
-                # 中午盘口：缺盘补全；首次有盘记为初盘，已有盘口再同步只动即时盘。
-                odds_updated = await fetcher.sync_odds_for_dates(
-                    day_list,
-                    refresh_existing=False,
-                    set_opening=True,
-                )
-            except Exception as exc:
-                logger.warning("midday_fixtures_sync odds gap-fill skipped: %s", exc)
-            try:
-                await fetcher.capture_finished_results(lookback_days=2)
-            except Exception as exc:
-                logger.warning("midday_fixtures_sync capture_results skipped: %s", exc)
-            try:
-                from app.services.ml_predictor import maybe_auto_train_model
-
-                await maybe_auto_train_model()
-            except Exception as exc:
-                logger.warning("midday_fixtures_sync ML auto-train skipped: %s", exc)
-
-        _set_task_status(
-            task_name,
-            "completed",
-            fixtures_saved=saved,
-            odds_updated=odds_updated,
-            window_start=day_list[0].isoformat(),
-            window_days=window,
-            finished_at=_utc_now().isoformat(),
-        )
-        logger.info(
-            "Task midday_fixtures_sync completed. fixtures_saved=%s odds_updated=%s window=%s+%sd",
-            saved,
-            odds_updated,
-            day_list[0],
-            window,
-        )
+        await scheduled_fixtures_sync()
+        _set_task_status(task_name, "completed", finished_at=_utc_now().isoformat())
+        logger.info("Task %s completed.", task_name)
     except Exception as exc:
         _set_task_status(
             task_name,
@@ -122,7 +74,12 @@ async def midday_fixtures_sync() -> None:
             error=str(exc),
             finished_at=_utc_now().isoformat(),
         )
-        logger.error("Task midday_fixtures_sync failed: %s", exc, exc_info=True)
+        logger.error("Task %s failed: %s", task_name, exc, exc_info=True)
+
+
+async def midday_fixtures_sync() -> None:
+    """Backward-compatible alias for admin CLI."""
+    await run_scheduled_fixtures_sync("midday_fixtures_sync")
 
 
 async def pre_match_update() -> None:
@@ -285,6 +242,7 @@ async def capture_results() -> None:
 
         # After new FT labels land, try auto-train so inference can switch to ml.
         train_info: dict[str, Any] = {}
+        ah_train_info: dict[str, Any] = {}
         try:
             from app.services.ml_predictor import maybe_auto_train_model
 
@@ -293,17 +251,27 @@ async def capture_results() -> None:
             logger.warning("ML auto-train after capture_results failed: %s", train_exc)
             train_info = {"ok": False, "error": str(train_exc)}
 
+        try:
+            from app.services.ah_predictor import maybe_auto_train_model as maybe_auto_train_ah
+
+            ah_train_info = await maybe_auto_train_ah()
+        except Exception as train_exc:
+            logger.warning("AH ML auto-train after capture_results failed: %s", train_exc)
+            ah_train_info = {"ok": False, "error": str(train_exc)}
+
         _set_task_status(
             task_name,
             "completed",
             fixtures_saved=saved,
             ml_train=train_info,
+            ah_ml_train=ah_train_info,
             finished_at=_utc_now().isoformat(),
         )
         logger.info(
-            "Task capture_results completed. fixtures_saved=%s ml_train=%s",
+            "Task capture_results completed. fixtures_saved=%s ml_train=%s ah_ml_train=%s",
             saved,
             train_info.get("reason") or train_info.get("inference") or train_info.get("ok"),
+            ah_train_info.get("reason") or ah_train_info.get("inference") or ah_train_info.get("ok"),
         )
     except Exception as exc:
         _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
@@ -349,6 +317,7 @@ async def train_model() -> None:
 
 
 TASK_HANDLERS = {
+    "scheduled_fixtures_sync": run_scheduled_fixtures_sync,
     "midday_fixtures_sync": midday_fixtures_sync,
     "pre_match_update": pre_match_update,
     "capture_results": capture_results,
@@ -372,16 +341,21 @@ def register_jobs() -> None:
     if scheduler.get_job("daily_init") is not None:
         scheduler.remove_job("daily_init")
 
-    if scheduler.get_job("midday_fixtures_sync") is None:
-        scheduler.add_job(
-            midday_fixtures_sync,
-            CronTrigger(hour=12, minute=0, timezone=timezone),
-            id="midday_fixtures_sync",
-            name="midday_fixtures_sync",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
+    if scheduler.get_job("midday_fixtures_sync") is not None:
+        scheduler.remove_job("midday_fixtures_sync")
+
+    for hour in (6, 12, 18):
+        job_id = f"scheduled_fixtures_sync_{hour:02d}"
+        if scheduler.get_job(job_id) is None:
+            scheduler.add_job(
+                run_scheduled_fixtures_sync,
+                CronTrigger(hour=hour, minute=0, timezone=timezone),
+                id=job_id,
+                name=job_id,
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
 
     if scheduler.get_job("pre_match_update") is None:
         scheduler.add_job(

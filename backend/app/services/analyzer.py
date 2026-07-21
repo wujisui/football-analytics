@@ -85,6 +85,7 @@ class AnalysisResult:
     both_score_lean: str | None = None
     score_hint: str | None = None
     handicap_lean: str | None = None
+    handicap_market_note: str | None = None
     leans_frozen: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -336,6 +337,7 @@ class AnalyzerService:
                 },
                 odds_for_snap if isinstance(odds_for_snap, dict) else None,
                 features=features,
+                league_id=fixture.league_id if fixture else None,
             )
             fields["home_win_prob"] = home_win_prob
             fields["draw_prob"] = draw_prob
@@ -361,6 +363,7 @@ class AnalyzerService:
                     setattr(record, key, value)
 
         if features is not None and not exam_locked:
+            from app.services.ah_predictor import persist_ah_fields
             from app.services.ml_predictor import persist_match_features
 
             await persist_match_features(
@@ -373,6 +376,17 @@ class AnalyzerService:
                     "away": away_win_prob,
                 },
                 source=model_source or "multifactor",
+            )
+            await persist_ah_fields(
+                self.session,
+                fixture_id,
+                package,
+                {
+                    "home": home_win_prob,
+                    "draw": draw_prob,
+                    "away": away_win_prob,
+                },
+                league_id=fixture.league_id if fixture else None,
             )
 
         await self.session.commit()
@@ -397,6 +411,20 @@ class AnalyzerService:
 
         frozen_rec = (getattr(stored, "recommendation", None) or "").strip()
         has_frozen = bool(frozen_rec and frozen_rec != "待分析")
+        pkg = package_from_record(stored)
+        odds = pkg.get("odds") if isinstance(pkg.get("odds"), dict) else None
+        from app.services.prediction import resolve_handicap_bundle
+
+        rec = frozen_rec if has_frozen else get_recommendation(probs)
+        score_hint = getattr(stored, "score_hint", None) or ""
+        handicap_lean, handicap_market_note = resolve_handicap_bundle(
+            odds,
+            rec,
+            probs,
+            league_id=fixture.league_id,
+            stored=getattr(stored, "handicap_lean", None),
+            score_hint=score_hint,
+        )
         return AnalysisResult(
             fixture_id=fixture.id,
             home_team_name=home_name,
@@ -408,15 +436,16 @@ class AnalyzerService:
             draw_prob=probs["draw"],
             away_win_prob=probs["away"],
             confidence=confidence,
-            recommendation=frozen_rec if has_frozen else get_recommendation(probs),
+            recommendation=rec,
             data_source="database",
             analyzed_at=analyzed_at,
             cache_status="miss",
-            package=package_from_record(stored),
+            package=pkg,
             goal_lean=getattr(stored, "goal_lean", None),
             both_score_lean=getattr(stored, "both_score_lean", None),
             score_hint=getattr(stored, "score_hint", None),
-            handicap_lean=getattr(stored, "handicap_lean", None),
+            handicap_lean=handicap_lean,
+            handicap_market_note=handicap_market_note or None,
             leans_frozen=has_frozen,
         )
 
@@ -1133,6 +1162,7 @@ class AnalyzerService:
             },
             odds_for_snap if isinstance(odds_for_snap, dict) else None,
             features=prediction.features,
+            league_id=fixture.league_id,
         )
 
         result = AnalysisResult(

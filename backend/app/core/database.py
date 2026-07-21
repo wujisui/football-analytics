@@ -76,6 +76,20 @@ async def _ensure_sqlite_columns(conn) -> None:
             "pen_away": "INTEGER",
         },
     )
+    await _ensure_table_columns(
+        conn,
+        "match_features",
+        {
+            "ah_line": "REAL",
+            "ah_home_odd": "REAL",
+            "ah_away_odd": "REAL",
+            "ah_features_json": "TEXT",
+            "ah_label": "TEXT",
+            "ah_cover_prob": "REAL",
+            "ah_model_source": "TEXT",
+            "ah_feature_version": "TEXT",
+        },
+    )
 
 
 async def init_db() -> None:

@@ -101,6 +101,8 @@ class Settings(BaseSettings):
     # ML: accumulate local labels from now; auto-train & switch when enough samples.
     ML_MIN_TRAIN_SAMPLES: int = 30
     ML_AUTO_TRAIN: bool = True
+    ML_AH_MIN_TRAIN_SAMPLES: int = 80
+    ML_AH_AUTO_TRAIN: bool = True
 
     # Optional JSON array override (same shape as config/leagues.json). Highest priority.
     LEAGUES_JSON: str = ""

@@ -213,7 +213,11 @@ class AnalysisResponse(BaseModel):
     score_hint: str = Field(default="", description="参考比分")
     handicap_lean: str = Field(
         default="",
-        description="让球胜平负推荐（让胜/让平/让负，附盘口，可多档）",
+        description="让球推荐（主盘）：让球胜/让球平/让球负 + 盘口",
+    )
+    handicap_market_note: str = Field(
+        default="",
+        description="进阶：盘口水位与参考比分结算不一致时的说明（详情页）",
     )
     data_source: str = Field(..., description="数据来源：cache/api/database")
     analyzed_at: datetime = Field(..., description="分析时间（UTC）")
@@ -379,11 +383,26 @@ class ResultsResponse(BaseModel):
 
 
 class SyncFixturesResponse(BaseModel):
-    status: str = Field(..., description="ok")
+    status: str = Field(
+        ...,
+        description="ok | accepted | running — accepted/running 表示后台任务",
+    )
     fixtures_saved: int = Field(default=0, description="写入/更新的场次数")
     days: int = Field(default=1, description="同步窗口天数")
     date: str | None = Field(default=None, description="单日同步时的日期")
     message: str = Field(default="")
+
+
+class SyncFixturesStatusResponse(BaseModel):
+    running: bool = Field(default=False, description="是否有后台同步进行中")
+    last_status: str | None = Field(
+        default=None,
+        description="最近一次后台同步结果：ok | failed",
+    )
+    last_message: str = Field(default="", description="最近一次同步说明")
+    last_error: str | None = Field(default=None, description="失败时的错误信息")
+    fixtures_saved: int = Field(default=0, description="最近一次写入场次数")
+    finished_at: str | None = Field(default=None, description="最近一次完成时间 ISO8601")
 
 
 class LeagueCatalogItemResponse(BaseModel):
@@ -473,6 +492,17 @@ def analysis_to_response(analysis) -> AnalysisResponse:
     probs = resolve_match_probabilities(raw, odds if isinstance(odds, dict) else None)
     ready = not is_flat_prior(probs)
 
+    league_id: int | None = None
+    if isinstance(analysis.package, dict):
+        standings = analysis.package.get("standings")
+        if isinstance(standings, dict):
+            raw_lid = standings.get("league_id")
+            if raw_lid is not None:
+                try:
+                    league_id = int(raw_lid)
+                except (TypeError, ValueError):
+                    league_id = None
+
     # Prefer snapshot frozen at last pre-kickoff analysis (audit / learning).
     frozen = bool(getattr(analysis, "leans_frozen", False))
     if frozen:
@@ -480,17 +510,28 @@ def analysis_to_response(analysis) -> AnalysisResponse:
         goal_lean = getattr(analysis, "goal_lean", None) or "大小球：待分析"
         both_score_lean = getattr(analysis, "both_score_lean", None) or "双方进球：待分析"
         score_hint = getattr(analysis, "score_hint", None) or "待分析"
-        handicap_lean = getattr(analysis, "handicap_lean", None) or "缺少盘口数据分析"
+        from app.services.prediction import resolve_handicap_bundle
+
+        handicap_lean, handicap_market_note = resolve_handicap_bundle(
+            odds if isinstance(odds, dict) else None,
+            recommendation,
+            probs if ready else None,
+            league_id=league_id,
+            stored=getattr(analysis, "handicap_lean", None),
+            score_hint=score_hint,
+        )
     else:
         leans = derive_prediction_leans(
             probs,
             odds if isinstance(odds, dict) else None,
+            league_id=league_id,
         )
         recommendation = get_recommendation(probs) if ready else "待分析"
         goal_lean = leans["goal_lean"] if ready else "大小球：待分析"
         both_score_lean = leans["both_score_lean"] if ready else "双方进球：待分析"
         score_hint = leans["score_hint"] if ready else "待分析"
         handicap_lean = leans["handicap_lean"]
+        handicap_market_note = leans.get("handicap_market_note", "")
 
     return AnalysisResponse(
         fixture_id=analysis.fixture_id,
@@ -511,6 +552,7 @@ def analysis_to_response(analysis) -> AnalysisResponse:
         both_score_lean=both_score_lean,
         score_hint=score_hint,
         handicap_lean=handicap_lean,
+        handicap_market_note=handicap_market_note or "",
         data_source=analysis.data_source,
         analyzed_at=analysis.analyzed_at,
         cache_status=analysis.cache_status,

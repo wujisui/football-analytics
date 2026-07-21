@@ -892,7 +892,18 @@ class FootballFetcher:
             total,
         )
         await self._label_match_features_for_finished()
+        await self._label_ah_for_finished()
         return total
+
+    async def _label_ah_for_finished(self) -> int:
+        """Stamp AH cover labels onto match_features after FT scores land."""
+        assert self.session is not None
+        from app.services.ah_predictor import label_finished_ah
+
+        updated = await label_finished_ah(self.session)
+        if updated:
+            logger.info("Labeled %s match_features rows with AH outcomes.", updated)
+        return updated
 
     async def _label_match_features_for_finished(self) -> int:
         """Stamp outcome labels onto stored match_features after FT scores land."""
@@ -1080,7 +1091,12 @@ class FootballFetcher:
                 if implied:
                     probs = implied
 
-            snap = build_prediction_snapshot(probs, odds_pkg, features=pred.features)
+            snap = build_prediction_snapshot(
+                probs,
+                odds_pkg,
+                features=pred.features,
+                league_id=fixture.league_id if fixture else None,
+            )
 
             if row is None:
                 row = PreMatchData(
@@ -1116,6 +1132,15 @@ class FootballFetcher:
                 pred.features,
                 probs,
                 source=pred.source,
+            )
+            from app.services.ah_predictor import persist_ah_fields
+
+            await persist_ah_fields(
+                self.session,
+                fixture_id,
+                package,
+                probs,
+                league_id=fixture.league_id if fixture else None,
             )
             # Ensure TTL freshness sees this write (SQLite onupdate can be flaky).
             row.updated_at = datetime.now(timezone.utc)

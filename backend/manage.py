@@ -219,16 +219,24 @@ async def run_train_model() -> None:
 async def run_model_status() -> None:
     from app.core.database import AsyncSessionLocal, init_db
     from app.models.match_feature import MatchFeature
+    from app.services.ah_predictor import model_status as ah_model_status
     from app.services.ml_predictor import model_status
     from sqlalchemy import func, select
 
     await init_db()
     status = model_status()
+    ah_status = ah_model_status()
     async with AsyncSessionLocal() as session:
         total = await session.scalar(select(func.count()).select_from(MatchFeature))
         labeled = await session.scalar(
             select(func.count()).select_from(MatchFeature).where(MatchFeature.label.is_not(None))
         )
+        ah_labeled = await session.scalar(
+            select(func.count())
+            .select_from(MatchFeature)
+            .where(MatchFeature.ah_label.in_(("cover", "no_cover")))
+        )
+    print("--- 1X2 ---")
     print(f"inference_mode: {status['inference_mode']}")
     print(f"artifact_ready: {status['artifact_ready']}")
     print(f"trained_n_samples: {status['trained_n_samples']}")
@@ -236,6 +244,48 @@ async def run_model_status() -> None:
     print(f"match_features_total: {total or 0}")
     print(f"match_features_labeled: {labeled or 0}")
     print(f"trained_at: {status.get('trained_at')}")
+    print("--- 让球 (AH) ---")
+    print(f"inference_mode: {ah_status['inference_mode']}")
+    print(f"artifact_ready: {ah_status['artifact_ready']}")
+    print(f"trained_n_samples: {ah_status['trained_n_samples']}")
+    print(f"min_train_samples: {ah_status['min_train_samples']}")
+    print(f"ah_labeled: {ah_labeled or 0}")
+    print(f"trained_at: {ah_status.get('trained_at')}")
+
+
+async def run_backfill_ah_features() -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.ah_predictor import backfill_ah_features
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        updated = await backfill_ah_features(session)
+    print(f"Backfilled AH fields for {updated} match_features row(s).")
+
+
+async def run_train_ah_model() -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.ah_predictor import min_train_samples, model_status, train_model_from_db
+
+    await init_db()
+    threshold = min_train_samples()
+    async with AsyncSessionLocal() as session:
+        result = await train_model_from_db(session)
+    status = model_status()
+    if not result.get("ok"):
+        print(
+            f"AH training skipped: {result.get('reason')} "
+            f"(need >={threshold} finished fixtures with AH labels)."
+        )
+        print(f"Current labeled samples: {result.get('n_samples', 0)}")
+        print(f"Current inference mode: {status['inference_mode']}")
+        return
+    print("AH training succeeded — inference will auto-switch to source=ml.")
+    print(f"Samples: {result.get('n_samples')}")
+    print(f"Val log-loss: {result.get('val_metrics', {}).get('log_loss')}")
+    print(f"Val accuracy: {result.get('val_metrics', {}).get('accuracy')}")
+    print(f"Weights: {result.get('weights_path')}")
+    print(f"Model status: {status}")
 
 
 def main() -> None:
@@ -279,6 +329,14 @@ def main() -> None:
         "model-status",
         help="Show labeled sample count and whether inference is multifactor or ml",
     )
+    subparsers.add_parser(
+        "backfill-ah-features",
+        help="Backfill AH features/labels on match_features from stored pre_match packages",
+    )
+    subparsers.add_parser(
+        "train-ah-model",
+        help="Train Asian handicap cover model (needs >= ML_AH_MIN_TRAIN_SAMPLES)",
+    )
 
     trigger_parser = subparsers.add_parser("trigger-task", help="Manually trigger a scheduler task")
     trigger_parser.add_argument(
@@ -318,6 +376,8 @@ def main() -> None:
         "backfill-features": run_backfill_features,
         "train-model": run_train_model,
         "model-status": run_model_status,
+        "backfill-ah-features": run_backfill_ah_features,
+        "train-ah-model": run_train_ah_model,
     }
 
     asyncio.run(commands[args.command]())

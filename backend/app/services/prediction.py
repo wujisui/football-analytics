@@ -438,160 +438,94 @@ def _split_score(total: int, probs: dict[str, float]) -> tuple[int, int]:
     return home, away
 
 
-def _sanitize_handicap_pick(pick: str, line_f: float | None) -> str:
-    """Half / quarter lines cannot be 平 or 胜/平 — goals are integers."""
-    if _line_allows_push(line_f):
-        return pick
-    if pick in {"让球平", "让球盘"}:
-        return "让球胜" if pick == "让球平" else pick
-    if pick == "让球胜/平":
-        return "让球胜"
-    if pick == "让球负/平":
-        return "让球负"
-    if "/平" in pick or pick.endswith("平"):
-        return pick.replace("胜/平", "胜").replace("负/平", "负").replace("让球平", "让球胜")
-    return pick
-
-
-def _line_allows_push(line_f: float | None) -> bool:
-    """True only for integer AH lines (0 / ±1 / ±2…), where a push is possible.
-
-    Half lines (±0.5 / ±1.5…) never push: goals are integers, so the bet
-    always settles as win or lose. Quarter lines (±0.25 / ±0.75) settle as
-    half-win / half-lose — also not a full 平.
-    """
-    if line_f is None:
-        return False
-    frac = abs(float(line_f)) % 1.0
-    return frac < 1e-6 or abs(frac - 1.0) < 1e-6
-
-
-def _handicap_pick(
-    line_f: float | None,
-    home_odd: float | None,
-    away_odd: float | None,
-    recommendation: str,
-) -> str:
-    """Pick 让球胜 / 让球平 / 让球负 for one AH line.
-
-    核心规则（优先于赔率）：
-    - 半盘（±0.5 等）只有胜/负，绝无平（进球数为整数）。
-    - 胜平负推荐「主胜/平」+ 主让半球 → 让球负
-      （平局即输盘；主胜才赢盘，双选落到让球侧只能选负）。
-    - 「客胜/平」+ 主受让半球 → 让球胜（对称）。
-    """
-    rec = recommendation
-    can_push = _line_allows_push(line_f)
-    half_giving = line_f is not None and -1.15 <= line_f <= -0.4
-    half_receiving = line_f is not None and 0.4 <= line_f <= 1.15
-    home_undivided = "主队不败" in rec or rec.startswith("主胜/平")
-    away_undivided = "客队不败" in rec or rec.startswith("客胜/平")
-
-    # 1) 胜平 / 负平 + 半球：直接映射，不看赔率。
-    if home_undivided and half_giving:
-        return "让球负"
-    if home_undivided and half_receiving:
-        return "让球胜"
-    if away_undivided and half_receiving:
-        return "让球胜"
-    if away_undivided and half_giving:
-        return "让球负"
-
-    # 2) 单选胜平负 + 半球
-    if rec == "主胜" and half_giving:
-        return "让球胜"
-    if rec == "主胜" and half_receiving:
-        return "让球胜"
-    if rec == "客胜" and half_receiving:
-        return "让球负"
-    if rec == "客胜" and half_giving:
-        return "让球负"
-    if rec == "平局":
-        if half_giving:
-            return "让球负"
-        if half_receiving:
-            return "让球胜"
-        if can_push and line_f is not None and abs(line_f) < 1e-6:
-            return "让球平"
-
-    # 3) 半盘：没有 1X2 强映射时，也只能在胜/负里选，绝不能出平。
-    if line_f is not None and not can_push:
-        if home_odd is None or away_odd is None:
-            return "让球盘"
-        return "让球胜" if home_odd <= away_odd else "让球负"
-
-    # 4) 整球盘：可用赔率，才允许平 / 胜平 / 负平。
-    if home_odd is None or away_odd is None:
-        return "让球盘"
-    ratio = home_odd / away_odd
-    if ratio <= 0.88:
-        return "让球胜"
-    if ratio >= 1.12:
-        return "让球负"
-    if abs(home_odd - away_odd) < 0.08:
-        return "让球平"
-    if home_odd <= away_odd:
-        return "让球胜/平"
-    return "让球负/平"
-
-
 def _handicap_lean(
     odds: dict[str, Any] | None,
     recommendation: str | None = None,
+    *,
+    league_id: int | None = None,
+    features: dict[str, float] | None = None,
+    probs: dict[str, float] | None = None,
+    score_hint: str | None = None,
 ) -> str:
-    """竞彩风格「让球胜平负」推荐：结合主盘 + 胜平负（含双选）。
+    """Asian handicap lean via ah_predictor (structural → score → ML → multifactor)."""
+    lean, _ = _handicap_bundle(
+        odds,
+        recommendation,
+        league_id=league_id,
+        features=features,
+        probs=probs,
+        score_hint=score_hint,
+    )
+    return lean
 
-    例：推荐「主胜/平（主队不败）」且主队让 0.5/1 → 「让球负（-0.5）」。
-    """
+
+def _handicap_bundle(
+    odds: dict[str, Any] | None,
+    recommendation: str | None = None,
+    *,
+    league_id: int | None = None,
+    features: dict[str, float] | None = None,
+    probs: dict[str, float] | None = None,
+    score_hint: str | None = None,
+) -> tuple[str, str]:
+    from app.services.ah_predictor import handicap_bundle_from_markets
+
+    return handicap_bundle_from_markets(
+        odds,
+        recommendation,
+        probs_1x2=probs,
+        league_id=league_id,
+        features=features,
+        score_hint=score_hint,
+    )
+
+
+def resolve_handicap_lean(
+    odds: dict[str, Any] | None,
+    recommendation: str | None,
+    probs: dict[str, float] | None = None,
+    *,
+    league_id: int | None = None,
+    features: dict[str, float] | None = None,
+    stored: str | None = None,
+    score_hint: str | None = None,
+) -> str:
+    """Recompute AH lean from stored odds when available (algorithm fixes apply on read)."""
+    lean, _ = resolve_handicap_bundle(
+        odds,
+        recommendation,
+        probs,
+        league_id=league_id,
+        features=features,
+        stored=stored,
+        score_hint=score_hint,
+    )
+    return lean
+
+
+def resolve_handicap_bundle(
+    odds: dict[str, Any] | None,
+    recommendation: str | None,
+    probs: dict[str, float] | None = None,
+    *,
+    league_id: int | None = None,
+    features: dict[str, float] | None = None,
+    stored: str | None = None,
+    score_hint: str | None = None,
+) -> tuple[str, str]:
+    """Recompute handicap lean + optional market note for detail views."""
     ah = (odds or {}).get("asian_handicap") if isinstance(odds, dict) else None
-    if not isinstance(ah, dict):
-        return "缺少盘口数据分析"
-
-    line_entries: list[dict[str, Any]] = []
-    lines = ah.get("lines")
-    if isinstance(lines, list) and lines:
-        for item in lines:
-            if isinstance(item, dict):
-                line_entries.append(item)
-    elif ah.get("line") is not None:
-        line_entries.append(
-            {"line": ah.get("line"), "home": ah.get("home"), "away": ah.get("away")}
+    if isinstance(odds, dict) and odds.get("available") and isinstance(ah, dict):
+        return _handicap_bundle(
+            odds,
+            recommendation,
+            league_id=league_id,
+            features=features,
+            probs=probs,
+            score_hint=score_hint,
         )
-
-    if not line_entries:
-        return "缺少盘口数据分析"
-
-    rec = (recommendation or "").strip()
-    leans: list[str] = []
-    for item in line_entries[:4]:
-        line_raw = item.get("line")
-        if line_raw is None or line_raw == "":
-            continue
-        line = _format_line(line_raw)
-        try:
-            line_f = float(str(line_raw).replace(",", "."))
-        except ValueError:
-            line_f = None
-        pick = _sanitize_handicap_pick(
-            _handicap_pick(
-                line_f,
-                _odd_float(item.get("home")),
-                _odd_float(item.get("away")),
-                rec,
-            ),
-            line_f,
-        )
-        leans.append(f"{pick}（{line}）")
-
-    if not leans:
-        return "缺少盘口数据分析"
-    seen: set[str] = set()
-    unique: list[str] = []
-    for text in leans:
-        if text not in seen:
-            seen.add(text)
-            unique.append(text)
-    return "；".join(unique)
+    text = (stored or "").strip()
+    return (text if text else "缺少盘口数据分析"), ""
 
 
 def _draw_scoreline(preferred_total: int) -> tuple[int, int]:
@@ -672,6 +606,8 @@ def derive_prediction_leans(
     probs: dict[str, float],
     odds: dict[str, Any] | None = None,
     features: dict[str, float] | None = None,
+    *,
+    league_id: int | None = None,
 ) -> dict[str, str]:
     """Derive O/U, BTTS, score and handicap leans from 1X2 + markets.
 
@@ -692,6 +628,7 @@ def derive_prediction_leans(
             "both_score_lean": "双方进球：待分析",
             "score_hint": "待分析",
             "handicap_lean": "让球：待分析" if has_ah else "缺少盘口数据分析",
+            "handicap_market_note": "",
         }
 
     ou = (odds or {}).get("goals_ou") if isinstance(odds, dict) else None
@@ -729,14 +666,20 @@ def derive_prediction_leans(
     )
     btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
     score_hint = " / ".join(f"{h}-{a}" for h, a in score_lines) if score_lines else "待分析"
+    handicap_lean, handicap_market_note = _handicap_bundle(
+        odds if isinstance(odds, dict) else None,
+        recommendation=recommendation,
+        league_id=league_id,
+        features=features,
+        probs=normalized,
+        score_hint=score_hint,
+    )
     return {
         "goal_lean": goal_lean,
         "both_score_lean": "双方进球：是" if btts_yes else "双方进球：否",
         "score_hint": score_hint,
-        "handicap_lean": _handicap_lean(
-            odds if isinstance(odds, dict) else None,
-            recommendation=recommendation,
-        ),
+        "handicap_lean": handicap_lean,
+        "handicap_market_note": handicap_market_note,
     }
 
 
@@ -773,9 +716,13 @@ def build_prediction_snapshot(
     probs: dict[str, float],
     odds: dict[str, Any] | None = None,
     features: dict[str, float] | None = None,
+    *,
+    league_id: int | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_probabilities(probs)
-    leans = derive_prediction_leans(normalized, odds, features=features)
+    leans = derive_prediction_leans(
+        normalized, odds, features=features, league_id=league_id
+    )
     return {
         "home_win_prob": round(normalized["home"], 4),
         "draw_prob": round(normalized["draw"], 4),
