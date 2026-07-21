@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onActivated, onMounted, watch } from 'vue'
+import { onActivated, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
 import HomeDateStrip from '@/components/HomeDateStrip.vue'
@@ -7,8 +7,7 @@ import LeagueFilterTrigger from '@/components/LeagueFilterTrigger.vue'
 import LeagueMenu from '@/components/LeagueMenu.vue'
 import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 import {
-  activateFixturesShell,
-  initFixturesShellOnMount,
+  bootstrapFixturesShell,
   useFixturesShell,
 } from '@/composables/useFixturesShell'
 import { useIsPhone } from '@/composables/useMediaQuery'
@@ -24,7 +23,7 @@ const {
   teamSearch,
   siderCollapsed,
   leagueDrawerShow,
-  shellLoading,
+  contentLoading,
   shellTrackedIds,
   shellFilterOptions,
   shellFilterActive,
@@ -37,22 +36,16 @@ const {
   filterConfirming,
   confirmFilter,
   selectLeague,
-  reloadPrematchDay,
   isResultsPage,
   isScheduleFutureDay,
 } = useFixturesShell()
 
-watch(selectedDay, () => {
-  if (isResultsPage.value) return
-  void reloadPrematchDay()
-})
-
 onMounted(() => {
-  initFixturesShellOnMount(route.name === 'results')
+  bootstrapFixturesShell({ reloadPrematch: route.name !== 'results' })
 })
 
 onActivated(() => {
-  activateFixturesShell()
+  bootstrapFixturesShell()
 })
 </script>
 
@@ -79,7 +72,7 @@ onActivated(() => {
           :selected-league-id="selectedLeagueId"
           :pending-count-by-league="shellCountByLeague"
           :total-pending="shellTotalCount"
-          :loading="shellLoading"
+          :loading="contentLoading"
           :collapsed="siderCollapsed"
           @select="selectLeague"
         >
@@ -162,7 +155,7 @@ onActivated(() => {
           :selected-league-id="selectedLeagueId"
           :pending-count-by-league="shellCountByLeague"
           :total-pending="shellTotalCount"
-          :loading="shellLoading"
+          :loading="contentLoading"
           :collapsed="false"
           @select="selectLeague"
         >
@@ -240,5 +233,21 @@ onActivated(() => {
 
 :deep(.n-breadcrumb-item:first-child .n-breadcrumb-item__link) {
   cursor: pointer;
+}
+
+:deep(.shell-layout > .n-layout-sider > .n-scrollbar) {
+  height: 100%;
+  max-height: 100%;
+}
+
+:deep(.shell-layout > .n-layout-sider > .n-scrollbar > .n-scrollbar-container) {
+  max-height: 100%;
+}
+
+:deep(.shell-layout > .n-layout-sider > .n-scrollbar .n-scrollbar-content) {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 </style>

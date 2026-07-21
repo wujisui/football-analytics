@@ -42,6 +42,8 @@ const siderCollapsed = ref(false)
 const leagueDrawerShow = ref(false)
 const filterConfirming = ref(false)
 
+let shellWatchersBound = false
+
 export function useFixturesShell() {
   const route = useRoute()
   const router = useRouter()
@@ -97,10 +99,6 @@ export function useFixturesShell() {
   })
 
   const contentLoading = computed(() =>
-    isResultsPage.value ? resultsLoading.value : prematchLoading.value,
-  )
-
-  const shellLoading = computed(() =>
     isResultsPage.value ? resultsLoading.value : prematchLoading.value,
   )
 
@@ -289,22 +287,23 @@ export function useFixturesShell() {
 
   const predictionsEmptyText = computed(() => {
     if (error.value) return ''
+    const day = homeDay.value
     if (
-      isDayAutoSynced(selectedDay.value) &&
+      isDayAutoSynced(day) &&
       !allFixtures.value.length &&
       !contentLoading.value
     ) {
-      return `${selectedDay.value} 当日没有比赛数据`
+      return `${day} 当日没有比赛数据`
     }
     if (!prematchTrackedIds.value.length) return '请先在「筛选」中勾选联赛'
     if (!predictionsDisplayedFixtures.value.length && !teamSearch.value.trim()) {
-      return `${selectedDay.value} 暂无未完赛预测`
+      return `${day} 暂无未完赛预测`
     }
     const teamHint = teamSearchEmptyHint(teamSearch.value)
     if (teamHint && sortFixtures(leagueFiltered(predictionsDayFixtures.value)).length) {
       return teamHint
     }
-    return `${selectedDay.value} 暂无未完赛预测`
+    return `${day} 暂无未完赛预测`
   })
 
   function syncLeagueFromRoute() {
@@ -357,10 +356,6 @@ export function useFixturesShell() {
     ).length
   }
 
-  function prematchCalendarDay() {
-    return homeDay.value
-  }
-
   function syncCalendarDay() {
     return isResultsPage.value ? selectedDay.value : homeDay.value
   }
@@ -368,10 +363,11 @@ export function useFixturesShell() {
   function onSyncSettled(_ok: boolean, day?: string) {
     const syncDay = day ?? syncCalendarDay()
     markDayAutoSynced(syncDay)
-    void Promise.all([
-      loadFilterOptions({ date: syncCalendarDay(), discover: true }),
-      loadDayLocal(true),
-    ])
+    const tasks: Promise<unknown>[] = [loadDayLocal(true)]
+    if (!isResultsPage.value) {
+      tasks.unshift(loadFilterOptions({ date: homeDay.value, discover: true }))
+    }
+    void Promise.all(tasks)
   }
 
   function startBackgroundSync(
@@ -395,7 +391,7 @@ export function useFixturesShell() {
     )
   }
 
-  function gapFillOddsIfNeeded(day = prematchCalendarDay()) {
+  function gapFillOddsIfNeeded(day = homeDay.value) {
     const missing = prematchMissingOddsCount()
     if (missing <= 0 || !shouldGapFillOdds(day)) return
     markOddsGapFillTried(day)
@@ -493,7 +489,7 @@ export function useFixturesShell() {
       enqueueBackgroundSync(
         {
           days: 1,
-          date: prematchCalendarDay(),
+          date: homeDay.value,
           includeResults: false,
           includeOdds: true,
           oddsRefreshExisting: false,
@@ -502,12 +498,12 @@ export function useFixturesShell() {
         },
         (ok) => {
           filterConfirming.value = false
-          onSyncSettled(ok, prematchCalendarDay())
+          onSyncSettled(ok, homeDay.value)
         },
       )
     } else {
       await loadDayLocal(false)
-      gapFillOddsIfNeeded(prematchCalendarDay())
+      gapFillOddsIfNeeded()
     }
   }
 
@@ -523,86 +519,90 @@ export function useFixturesShell() {
     })
   }
 
-  watch(
-    isTabletDown,
-    (compact) => {
-      if (compact && !isPhone.value) siderCollapsed.value = true
-    },
-    { immediate: true },
-  )
+  if (!shellWatchersBound) {
+    shellWatchersBound = true
 
-  watch(prematchTrackedIds, () => {
-    if (
-      !isResultsPage.value &&
-      prematchSelectedLeagueId.value != null &&
-      !prematchTrackedIdSet.value.has(prematchSelectedLeagueId.value)
-    ) {
-      selectLeague(null)
-    }
-  })
+    watch(
+      isTabletDown,
+      (compact) => {
+        if (compact && !isPhone.value) siderCollapsed.value = true
+      },
+      { immediate: true },
+    )
 
-  watch(resultsTrackedIds, () => {
-    if (
-      isResultsPage.value &&
-      resultsSelectedLeagueId.value != null &&
-      !new Set(resultsTrackedIds.value).has(resultsSelectedLeagueId.value)
-    ) {
-      selectLeague(null)
-    }
-  })
-
-  watch(resultsMenuLeagues, () => {
-    if (
-      !isResultsPage.value ||
-      resultsSelectedLeagueId.value == null ||
-      !resultsMenuLeagues.value.length
-    ) {
-      return
-    }
-    if (
-      !resultsMenuLeagues.value.some(
-        (l) => l.league_id === resultsSelectedLeagueId.value,
-      )
-    ) {
-      selectLeague(null)
-    }
-  })
-
-  watch(prematchMenuLeagues, () => {
-    if (
-      isResultsPage.value ||
-      prematchSelectedLeagueId.value == null ||
-      !prematchMenuLeagues.value.length
-    ) {
-      return
-    }
-    if (
-      !prematchMenuLeagues.value.some(
-        (l) => l.league_id === prematchSelectedLeagueId.value,
-      )
-    ) {
-      selectLeague(null)
-    }
-  })
-
-  watch(
-    () => route.query.league,
-    () => {
-      if (!FIXTURES_ROUTE_NAMES.has(String(route.name))) return
-      syncLeagueFromRoute()
-    },
-  )
-
-  watch(
-    () => route.name,
-    (name, prev) => {
-      syncLeagueFromRoute()
-      const prematch = name === 'home' || name === 'predictions'
-      if (prematch && prev === 'results') {
-        void reloadPrematchDay()
+    watch(prematchTrackedIds, () => {
+      if (
+        !isResultsPage.value &&
+        prematchSelectedLeagueId.value != null &&
+        !prematchTrackedIdSet.value.has(prematchSelectedLeagueId.value)
+      ) {
+        selectLeague(null)
       }
-    },
-  )
+    })
+
+    watch(resultsTrackedIds, () => {
+      if (
+        isResultsPage.value &&
+        resultsSelectedLeagueId.value != null &&
+        !new Set(resultsTrackedIds.value).has(resultsSelectedLeagueId.value)
+      ) {
+        selectLeague(null)
+      }
+    })
+
+    watch(resultsMenuLeagues, () => {
+      if (
+        !isResultsPage.value ||
+        resultsSelectedLeagueId.value == null ||
+        !resultsMenuLeagues.value.length
+      ) {
+        return
+      }
+      if (
+        !resultsMenuLeagues.value.some(
+          (l) => l.league_id === resultsSelectedLeagueId.value,
+        )
+      ) {
+        selectLeague(null)
+      }
+    })
+
+    watch(prematchMenuLeagues, () => {
+      if (
+        isResultsPage.value ||
+        prematchSelectedLeagueId.value == null ||
+        !prematchMenuLeagues.value.length
+      ) {
+        return
+      }
+      if (
+        !prematchMenuLeagues.value.some(
+          (l) => l.league_id === prematchSelectedLeagueId.value,
+        )
+      ) {
+        selectLeague(null)
+      }
+    })
+
+    watch(
+      () => route.query.league,
+      () => {
+        if (!FIXTURES_ROUTE_NAMES.has(String(route.name))) return
+        syncLeagueFromRoute()
+      },
+    )
+
+    watch(
+      () => route.name,
+      (name, prev) => {
+        syncLeagueFromRoute()
+        const prematch = name === 'home' || name === 'predictions'
+        if (prematch && prev === 'results') {
+          void reloadPrematchDay()
+        }
+      },
+    )
+  }
 
   return {
     selectedDay,
@@ -612,7 +612,6 @@ export function useFixturesShell() {
     leagueDrawerShow,
     filterConfirming,
     contentLoading,
-    shellLoading,
     error,
     shellTrackedIds,
     shellFilterOptions,
@@ -640,13 +639,8 @@ export function useFixturesShell() {
   }
 }
 
-export function initFixturesShellOnMount(isResults: boolean) {
+export function bootstrapFixturesShell(options?: { reloadPrematch?: boolean }) {
   const { syncLeagueFromRoute, reloadPrematchDay } = useFixturesShell()
   syncLeagueFromRoute()
-  if (!isResults) void reloadPrematchDay()
-}
-
-export function activateFixturesShell() {
-  const { syncLeagueFromRoute } = useFixturesShell()
-  syncLeagueFromRoute()
+  if (options?.reloadPrematch) void reloadPrematchDay()
 }
