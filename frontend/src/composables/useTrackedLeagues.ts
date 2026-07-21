@@ -2,17 +2,19 @@ import { ref } from 'vue'
 
 import {
   fetchLeagueFilterOptions,
-  type LeagueCatalogItem,
   type LeagueFilterOption,
   type LeagueFilterOptionsResponse,
 } from '@/api/leagues'
+import { resolveTrackedSelection } from '@/utils/leagueFilterSelection'
 
 const STORAGE_KEY = 'fa-tracked-league-ids'
 
-const catalog = ref<LeagueCatalogItem[]>([])
 const filterOptions = ref<LeagueFilterOptionsResponse | null>(null)
 const trackedIds = ref<number[]>([])
 const filterOptionsError = ref('')
+
+let inflightFilterOptions: Promise<LeagueFilterOptionsResponse> | null = null
+let inflightFilterOptionsKey = ''
 
 function readStoredIds(): number[] | null {
   try {
@@ -46,64 +48,47 @@ function allFilterOptions(): LeagueFilterOption[] {
   return [...data.configured, ...data.extra]
 }
 
-/** Prune preference to current options; default = all default_checked leagues. */
 function syncTrackedWithFilterOptions() {
   const options = allFilterOptions()
   if (!options.length) return
-
-  const allow = new Set(options.map((o) => o.league_id))
-  const defaults = options.filter((o) => o.default_checked).map((o) => o.league_id)
-  const configuredIds = options
-    .filter((o) => o.tier === 'configured')
-    .map((o) => o.league_id)
-  const stored = readStoredIds()
-
-  if (!stored?.length) {
-    setTrackedIds(defaults)
-    return
-  }
-
-  const pruned = stored.filter((id) => allow.has(id))
-  if (
-    configuredIds.length > 0 &&
-    !configuredIds.some((id) => pruned.includes(id))
-  ) {
-    setTrackedIds(defaults)
-    return
-  }
-  if (pruned.length) {
-    setTrackedIds(pruned)
-    return
-  }
-  setTrackedIds(defaults)
+  setTrackedIds(resolveTrackedSelection(options, readStoredIds() ?? []))
 }
 
 async function loadFilterOptions(options?: {
   date?: string
   discover?: boolean
 }): Promise<LeagueFilterOptionsResponse> {
-  filterOptionsError.value = ''
-  try {
-    const data = await fetchLeagueFilterOptions({
-      date: options?.date,
-      discover: options?.discover ?? true,
-    })
-    filterOptions.value = data
-    if (data.catalog?.length) {
-      catalog.value = data.catalog
-    }
-    syncTrackedWithFilterOptions()
-    return data
-  } catch (err) {
-    filterOptionsError.value =
-      err instanceof Error ? err.message : '加载联赛筛选选项失败'
-    throw err
+  const key = `${options?.date ?? ''}|${options?.discover ?? true}`
+  if (inflightFilterOptions && inflightFilterOptionsKey === key) {
+    return inflightFilterOptions
   }
+
+  filterOptionsError.value = ''
+  inflightFilterOptionsKey = key
+  inflightFilterOptions = (async () => {
+    try {
+      const data = await fetchLeagueFilterOptions({
+        date: options?.date,
+        discover: options?.discover ?? true,
+      })
+      filterOptions.value = data
+      syncTrackedWithFilterOptions()
+      return data
+    } catch (err) {
+      filterOptionsError.value =
+        err instanceof Error ? err.message : '加载联赛筛选选项失败'
+      throw err
+    } finally {
+      inflightFilterOptions = null
+      inflightFilterOptionsKey = ''
+    }
+  })()
+
+  return inflightFilterOptions
 }
 
 export function useTrackedLeagues() {
   return {
-    catalog,
     filterOptions,
     trackedIds,
     filterOptionsError,

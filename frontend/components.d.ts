@@ -17,6 +17,7 @@ declare module 'vue' {
     FixtureList: typeof import('./src/components/FixtureList.vue')['default']
     H2HTab: typeof import('./src/components/detail/H2HTab.vue')['default']
     HomeDateStrip: typeof import('./src/components/HomeDateStrip.vue')['default']
+    LeagueFilterPanel: typeof import('./src/components/LeagueFilterPanel.vue')['default']
     LeagueFilterTrigger: typeof import('./src/components/LeagueFilterTrigger.vue')['default']
     LeagueMenu: typeof import('./src/components/LeagueMenu.vue')['default']
     LineupTab: typeof import('./src/components/detail/LineupTab.vue')['default']
