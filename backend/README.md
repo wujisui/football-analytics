@@ -146,7 +146,9 @@ python manage.py trigger-task --name midday_fixtures_sync   # 手动触发中午
 python manage.py run-scheduler    # 前台运行调度器（调试用）
 python manage.py backfill-features  # 从已结束场次回填 match_features 训练行
 python manage.py train-model      # 用赛果标签训练 1X2（需 ≥ ML_MIN_TRAIN_SAMPLES）
-python manage.py model-status     # 查看标签数与当前 multifactor / ml
+python manage.py model-status     # 查看 1X2 / 让球标签数与 multifactor / ml
+python manage.py backfill-ah-features  # 回填让球特征与 AH 标签
+python manage.py train-ah-model   # 训练让球穿盘模型（需 ≥ ML_AH_MIN_TRAIN_SAMPLES）
 ```
 
 可触发的任务名：`midday_fixtures_sync`、`pre_match_update`、`capture_results`、`clean_old_data`、`train_model`。
@@ -160,6 +162,16 @@ python manage.py model-status     # 查看标签数与当前 multifactor / ml
 3. 有合格模型后，新分析自动 `source=ml`；否则继续 `multifactor`
 
 配置见 `.env`：`ML_MIN_TRAIN_SAMPLES`、`ML_AUTO_TRAIN`。盘口权重刻意偏低；长连胜淡化、长不胜抬升反弹。
+
+### 让球模型（M-AH）
+
+与 1X2 独立：`ah_predictor.py` 预测主侧穿盘概率，标签 `cover` / `no_cover`（走盘不训练）。
+
+1. 赛前分析 / 赔率入库写入 `match_features` 的 AH 字段
+2. 赛果回写打 `ah_label`；`capture_results` 后样本 ≥ `ML_AH_MIN_TRAIN_SAMPLES`（默认 80）且有新增 → 自动训练
+3. 推断优先级：结构性双选 > ML > multifactor 启发式（相对水位 + 1X2 分歧）
+
+配置：`ML_AH_MIN_TRAIN_SAMPLES`、`ML_AH_AUTO_TRAIN`。
 ## API 接口
 
 所有业务接口前缀为 `/api/v1`。完整请求/响应结构见 **[/docs](http://127.0.0.1:8000/docs)**。

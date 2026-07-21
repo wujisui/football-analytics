@@ -1,6 +1,6 @@
 # Football Analytics 项目计划书
 
-> 更新日期：2026-07-12  
+> 更新日期：2026-07-21  
 > 仓库：`football-analytics`（`backend/` + `frontend/`）  
 > 定位：**赛前分析产品**，不是实时比分站
 
@@ -64,7 +64,7 @@
 | 数据模型与 SQLite     | ✅ 完成    | 联赛 / 球队 / 赛程 / 赛前分析 / API 快照                |
 | 官方数据拉取           | 🟡 部分完成 | 联赛/球队/赛程/H2H/近况/统计已接；赔率/阵容/伤病已接并落库（视官方是否有数据） |
 | 本地优先与 TTL        | ✅ 完成    | 落库、开赛后冻结、按开赛时间刷新                            |
-| 赛前概率分析           | 🟡 积累期 | 多因子在线；特征+预测入 `match_features`；赛果打标；**≥阈值自动训练并切 `ml`**（见阶段 M） |
+| 赛前概率分析           | 🟡 积累期 | 多因子在线；特征+预测入 `match_features`；赛果打标；**≥阈值自动训练并切 `ml`**（见阶段 M）；**让球 ML 规划见 M-AH** |
 | 业务 API           | ✅ MVP   | leagues / today / sync（含按日批量赔率） / results / analysis / admin |
 | 定时任务             | ✅ 完成    | **每日 12:00 赛程同步（初盘冻结）**、赛前窗口、赛果回写（含自动 train）、清理 |
 | 密钥管理             | ✅ 完成    | `secrets.local.env`（不进 Git）                 |
@@ -252,6 +252,132 @@
 
 列入里程碑 **M7**（见 §6）；**不**挤占当前阶段 M 积累与自动切换。
 
+### 阶段 M-AH — 让球穿盘 ML（规划 · 接在阶段 M 之后）
+
+> **动机**：1X2 与让球是不同市场；同一天可既有「主胜 + 让球负」（主让 -0.5 主侧高水）又有「客胜 + 让球胜」（主受让 +0.5 主侧低水）。写死水位规则无法稳定覆盖，需单独学 **「主队是否穿盘」**。  
+> **原则**：与 1X2 ML 同架构——本地积累标签 → 样本够自动训练 → 推断切换；**不足样本时保留极简规则兜底**（仅结构性双选 + 无盘口空态）。  
+> **不做**：滚球让球、多庄家套利、实时水位跟踪。
+
+#### M-AH.1 问题定义
+
+| 项 | 约定 |
+|----|------|
+| 预测目标 | 赛前快照时刻 **主盘 Asian Handicap** 上，主队是否 **穿盘**（cover） |
+| 标签 `ah_label` | `cover` \| `no_cover`；整球线走水 `push` **不入训**（或单独三分类，首版二分类+过滤） |
+| 结算 | 90 分钟比分 + 赛前冻结 `ah_line`：`home_adj = home_goals + line`，与 `away_goals` 比大小 |
+| 主盘选取 | 与列表/详情展示一致：取 `pre_match_data.odds_json`（或 `odds_opening_json`）中 **第一条有效 AH 线**；分析时冻结写入特征行 |
+| 与 1X2 关系 | **独立模型**；输出可与 `recommendation` 并存，UI 标明「赛果推荐 vs 赢盘推荐」 |
+
+典型分歧（必须靠模型/特征学，不宜写死）：
+
+- 1X2 主胜，主让 -0.5 但 **主侧水位 > 客侧** → 市场看「难穿盘」  
+- 1X2 客胜，主受让 +0.5 但 **主侧水位 < 客侧** → 市场看「主队不败穿盘」  
+
+#### M-AH.2 特征（`AH_FEATURE_VERSION = ah_v1`）
+
+在现有 `FEATURE_NAMES`（1X2）基础上 **追加** 让球专用列（训练/推断向量分开或拼接，推荐 **拼接同一行** 便于 join）：
+
+| 分组 | 特征 | 说明 |
+|------|------|------|
+| 盘口 | `ah_line` | 有符号让球线（主让为负），归一化到约 [-2.5, +2.5] |
+| 盘口 | `ah_home_odd`, `ah_away_odd` | 主盘两侧欧赔 |
+| 盘口 | `ah_water_diff` | home − away（正 → 主侧相对高水） |
+| 盘口 | `ah_implied_cover` | 由两侧赔率反推的穿盘概率（去 margin 后） |
+| 盘口 | `ah_line_abs`, `ah_line_shallow`, `ah_line_deep` | 浅/中/深盘 one-hot 或 tier 标量 |
+| 交叉 | `mx_home_prob`, `mx_draw_prob`, `mx_away_prob` | 当时 1X2 模型输出（或赔率隐含） |
+| 交叉 | `mx_vs_ah_gap` | 1X2 主胜概率 − AH 穿盘隐含（市场分歧强度） |
+| 联赛 | `league_tier_top5`, `league_tier_asia`, … | 与 `league_names`/配置 ID 桶一致，避免每联赛 one-hot 过稀 |
+| 元 | `has_ah_market` | 是否有有效 AH（无则 whole-head 不输出） |
+
+**不新增官方 API 调用**；特征全部来自已有赛前包 + 当时 1X2 推断。
+
+#### M-AH.3 数据与表结构
+
+**方案（推荐）**：扩展 `match_features` 同表同行，避免双表 join。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `ah_line` | Float, nullable | 冻结主盘线 |
+| `ah_home_odd`, `ah_away_odd` | Float, nullable | 冻结主盘水位 |
+| `ah_features_json` | Text, nullable | `AH_FEATURE_NAMES` 有序 JSON |
+| `ah_label` | String(12), nullable | `cover` / `no_cover` / `push` |
+| `ah_cover_prob` | Float, nullable | 推断时 P(cover) |
+| `ah_model_source` | String(32), nullable | `rules` / `multifactor` / `ml` |
+
+`feature_version` 仍为 1X2 的 `v1`；让球版本用 **`ah_feature_version=ah_v1`** 独立演进。
+
+**写入时机**（与 1X2 对称）：
+
+```
+赛前分析 / 赔率入库后
+  → extract_ah_features(package, probs_1x2)
+  → persist_match_features(..., ah_*)
+赛果回写 capture_results
+  → settle_ah_label(home_goals, away_goals, ah_line)
+  → 写 ah_label（push 可写 NULL 或 push 字符串）
+```
+
+**回填**：`manage.py backfill-ah-features` — 从已有 `pre_match_data.odds_json` + 完场比分补历史行（本地库有则做，**不**为回填打官方 API）。
+
+#### M-AH.4 模型与训练
+
+| 项 | 首版 | 样本多后 |
+|----|------|----------|
+| 算法 | **二元 Logistic**（与 1X2 softmax 并列） | 可选 GBDT + Platt 校准 |
+| artifact | `data/models/ah_v1_weights.npz` + `ah_v1_meta.json` | 同路径版本递增 |
+| 阈值 | `ML_AH_MIN_TRAIN_SAMPLES` 默认 **80**（二分类，且需覆盖多档盘口） | 可调 |
+| 切训条件 | `ML_AH_AUTO_TRAIN=true` 且 labeled 行数 ≥ 阈值且较上次训练有新增 | 同 1X2 |
+| 验证 | **按日期 hold-out**（禁止随机打乱同联赛同日） | 分 league_tier、分 line tier 报准确率 / Brier |
+| 基线对比 | ① 永远跟低水一侧 ② 当前规则层 ③ 仅 `ah_implied_cover` | 赛果页加 AH 命中统计 |
+
+**推断优先级**：
+
+```
+无 AH 盘口 → handicap_lean = 「缺少盘口数据分析」
+有 artifact 且 source=ml → P(cover) → 让球胜/负 + 「模型穿盘 xx%」
+样本不足 → multifactor 启发（相对水位 + 1X2 分歧，规则极简）
+```
+
+**产品输出示例**：
+
+```
+让球负（-0.5）· 模型穿盘 38%（与胜平负「主胜」分歧）
+让球胜（+0.5）· 模型穿盘 61%
+```
+
+#### M-AH.5 代码落点（实现时）
+
+| 模块 | 职责 |
+|------|------|
+| `backend/app/services/ah_features.py` | `extract_ah_features`, `settle_ah_label`, `AH_FEATURE_NAMES` |
+| `backend/app/services/ah_predictor.py` | 训练/推断/持久化；镜像 `ml_predictor.py` 结构 |
+| `backend/app/services/prediction.py` | `handicap_lean` 改为 **调 ah_predictor**；删除或降级冗长水位 if-else |
+| `backend/app/services/ml_predictor.py` | 不变；1X2 与 AH **解耦** |
+| `backend/app/models/match_feature.py` | 新增 AH 列（迁移） |
+| `backend/app/tasks/scheduler.py` | `capture_results` 后 `maybe_auto_train_ah_model` |
+| `manage.py` | `backfill-ah-features`, `train-ah-model`, `model-status` 展示 AH 段 |
+| 前端 | `handicap_lean` 展示理由；可选 badge「ML 让球」 |
+
+#### M-AH.6 里程碑与门禁
+
+| 步骤 | 交付 | 门禁 |
+|------|------|------|
+| AH-0 | 标签结算函数 + 单元测试（含 -0.5 / +0.5 / -1.5 走水） | 无 |
+| AH-1 | 特征提取 + 分析/赔率入库时写入 + backfill 命令 | 本地可看到 `ah_label` 计数 |
+| AH-2 | 训练 CLI + 自动训练钩子 + `model-status` | labeled ≥ 80 |
+| AH-3 | `handicap_lean` 切 ML 推断；规则仅兜底 | 验证集优于「跟低水」基线 |
+| AH-4 | 赛果页 **让球命中率**（cover 预测 vs 实际） | 与 1X2 命中率并列 |
+
+**与阶段 M 关系**：1X2 ML 继续积累；**不等待** 1X2 切 `ml` 才开 AH——两者标签同源、可并行攒样本。  
+**与 M.5 串关关系**：串关仍门禁在 1X2 ML；让球 ML 稳定后可把 AH 作为串关第二市场（**M7 扩展**，另议）。
+
+#### M-AH.7 积累期操作（现在起）
+
+1. 保持 sync / 分析 / `capture_results` 运行，确保 **`odds_json` 含 AH 主盘** 且完场比分齐全  
+2. 实现 AH-0～AH-1 后跑 `backfill-ah-features`，用 `model-status` 看 `ah_labeled`  
+3. **未达 80 条前**：前端仍见规则/占位 `handicap_lean`，产品文案注明「让球模型积累中」  
+4. 达标后部署 AH-2～AH-3，用你提供的「同日主客分歧盘」样例做回归验收  
+
 ### 阶段 A — 赛前数据包
 
 目标：一场比赛详情页能看到「分析 + 交锋 + 近况 + 赔率 + 阵容/伤病/替补」，且全部来自本地库。
@@ -338,6 +464,7 @@
 | M3 本地优先    | 落库、开赛后冻结、密钥本地化               | ✅      |
 | M4 赛前数据包   | 赔率 + 阵容 + 伤病 + 替补 + H2H 展示闭环 | 🟡 进行中（主链路已通） |
 | M5 模型与调度增强 | 本地积累闭环 + 自动训练切换（未来赛程准备仍缺） | 🟡 阶段 M 进行中 |
+| M5-AH 让球 ML | 穿盘标签 + AH 特征 + 二元模型；`handicap_lean` 切 ML（见 M-AH） | ⬜ 已规划 |
 | M6 可上线     | 测试 + 部署 + 配额可控 + **数据迁云/备份策略落地（D.2）** | ⬜      |
 | M7 串关推荐   | 2～8 串 1 最优组合页；**仅 ML 稳定输出后**（见阶段 M.5） | ⬜ 门禁未开 |
 
@@ -362,7 +489,7 @@
 | 官方 API 日配额有限 | 本地优先 + 开赛后冻结 + 按开赛时间刷新               |
 | Key 泄露       | 仅本地 `secrets.local.env`；勿提交 Git；勿写前端 |
 | 阵容/赔率临场才稳定   | 临场窗口提高刷新频率，但仍在开赛前停止                  |
-| 分析模型过简       | 积累期多因子；样本够自动切拟合模型（阶段 M）              |
+| 分析模型过简       | 积累期多因子；样本够自动切拟合模型（阶段 M）；让球单独 M-AH，不与 1X2 写死规则混用 |
 | 串关过早上线       | 门禁见 M.5：须 `source=ml` 且样本充足后再做；乘积假设偏乐观 |
 | 上云丢库 / 双写冲突  | 明确权威源；整库拷或云上重拉（阶段 D.2）；禁止用 Git 同步 db |
 | SQLite 单文件 concurrent | 单实例部署；生产演进 Postgres + 卷备份           |
