@@ -185,6 +185,7 @@ export interface AnalysisResponse {
   both_score_lean?: string
   score_hint?: string
   handicap_lean?: string
+  handicap_market_note?: string
   data_source: string
   analyzed_at: string
   cache_status: string

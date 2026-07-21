@@ -111,6 +111,7 @@ async function submitOpinion() {
       :analyzed-at="formatDateTime(fixture.analysis.analyzed_at)"
       :comparing="submitting"
       :has-opinion="submittedFactors.length > 0"
+      :handicap-market-note="fixture.analysis.handicap_market_note || ''"
     />
   </div>
 </template>

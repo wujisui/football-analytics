@@ -16,6 +16,7 @@ const props = defineProps<{
   analyzedAt: string
   comparing?: boolean
   hasOpinion?: boolean
+  handicapMarketNote?: string
 }>()
 
 const diffKeys = computed(() => {
@@ -72,6 +73,7 @@ function isPendingHandicap(text: string): boolean {
               {{ original.handicap_lean || '缺少盘口数据分析' }}
             </n-tag>
           </div>
+          <p v-if="handicapMarketNote" class="handicap-note">{{ handicapMarketNote }}</p>
           <template v-if="original.probabilitiesAvailable">
             <ul class="rows">
               <li>主胜 {{ toPercent(original.home_win_prob) }}</li>
@@ -222,6 +224,13 @@ function isPendingHandicap(text: string): boolean {
   height: auto;
   line-height: 1.4;
   padding: 2px 8px;
+}
+
+.handicap-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fa-text-faint);
 }
 
 .rows {
