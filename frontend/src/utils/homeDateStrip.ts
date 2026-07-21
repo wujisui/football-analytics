@@ -24,6 +24,11 @@ export function todayDate(): string {
   return isoDate(d)
 }
 
+/** Calendar day before today (local). */
+export function yesterdayDate(): string {
+  return addCalendarDays(todayDate(), -1)
+}
+
 /** Clamp calendar day to today when picking prematch dates. */
 export function clampToToday(iso: string, today: string = todayDate()): string {
   return iso < today ? today : iso
@@ -106,4 +111,16 @@ export function predictionsDayCountLabel(count: number): string {
 
 export function resultsDayCountLabel(count: number): string {
   return `完场 ${count} 场`
+}
+
+export function scheduleDayCountLabel(count: number): string {
+  return `未开赛 ${count} 场`
+}
+
+export function isScheduleFutureDay(day: string, today: string = todayDate()): boolean {
+  return day > today
+}
+
+export function isResultsHistoryDay(day: string, today: string = todayDate()): boolean {
+  return day <= today
 }

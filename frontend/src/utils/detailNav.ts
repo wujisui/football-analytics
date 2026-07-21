@@ -46,10 +46,10 @@ export function fixtureDetailRoute(
 }
 
 export function detailRootLabel(from: DetailFrom): string {
-  if (from === 'results') return '赛果'
+  if (from === 'results') return '赛程'
   if (from === 'predictions') return '预测'
   if (from === 'favorites') return '收藏'
-  return '赛前赛事'
+  return '即时'
 }
 
 /** Breadcrumb / page-header back target based on how the user opened detail. */

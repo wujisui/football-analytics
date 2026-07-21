@@ -3,16 +3,18 @@ import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useRoute, useRouter } from 'vue-router'
 
+import { enqueueBackgroundSync } from '@/composables/useBackgroundSync'
 import {
   fetchResults,
   fetchResultsHistory,
-  syncFixtures,
+  fetchTodayFixtures,
   type AccuracyStat,
   type ResultFixture,
   type ResultsAccuracy,
   type ResultsHistoryResponse,
 } from '@/api/fixtures'
 import AccuracyHistoryChart from '@/components/AccuracyHistoryChart.vue'
+import FixtureList from '@/components/FixtureList.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import ResultHitTags from '@/components/ResultHitTags.vue'
 import FavoriteButton from '@/components/FavoriteButton.vue'
@@ -22,8 +24,8 @@ import { useFixturesShell } from '@/composables/useFixturesShell'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 import { markDayAutoSynced, isDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
-import { publishResultsFixtures, setResultsLoading, useResultsLeagues } from '@/composables/useResultsLeagues'
-import { todayDate } from '@/utils/homeDateStrip'
+import { publishResultsFixtures, publishScheduleFixtures, setResultsLoading, useResultsLeagues } from '@/composables/useResultsLeagues'
+import { todayDate, yesterdayDate } from '@/utils/homeDateStrip'
 import {
   formatDateTime,
   leagueTagColor,
@@ -57,13 +59,16 @@ const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 const { favoriteIds, syncFavoriteFromResult } = useFavoriteFixtures()
-const { resultsTrackedIds } = useResultsLeagues()
+const {
+  resultsTrackedIds,
+  scheduleFixtures,
+} = useResultsLeagues()
 const {
   selectedDay,
   selectedLeagueId,
   teamSearch,
   contentLoading: shellContentLoading,
-  syncing: shellSyncing,
+  isScheduleFutureDay,
 } = useFixturesShell()
 
 const desktopListShellRef = ref<HTMLElement | null>(null)
@@ -74,7 +79,6 @@ const dayAccuracy = ref<ResultsAccuracy | null>(null)
 const history = ref<ResultsHistoryResponse | null>(null)
 const loading = ref(false)
 const historyLoading = ref(false)
-const syncing = ref(false)
 const error = ref('')
 const hint = ref('')
 
@@ -82,10 +86,22 @@ const filterHitKeys = ref<ResultsHitKey[]>([...ALL_HIT_KEYS])
 const loadedResultsDay = ref('')
 
 const contentLoading = computed(
-  () => loading.value || syncing.value || shellContentLoading.value,
+  () => loading.value || shellContentLoading.value,
+)
+
+const isResultsDay = computed(
+  () => !isScheduleFutureDay.value,
 )
 
 const trackedIdSet = computed(() => new Set(resultsTrackedIds.value))
+
+const scheduleDisplayedFixtures = computed(() => {
+  let list = scheduleFixtures.value.filter((f) => trackedIdSet.value.has(f.league_id))
+  if (selectedLeagueId.value != null) {
+    list = list.filter((f) => f.league_id === selectedLeagueId.value)
+  }
+  return filterByTeamQuery(list, teamSearch.value)
+})
 
 const filteredFixtures = computed(() => {
   let list = fixtures.value.filter((fx) => trackedIdSet.value.has(fx.league_id))
@@ -176,6 +192,20 @@ const emptyText = computed(() => {
   return `${selectedDay.value} 暂无已结束赛果`
 })
 
+const scheduleEmptyText = computed(() => {
+  if (!selectedDay.value) return '请选择日期'
+  const teamHint = teamSearchEmptyHint(teamSearch.value)
+  if (teamHint && scheduleFixtures.value.length) return teamHint
+  if (
+    isDayAutoSynced(selectedDay.value) &&
+    !scheduleFixtures.value.length &&
+    !contentLoading.value
+  ) {
+    return `${selectedDay.value} 当日没有比赛数据`
+  }
+  return `${selectedDay.value} 暂无未开赛赛程`
+})
+
 const historySampleCount = computed(
   () => history.value?.overall?.fixtures_with_prediction ?? 0,
 )
@@ -197,10 +227,16 @@ const hasChartData = computed(
 )
 
 const listTitle = computed(() => {
+  if (isScheduleFutureDay.value) {
+    const n = scheduleDisplayedFixtures.value.length
+    const total = scheduleFixtures.value.filter((f) => trackedIdSet.value.has(f.league_id)).length
+    if (total && n !== total) return `赛程 · ${selectedDay.value}（${n}/${total}）`
+    return `赛程 · ${selectedDay.value}`
+  }
   const n = listedFixtures.value.length
   const total = filteredFixtures.value.length
-  if (total && n !== total) return `赛果列表 · ${selectedDay.value}（${n}/${total}）`
-  return `赛果列表 · ${selectedDay.value}`
+  if (total && n !== total) return `赛果 · ${selectedDay.value}（${n}/${total}）`
+  return `赛果 · ${selectedDay.value}`
 })
 
 function formatRate(stat: AccuracyStat | undefined): string {
@@ -284,10 +320,54 @@ async function loadHistory() {
   }
 }
 
+async function loadScheduleDay() {
+  if (!selectedDay.value) {
+    publishScheduleFixtures([], selectedDay.value)
+    loadedResultsDay.value = ''
+    return
+  }
+  loading.value = true
+  setResultsLoading(true)
+  error.value = ''
+  try {
+    const data = await fetchTodayFixtures({ date: selectedDay.value, days: 1 })
+    publishScheduleFixtures(data.fixtures, selectedDay.value)
+    hint.value = data.total ? `共 ${data.total} 场` : ''
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '获取失败'
+    publishScheduleFixtures([], selectedDay.value)
+  } finally {
+    loading.value = false
+    setResultsLoading(false)
+    loadedResultsDay.value = selectedDay.value
+  }
+}
+
 async function syncAndLoadDay() {
   if (!selectedDay.value) {
     fixtures.value = []
     dayAccuracy.value = null
+    publishResultsFixtures([], selectedDay.value)
+    publishScheduleFixtures([], selectedDay.value)
+    return
+  }
+
+  if (isScheduleFutureDay.value) {
+    await loadScheduleDay()
+    const day = selectedDay.value
+    if (!shouldAutoSyncDay(day, scheduleFixtures.value.length > 0)) return
+    enqueueBackgroundSync(
+      {
+        date: day,
+        days: 1,
+        includeResults: false,
+        includeOdds: true,
+      },
+      (_ok) => {
+        markDayAutoSynced(day)
+        void loadScheduleDay()
+      },
+    )
     return
   }
 
@@ -295,26 +375,19 @@ async function syncAndLoadDay() {
 
   const day = selectedDay.value
   if (!shouldAutoSyncDay(day, fixtures.value.length > 0)) return
-  if (shellSyncing.value) return
 
-  syncing.value = true
-  error.value = ''
-  hint.value = ''
-  try {
-    await syncFixtures({
+  enqueueBackgroundSync(
+    {
       date: day,
       days: 1,
       includeResults: true,
-    })
-    markDayAutoSynced(day)
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '获取失败'
-    markDayAutoSynced(day)
-  } finally {
-    syncing.value = false
-  }
-
-  await loadDayResults()
+      includeOdds: false,
+    },
+    (_ok) => {
+      markDayAutoSynced(day)
+      void loadDayResults()
+    },
+  )
 }
 
 watch(selectedDay, () => {
@@ -324,6 +397,14 @@ watch(selectedDay, () => {
 })
 
 onActivated(() => {
+  if (isScheduleFutureDay.value) {
+    if (loadedResultsDay.value !== selectedDay.value) {
+      void syncAndLoadDay()
+    } else {
+      publishScheduleFixtures(scheduleFixtures.value, selectedDay.value)
+    }
+    return
+  }
   applySavedFiltersIfAny()
   if (loadedResultsDay.value !== selectedDay.value) {
     void syncAndLoadDay()
@@ -338,6 +419,8 @@ onMounted(() => {
     if (qDate !== selectedDay.value) {
       selectedDay.value = qDate
     }
+  } else {
+    selectedDay.value = yesterdayDate()
   }
   applySavedFiltersIfAny()
   void syncAndLoadDay()
@@ -354,7 +437,7 @@ onMounted(() => {
     <n-layout
       content-style="display: flex; flex-direction: column; height: 100%; padding: 12px; gap: 10px; background: var(--fa-bg); box-sizing: border-box; min-height: 0;"
     >
-      <n-grid :cols="isPhone ? 1 : 2" :x-gap="10" :y-gap="10" style="flex-shrink: 0;">
+      <n-grid v-if="isResultsDay" :cols="isPhone ? 1 : 2" :x-gap="10" :y-gap="10" style="flex-shrink: 0;">
         <n-gi>
           <n-card
             size="small"
@@ -421,6 +504,7 @@ onMounted(() => {
       </n-grid>
 
       <n-card
+        v-if="isResultsDay"
         size="small"
         title="准确率走势"
         :segmented="{ content: true }"
@@ -458,8 +542,40 @@ onMounted(() => {
         </n-spin>
       </n-card>
 
+      <n-alert
+        v-if="error && isScheduleFutureDay"
+        type="error"
+        title="获取失败"
+        style="flex-shrink: 0;"
+      >
+        <n-space align="center" :size="12">
+          <span>{{ error }}</span>
+          <n-button size="small" type="primary" @click="loadScheduleDay()">重试</n-button>
+        </n-space>
+      </n-alert>
+
+      <div
+        v-if="isScheduleFutureDay"
+        ref="desktopListShellRef"
+        class="schedule-list-shell"
+        :class="{ phone: isPhone }"
+      >
+        <n-scrollbar style="height: 100%;" trigger="hover">
+          <div :style="isPhone ? 'padding: 8px 12px 20px;' : 'padding: 4px 14px 24px;'">
+            <n-spin :show="contentLoading">
+              <FixtureList
+                :fixtures="scheduleDisplayedFixtures"
+                :empty-description="scheduleEmptyText"
+                :group-by-day="false"
+              />
+            </n-spin>
+          </div>
+        </n-scrollbar>
+        <ListBackTop :shell="desktopListShellRef" :bottom="16" />
+      </div>
+
       <n-card
-        v-if="isPhone"
+        v-if="isPhone && isResultsDay"
         size="small"
         :segmented="{ content: true }"
         style="flex: 0 0 42%; min-height: 0; display: flex; flex-direction: column; background: var(--fa-bg-elevated);"
@@ -542,7 +658,7 @@ onMounted(() => {
     </n-layout>
 
     <n-layout-sider
-      v-if="!isPhone"
+      v-if="!isPhone && isResultsDay"
       placement="right"
       bordered
       :width="320"
@@ -671,6 +787,19 @@ onMounted(() => {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+}
+
+.schedule-list-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.schedule-list-shell.phone {
+  flex: 1;
+  min-height: 0;
 }
 
 .results-list-shell {

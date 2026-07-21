@@ -58,7 +58,7 @@ function confirm() {
         size="tiny"
         quaternary
         :type="filterActive ? 'primary' : 'default'"
-        aria-label="筛选赛果"
+        aria-label="筛选命中"
       >
         <template #icon>
           <n-icon :component="FilterOutline" :size="14" />
