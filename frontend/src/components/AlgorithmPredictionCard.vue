@@ -4,32 +4,63 @@ import { useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
 import { hasRealProbabilities, toPercent } from '@/utils/format'
-import { fixtureDetailRoute } from '@/utils/detailNav'
-import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
+import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
+import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
 
 const props = withDefaults(
   defineProps<{
-    fixture: FixtureResponse
+    fixture?: FixtureResponse
+    snapshot?: PredictionSnapshot
+    fixtureId?: number
     /** Elevated card for the predictions list. */
     standalone?: boolean
     /** Navigate to fixture detail on click (standalone implies true). */
     linkToDetail?: boolean
-    from?: 'home' | 'predictions'
+    /** Show home vs away title link above recommendation row. */
+    showMatchupTitle?: boolean
+    from?: DetailFrom
   }>(),
-  { standalone: false, linkToDetail: false, from: 'home' },
+  {
+    standalone: false,
+    linkToDetail: false,
+    showMatchupTitle: true,
+    from: 'home',
+  },
 )
 
 const router = useRouter()
 
 const canNavigate = computed(() => props.standalone || props.linkToDetail)
 
-const prediction = computed(() => snapshotFromAnalysis(props.fixture.analysis))
-const predictionReady = computed(() =>
-  hasRealProbabilities(
+const resolvedFixtureId = computed(
+  () => props.fixture?.fixture_id ?? props.fixtureId ?? null,
+)
+
+const prediction = computed((): PredictionSnapshot => {
+  if (props.snapshot) return props.snapshot
+  if (props.fixture) return snapshotFromAnalysis(props.fixture.analysis)
+  return {
+    home_win_prob: 0,
+    draw_prob: 0,
+    away_win_prob: 0,
+    recommendation: '待分析',
+    goal_lean: '',
+    both_score_lean: '',
+    score_hint: '',
+    handicap_lean: '',
+    probabilitiesAvailable: false,
+  }
+})
+
+const predictionReady = computed(() => {
+  if (props.snapshot) return props.snapshot.probabilitiesAvailable
+  if (!props.fixture) return false
+  return hasRealProbabilities(
     props.fixture.analysis.probabilities,
     prediction.value.recommendation,
-  ),
-)
+  )
+})
+
 const recommendationPending = computed(
   () => !predictionReady.value || prediction.value.recommendation === '待分析',
 )
@@ -38,8 +69,8 @@ const handicapPending = computed(() => {
   return !text || text.includes('缺少盘口') || text.includes('待分析')
 })
 
-const homeName = computed(() => props.fixture.home_team_name || '—')
-const awayName = computed(() => props.fixture.away_team_name || '—')
+const homeName = computed(() => props.fixture?.home_team_name || '—')
+const awayName = computed(() => props.fixture?.away_team_name || '—')
 const matchupTitle = computed(() => `${homeName.value} vs ${awayName.value}`)
 
 const probs = computed(() => {
@@ -52,14 +83,17 @@ const probs = computed(() => {
 })
 
 function goDetail() {
-  if (!canNavigate.value) return
-  void router.push(fixtureDetailRoute(props.fixture.fixture_id, { from: props.from }))
+  if (!canNavigate.value || resolvedFixtureId.value == null) return
+  void router.push(
+    fixtureDetailRoute(resolvedFixtureId.value, { from: props.from }),
+  )
 }
 
 function goBriefing(event: MouseEvent) {
   event.stopPropagation()
+  if (resolvedFixtureId.value == null) return
   void router.push(
-    fixtureDetailRoute(props.fixture.fixture_id, {
+    fixtureDetailRoute(resolvedFixtureId.value, {
       from: props.from,
       tab: 'briefing',
     }),
@@ -82,7 +116,14 @@ function goBriefing(event: MouseEvent) {
     @keydown.enter="goDetail"
   >
     <div class="rec-row">
-      <n-button text type="primary" size="small" class="zone-matchup" @click="goBriefing">
+      <n-button
+        v-if="showMatchupTitle"
+        text
+        type="primary"
+        size="small"
+        class="zone-matchup"
+        @click="goBriefing"
+      >
         {{ matchupTitle }}
       </n-button>
       <span class="rec-label">推荐</span>
