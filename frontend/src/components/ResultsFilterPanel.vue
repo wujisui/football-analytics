@@ -1,35 +1,40 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+
 import {
-  RESULTS_ALL_HIT_KEYS,
   RESULTS_HIT_OPTIONS,
+  type ResultsFilterConfirm,
   type ResultsHitKey,
 } from '@/utils/resultsPageState'
 
 const props = withDefaults(
   defineProps<{
+    initialHitKeys: ResultsHitKey[]
+    initialHideWithoutPrediction?: boolean
     compactActions?: boolean
   }>(),
-  { compactActions: true },
+  { initialHideWithoutPrediction: false, compactActions: true },
 )
 
-const draftHits = defineModel<ResultsHitKey[]>('draftHits', { required: true })
-const hideWithoutPrediction = defineModel<boolean>('hideWithoutPrediction', {
-  required: true,
-})
-
 const emit = defineEmits<{
-  confirm: []
+  confirm: [payload: ResultsFilterConfirm]
 }>()
+
+const draftHits = ref<ResultsHitKey[]>([...props.initialHitKeys])
+const hideWithoutPrediction = ref(props.initialHideWithoutPrediction)
 
 const actionSize = props.compactActions ? 'tiny' : 'small'
 
-function selectAllHits() {
-  draftHits.value = [...RESULTS_ALL_HIT_KEYS]
+function selectAll() {
+  draftHits.value = RESULTS_HIT_OPTIONS.map((o) => o.key)
 }
 
 function confirm() {
   if (!draftHits.value.length) return
-  emit('confirm')
+  emit('confirm', {
+    hitKeys: [...draftHits.value],
+    hideWithoutPrediction: hideWithoutPrediction.value,
+  })
 }
 </script>
 
@@ -55,8 +60,8 @@ function confirm() {
       </n-checkbox-group>
     </div>
     <n-space justify="end" :size="8" class="actions">
-      <n-button :size="actionSize" @click="selectAllHits">全选维度</n-button>
-      <n-button :size="actionSize" type="primary" @click="confirm">确认</n-button>
+      <n-button :size="actionSize" @click.stop="selectAll">全选</n-button>
+      <n-button :size="actionSize" type="primary" @click.stop="confirm">确认</n-button>
     </n-space>
   </div>
 </template>

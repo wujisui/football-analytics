@@ -9,7 +9,7 @@ import {
   type ResultsHitKey,
 } from '@/utils/resultsPageState'
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     selectedHitKeys: ResultsHitKey[]
     hideWithoutPrediction?: boolean
@@ -23,23 +23,15 @@ const emit = defineEmits<{
 }>()
 
 const show = ref(false)
-const draftHits = ref<ResultsHitKey[]>([])
-const draftHideWithoutPrediction = ref(false)
+const panelKey = ref(0)
 
 watch(show, (open) => {
-  if (!open) return
-  draftHits.value = props.selectedHitKeys.length
-    ? [...props.selectedHitKeys]
-    : [...RESULTS_ALL_HIT_KEYS]
-  draftHideWithoutPrediction.value = props.hideWithoutPrediction
+  if (open) panelKey.value += 1
 })
 
-function confirm() {
-  if (!draftHits.value.length) return
-  emit('confirm', {
-    hitKeys: [...draftHits.value],
-    hideWithoutPrediction: draftHideWithoutPrediction.value,
-  })
+function confirm(payload: ResultsFilterConfirm) {
+  if (!payload.hitKeys.length) return
+  emit('confirm', payload)
   show.value = false
 }
 </script>
@@ -70,8 +62,12 @@ function confirm() {
       </n-button>
     </template>
     <ResultsFilterPanel
-      v-model:draft-hits="draftHits"
-      v-model:hide-without-prediction="draftHideWithoutPrediction"
+      v-if="show"
+      :key="panelKey"
+      :initial-hit-keys="
+        selectedHitKeys.length ? [...selectedHitKeys] : [...RESULTS_ALL_HIT_KEYS]
+      "
+      :initial-hide-without-prediction="hideWithoutPrediction"
       compact-actions
       @confirm="confirm"
     />
