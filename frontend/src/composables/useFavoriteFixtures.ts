@@ -1,8 +1,10 @@
 import { computed, ref } from 'vue'
 
-import type { FixtureResponse } from '@/api/types'
+import type { FixtureOddsSnippet, FixtureResponse } from '@/api/types'
 import type { ResultFixture } from '@/api/fixtures'
-import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
+import { hasOddsMarkets, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
+import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
+import { toScheduleDayKey } from '@/utils/format'
 
 const STORAGE_KEY = 'fa-favorite-fixtures'
 
@@ -28,6 +30,7 @@ export interface FavoriteFixtureRecord {
   home_win_prob?: number
   draw_prob?: number
   away_win_prob?: number
+  odds_snippet?: FixtureOddsSnippet | null
 }
 
 function predictionFieldsFromResult(fixture: ResultFixture) {
@@ -107,6 +110,10 @@ function readStored(): FavoriteFixtureRecord[] {
         home_win_prob: parseOptionalNumber(item.home_win_prob),
         draw_prob: parseOptionalNumber(item.draw_prob),
         away_win_prob: parseOptionalNumber(item.away_win_prob),
+        odds_snippet:
+          item.odds_snippet && typeof item.odds_snippet === 'object'
+            ? (item.odds_snippet as FixtureOddsSnippet)
+            : null,
       }))
       .filter((item) => Number.isFinite(item.fixture_id) && item.fixture_id > 0)
   } catch {
@@ -136,7 +143,14 @@ function isFavorite(fixtureId: number): boolean {
   return favoriteIds.value.has(fixtureId)
 }
 
-function favoriteHasPredictSnapshot(item: FavoriteFixtureRecord): boolean {
+/** Schedule calendar days (YYYY-MM-DD) that have at least one favorite fixture. */
+export function favoriteFixtureDays(
+  favorites: readonly FavoriteFixtureRecord[],
+): Set<string> {
+  return new Set(favorites.map((item) => toScheduleDayKey(item.fixture_date)))
+}
+
+export function favoriteHasPredictSnapshot(item: FavoriteFixtureRecord): boolean {
   return !!(
     item.has_prediction ||
     item.recommendation ||
@@ -144,6 +158,33 @@ function favoriteHasPredictSnapshot(item: FavoriteFixtureRecord): boolean {
     item.goal_lean ||
     item.both_score_lean
   )
+}
+
+/** Map stored favorite row → prediction card snapshot. */
+export function snapshotFromFavorite(item: FavoriteFixtureRecord): PredictionSnapshot {
+  const ready = !!item.probabilities_available
+  return {
+    home_win_prob: ready ? Number(item.home_win_prob ?? 0) : 0,
+    draw_prob: ready ? Number(item.draw_prob ?? 0) : 0,
+    away_win_prob: ready ? Number(item.away_win_prob ?? 0) : 0,
+    recommendation: item.recommendation || '待分析',
+    goal_lean: item.goal_lean || '',
+    both_score_lean: item.both_score_lean || '',
+    score_hint: item.score_hint || '',
+    handicap_lean: item.handicap_lean || '',
+    probabilitiesAvailable: ready,
+  }
+}
+
+function favoriteNeedsOdds(item: FavoriteFixtureRecord): boolean {
+  return !hasOddsMarkets(item.odds_snippet)
+}
+
+function oddsForFixture(
+  fixture: Pick<FixtureResponse, 'odds_snippet' | 'analysis'>,
+  prev?: FixtureOddsSnippet | null,
+): FixtureOddsSnippet | null {
+  return oddsSnippetFromFixture(fixture) ?? prev ?? null
 }
 
 function syncFavoriteFromResult(result: ResultFixture): boolean {
@@ -175,6 +216,7 @@ function syncFavoriteFromFixture(fixture: FixtureResponse): boolean {
     status: fixture.status,
     home_goals: fixture.home_goals,
     away_goals: fixture.away_goals,
+    odds_snippet: oddsForFixture(fixture, prev.odds_snippet),
     ...prediction,
   }
   favorites.value = next
@@ -196,6 +238,7 @@ function recordFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord {
     home_goals: fixture.home_goals,
     away_goals: fixture.away_goals,
     saved_at: new Date().toISOString(),
+    odds_snippet: oddsSnippetFromFixture(fixture),
     ...predictionFieldsFromSnapshot(snapshot),
   }
 }
@@ -249,29 +292,51 @@ function toggleResultFixture(fixture: ResultFixture) {
 }
 
 function fixtureDay(iso: string): string {
-  return iso.slice(0, 10)
+  return toScheduleDayKey(iso)
 }
 
-/** Backfill missing prediction snapshots from local DB (same source as 赛果页). */
+/** Backfill missing prediction snapshots and odds from local DB. */
 async function refreshFavoritePredictions(): Promise<void> {
-  const { fetchResults, fetchFixtureAnalysis } = await import('@/api/fixtures')
+  const { fetchResults, fetchFixtureAnalysis, fetchTodayFixtures } = await import(
+    '@/api/fixtures'
+  )
 
-  let missing = favorites.value.filter((f) => !favoriteHasPredictSnapshot(f))
-  if (!missing.length) return
+  const needsRefresh = (item: FavoriteFixtureRecord) =>
+    !favoriteHasPredictSnapshot(item) || favoriteNeedsOdds(item)
+  if (!favorites.value.some(needsRefresh)) return
 
-  const dates = [...new Set(missing.map((f) => fixtureDay(f.fixture_date)))]
-  for (const date of dates) {
+  const needOdds = favorites.value.filter(favoriteNeedsOdds)
+  const oddsDates = [...new Set(needOdds.map((f) => fixtureDay(f.fixture_date)))]
+  for (const date of oddsDates.slice(0, 8)) {
     try {
-      const { fixtures: dayFixtures } = await fetchResults(date)
+      const { fixtures: dayFixtures } = await fetchTodayFixtures({ date, days: 1 })
       for (const fx of dayFixtures) {
-        if (isFavorite(fx.fixture_id)) syncFavoriteFromResult(fx)
+        if (!isFavorite(fx.fixture_id) || !hasOddsMarkets(oddsSnippetFromFixture(fx))) {
+          continue
+        }
+        syncFavoriteFromFixture(fx)
       }
     } catch {
       /* ignore per-day failures */
     }
   }
 
-  missing = favorites.value.filter((f) => !favoriteHasPredictSnapshot(f))
+  let missing = favorites.value.filter((f) => !favoriteHasPredictSnapshot(f))
+  if (missing.length) {
+    const dates = [...new Set(missing.map((f) => fixtureDay(f.fixture_date)))]
+    for (const date of dates) {
+      try {
+        const { fixtures: dayFixtures } = await fetchResults(date)
+        for (const fx of dayFixtures) {
+          if (isFavorite(fx.fixture_id)) syncFavoriteFromResult(fx)
+        }
+      } catch {
+        /* ignore per-day failures */
+      }
+    }
+  }
+
+  missing = favorites.value.filter(needsRefresh)
   for (const item of missing.slice(0, 12)) {
     try {
       const fx = await fetchFixtureAnalysis(item.fixture_id)

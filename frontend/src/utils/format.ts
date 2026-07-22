@@ -75,6 +75,19 @@ export function toLocalDayKey(dateStr: string | Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
 
+/**
+ * Schedule calendar day (UTC date of kickoff), aligned with `/fixtures/today?date=`.
+ * Home lists fixtures by this day; local display may show the next calendar date
+ * for late UTC kickoffs (e.g. 03:00 北京时间仍归属前一日赛程).
+ */
+export function toScheduleDayKey(dateStr: string | Date): string {
+  const d = dateStr instanceof Date ? dateStr : parseApiDate(dateStr)
+  if (Number.isNaN(d.getTime())) {
+    return typeof dateStr === 'string' ? invalidDateFallback(dateStr) : ''
+  }
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`
+}
+
 function tzOffsetLabel(date: Date): string {
   const offsetMin = -date.getTimezoneOffset()
   const sign = offsetMin >= 0 ? '+' : '-'
