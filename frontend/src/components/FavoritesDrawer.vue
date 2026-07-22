@@ -7,7 +7,7 @@ import FavoriteFixtureCard from '@/components/FavoriteFixtureCard.vue'
 import { favoriteFixtureDays, useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 import { useFavoritesDrawer } from '@/composables/useFavoritesDrawer'
 import { useIsPhone } from '@/composables/useMediaQuery'
-import { toScheduleDayKey } from '@/utils/format'
+import { parseApiDate, toScheduleDayKey } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'
 import { todayDate } from '@/utils/homeDateStrip'
 
@@ -44,11 +44,11 @@ const filteredFavorites = computed(() => {
       (item) => toScheduleDayKey(item.fixture_date) === filterDate.value,
     )
   }
-  return list.sort((a, b) => {
-    const byDate = b.fixture_date.localeCompare(a.fixture_date)
-    if (byDate !== 0) return byDate
-    return b.saved_at.localeCompare(a.saved_at)
-  })
+  return list.sort(
+    (a, b) =>
+      parseApiDate(a.fixture_date).getTime() -
+      parseApiDate(b.fixture_date).getTime(),
+  )
 })
 
 function goDetail(fixtureId: number) {
