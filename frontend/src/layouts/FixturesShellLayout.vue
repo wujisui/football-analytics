@@ -121,7 +121,10 @@ onActivated(() => {
 
           <div class="shell-list-meta">
             <span class="day-stat">{{ dayCountLabel }}</span>
-            <PageToolbarSearch v-model="teamSearch" />
+            <PageToolbarSearch
+              v-if="!(isResultsPage && !isScheduleFutureDay)"
+              v-model="teamSearch"
+            />
           </div>
         </n-layout-header>
 

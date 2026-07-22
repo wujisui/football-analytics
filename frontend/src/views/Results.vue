@@ -16,37 +16,25 @@ import {
 import AccuracyHistoryChart from '@/components/AccuracyHistoryChart.vue'
 import FixtureList from '@/components/FixtureList.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
-import ResultHitTags from '@/components/ResultHitTags.vue'
-import FavoriteButton from '@/components/FavoriteButton.vue'
-import ScoreDetailLink from '@/components/ScoreDetailLink.vue'
-import ResultsFilterTrigger from '@/components/ResultsFilterTrigger.vue'
+import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
+import ResultsListToolbar from '@/components/ResultsListToolbar.vue'
 import { useFixturesShell } from '@/composables/useFixturesShell'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 import { markDayAutoSynced, isDayAutoSynced, shouldAutoSyncDay } from '@/composables/useDayAutoSync'
 import { publishResultsFixtures, publishScheduleFixtures, setResultsLoading, useResultsLeagues } from '@/composables/useResultsLeagues'
 import { todayDate, yesterdayDate } from '@/utils/homeDateStrip'
-import {
-  formatDateTime,
-  leagueTagColor,
-  statusLabel,
-  statusTagType,
-} from '@/utils/format'
-import { leagueLabel } from '@/utils/leagueNames'
-import {
-  resultExtraScoreLine,
-  resultScoreText,
-} from '@/utils/resultsDisplay'
 import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
 import {
   readResultsPageState,
   writeResultsPageState,
+  RESULTS_ALL_HIT_KEYS,
+  type ResultsFilterConfirm,
   type ResultsHitKey,
 } from '@/utils/resultsPageState'
 
 defineOptions({ name: 'Results' })
 
-const ALL_HIT_KEYS: ResultsHitKey[] = ['score', 'result', 'ou', 'btts']
 const HIT_FIELD: Record<ResultsHitKey, keyof ResultFixture> = {
   result: 'result_hit',
   score: 'score_hit',
@@ -82,7 +70,8 @@ const historyLoading = ref(false)
 const error = ref('')
 const hint = ref('')
 
-const filterHitKeys = ref<ResultsHitKey[]>([...ALL_HIT_KEYS])
+const filterHitKeys = ref<ResultsHitKey[]>([...RESULTS_ALL_HIT_KEYS])
+const hideWithoutPrediction = ref(false)
 const loadedResultsDay = ref('')
 
 const contentLoading = computed(
@@ -103,12 +92,20 @@ const scheduleDisplayedFixtures = computed(() => {
   return filterByTeamQuery(list, teamSearch.value)
 })
 
-const filteredFixtures = computed(() => {
+const leagueScopedFixtures = computed(() => {
   let list = fixtures.value.filter((fx) => trackedIdSet.value.has(fx.league_id))
   if (selectedLeagueId.value != null) {
     list = list.filter((fx) => fx.league_id === selectedLeagueId.value)
   }
-  if (filterHitKeys.value.length && filterHitKeys.value.length < ALL_HIT_KEYS.length) {
+  return list
+})
+
+const filteredFixtures = computed(() => {
+  let list = leagueScopedFixtures.value
+  if (hideWithoutPrediction.value) {
+    list = list.filter((fx) => fx.has_prediction)
+  }
+  if (filterHitKeys.value.length && filterHitKeys.value.length < RESULTS_ALL_HIT_KEYS.length) {
     const keys = filterHitKeys.value
     list = list.filter((fx) =>
       keys.some((k) => fx[HIT_FIELD[k]] === true),
@@ -131,14 +128,19 @@ const listedFixtures = computed(() => {
     .map(({ fx }) => fx)
 })
 
-const filterActive = computed(() => filterHitKeys.value.length !== ALL_HIT_KEYS.length)
+const filterActive = computed(
+  () =>
+    filterHitKeys.value.length !== RESULTS_ALL_HIT_KEYS.length
+    || hideWithoutPrediction.value,
+)
 
-function confirmHitFilter(hitKeys: ResultsHitKey[]) {
-  if (!hitKeys.length) {
+function confirmHitFilter(payload: ResultsFilterConfirm) {
+  if (!payload.hitKeys.length) {
     message.warning('请至少勾选一个预测维度')
     return
   }
-  filterHitKeys.value = hitKeys
+  filterHitKeys.value = payload.hitKeys
+  hideWithoutPrediction.value = payload.hideWithoutPrediction
 }
 
 function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
@@ -171,8 +173,11 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
 }
 
 const displayAccuracy = computed(() => {
-  if (!filterActive.value) return dayAccuracy.value
-  return summarizeFiltered(filteredFixtures.value)
+  if (!filterActive.value && selectedLeagueId.value == null) {
+    return dayAccuracy.value
+  }
+  const base = filterActive.value ? filteredFixtures.value : leagueScopedFixtures.value
+  return summarizeFiltered(base)
 })
 
 const emptyText = computed(() => {
@@ -180,7 +185,9 @@ const emptyText = computed(() => {
   const teamHint = teamSearchEmptyHint(teamSearch.value)
   if (teamHint && filteredFixtures.value.length) return teamHint
   if (fixtures.value.length && !listedFixtures.value.length) {
-    return '当前筛选下无场次，可调整预测维度'
+    return hideWithoutPrediction.value
+      ? '当前筛选下无场次，可取消「隐藏无赛前预测」或调整预测维度'
+      : '当前筛选下无场次，可调整预测维度'
   }
   if (
     isDayAutoSynced(selectedDay.value) &&
@@ -226,36 +233,16 @@ const hasChartData = computed(
   () => (history.value?.series ?? []).some((p) => p.fixtures_with_prediction > 0),
 )
 
-const listTitle = computed(() => {
-  if (isScheduleFutureDay.value) {
-    const n = scheduleDisplayedFixtures.value.length
-    const total = scheduleFixtures.value.filter((f) => trackedIdSet.value.has(f.league_id)).length
-    if (total && n !== total) return `赛程 · ${selectedDay.value}（${n}/${total}）`
-    return `赛程 · ${selectedDay.value}`
-  }
-  const n = listedFixtures.value.length
-  const total = filteredFixtures.value.length
-  if (total && n !== total) return `赛果 · ${selectedDay.value}（${n}/${total}）`
-  return `赛果 · ${selectedDay.value}`
-})
-
 function formatRate(stat: AccuracyStat | undefined): string {
   if (!stat || stat.total <= 0 || stat.rate == null) return '—'
   return `${(stat.rate * 100).toFixed(0)}%（${stat.hits}/${stat.total}）`
-}
-
-function resultStatusTagType(
-  status: string,
-  statusShort?: string | null,
-): ReturnType<typeof statusTagType> {
-  if (status.toLowerCase() === 'finished') return 'error'
-  return statusTagType(status, statusShort)
 }
 
 function goDetail(fixtureId: number) {
   writeResultsPageState({
     date: selectedDay.value,
     filterHitKeys: filterHitKeys.value,
+    hideWithoutPrediction: hideWithoutPrediction.value,
     teamSearch: teamSearch.value,
   })
   void router.push({
@@ -271,6 +258,7 @@ function applySavedFiltersIfAny() {
   if (saved.filterHitKeys.length) {
     filterHitKeys.value = [...saved.filterHitKeys]
   }
+  hideWithoutPrediction.value = saved.hideWithoutPrediction === true
   teamSearch.value = saved.teamSearch
 }
 
@@ -392,7 +380,8 @@ async function syncAndLoadDay() {
 
 watch(selectedDay, () => {
   if (route.name !== 'results') return
-  filterHitKeys.value = [...ALL_HIT_KEYS]
+  filterHitKeys.value = [...RESULTS_ALL_HIT_KEYS]
+  hideWithoutPrediction.value = false
   void syncAndLoadDay()
 })
 
@@ -583,73 +572,31 @@ onMounted(() => {
         content-style="flex: 1; min-height: 0; padding: 0;"
       >
         <template #header>
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;">
-            <span>{{ listTitle }}</span>
-            <ResultsFilterTrigger
-              :selected-hit-keys="filterHitKeys"
-              :filter-active="filterActive"
-              @confirm="confirmHitFilter"
-            />
-          </div>
+          <ResultsListToolbar
+            v-model:team-search="teamSearch"
+            :selected-hit-keys="filterHitKeys"
+            :hide-without-prediction="hideWithoutPrediction"
+            :filter-active="filterActive"
+            @confirm-filter="confirmHitFilter"
+          />
         </template>
         <div ref="phoneListShellRef" class="results-list-shell phone">
           <n-scrollbar style="max-height: 100%; height: 100%;" trigger="hover">
-            <div style="padding: 8px 12px 12px;">
+            <div class="results-list-inner">
               <n-spin :show="contentLoading">
                 <n-empty
                   v-if="!loading && !listedFixtures.length"
                   :description="emptyText"
                   style="padding: 24px 12px;"
                 />
-                <n-list v-else>
-                  <n-list-item v-for="fx in listedFixtures" :key="fx.fixture_id">
-                    <n-thing>
-                      <template #header>
-                        <n-space :size="6" align="center" wrap style="width: 100%;">
-                          <span>{{ fx.home_team_name }}</span>
-                          <ScoreDetailLink
-                            :label="resultScoreText(fx)"
-                            @click="goDetail(fx.fixture_id)"
-                          />
-                          <span>{{ fx.away_team_name }}</span>
-                          <FavoriteButton
-                            :fixture-id="fx.fixture_id"
-                            :result-fixture="fx"
-                            size="tiny"
-                          />
-                        </n-space>
-                        <n-text
-                          v-if="resultExtraScoreLine(fx)"
-                          depth="3"
-                          style="display: block; font-size: 11px; font-weight: 400;"
-                        >
-                          {{ resultExtraScoreLine(fx) }}
-                        </n-text>
-                      </template>
-                      <n-space
-                        v-if="fx.has_prediction"
-                        vertical
-                        :size="4"
-                        style="margin-top: 4px;"
-                      >
-                        <n-text depth="3" style="font-size: 11px;">
-                          {{ fx.recommendation || '—' }}
-                          · {{ fx.score_hint || '—' }}
-                          · {{ fx.goal_lean || '—' }}
-                          · {{ fx.both_score_lean || '—' }}
-                        </n-text>
-                        <ResultHitTags :fixture="fx" />
-                      </n-space>
-                      <n-text
-                        v-else
-                        depth="3"
-                        style="display: block; margin-top: 4px; font-size: 11px;"
-                      >
-                        无赛前预测
-                      </n-text>
-                    </n-thing>
-                  </n-list-item>
-                </n-list>
+                <div v-else class="results-card-stack">
+                  <ResultFixtureCard
+                    v-for="fx in listedFixtures"
+                    :key="fx.fixture_id"
+                    :fixture="fx"
+                    @open-detail="goDetail"
+                  />
+                </div>
               </n-spin>
             </div>
           </n-scrollbar>
@@ -666,15 +613,13 @@ onMounted(() => {
       :native-scrollbar="true"
       content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
     >
-      <div
-        class="results-sider-head"
-        style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;"
-      >
-        <n-text strong>{{ listTitle }}</n-text>
-        <ResultsFilterTrigger
+      <div class="results-sider-head">
+        <ResultsListToolbar
+          v-model:team-search="teamSearch"
           :selected-hit-keys="filterHitKeys"
+          :hide-without-prediction="hideWithoutPrediction"
           :filter-active="filterActive"
-          @confirm="confirmHitFilter"
+          @confirm-filter="confirmHitFilter"
         />
       </div>
       <n-alert
@@ -691,90 +636,21 @@ onMounted(() => {
       </n-alert>
       <div ref="desktopListShellRef" class="results-list-shell">
         <n-scrollbar style="height: 100%;" trigger="hover">
-          <div style="padding: 4px 0 16px;">
+          <div class="results-list-inner">
             <n-spin :show="contentLoading">
               <n-empty
                 v-if="!loading && !listedFixtures.length"
                 :description="emptyText"
                 style="padding: 40px 12px;"
               />
-              <n-list v-else style="background: transparent;">
-                <n-list-item v-for="fx in listedFixtures" :key="fx.fixture_id">
-                  <n-thing>
-                    <template #header>
-                      <n-space :size="6" align="center" wrap>
-                        <n-tag
-                          size="small"
-                          :bordered="false"
-                          :color="{
-                            color: `${leagueTagColor(fx.league_id)}18`,
-                            textColor: leagueTagColor(fx.league_id),
-                          }"
-                        >
-                          {{ leagueLabel(fx.league_name) }}
-                        </n-tag>
-                        <span style="font-size: 12px; color: var(--fa-text-secondary);">
-                          {{ formatDateTime(fx.fixture_date) }}
-                        </span>
-                      </n-space>
-                    </template>
-                    <template #header-extra>
-                      <n-space :size="4" align="center">
-                        <FavoriteButton
-                          :fixture-id="fx.fixture_id"
-                          :result-fixture="fx"
-                          size="tiny"
-                        />
-                        <n-tag
-                          size="small"
-                          :type="resultStatusTagType(fx.status, fx.status_short)"
-                          :bordered="false"
-                        >
-                          {{ statusLabel(fx.status, fx.status_short) }}
-                        </n-tag>
-                      </n-space>
-                    </template>
-                    <n-grid :cols="3" :x-gap="8" style="align-items: center; font-weight: 600;">
-                      <n-gi style="text-align: right; font-size: 13px;">
-                        {{ fx.home_team_name }}
-                      </n-gi>
-                      <n-gi style="text-align: center; font-variant-numeric: tabular-nums;">
-                        <ScoreDetailLink
-                          :label="resultScoreText(fx)"
-                          @click="goDetail(fx.fixture_id)"
-                        />
-                        <div v-if="resultExtraScoreLine(fx)" class="score-extra">
-                          {{ resultExtraScoreLine(fx) }}
-                        </div>
-                      </n-gi>
-                      <n-gi style="font-size: 13px;">
-                        {{ fx.away_team_name }}
-                      </n-gi>
-                    </n-grid>
-                    <n-space
-                      v-if="fx.has_prediction"
-                      vertical
-                      :size="4"
-                      style="margin-top: 8px;"
-                    >
-                      <n-text depth="3" style="font-size: 11px;">
-                        {{ fx.recommendation || '—' }}
-                        · {{ fx.score_hint || '—' }}
-                        · {{ fx.goal_lean || '—' }}
-                        · {{ fx.both_score_lean || '—' }}
-                      </n-text>
-                      <ResultHitTags :fixture="fx" />
-                    </n-space>
-                    <n-text
-                      v-else
-                      depth="3"
-                      style="display: block; margin-top: 6px; font-size: 11px;"
-                    >
-                      无赛前预测
-                    </n-text>
-                  </n-thing>
-                </n-list-item>
-              </n-list>
+              <div v-else class="results-card-stack">
+                <ResultFixtureCard
+                  v-for="fx in listedFixtures"
+                  :key="fx.fixture_id"
+                  :fixture="fx"
+                  @open-detail="goDetail"
+                />
+              </div>
             </n-spin>
           </div>
         </n-scrollbar>
@@ -801,7 +677,19 @@ onMounted(() => {
 }
 
 .results-sider-head {
+  flex-shrink: 0;
   padding: 10px var(--fa-content-inline) 6px;
+}
+
+.results-list-inner {
+  padding: 0 8px 8px;
+  box-sizing: border-box;
+}
+
+.results-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .results-sider-alert {
@@ -856,12 +744,5 @@ onMounted(() => {
   min-height: 0;
   width: 100%;
   height: 100%;
-}
-
-.score-extra {
-  margin-top: 2px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--fa-text-secondary);
 }
 </style>
