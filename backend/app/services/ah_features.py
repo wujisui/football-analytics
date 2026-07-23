@@ -216,9 +216,14 @@ def build_ah_features(
 
 
 def format_ah_line(line_f: float) -> str:
-    if float(line_f).is_integer():
-        return str(int(line_f))
-    return str(line_f)
+    value = float(line_f)
+    if value.is_integer():
+        text = str(int(value))
+    else:
+        text = str(value)
+    # AH line is always from the home side: positive = home receives,
+    # negative = home gives. Show '+' explicitly to remove ambiguity.
+    return f"+{text}" if value > 0 else text
 
 
 def pick_to_lean(pick: str) -> str:
