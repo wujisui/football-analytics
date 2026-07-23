@@ -14,7 +14,7 @@ import { todayDate } from '@/utils/homeDateStrip'
 const router = useRouter()
 const isPhone = useIsPhone()
 const { show, close } = useFavoritesDrawer()
-const { favorites, remove, refreshFavoritePredictions } = useFavoriteFixtures()
+const { favorites, reloadFavorites } = useFavoriteFixtures()
 
 const filterDate = ref<string | null>(todayDate())
 const refreshing = ref(false)
@@ -22,20 +22,27 @@ const refreshing = ref(false)
 watch(show, (open) => {
   if (!open) return
   filterDate.value = todayDate()
-  void refreshDrawerPredictions()
+  void refreshDrawer()
 })
 
-async function refreshDrawerPredictions() {
+async function refreshDrawer() {
   if (refreshing.value) return
   refreshing.value = true
   try {
-    await refreshFavoritePredictions()
+    await reloadFavorites()
   } finally {
     refreshing.value = false
   }
 }
 
 const favoriteDays = computed(() => favoriteFixtureDays(favorites.value))
+
+const todayFavoriteCount = computed(() => {
+  const today = todayDate()
+  return favorites.value.filter(
+    (item) => toScheduleDayKey(item.fixture_date) === today,
+  ).length
+})
 
 const filteredFavorites = computed(() => {
   let list = [...favorites.value]
@@ -55,12 +62,6 @@ function goDetail(fixtureId: number) {
   close()
   void router.push(fixtureDetailRoute(fixtureId, { from: 'favorites' }))
 }
-
-function clearAll() {
-  for (const item of favorites.value) {
-    remove(item.fixture_id)
-  }
-}
 </script>
 
 <template>
@@ -77,7 +78,10 @@ function clearAll() {
           <div class="drawer-head">
             <span class="drawer-title">收藏</span>
             <n-text depth="3" class="drawer-count">
-              {{ favorites.length }} 场
+              共 {{ favorites.length }} 场
+            </n-text>
+            <n-text depth="3" class="drawer-count drawer-count-sep">
+              今日 {{ todayFavoriteCount }} 场
             </n-text>
           </div>
           <div class="drawer-toolbar">
@@ -85,14 +89,6 @@ function clearAll() {
               v-model="filterDate"
               :favorite-days="favoriteDays"
             />
-            <n-button
-              v-if="favorites.length"
-              size="small"
-              quaternary
-              @click="clearAll"
-            >
-              清空
-            </n-button>
           </div>
         </div>
       </template>
@@ -159,6 +155,12 @@ function clearAll() {
 
 .drawer-count {
   font-size: 12px;
+}
+
+.drawer-count-sep::before {
+  content: '·';
+  margin: 0 6px 0 2px;
+  opacity: 0.55;
 }
 
 .drawer-toolbar {

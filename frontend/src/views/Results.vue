@@ -46,7 +46,7 @@ const isPhone = useIsPhone()
 const message = useMessage()
 const route = useRoute()
 const router = useRouter()
-const { favoriteIds, syncFavoriteFromResult } = useFavoriteFixtures()
+const { favoriteIds } = useFavoriteFixtures()
 const {
   resultsTrackedIds,
   scheduleFixtures,
@@ -279,11 +279,6 @@ async function loadDayResults() {
     publishResultsFixtures(data.fixtures, selectedDay.value)
     dayAccuracy.value = data.accuracy ?? null
     hint.value = data.total ? `共 ${data.total} 场` : ''
-    for (const fx of fixtures.value) {
-      if (favoriteIds.value.has(fx.fixture_id)) {
-        syncFavoriteFromResult(fx)
-      }
-    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '获取失败'
     fixtures.value = []

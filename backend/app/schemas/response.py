@@ -333,6 +333,46 @@ class ResultFixtureResponse(BaseModel):
         return _utc_iso(value)
 
 
+class FavoriteFixtureResponse(BaseModel):
+    """Hydrated favorite row for the drawer (join fixtures + pre_match_data)."""
+
+    fixture_id: int
+    home_team_name: str
+    away_team_name: str
+    league_id: int
+    league_name: str
+    league_country: str | None = None
+    fixture_date: datetime
+    status: str | None = None
+    home_goals: int | None = None
+    away_goals: int | None = None
+    saved_at: datetime
+    has_prediction: bool = False
+    recommendation: str | None = None
+    handicap_lean: str | None = None
+    score_hint: str | None = None
+    goal_lean: str | None = None
+    both_score_lean: str | None = None
+    probabilities_available: bool = False
+    home_win_prob: float | None = None
+    draw_prob: float | None = None
+    away_win_prob: float | None = None
+    odds_snippet: FixtureOddsSnippetResponse | None = None
+
+    @field_serializer("fixture_date", "saved_at")
+    def serialize_datetimes(self, value: datetime) -> str:
+        return _utc_iso(value)
+
+
+class FavoriteFixturesResponse(BaseModel):
+    total: int
+    favorites: list[FavoriteFixtureResponse] = Field(default_factory=list)
+
+
+class FavoriteFixtureCreateRequest(BaseModel):
+    fixture_id: int = Field(..., gt=0, description="比赛 ID")
+
+
 class AccuracyStatResponse(BaseModel):
     hits: int = 0
     total: int = 0

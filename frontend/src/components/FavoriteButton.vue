@@ -25,15 +25,15 @@ const active = computed(() => isFavorite(props.fixtureId))
 function onClick(event: MouseEvent) {
   if (props.stopPropagation) event.stopPropagation()
   if (active.value) {
-    remove(props.fixtureId)
+    void remove(props.fixtureId)
     return
   }
   if (props.fixture) {
-    toggleFixture(props.fixture)
+    void toggleFixture(props.fixture)
     return
   }
   if (props.resultFixture) {
-    toggleResultFixture(props.resultFixture)
+    void toggleResultFixture(props.resultFixture)
   }
 }
 </script>

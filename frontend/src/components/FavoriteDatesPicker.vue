@@ -8,7 +8,7 @@ const props = withDefaults(
     favoriteDays: ReadonlySet<string>
     placeholder?: string
   }>(),
-  { placeholder: '按赛程日筛选（同首页）' },
+  { placeholder: '赛程日' },
 )
 
 let markTimer: ReturnType<typeof setTimeout> | null = null
@@ -151,8 +151,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .favorite-dates-picker {
-  flex: 1;
-  min-width: 0;
+  width: 148px;
+  flex: 0 0 auto;
 }
 
 .favorite-date-legend {

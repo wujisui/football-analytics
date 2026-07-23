@@ -1,54 +1,21 @@
 import { computed, ref } from 'vue'
 
-import type { FixtureOddsSnippet, FixtureResponse } from '@/api/types'
+import type { FixtureResponse } from '@/api/types'
 import type { ResultFixture } from '@/api/fixtures'
-import { hasOddsMarkets, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
+import {
+  addFavorite,
+  deleteFavorite,
+  fetchFavorites,
+  type FavoriteFixtureRecord,
+} from '@/api/favorites'
+import { oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import { toScheduleDayKey } from '@/utils/format'
 
-const STORAGE_KEY = 'fa-favorite-fixtures'
+export type { FavoriteFixtureRecord }
 
-export interface FavoriteFixtureRecord {
-  fixture_id: number
-  home_team_name: string
-  away_team_name: string
-  league_id: number
-  league_name: string
-  league_country?: string | null
-  fixture_date: string
-  status?: string
-  home_goals?: number | null
-  away_goals?: number | null
-  saved_at: string
-  has_prediction?: boolean
-  recommendation?: string
-  handicap_lean?: string
-  score_hint?: string
-  goal_lean?: string
-  both_score_lean?: string
-  probabilities_available?: boolean
-  home_win_prob?: number
-  draw_prob?: number
-  away_win_prob?: number
-  odds_snippet?: FixtureOddsSnippet | null
-}
-
-function predictionFieldsFromResult(fixture: ResultFixture) {
-  const hasPrediction = !!(
-    fixture.has_prediction ||
-    fixture.recommendation ||
-    fixture.score_hint ||
-    fixture.goal_lean ||
-    fixture.both_score_lean
-  )
-  return {
-    has_prediction: hasPrediction,
-    recommendation: fixture.recommendation ?? undefined,
-    score_hint: fixture.score_hint ?? undefined,
-    goal_lean: fixture.goal_lean ?? undefined,
-    both_score_lean: fixture.both_score_lean ?? undefined,
-  }
-}
+const favorites = ref<FavoriteFixtureRecord[]>([])
+let loadPromise: Promise<void> | null = null
 
 function predictionFieldsFromSnapshot(snapshot: ReturnType<typeof snapshotFromAnalysis>) {
   return {
@@ -65,166 +32,7 @@ function predictionFieldsFromSnapshot(snapshot: ReturnType<typeof snapshotFromAn
   }
 }
 
-function parseOptionalString(value: unknown): string | undefined {
-  if (value == null || value === '') return undefined
-  return String(value)
-}
-
-function parseOptionalNumber(value: unknown): number | undefined {
-  if (value == null || value === '') return undefined
-  const n = Number(value)
-  return Number.isFinite(n) ? n : undefined
-}
-
-const favorites = ref<FavoriteFixtureRecord[]>([])
-
-function readStored(): FavoriteFixtureRecord[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .map((item) => ({
-        fixture_id: Number(item.fixture_id),
-        home_team_name: String(item.home_team_name ?? ''),
-        away_team_name: String(item.away_team_name ?? ''),
-        league_id: Number(item.league_id),
-        league_name: String(item.league_name ?? ''),
-        league_country:
-          item.league_country == null ? null : String(item.league_country),
-        fixture_date: String(item.fixture_date ?? ''),
-        status: item.status != null ? String(item.status) : undefined,
-        home_goals:
-          item.home_goals == null ? null : Number(item.home_goals),
-        away_goals:
-          item.away_goals == null ? null : Number(item.away_goals),
-        saved_at: String(item.saved_at ?? new Date().toISOString()),
-        has_prediction: item.has_prediction === true,
-        recommendation: parseOptionalString(item.recommendation),
-        handicap_lean: parseOptionalString(item.handicap_lean),
-        score_hint: parseOptionalString(item.score_hint),
-        goal_lean: parseOptionalString(item.goal_lean),
-        both_score_lean: parseOptionalString(item.both_score_lean),
-        probabilities_available: item.probabilities_available === true,
-        home_win_prob: parseOptionalNumber(item.home_win_prob),
-        draw_prob: parseOptionalNumber(item.draw_prob),
-        away_win_prob: parseOptionalNumber(item.away_win_prob),
-        odds_snippet:
-          item.odds_snippet && typeof item.odds_snippet === 'object'
-            ? (item.odds_snippet as FixtureOddsSnippet)
-            : null,
-      }))
-      .filter((item) => Number.isFinite(item.fixture_id) && item.fixture_id > 0)
-  } catch {
-    return []
-  }
-}
-
-function persist(list: FavoriteFixtureRecord[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
-  } catch {
-    /* ignore */
-  }
-}
-
-function ensureLoaded() {
-  if (favorites.value.length || readStored().length) {
-    favorites.value = readStored()
-  }
-}
-
-ensureLoaded()
-
-const favoriteIds = computed(() => new Set(favorites.value.map((f) => f.fixture_id)))
-
-function isFavorite(fixtureId: number): boolean {
-  return favoriteIds.value.has(fixtureId)
-}
-
-/** Schedule calendar days (YYYY-MM-DD) that have at least one favorite fixture. */
-export function favoriteFixtureDays(
-  favorites: readonly FavoriteFixtureRecord[],
-): Set<string> {
-  return new Set(favorites.map((item) => toScheduleDayKey(item.fixture_date)))
-}
-
-export function favoriteHasPredictSnapshot(item: FavoriteFixtureRecord): boolean {
-  return !!(
-    item.has_prediction ||
-    item.recommendation ||
-    item.score_hint ||
-    item.goal_lean ||
-    item.both_score_lean
-  )
-}
-
-/** Map stored favorite row → prediction card snapshot. */
-export function snapshotFromFavorite(item: FavoriteFixtureRecord): PredictionSnapshot {
-  const ready = !!item.probabilities_available
-  return {
-    home_win_prob: ready ? Number(item.home_win_prob ?? 0) : 0,
-    draw_prob: ready ? Number(item.draw_prob ?? 0) : 0,
-    away_win_prob: ready ? Number(item.away_win_prob ?? 0) : 0,
-    recommendation: item.recommendation || '待分析',
-    goal_lean: item.goal_lean || '',
-    both_score_lean: item.both_score_lean || '',
-    score_hint: item.score_hint || '',
-    handicap_lean: item.handicap_lean || '',
-    probabilitiesAvailable: ready,
-  }
-}
-
-function favoriteNeedsOdds(item: FavoriteFixtureRecord): boolean {
-  return !hasOddsMarkets(item.odds_snippet)
-}
-
-function oddsForFixture(
-  fixture: Pick<FixtureResponse, 'odds_snippet' | 'analysis'>,
-  prev?: FixtureOddsSnippet | null,
-): FixtureOddsSnippet | null {
-  return oddsSnippetFromFixture(fixture) ?? prev ?? null
-}
-
-function syncFavoriteFromResult(result: ResultFixture): boolean {
-  const idx = favorites.value.findIndex((f) => f.fixture_id === result.fixture_id)
-  if (idx < 0) return false
-  const prev = favorites.value[idx]
-  const prediction = predictionFieldsFromResult(result)
-  const next = [...favorites.value]
-  next[idx] = {
-    ...prev,
-    status: result.status,
-    home_goals: result.home_goals,
-    away_goals: result.away_goals,
-    ...prediction,
-  }
-  favorites.value = next
-  persist(next)
-  return favoriteHasPredictSnapshot(next[idx])
-}
-
-function syncFavoriteFromFixture(fixture: FixtureResponse): boolean {
-  const idx = favorites.value.findIndex((f) => f.fixture_id === fixture.fixture_id)
-  if (idx < 0) return false
-  const prev = favorites.value[idx]
-  const prediction = predictionFieldsFromSnapshot(snapshotFromAnalysis(fixture.analysis))
-  const next = [...favorites.value]
-  next[idx] = {
-    ...prev,
-    status: fixture.status,
-    home_goals: fixture.home_goals,
-    away_goals: fixture.away_goals,
-    odds_snippet: oddsForFixture(fixture, prev.odds_snippet),
-    ...prediction,
-  }
-  favorites.value = next
-  persist(next)
-  return favoriteHasPredictSnapshot(next[idx])
-}
-
-function recordFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord {
+function optimisticFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord {
   const snapshot = snapshotFromAnalysis(fixture.analysis)
   return {
     fixture_id: fixture.fixture_id,
@@ -243,7 +51,14 @@ function recordFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord {
   }
 }
 
-function recordFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
+function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
+  const hasPrediction = !!(
+    fixture.has_prediction ||
+    fixture.recommendation ||
+    fixture.score_hint ||
+    fixture.goal_lean ||
+    fixture.both_score_lean
+  )
   return {
     fixture_id: fixture.fixture_id,
     home_team_name: fixture.home_team_name,
@@ -256,107 +71,146 @@ function recordFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     home_goals: fixture.home_goals,
     away_goals: fixture.away_goals,
     saved_at: new Date().toISOString(),
-    ...predictionFieldsFromResult(fixture),
+    has_prediction: hasPrediction,
+    recommendation: fixture.recommendation ?? undefined,
+    score_hint: fixture.score_hint ?? undefined,
+    goal_lean: fixture.goal_lean ?? undefined,
+    both_score_lean: fixture.both_score_lean ?? undefined,
   }
 }
 
-function upsert(record: FavoriteFixtureRecord) {
-  const next = favorites.value.filter((f) => f.fixture_id !== record.fixture_id)
-  next.unshift({ ...record, saved_at: new Date().toISOString() })
-  favorites.value = next
-  persist(next)
+async function loadFavorites(): Promise<void> {
+  const data = await fetchFavorites()
+  favorites.value = data.favorites
 }
 
-function remove(fixtureId: number) {
-  const next = favorites.value.filter((f) => f.fixture_id !== fixtureId)
-  favorites.value = next
-  persist(next)
+async function ensureLoaded(): Promise<void> {
+  if (loadPromise) return loadPromise
+  loadPromise = (async () => {
+    try {
+      await loadFavorites()
+    } catch {
+      /* keep empty until next reload */
+    }
+  })()
+  return loadPromise
 }
 
-function toggleFixture(fixture: FixtureResponse) {
-  if (isFavorite(fixture.fixture_id)) {
-    remove(fixture.fixture_id)
-    return false
-  }
-  upsert(recordFromFixture(fixture))
-  return true
+void ensureLoaded()
+
+const favoriteIds = computed(() => new Set(favorites.value.map((f) => f.fixture_id)))
+const favoriteList = computed<FavoriteFixtureRecord[]>(() => favorites.value)
+
+function isFavorite(fixtureId: number): boolean {
+  return favoriteIds.value.has(fixtureId)
 }
 
-function toggleResultFixture(fixture: ResultFixture) {
-  if (isFavorite(fixture.fixture_id)) {
-    remove(fixture.fixture_id)
-    return false
-  }
-  upsert(recordFromResult(fixture))
-  return true
+/** Schedule calendar days (YYYY-MM-DD) that have at least one favorite fixture. */
+export function favoriteFixtureDays(
+  favoritesList: readonly FavoriteFixtureRecord[],
+): Set<string> {
+  return new Set(favoritesList.map((item) => toScheduleDayKey(item.fixture_date)))
 }
 
-function fixtureDay(iso: string): string {
-  return toScheduleDayKey(iso)
-}
-
-/** Backfill missing prediction snapshots and odds from local DB. */
-async function refreshFavoritePredictions(): Promise<void> {
-  const { fetchResults, fetchFixtureAnalysis, fetchTodayFixtures } = await import(
-    '@/api/fixtures'
+export function favoriteHasPredictSnapshot(item: FavoriteFixtureRecord): boolean {
+  return !!(
+    item.has_prediction ||
+    item.recommendation ||
+    item.score_hint ||
+    item.goal_lean ||
+    item.both_score_lean
   )
+}
 
-  const needsRefresh = (item: FavoriteFixtureRecord) =>
-    !favoriteHasPredictSnapshot(item) || favoriteNeedsOdds(item)
-  if (!favorites.value.some(needsRefresh)) return
-
-  const needOdds = favorites.value.filter(favoriteNeedsOdds)
-  const oddsDates = [...new Set(needOdds.map((f) => fixtureDay(f.fixture_date)))]
-  for (const date of oddsDates.slice(0, 8)) {
-    try {
-      const { fixtures: dayFixtures } = await fetchTodayFixtures({ date, days: 1 })
-      for (const fx of dayFixtures) {
-        if (!isFavorite(fx.fixture_id) || !hasOddsMarkets(oddsSnippetFromFixture(fx))) {
-          continue
-        }
-        syncFavoriteFromFixture(fx)
-      }
-    } catch {
-      /* ignore per-day failures */
-    }
+/** Map favorite row → prediction card snapshot. */
+export function snapshotFromFavorite(item: FavoriteFixtureRecord): PredictionSnapshot {
+  const ready = !!item.probabilities_available
+  return {
+    home_win_prob: ready ? Number(item.home_win_prob ?? 0) : 0,
+    draw_prob: ready ? Number(item.draw_prob ?? 0) : 0,
+    away_win_prob: ready ? Number(item.away_win_prob ?? 0) : 0,
+    recommendation: item.recommendation || '待分析',
+    goal_lean: item.goal_lean || '',
+    both_score_lean: item.both_score_lean || '',
+    score_hint: item.score_hint || '',
+    handicap_lean: item.handicap_lean || '',
+    probabilitiesAvailable: ready,
   }
+}
 
-  let missing = favorites.value.filter((f) => !favoriteHasPredictSnapshot(f))
-  if (missing.length) {
-    const dates = [...new Set(missing.map((f) => fixtureDay(f.fixture_date)))]
-    for (const date of dates) {
-      try {
-        const { fixtures: dayFixtures } = await fetchResults(date)
-        for (const fx of dayFixtures) {
-          if (isFavorite(fx.fixture_id)) syncFavoriteFromResult(fx)
-        }
-      } catch {
-        /* ignore per-day failures */
-      }
-    }
+function upsertLocal(record: FavoriteFixtureRecord) {
+  const next = favorites.value.filter((f) => f.fixture_id !== record.fixture_id)
+  next.unshift(record)
+  favorites.value = next
+}
+
+async function remove(fixtureId: number): Promise<void> {
+  await ensureLoaded()
+  const prev = favorites.value
+  favorites.value = prev.filter((f) => f.fixture_id !== fixtureId)
+  try {
+    await deleteFavorite(fixtureId)
+  } catch {
+    favorites.value = prev
   }
+}
 
-  missing = favorites.value.filter(needsRefresh)
-  for (const item of missing.slice(0, 12)) {
-    try {
-      const fx = await fetchFixtureAnalysis(item.fixture_id)
-      syncFavoriteFromFixture(fx)
-    } catch {
-      /* ignore per-fixture failures */
-    }
+async function toggleFixture(fixture: FixtureResponse): Promise<boolean> {
+  await ensureLoaded()
+  if (isFavorite(fixture.fixture_id)) {
+    await remove(fixture.fixture_id)
+    return false
+  }
+  const optimistic = optimisticFromFixture(fixture)
+  upsertLocal(optimistic)
+  try {
+    const saved = await addFavorite(fixture.fixture_id)
+    upsertLocal({
+      ...saved,
+      odds_snippet: saved.odds_snippet ?? optimistic.odds_snippet ?? null,
+    })
+    return true
+  } catch {
+    favorites.value = favorites.value.filter((f) => f.fixture_id !== fixture.fixture_id)
+    return false
+  }
+}
+
+async function toggleResultFixture(fixture: ResultFixture): Promise<boolean> {
+  await ensureLoaded()
+  if (isFavorite(fixture.fixture_id)) {
+    await remove(fixture.fixture_id)
+    return false
+  }
+  const optimistic = optimisticFromResult(fixture)
+  upsertLocal(optimistic)
+  try {
+    const saved = await addFavorite(fixture.fixture_id)
+    upsertLocal(saved)
+    return true
+  } catch {
+    favorites.value = favorites.value.filter((f) => f.fixture_id !== fixture.fixture_id)
+    return false
+  }
+}
+
+/** Reload hydrated favorites from the backend. */
+async function reloadFavorites(): Promise<void> {
+  try {
+    await loadFavorites()
+  } catch {
+    /* keep current cache */
   }
 }
 
 export function useFavoriteFixtures() {
   return {
-    favorites,
+    favorites: favoriteList,
     favoriteIds,
     isFavorite,
     toggleFixture,
     toggleResultFixture,
     remove,
-    syncFavoriteFromResult,
-    favoriteHasPredictSnapshot,
-    refreshFavoritePredictions,
+    reloadFavorites,
   }
 }
