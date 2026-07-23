@@ -176,6 +176,41 @@ async def run_backfill_team_names() -> None:
     print(f"Updated {updated} team display name(s) to Chinese.")
 
 
+async def run_translate_catalog_teams(dry_run: bool = False) -> None:
+    """Auto-translate unmapped clubs that appear in config/leagues.json leagues."""
+    import sys
+
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.team_translate import auto_translate_catalog_teams
+
+    def _out(msg: str) -> None:
+        stream = getattr(sys.stdout, "buffer", None)
+        if stream is None:
+            print(msg)
+            return
+        enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+        stream.write((msg + "\n").encode(enc, errors="replace"))
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        result = await auto_translate_catalog_teams(session, dry_run=dry_run)
+    _out(
+        "Catalog teams: "
+        f"missing={result['catalog_missing']} attempted={result['attempted']} "
+        f"translated={result['translated']} rejected={result.get('rejected')} "
+        f"stored={result['stored']} "
+        f"backfilled={result['backfilled']} dry_run={result['dry_run']} "
+        f"aborted={result.get('aborted')}"
+    )
+    for sample in result.get("samples") or []:
+        _out(f"  {sample['id']}: {sample['zh']}")
+    still = result.get("still_missing") or []
+    if still:
+        _out(f"Still missing ({len(still)} shown):")
+        for item in still:
+            _out(f"  {item['id']}: {item['name']}")
+
+
 async def run_backfill_features() -> None:
     from app.core.database import AsyncSessionLocal, init_db
     from app.services.ml_predictor import collect_training_rows
@@ -317,6 +352,18 @@ def main() -> None:
         "backfill-team-names",
         help="Rewrite teams.name to Chinese from the built-in id/name map",
     )
+    translate_parser = subparsers.add_parser(
+        "translate-catalog-teams",
+        help=(
+            "Auto-translate clubs that appear in config/leagues.json fixtures "
+            "but still lack Chinese names"
+        ),
+    )
+    translate_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Only report proposed translations; do not write auto map or DB",
+    )
     subparsers.add_parser(
         "backfill-features",
         help="Build match_features from finished fixtures + pre_match packages",
@@ -360,6 +407,10 @@ def main() -> None:
 
     if args.command == "fetch-upcoming":
         asyncio.run(run_fetch_upcoming(args.days))
+        return
+
+    if args.command == "translate-catalog-teams":
+        asyncio.run(run_translate_catalog_teams(dry_run=args.dry_run))
         return
 
     commands = {

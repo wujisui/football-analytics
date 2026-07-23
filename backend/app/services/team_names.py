@@ -14,7 +14,41 @@ Unmapped names stay as the official string.
 
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Runtime auto-translations for catalog-league clubs (curated BY_ID always wins).
+_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+AUTO_NAMES_PATH = _DATA_DIR / "team_names_auto.json"
+
+
+def _load_auto_by_id() -> dict[int, str]:
+    if not AUTO_NAMES_PATH.is_file():
+        return {}
+    try:
+        raw = json.loads(AUTO_NAMES_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to load %s: %s", AUTO_NAMES_PATH, exc)
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[int, str] = {}
+    for key, value in raw.items():
+        try:
+            tid = int(key)
+        except (TypeError, ValueError):
+            continue
+        text = str(value or "").strip()
+        if tid > 0 and text:
+            out[tid] = text
+    return out
+
+
+AUTO_BY_ID: dict[int, str] = _load_auto_by_id()
 
 # Prefer stable API-Sports team ids.
 BY_ID: dict[int, str] = {
@@ -286,6 +320,66 @@ BY_ID: dict[int, str] = {
     18762: "利伯塔德",
     20406: "爱尔巴桑尼",
     21011: "塞梅伊叶利迈",
+    # 2026-07-23 欧罗巴 / 欧协联
+    194: "阿贾克斯",
+    211: "本菲卡",
+    249: "希伯尼安",
+    256: "马瑟韦尔",
+    274: "雷克雅未克瓦鲁尔",
+    319: "布兰",
+    325: "特罗姆瑟",
+    363: "哈马比",
+    397: "中日德兰",
+    398: "北西兰",
+    400: "哥本哈根",
+    415: "特温特",
+    549: "贝西克塔斯",
+    554: "安德莱赫特",
+    559: "布加勒斯特星",
+    561: "里耶卡",
+    566: "卢多戈雷茨",
+    573: "贝尔格莱德游击",
+    588: "莫斯塔尔日林斯基",
+    601: "奥地利维也纳",
+    602: "阿波罗利马索尔",
+    604: "特拉维夫马卡比",
+    606: "卢加诺",
+    614: "拉纳卡AEK",
+    617: "帕纳辛纳科斯",
+    619: "塞萨洛尼基PAOK",
+    630: "锡永",
+    631: "根特",
+    649: "赫尔辛基",
+    657: "耶路撒冷贝塔",
+    659: "瓦莱塔",
+    660: "瓦杜兹",
+    669: "科尔雷恩",
+    781: "维也纳快速",
+    1011: "圣加仑",
+    1122: "亚布洛内茨",
+    1483: "瓦拉日丁",
+    2170: "盖斯",
+    2246: "克卢日",
+    2257: "多瑙斯特雷达",
+    2259: "托博尔",
+    2390: "帕克斯",
+    2392: "德布勒森",
+    3403: "帕福斯",
+    3484: "卡托维兹GKS",
+    3491: "琴斯托霍瓦",
+    3684: "诺亚",
+    3723: "赫拉德茨克拉洛韦",
+    3854: "谢尔伯恩",
+    3874: "帕涅韦日斯",
+    4133: "托尔斯港HB",
+    4135: "奥达",
+    4359: "布拉沃",
+    4374: "科佩尔",
+    4501: "特拉维夫夏普尔",
+    4633: "基希讷乌野牛",
+    6496: "波利西亚",
+    14393: "杜卡吉尼",
+    17161: "切尔卡瑟LNZ",
     # 中超 / 中国
     830: "北京国安",
     833: "上海申花",
@@ -756,6 +850,41 @@ _BY_NAME_RAW: dict[str, str] = {
 BY_NAME: dict[str, str] = {k.lower(): v for k, v in _BY_NAME_RAW.items()}
 
 
+def name_has_cjk(text: str | None) -> bool:
+    """True when the string already contains Chinese characters."""
+    if not text:
+        return False
+    return any("\u4e00" <= ch <= "\u9fff" for ch in str(text))
+
+
+def persist_auto_names(updates: dict[int, str]) -> int:
+    """Merge auto translations into memory + ``data/team_names_auto.json``.
+
+    Curated ``BY_ID`` entries are never overwritten here. Returns how many ids
+    were newly stored or changed in the auto map.
+    """
+    if not updates:
+        return 0
+    changed = 0
+    for tid, zh in updates.items():
+        text = str(zh or "").strip()
+        if tid <= 0 or not text or tid in BY_ID:
+            continue
+        if AUTO_BY_ID.get(tid) == text:
+            continue
+        AUTO_BY_ID[tid] = text
+        changed += 1
+    if not changed:
+        return 0
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {str(k): v for k, v in sorted(AUTO_BY_ID.items())}
+    AUTO_NAMES_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return changed
+
+
 def team_name_zh(name: str | None, team_id: int | None = None) -> str:
     """Resolve Chinese display name; fall back to original / empty."""
     if team_id is not None:
@@ -765,6 +894,8 @@ def team_name_zh(name: str | None, team_id: int | None = None) -> str:
             tid = None
         if tid is not None and tid in BY_ID:
             return BY_ID[tid]
+        if tid is not None and tid in AUTO_BY_ID:
+            return AUTO_BY_ID[tid]
     if not name:
         return ""
     trimmed = str(name).strip()
@@ -772,6 +903,11 @@ def team_name_zh(name: str | None, team_id: int | None = None) -> str:
     if hit:
         return hit
     return trimmed
+
+
+def team_needs_zh(name: str | None, team_id: int | None = None) -> bool:
+    """True when resolved display name still has no Chinese characters."""
+    return not name_has_cjk(team_name_zh(name, team_id))
 
 
 def localize_match_teams(match: dict[str, Any]) -> dict[str, Any]:
