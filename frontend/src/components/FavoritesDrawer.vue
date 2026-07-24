@@ -11,17 +11,45 @@ import { parseApiDate, toScheduleDayKey } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'
 import { todayDate } from '@/utils/homeDateStrip'
 
+const FILTER_DATE_KEY = 'fa-favorites-filter-date'
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function readSavedFilterDate(): string | null {
+  try {
+    const raw = localStorage.getItem(FILTER_DATE_KEY)
+    if (raw === '') return null
+    if (raw && DATE_RE.test(raw)) return raw
+  } catch {
+    /* ignore */
+  }
+  return todayDate()
+}
+
+function writeSavedFilterDate(date: string | null) {
+  try {
+    if (date == null) localStorage.setItem(FILTER_DATE_KEY, '')
+    else localStorage.setItem(FILTER_DATE_KEY, date)
+  } catch {
+    /* ignore */
+  }
+}
+
 const router = useRouter()
 const isPhone = useIsPhone()
 const { show, close } = useFavoritesDrawer()
 const { favorites, reloadFavorites } = useFavoriteFixtures()
 
-const filterDate = ref<string | null>(todayDate())
+const filterDate = ref<string | null>(readSavedFilterDate())
 const refreshing = ref(false)
+const today = computed(() => todayDate())
+const isTodaySelected = computed(() => filterDate.value === today.value)
+
+watch(filterDate, (date) => {
+  writeSavedFilterDate(date)
+})
 
 watch(show, (open) => {
   if (!open) return
-  filterDate.value = todayDate()
   void refreshDrawer()
 })
 
@@ -35,12 +63,16 @@ async function refreshDrawer() {
   }
 }
 
+function goToday() {
+  filterDate.value = today.value
+}
+
 const favoriteDays = computed(() => favoriteFixtureDays(favorites.value))
 
 const todayFavoriteCount = computed(() => {
-  const today = todayDate()
+  const day = today.value
   return favorites.value.filter(
-    (item) => toScheduleDayKey(item.fixture_date) === today,
+    (item) => toScheduleDayKey(item.fixture_date) === day,
   ).length
 })
 
@@ -67,7 +99,7 @@ function goDetail(fixtureId: number) {
 <template>
   <n-drawer
     v-model:show="show"
-    :width="isPhone ? '92%' : 'min(820px, 92vw)'"
+    :width="isPhone ? '100%' : 'min(820px, 92vw)'"
     placement="left"
     to="body"
     display-directive="show"
@@ -89,6 +121,14 @@ function goDetail(fixtureId: number) {
               v-model="filterDate"
               :favorite-days="favoriteDays"
             />
+            <n-button
+              size="small"
+              type="primary"
+              :disabled="isTodaySelected"
+              @click="goToday"
+            >
+              今天
+            </n-button>
           </div>
         </div>
       </template>

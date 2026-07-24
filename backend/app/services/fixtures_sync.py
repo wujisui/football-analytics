@@ -5,25 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from datetime import date, datetime, timedelta
 
 from app.core.config import Settings, get_settings
-from app.schemas.response import SyncFixturesResponse, SyncFixturesStatusResponse
-from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
+from app.schemas.response import SyncFixturesResponse
+from app.services.fetcher import FootballFetcher
 
 logger = logging.getLogger(__name__)
 
 _sync_lock = asyncio.Lock()
 _odds_followup_lock = asyncio.Lock()
-_sync_state: dict[str, Any] = {
-    "running": False,
-    "last_status": None,
-    "last_message": "",
-    "last_error": None,
-    "fixtures_saved": 0,
-    "finished_at": None,
-}
 
 
 @dataclass(frozen=True)
@@ -31,7 +22,7 @@ class FixturesSyncParams:
     start: date
     window: int
     day_list: list[date]
-    selected: list[int] | None
+    selected: list[int]
     include_results: bool
     include_odds: bool
     odds_refresh_existing: bool
@@ -58,8 +49,14 @@ def build_sync_params(
     window = days if days is not None else min(cfg.FIXTURES_LOOKAHEAD_DAYS, 7)
     window = max(1, min(window, 14))
     day_list = [start + timedelta(days=i) for i in range(window)]
-    selected = league_ids
-    if selected is not None and not selected:
+    # Default = curated primary-league catalog (一级联赛 / 主要洲际赛事).
+    # Optional/secondary leagues are included only when the client passes them.
+    selected = (
+        [int(x) for x in league_ids]
+        if league_ids is not None
+        else list(cfg.LEAGUE_IDS.values())
+    )
+    if not selected:
         raise ValueError("league_ids 不能为空")
     return FixturesSyncParams(
         start=start,
@@ -77,7 +74,7 @@ def build_sync_params(
 
 async def _sync_odds_and_results_followup(
     day_list: list[date],
-    selected: list[int] | None,
+    selected: list[int],
     *,
     include_odds: bool,
     include_results: bool,
@@ -104,7 +101,9 @@ async def _sync_odds_and_results_followup(
                         logger.warning("include_odds batch failed: %s", exc)
                 if include_results:
                     try:
-                        await fetcher.capture_finished_results(lookback_days=2)
+                        # Prefer the sync window so date-strip days beyond default
+                        # lookback still get FT backfill when the user opens 赛果.
+                        await fetcher.capture_finished_results(on_days=list(day_list))
                     except Exception as exc:
                         logger.warning("include_results capture failed: %s", exc)
         except Exception as exc:
@@ -113,10 +112,16 @@ async def _sync_odds_and_results_followup(
 
 def _result_message(params: FixturesSyncParams) -> str:
     if params.odds_only:
-        return "缺失盘口已补全" if params.include_odds else "无变更"
+        if params.include_results and not params.include_odds:
+            return "赛果已回写"
+        if params.include_odds:
+            return "缺失盘口已补全"
+        return "无变更"
     msg = "赛程已刷新"
     if params.include_odds:
         msg += "，盘口已同步" if params.odds_refresh_existing else "，缺失盘口已补全"
+    if params.include_results:
+        msg += "，赛果已回写"
     return msg
 
 
@@ -153,57 +158,6 @@ async def execute_fixtures_sync(params: FixturesSyncParams) -> SyncFixturesRespo
         )
 
 
-def sync_status_response() -> SyncFixturesStatusResponse:
-    return SyncFixturesStatusResponse.model_validate(_sync_state)
-
-
-def is_sync_running() -> bool:
-    return bool(_sync_state["running"])
-
-
-async def _run_background(params: FixturesSyncParams) -> None:
-    _sync_state["running"] = True
-    _sync_state["last_error"] = None
-    try:
-        result = await execute_fixtures_sync(params)
-        _sync_state["last_status"] = result.status
-        _sync_state["last_message"] = result.message
-        _sync_state["fixtures_saved"] = result.fixtures_saved
-    except ApiKeyNotConfiguredError as exc:
-        _sync_state["last_status"] = "failed"
-        _sync_state["last_error"] = str(exc)
-        _sync_state["last_message"] = str(exc)
-        logger.warning("background fixtures sync unavailable: %s", exc)
-    except Exception as exc:
-        _sync_state["last_status"] = "failed"
-        _sync_state["last_error"] = str(exc)
-        _sync_state["last_message"] = f"同步失败：{exc}"
-        logger.error("background fixtures sync failed: %s", exc, exc_info=True)
-    finally:
-        _sync_state["running"] = False
-        _sync_state["finished_at"] = datetime.now(timezone.utc).isoformat()
-
-
-async def enqueue_fixtures_sync(params: FixturesSyncParams) -> SyncFixturesResponse:
-    """Start sync in background; return immediately unless already running."""
-    if _sync_state["running"]:
-        return SyncFixturesResponse(
-            status="running",
-            fixtures_saved=0,
-            days=params.window,
-            date=params.start.isoformat(),
-            message="同步任务进行中，请稍候",
-        )
-    asyncio.create_task(_run_background(params))
-    return SyncFixturesResponse(
-        status="accepted",
-        fixtures_saved=0,
-        days=params.window,
-        date=params.start.isoformat(),
-        message="已在后台开始同步官方数据",
-    )
-
-
 async def scheduled_fixtures_sync() -> None:
     """Scheduler: refresh fixture window + gap-fill odds (+ recent results)."""
     settings = get_settings()
@@ -221,12 +175,20 @@ async def scheduled_fixtures_sync() -> None:
         set_opening=True,
     )
     result = await execute_fixtures_sync(params)
-    try:
-        from app.services.ml_predictor import maybe_auto_train_model
+    for mod_path, fn_name, label in (
+        ("app.services.ml_predictor", "maybe_auto_train_model", "1X2"),
+        ("app.services.ah_predictor", "maybe_auto_train_model", "AH"),
+        ("app.services.goal_predictor", "maybe_auto_train_model", "goals"),
+    ):
+        try:
+            import importlib
 
-        await maybe_auto_train_model()
-    except Exception as exc:
-        logger.warning("scheduled_fixtures_sync ML auto-train skipped: %s", exc)
+            mod = importlib.import_module(mod_path)
+            await getattr(mod, fn_name)()
+        except Exception as exc:
+            logger.warning(
+                "scheduled_fixtures_sync %s auto-train skipped: %s", label, exc
+            )
     logger.info(
         "scheduled_fixtures_sync done fixtures_saved=%s message=%s",
         result.fixtures_saved,

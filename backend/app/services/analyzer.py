@@ -95,13 +95,6 @@ class AnalysisResult:
         return data
 
 
-def normalize_probabilities(probs: dict[str, float]) -> dict[str, float]:
-    total = sum(max(value, 0.0) for value in probs.values())
-    if total <= 0:
-        return {"home": DEFAULT_PROB, "draw": DEFAULT_PROB, "away": DEFAULT_PROB}
-    return {key: max(value, 0.0) / total for key, value in probs.items()}
-
-
 def get_confidence_level(data_completeness: float) -> str:
     if data_completeness >= 0.8:
         return "高"
@@ -364,6 +357,7 @@ class AnalyzerService:
 
         if features is not None and not exam_locked:
             from app.services.ah_predictor import persist_ah_fields
+            from app.services.goal_predictor import persist_goal_features
             from app.services.ml_predictor import persist_match_features
 
             await persist_match_features(
@@ -377,15 +371,16 @@ class AnalyzerService:
                 },
                 source=model_source or "multifactor",
             )
+            await persist_goal_features(
+                self.session,
+                fixture_id,
+                features,
+                odds_for_snap if isinstance(odds_for_snap, dict) else None,
+            )
             await persist_ah_fields(
                 self.session,
                 fixture_id,
                 package,
-                {
-                    "home": home_win_prob,
-                    "draw": draw_prob,
-                    "away": away_win_prob,
-                },
                 league_id=fixture.league_id if fixture else None,
             )
 
@@ -420,7 +415,6 @@ class AnalyzerService:
         handicap_lean, handicap_market_note = resolve_handicap_bundle(
             odds,
             rec,
-            probs,
             league_id=fixture.league_id,
             stored=getattr(stored, "handicap_lean", None),
             score_hint=score_hint,
@@ -1141,6 +1135,7 @@ class AnalyzerService:
                 return result
 
         from app.services.ml_predictor import predict_probabilities
+        from app.services.prediction import normalize_probabilities
 
         prediction = predict_probabilities(package)
         probs = normalize_probabilities(prediction.probs)

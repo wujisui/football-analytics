@@ -3,6 +3,7 @@ import { ref, type Ref } from 'vue'
 import { fetchFixtureAnalysis } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
 import { patchFixtureFromDetail } from '@/composables/useHomeFixtures'
+import { patchScheduleFixtureFromDetail } from '@/composables/useResultsLeagues'
 
 /**
  * Lazy-load + cache for GET /fixtures/{id}/analysis.
@@ -42,7 +43,10 @@ export function useFixtureAnalysis(fixtureId: Ref<number>) {
         const result = await fetchFixtureAnalysis(fixtureId.value)
         data.value = result
         loaded.value = true
-        if (result) patchFixtureFromDetail(result)
+        if (result) {
+          patchFixtureFromDetail(result)
+          patchScheduleFixtureFromDetail(result)
+        }
         return result
       } catch (err) {
         error.value = err instanceof Error ? err.message : '加载分析失败'

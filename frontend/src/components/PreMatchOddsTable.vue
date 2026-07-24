@@ -27,12 +27,14 @@ const props = withDefaults(
     fixtureId?: number
     from?: DetailFrom
     detailTab?: 'prediction' | 'briefing'
+    date?: string | null
     emptyText?: string
   }>(),
   {
     linkMiddleToDetail: false,
     from: 'home',
     detailTab: 'prediction',
+    date: null,
     emptyText: '暂无盘口（打开详情拉取后显示）',
   },
 )
@@ -57,6 +59,7 @@ function goDetail() {
     fixtureDetailRoute(props.fixtureId, {
       from: props.from,
       tab: props.detailTab,
+      date: props.date,
     }),
   )
 }

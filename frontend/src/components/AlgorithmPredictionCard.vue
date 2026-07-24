@@ -6,6 +6,10 @@ import type { FixtureResponse } from '@/api/types'
 import { hasRealProbabilities, toPercent } from '@/utils/format'
 import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
 import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
+import {
+  HANDICAP_MISSING_LABEL,
+  isHandicapPending,
+} from '@/utils/handicapDisplay'
 
 const props = withDefaults(
   defineProps<{
@@ -19,12 +23,14 @@ const props = withDefaults(
     /** Show home vs away title link above recommendation row. */
     showMatchupTitle?: boolean
     from?: DetailFrom
+    date?: string | null
   }>(),
   {
     standalone: false,
     linkToDetail: false,
     showMatchupTitle: true,
     from: 'home',
+    date: null,
   },
 )
 
@@ -64,10 +70,9 @@ const predictionReady = computed(() => {
 const recommendationPending = computed(
   () => !predictionReady.value || prediction.value.recommendation === '待分析',
 )
-const handicapPending = computed(() => {
-  const text = prediction.value.handicap_lean || ''
-  return !text || text.includes('缺少盘口') || text.includes('待分析')
-})
+const handicapPending = computed(() =>
+  isHandicapPending(prediction.value.handicap_lean),
+)
 
 const homeName = computed(() => props.fixture?.home_team_name || '—')
 const awayName = computed(() => props.fixture?.away_team_name || '—')
@@ -85,7 +90,10 @@ const probs = computed(() => {
 function goDetail() {
   if (!canNavigate.value || resolvedFixtureId.value == null) return
   void router.push(
-    fixtureDetailRoute(resolvedFixtureId.value, { from: props.from }),
+    fixtureDetailRoute(resolvedFixtureId.value, {
+      from: props.from,
+      date: props.date,
+    }),
   )
 }
 
@@ -96,6 +104,7 @@ function goBriefing(event: MouseEvent) {
     fixtureDetailRoute(resolvedFixtureId.value, {
       from: props.from,
       tab: 'briefing',
+      date: props.date,
     }),
   )
 }
@@ -135,10 +144,13 @@ function goBriefing(event: MouseEvent) {
         size="small"
         class="rec-tag"
       >
-        {{ prediction.handicap_lean || '缺少盘口数据分析' }}
+        {{ prediction.handicap_lean || HANDICAP_MISSING_LABEL }}
       </n-tag>
     </div>
-    <div v-if="predictionReady" class="prob-row">
+    <div
+      v-if="predictionReady"
+      class="prob-row"
+    >
       <div v-for="p in probs" :key="p.key" class="prob-item">
         <span class="prob-label">{{ p.label }}</span>
         <span class="prob-value">{{ toPercent(p.value) }}</span>
@@ -156,7 +168,7 @@ function goBriefing(event: MouseEvent) {
       <n-tag size="small" :bordered="false">{{ prediction.goal_lean }}</n-tag>
       <n-tag size="small" :bordered="false">{{ prediction.both_score_lean }}</n-tag>
       <n-tag size="small" :bordered="false" type="info">
-        参考比分 {{ prediction.score_hint }}
+        {{ prediction.score_hint }}
       </n-tag>
     </div>
     <div v-else-if="!handicapPending" class="lean-row">

@@ -2,15 +2,15 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 
-import type { SyncFixturesOptions } from '@/api/fixtures'
-import { enqueueBackgroundSync } from '@/composables/useBackgroundSync'
-import { markDayAutoSynced, isDayAutoSynced, shouldAutoSyncDay, shouldGapFillOdds, markOddsGapFillTried, clearOddsGapFillTried } from '@/composables/useDayAutoSync'
+import { syncFixtures } from '@/api/fixtures'
+import { resolveSyncLeagueIds } from '@/utils/leagueFilterSelection'
+import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import type { LeagueSummaryResponse } from '@/api/types'
 import { useIsPhone, useIsTabletDown } from '@/composables/useMediaQuery'
 import { useResultsLeagues } from '@/composables/useResultsLeagues'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
-import { parseApiDate } from '@/utils/format'
+import { sortFixturesFavoritesFirst } from '@/utils/fixtureSort'
 import {
   fixturesShellContext,
   readFixturesLeagueFilter,
@@ -18,9 +18,7 @@ import {
   type FixturesRouteName,
 } from '@/utils/fixturesLeagueFilter'
 import {
-  homeDayCountLabel,
-  isHomeFixtureVisible,
-  isPredictionsFixtureVisible,
+  isPrematchFixtureVisible,
   isScheduleFutureDay,
   predictionsDayCountLabel,
   resultsDayCountLabel,
@@ -30,7 +28,6 @@ import {
 } from '@/utils/homeDateStrip'
 import { leagueLabel } from '@/utils/leagueNames'
 import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
-import { hasOddsMarkets } from '@/utils/oddsDisplay'
 
 const FIXTURES_ROUTE_NAMES = new Set<string>(['home', 'predictions', 'results'])
 
@@ -40,7 +37,9 @@ const resultsSelectedLeagueId = ref<number | null>(null)
 const teamSearch = ref('')
 const siderCollapsed = ref(false)
 const leagueDrawerShow = ref(false)
-const filterConfirming = ref(false)
+const syncLoading = ref(false)
+const manualSyncRevision = ref(0)
+const manualSyncedDay = ref('')
 
 let shellWatchersBound = false
 
@@ -57,6 +56,8 @@ export function useFixturesShell() {
     error,
     loadHomeFixtures,
   } = useHomeFixtures()
+
+  const { favoriteIds } = useFavoriteFixtures()
 
   const {
     trackedIds: prematchTrackedIds,
@@ -75,6 +76,7 @@ export function useFixturesShell() {
     filterActive: resultsFilterActive,
     resultsLoading,
     confirmFilter: confirmResultsFilter,
+    setResultsTrackedIds,
   } = useResultsLeagues()
 
   const pageName = computed(
@@ -110,17 +112,8 @@ export function useFixturesShell() {
 
   const prematchVisibleFixtures = computed(() => {
     const tracked = prematchTrackedIdSet.value
-    const day = homeDay.value
-    const today = todayDate()
-    if (pageName.value === 'predictions') {
-      return allFixtures.value.filter(
-        (f) => tracked.has(f.league_id) && isPredictionsFixtureVisible(f.status),
-      )
-    }
     return allFixtures.value.filter(
-      (f) =>
-        tracked.has(f.league_id) &&
-        isHomeFixtureVisible(f.status, day, today),
+      (f) => tracked.has(f.league_id) && isPrematchFixtureVisible(f.status),
     )
   })
 
@@ -161,13 +154,19 @@ export function useFixturesShell() {
   })
 
   const shellTrackedIds = computed(() =>
-    isResultsPage.value ? resultsTrackedIds.value : prematchTrackedIds.value,
+    isResultsPage.value && !isScheduleFutureDayRef.value
+      ? resultsTrackedIds.value
+      : prematchTrackedIds.value,
   )
   const shellFilterOptions = computed(() =>
-    isResultsPage.value ? resultsFilterOptions.value : prematchFilterOptions.value,
+    isResultsPage.value && !isScheduleFutureDayRef.value
+      ? resultsFilterOptions.value
+      : prematchFilterOptions.value,
   )
   const shellFilterActive = computed(() =>
-    isResultsPage.value ? resultsFilterActive.value : prematchFilterActive.value,
+    isResultsPage.value && !isScheduleFutureDayRef.value
+      ? resultsFilterActive.value
+      : prematchFilterActive.value,
   )
   const shellMenuLeagues = computed(() =>
     isResultsPage.value ? resultsMenuLeagues.value : prematchMenuLeagues.value,
@@ -199,42 +198,15 @@ export function useFixturesShell() {
     return list.filter((f) => f.league_id === selectedLeagueId.value)
   }
 
-  function sortFixtures<T extends { fixture_date: string }>(list: T[]) {
-    return list
-      .slice()
-      .sort(
-        (a, b) =>
-          parseApiDate(a.fixture_date).getTime() -
-          parseApiDate(b.fixture_date).getTime(),
-      )
+  function sortFixtures<T extends { fixture_id: number; fixture_date: string }>(
+    list: T[],
+  ) {
+    return sortFixturesFavoritesFirst(list, favoriteIds.value)
   }
 
-  const homeDayFixtures = computed(() =>
-    allFixtures.value.filter(
-      (f) =>
-        prematchTrackedIdSet.value.has(f.league_id) &&
-        isHomeFixtureVisible(f.status, homeDay.value, todayDate()),
-    ),
-  )
-
-  const predictionsDayFixtures = computed(() =>
-    allFixtures.value.filter(
-      (f) =>
-        prematchTrackedIdSet.value.has(f.league_id) &&
-        isPredictionsFixtureVisible(f.status),
-    ),
-  )
-
-  const homeDisplayedFixtures = computed(() =>
+  const prematchDisplayedFixtures = computed(() =>
     filterByTeamQuery(
-      sortFixtures(leagueFiltered(homeDayFixtures.value)),
-      teamSearch.value,
-    ),
-  )
-
-  const predictionsDisplayedFixtures = computed(() =>
-    filterByTeamQuery(
-      sortFixtures(leagueFiltered(predictionsDayFixtures.value)),
+      sortFixtures(leagueFiltered(prematchVisibleFixtures.value)),
       teamSearch.value,
     ),
   )
@@ -251,31 +223,23 @@ export function useFixturesShell() {
     }
     const list = leagueFiltered(prematchVisibleFixtures.value)
     const count = filterByTeamQuery(sortFixtures(list), teamSearch.value).length
-    if (pageName.value === 'predictions') return predictionsDayCountLabel(count)
-    return homeDayCountLabel('today', count)
+    return predictionsDayCountLabel(count)
   })
 
   const homeEmptyText = computed(() => {
     if (error.value) return ''
     const day = homeDay.value
-    if (
-      isDayAutoSynced(day) &&
-      !allFixtures.value.length &&
-      !contentLoading.value
-    ) {
-      return `${day} 当日没有比赛数据`
-    }
-    if (!prematchFilterOptions.value.length && !homeDayFixtures.value.length) {
-      return '暂无匹配联赛，正在拉取配置联赛赛程…'
+    if (!prematchFilterOptions.value.length && !prematchVisibleFixtures.value.length) {
+      return '暂无本地赛程，可点击「同步」手动更新'
     }
     if (!prematchTrackedIds.value.length) {
       return '请先在「筛选」中勾选要关注的联赛'
     }
-    if (!homeDisplayedFixtures.value.length && !teamSearch.value.trim()) {
+    if (!prematchDisplayedFixtures.value.length && !teamSearch.value.trim()) {
       return `${day} 暂无当日赛事`
     }
     const teamHint = teamSearchEmptyHint(teamSearch.value)
-    if (teamHint && sortFixtures(leagueFiltered(homeDayFixtures.value)).length) {
+    if (teamHint && sortFixtures(leagueFiltered(prematchVisibleFixtures.value)).length) {
       return teamHint
     }
     if (selectedLeagueId.value == null) {
@@ -288,19 +252,12 @@ export function useFixturesShell() {
   const predictionsEmptyText = computed(() => {
     if (error.value) return ''
     const day = homeDay.value
-    if (
-      isDayAutoSynced(day) &&
-      !allFixtures.value.length &&
-      !contentLoading.value
-    ) {
-      return `${day} 当日没有比赛数据`
-    }
     if (!prematchTrackedIds.value.length) return '请先在「筛选」中勾选联赛'
-    if (!predictionsDisplayedFixtures.value.length && !teamSearch.value.trim()) {
+    if (!prematchDisplayedFixtures.value.length && !teamSearch.value.trim()) {
       return `${day} 暂无未完赛预测`
     }
     const teamHint = teamSearchEmptyHint(teamSearch.value)
-    if (teamHint && sortFixtures(leagueFiltered(predictionsDayFixtures.value)).length) {
+    if (teamHint && sortFixtures(leagueFiltered(prematchVisibleFixtures.value)).length) {
       return teamHint
     }
     return `${day} 暂无未完赛预测`
@@ -341,69 +298,22 @@ export function useFixturesShell() {
   }
 
   function leagueIdsForSync(): number[] | undefined {
-    return prematchTrackedIds.value.length ? prematchTrackedIds.value : undefined
+    // Default-checked primary leagues (+ opted-in secondary). Backend falls
+    // back to leagues.json primary catalog when this is omitted.
+    const ids = resolveSyncLeagueIds(
+      prematchFilterOptions.value,
+      prematchTrackedIds.value,
+    )
+    return ids.length ? ids : undefined
   }
 
-  function prematchMissingOddsCount(): number {
-    const day = homeDay.value
-    const today = todayDate()
-    return allFixtures.value.filter(
-      (f) =>
-        prematchTrackedIdSet.value.has(f.league_id) &&
-        isHomeFixtureVisible(f.status, day, today) &&
-        f.status.toLowerCase() === 'pending' &&
-        !hasOddsMarkets(f.odds_snippet),
-    ).length
+  function syncFutureScheduleSelection() {
+    if (!isScheduleFutureDayRef.value || !prematchTrackedIds.value.length) return
+    setResultsTrackedIds(prematchTrackedIds.value)
   }
 
   function syncCalendarDay() {
     return isResultsPage.value ? selectedDay.value : homeDay.value
-  }
-
-  function onSyncSettled(_ok: boolean, day?: string) {
-    const syncDay = day ?? syncCalendarDay()
-    markDayAutoSynced(syncDay)
-    const tasks: Promise<unknown>[] = [loadDayLocal(true)]
-    if (!isResultsPage.value) {
-      tasks.unshift(loadFilterOptions({ date: homeDay.value, discover: true }))
-    }
-    void Promise.all(tasks)
-  }
-
-  function startBackgroundSync(
-    leagueIds: number[] | undefined,
-    opts: SyncFixturesOptions,
-    day?: string,
-  ) {
-    const syncDay = day ?? opts.date ?? syncCalendarDay()
-    enqueueBackgroundSync(
-      {
-        days: opts.days ?? 1,
-        date: opts.date ?? syncDay,
-        includeResults: opts.includeResults ?? true,
-        includeOdds: opts.includeOdds ?? true,
-        oddsRefreshExisting: opts.oddsRefreshExisting ?? true,
-        oddsBudget: opts.oddsBudget,
-        leagueIds,
-        oddsOnly: opts.oddsOnly ?? false,
-      },
-      (ok) => onSyncSettled(ok, syncDay),
-    )
-  }
-
-  function gapFillOddsIfNeeded(day = homeDay.value) {
-    const missing = prematchMissingOddsCount()
-    if (missing <= 0 || !shouldGapFillOdds(day)) return
-    markOddsGapFillTried(day)
-    startBackgroundSync(leagueIdsForSync(), {
-      date: day,
-      days: 1,
-      includeResults: false,
-      includeOdds: true,
-      oddsRefreshExisting: false,
-      oddsBudget: Math.min(Math.max(missing, 1), 100),
-      oddsOnly: true,
-    }, day)
   }
 
   async function loadDayLocal(force = false) {
@@ -416,42 +326,71 @@ export function useFixturesShell() {
     }
   }
 
-  async function refreshDayData() {
-    const day = homeDay.value
-    await loadDayLocal(false)
-    const leagueIds = leagueIdsForSync()
-    const hasLocal = allFixtures.value.length > 0
+  async function syncCurrentDay() {
+    if (syncLoading.value) return
+    const day = syncCalendarDay()
+    const syncingResultsPage = isResultsPage.value
+    const futureResultsDay =
+      syncingResultsPage && isScheduleFutureDayRef.value
 
-    if (shouldAutoSyncDay(day, hasLocal)) {
-      startBackgroundSync(leagueIds, { date: day, days: 1 }, day)
-      return
-    }
-
-    gapFillOddsIfNeeded(day)
-  }
-
-  function forceRefreshDay() {
-    const day = homeDay.value
-    clearOddsGapFillTried(day)
-    startBackgroundSync(leagueIdsForSync(), {
-      date: day,
-      days: 1,
-      includeResults: true,
-      includeOdds: true,
-      oddsRefreshExisting: true,
-    }, day)
-  }
-
-  async function reloadPrematchDay() {
+    syncLoading.value = true
     try {
-      await loadFilterOptions({ date: homeDay.value, discover: true })
+      const res = await syncFixtures({
+        date: day,
+        days: 1,
+        includeResults: !futureResultsDay,
+        includeOdds: !syncingResultsPage || futureResultsDay,
+        // Future schedule: spend quota filling missing boards for primary
+        // (default-checked) leagues; home/today also refreshes existing lines.
+        oddsRefreshExisting: !futureResultsDay,
+        // Batch fixtures + odds for default primary leagues; secondary only
+        // when explicitly checked.
+        leagueIds: leagueIdsForSync(),
+      })
+      if (res.status !== 'ok') {
+        throw new Error(res.message || '同步失败')
+      }
+
+      manualSyncedDay.value = day
+      manualSyncRevision.value += 1
+      if (!syncingResultsPage) {
+        await reloadPrematchDay(true)
+      }
+      message.success(res.message || `${day} 同步成功`)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '同步失败')
+    } finally {
+      syncLoading.value = false
+    }
+  }
+
+  async function reloadPrematchDay(force = false) {
+    await loadDayLocal(force)
+    try {
+      await loadFilterOptions({ date: homeDay.value })
     } catch {
       if (filterOptionsError.value) message.warning(filterOptionsError.value)
     }
-    await refreshDayData()
   }
 
   async function confirmFilter(ids: number[]) {
+    if (isResultsPage.value && isScheduleFutureDayRef.value) {
+      const allow = new Set(prematchFilterOptions.value.map((o) => o.league_id))
+      const allowed = ids.filter((id) => allow.has(id))
+      if (!allowed.length) {
+        message.warning('请至少勾选一个默认或可选联赛')
+        return
+      }
+      setPrematchTrackedIds(allowed)
+      setResultsTrackedIds(allowed)
+      if (
+        resultsSelectedLeagueId.value != null &&
+        !allowed.includes(resultsSelectedLeagueId.value)
+      ) {
+        selectLeague(null)
+      }
+      return
+    }
     if (isResultsPage.value) {
       const ok = confirmResultsFilter(ids)
       if (!ok) {
@@ -480,31 +419,7 @@ export function useFixturesShell() {
     ) {
       selectLeague(null)
     }
-    const needFetch = allowed.filter((id) => {
-      const opt = prematchFilterOptionById.value.get(id)
-      return !!opt && !opt.locally_loaded
-    })
-    if (needFetch.length) {
-      filterConfirming.value = true
-      enqueueBackgroundSync(
-        {
-          days: 1,
-          date: homeDay.value,
-          includeResults: false,
-          includeOdds: true,
-          oddsRefreshExisting: false,
-          oddsBudget: 30,
-          leagueIds: needFetch,
-        },
-        (ok) => {
-          filterConfirming.value = false
-          onSyncSettled(ok, homeDay.value)
-        },
-      )
-    } else {
-      await loadDayLocal(false)
-      gapFillOddsIfNeeded()
-    }
+    await loadDayLocal(false)
   }
 
   function selectLeague(leagueId: number | null) {
@@ -531,6 +446,7 @@ export function useFixturesShell() {
     )
 
     watch(prematchTrackedIds, () => {
+      syncFutureScheduleSelection()
       if (
         !isResultsPage.value &&
         prematchSelectedLeagueId.value != null &&
@@ -610,7 +526,6 @@ export function useFixturesShell() {
     teamSearch,
     siderCollapsed,
     leagueDrawerShow,
-    filterConfirming,
     contentLoading,
     error,
     shellTrackedIds,
@@ -623,13 +538,17 @@ export function useFixturesShell() {
     breadcrumbRoot,
     breadcrumbFilter,
     dayCountLabel,
-    homeDisplayedFixtures,
-    predictionsDisplayedFixtures,
+    prematchDisplayedFixtures,
     homeEmptyText,
     predictionsEmptyText,
     loadDayLocal,
-    forceRefreshDay,
+    syncCurrentDay,
+    syncLoading,
+    manualSyncRevision,
+    manualSyncedDay,
     reloadPrematchDay,
+    loadFilterOptions,
+    syncFutureScheduleSelection,
     confirmFilter,
     selectLeague,
     syncLeagueFromRoute,

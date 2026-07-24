@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 import ResultsFilterTrigger from '@/components/ResultsFilterTrigger.vue'
-import type { ResultsFilterConfirm, ResultsHitKey } from '@/utils/resultsPageState'
+import type { ResultsHitKey } from '@/utils/resultsPageState'
 
 defineProps<{
   selectedHitKeys: ResultsHitKey[]
-  hideWithoutPrediction: boolean
   filterActive: boolean
 }>()
 
 const teamSearch = defineModel<string>('teamSearch', { required: true })
 
 const emit = defineEmits<{
-  confirmFilter: [payload: ResultsFilterConfirm]
+  confirmFilter: [hitKeys: ResultsHitKey[]]
 }>()
 </script>
 
@@ -21,7 +20,6 @@ const emit = defineEmits<{
     <PageToolbarSearch v-model="teamSearch" />
     <ResultsFilterTrigger
       :selected-hit-keys="selectedHitKeys"
-      :hide-without-prediction="hideWithoutPrediction"
       :filter-active="filterActive"
       @confirm="emit('confirmFilter', $event)"
     />

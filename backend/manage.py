@@ -221,6 +221,16 @@ async def run_backfill_features() -> None:
     print(f"Backfilled / collected {len(rows)} labeled training row(s).")
 
 
+async def run_prune_low_value_data(*, apply: bool) -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.data_cleanup import prune_low_value_data
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        report = await prune_low_value_data(session, apply=apply)
+    print(report.to_dict())
+
+
 async def run_train_model() -> None:
     from app.core.database import AsyncSessionLocal, init_db
     from app.services.ml_predictor import (
@@ -243,10 +253,12 @@ async def run_train_model() -> None:
         print(f"Current labeled samples: {result.get('n_samples', 0)}")
         print(f"Current inference mode: {status['inference_mode']}")
         return
-    print("Training succeeded — inference will auto-switch to source=ml.")
+    print("Training completed.")
     print(f"Samples: {result.get('n_samples')}")
     print(f"Val log-loss: {result.get('val_metrics', {}).get('log_loss')}")
     print(f"Val accuracy: {result.get('val_metrics', {}).get('accuracy')}")
+    print(f"Market baseline: {result.get('market_val_metrics')}")
+    print(f"Deployable: {result.get('deployable')}")
     print(f"Weights: {result.get('weights_path')}")
     print(f"Model status: {status}")
 
@@ -255,12 +267,14 @@ async def run_model_status() -> None:
     from app.core.database import AsyncSessionLocal, init_db
     from app.models.match_feature import MatchFeature
     from app.services.ah_predictor import model_status as ah_model_status
+    from app.services.goal_predictor import model_status as goal_model_status
     from app.services.ml_predictor import model_status
     from sqlalchemy import func, select
 
     await init_db()
     status = model_status()
     ah_status = ah_model_status()
+    goal_status = goal_model_status()
     async with AsyncSessionLocal() as session:
         total = await session.scalar(select(func.count()).select_from(MatchFeature))
         labeled = await session.scalar(
@@ -278,6 +292,9 @@ async def run_model_status() -> None:
     print(f"min_train_samples: {status['min_train_samples']}")
     print(f"match_features_total: {total or 0}")
     print(f"match_features_labeled: {labeled or 0}")
+    print(f"val_metrics: {status.get('val_metrics')}")
+    print(f"market_val_metrics: {status.get('market_val_metrics')}")
+    print(f"confidence_metrics: {status.get('confidence_metrics')}")
     print(f"trained_at: {status.get('trained_at')}")
     print("--- 让球 (AH) ---")
     print(f"inference_mode: {ah_status['inference_mode']}")
@@ -286,6 +303,13 @@ async def run_model_status() -> None:
     print(f"min_train_samples: {ah_status['min_train_samples']}")
     print(f"ah_labeled: {ah_labeled or 0}")
     print(f"trained_at: {ah_status.get('trained_at')}")
+    print("--- 进球分布 (Poisson) ---")
+    print(f"artifact_ready: {goal_status['artifact_ready']}")
+    print(f"deployable: {goal_status['deployable']}")
+    print(f"trained_n_samples: {goal_status['trained_n_samples']}")
+    print(f"val_metrics: {goal_status.get('val_metrics')}")
+    print(f"baseline_total_mae: {goal_status.get('baseline_total_mae')}")
+    print(f"trained_at: {goal_status.get('trained_at')}")
 
 
 async def run_backfill_ah_features() -> None:
@@ -321,6 +345,24 @@ async def run_train_ah_model() -> None:
     print(f"Val accuracy: {result.get('val_metrics', {}).get('accuracy')}")
     print(f"Weights: {result.get('weights_path')}")
     print(f"Model status: {status}")
+
+
+async def run_train_goals_model() -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.goal_predictor import model_status, train_model_from_db
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        result = await train_model_from_db(session)
+    if not result.get("ok"):
+        print(f"Goal training skipped: {result.get('reason')}")
+        return
+    print("Goal-distribution training completed.")
+    print(f"Samples: {result.get('n_samples')}")
+    print(f"Deployable: {result.get('deployable')}")
+    print(f"Validation: {result.get('val_metrics')}")
+    print(f"Constant baseline total MAE: {result.get('baseline_total_mae')}")
+    print(f"Model status: {model_status()}")
 
 
 def main() -> None:
@@ -368,13 +410,25 @@ def main() -> None:
         "backfill-features",
         help="Build match_features from finished fixtures + pre_match packages",
     )
+    prune_parser = subparsers.add_parser(
+        "prune-low-value-data",
+        help=(
+            "Delete finished/cancelled/postponed fixtures that have neither "
+            "pre-match 1X2 nor an algorithm recommendation (never deletes pending)"
+        ),
+    )
+    prune_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply physical deletion; omitted means dry-run",
+    )
     subparsers.add_parser(
         "train-model",
         help="Train 1X2 probability model from labeled match_features (needs >= ML_MIN_TRAIN_SAMPLES)",
     )
     subparsers.add_parser(
         "model-status",
-        help="Show labeled sample count and whether inference is multifactor or ml",
+        help="Show labeled sample count and 1X2 inference mode (ml / market_baseline / multifactor)",
     )
     subparsers.add_parser(
         "backfill-ah-features",
@@ -384,13 +438,17 @@ def main() -> None:
         "train-ah-model",
         help="Train Asian handicap cover model (needs >= ML_AH_MIN_TRAIN_SAMPLES)",
     )
+    subparsers.add_parser(
+        "train-goals-model",
+        help="Train Poisson goal-distribution model from pre-match markets and FT scores",
+    )
 
     trigger_parser = subparsers.add_parser("trigger-task", help="Manually trigger a scheduler task")
     trigger_parser.add_argument(
         "--name",
         required=True,
         choices=[
-            "midday_fixtures_sync",
+            "scheduled_fixtures_sync",
             "pre_match_update",
             "capture_results",
             "clean_old_data",
@@ -412,6 +470,9 @@ def main() -> None:
     if args.command == "translate-catalog-teams":
         asyncio.run(run_translate_catalog_teams(dry_run=args.dry_run))
         return
+    if args.command == "prune-low-value-data":
+        asyncio.run(run_prune_low_value_data(apply=args.apply))
+        return
 
     commands = {
         "init-db": run_init_db,
@@ -429,6 +490,7 @@ def main() -> None:
         "model-status": run_model_status,
         "backfill-ah-features": run_backfill_ah_features,
         "train-ah-model": run_train_ah_model,
+        "train-goals-model": run_train_goals_model,
     }
 
     asyncio.run(commands[args.command]())

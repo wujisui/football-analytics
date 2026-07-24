@@ -29,15 +29,6 @@ export interface SyncFixturesResult {
   message: string
 }
 
-export interface SyncFixturesStatus {
-  running: boolean
-  last_status?: string | null
-  last_message?: string
-  last_error?: string | null
-  fixtures_saved?: number
-  finished_at?: string | null
-}
-
 export type SyncFixturesOptions = {
   days?: number
   date?: string
@@ -47,10 +38,9 @@ export type SyncFixturesOptions = {
   oddsBudget?: number
   leagueIds?: number[]
   oddsOnly?: boolean
-  background?: boolean
 }
 
-/** Force re-fetch from official API into local DB (bypasses day cache). */
+/** Force re-fetch from official API into local DB; waits until complete. */
 export async function syncFixtures(
   options?: SyncFixturesOptions,
 ): Promise<SyncFixturesResult> {
@@ -64,15 +54,10 @@ export async function syncFixtures(
       odds_budget: options?.oddsBudget,
       league_ids: options?.leagueIds,
       odds_only: options?.oddsOnly ?? false,
-      background: options?.background ?? true,
     },
-    timeout: 30_000,
+    // Sync may pull fixtures + odds + results in one request.
+    timeout: 180_000,
   })
-  return data
-}
-
-export async function fetchSyncStatus(): Promise<SyncFixturesStatus> {
-  const { data } = await apiClient.get<SyncFixturesStatus>('/fixtures/sync/status')
   return data
 }
 
@@ -102,10 +87,14 @@ export interface ResultFixture {
   score_hint?: string | null
   goal_lean?: string | null
   both_score_lean?: string | null
+  handicap_lean?: string | null
+  handicap_result?: string | null
+  handicap_hit?: boolean | null
   score_hit?: boolean | null
   ou_hit?: boolean | null
   btts_hit?: boolean | null
   result_hit?: boolean | null
+  single_result_hit?: boolean | null
 }
 
 export interface AccuracyStat {
@@ -116,9 +105,11 @@ export interface AccuracyStat {
 
 export interface ResultsAccuracy {
   result: AccuracyStat
+  single_result: AccuracyStat
   score: AccuracyStat
   ou: AccuracyStat
   btts: AccuracyStat
+  handicap: AccuracyStat
   fixtures_with_prediction: number
   fixtures_finished: number
 }
@@ -129,10 +120,12 @@ export interface AccuracyDayPoint {
   score_rate: number | null
   ou_rate: number | null
   btts_rate: number | null
+  handicap_rate: number | null
   result: AccuracyStat
   score: AccuracyStat
   ou: AccuracyStat
   btts: AccuracyStat
+  handicap: AccuracyStat
   fixtures_with_prediction: number
   fixtures_finished: number
 }

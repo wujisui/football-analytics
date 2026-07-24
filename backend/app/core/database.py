@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -8,6 +9,15 @@ from app.core.config import get_settings
 settings = get_settings()
 
 async_engine = create_async_engine(settings.DATABASE_URL, echo=False)
+
+if settings.DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(async_engine.sync_engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
 AsyncSessionLocal = async_sessionmaker(
     async_engine,
     class_=AsyncSession,
@@ -88,6 +98,10 @@ async def _ensure_sqlite_columns(conn) -> None:
             "ah_cover_prob": "REAL",
             "ah_model_source": "TEXT",
             "ah_feature_version": "TEXT",
+            "goal_features_json": "TEXT",
+            "goal_feature_version": "TEXT",
+            "home_goals_label": "INTEGER",
+            "away_goals_label": "INTEGER",
         },
     )
 

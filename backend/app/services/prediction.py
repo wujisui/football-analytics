@@ -40,12 +40,47 @@ _FACTOR_DELTAS: dict[str, dict[str, float]] = {
     "under_goals": {"home": -0.025, "draw": 0.05, "away": -0.025},
 }
 
-_LABEL = {"home": "主胜", "draw": "平局", "away": "客胜"}
+_LABEL = {"home": "胜", "draw": "平", "away": "负"}
 _DOUBLE = {
-    frozenset({"home", "draw"}): "主胜/平（主队不败）",
-    frozenset({"away", "draw"}): "客胜/平（客队不败）",
-    frozenset({"home", "away"}): "主胜/客胜（防平）",
+    frozenset({"home", "draw"}): "胜/平",
+    frozenset({"away", "draw"}): "负/平",
+    frozenset({"home", "away"}): "胜/负",
 }
+
+
+def canonical_recommendation(text: str | None) -> str:
+    """Return compact 1X2 copy while accepting historical stored wording."""
+    rec = (text or "").strip()
+    outcomes = recommendation_outcomes(rec)
+    if outcomes is None:
+        return rec
+    if len(outcomes) == 1:
+        return _LABEL[next(iter(outcomes))]
+    return _DOUBLE[frozenset(outcomes)]
+
+
+def canonical_goal_lean(text: str | None) -> str:
+    value = (text or "").strip()
+    return value.replace("倾向大球", "大").replace("倾向小球", "小").replace(
+        "大小球：", "大小："
+    )
+
+
+def canonical_btts_lean(text: str | None) -> str:
+    return (text or "").strip().replace("双方进球：", "双进:").replace(
+        "双方进球:", "双进:"
+    )
+
+
+def canonical_score_hint(text: str | None) -> str:
+    value = (text or "").strip()
+    if not value:
+        return ""
+    if value.startswith("比分:"):
+        return value
+    if value.startswith("比分："):
+        return f"比分:{value[3:]}"
+    return f"比分:{value}"
 
 
 def normalize_probabilities(probs: dict[str, float]) -> dict[str, float]:
@@ -61,10 +96,6 @@ def is_flat_prior(probs: dict[str, float]) -> bool:
         abs(float(probs.get(k, 0)) - DEFAULT_PROB) < _FLAT_EPS
         for k in ("home", "draw", "away")
     )
-
-
-def _is_flat_prior(probs: dict[str, float]) -> bool:
-    return is_flat_prior(probs)
 
 
 def implied_probs_from_odds(odds: dict[str, Any] | None) -> dict[str, float] | None:
@@ -103,7 +134,7 @@ def resolve_match_probabilities(
             "away": float((probs or {}).get("away", DEFAULT_PROB)),
         }
     )
-    if not _is_flat_prior(normalized):
+    if not is_flat_prior(normalized):
         return normalized
     implied = implied_probs_from_odds(odds)
     return implied if implied is not None else normalized
@@ -124,7 +155,7 @@ def get_recommendation(
     thin, also soften toward 双选 (future matches only; frozen snaps untouched).
     """
     normalized = normalize_probabilities(probs)
-    if _is_flat_prior(normalized):
+    if is_flat_prior(normalized):
         return "待分析"
     edge = _DOUBLE_CHANCE_EDGE
     if features:
@@ -171,17 +202,17 @@ def recommendation_outcomes(recommendation: str) -> set[str] | None:
     rec = (recommendation or "").strip()
     if not rec or "待分析" in rec:
         return None
-    if "主队不败" in rec or rec.startswith("主胜/平"):
+    if rec == "胜/平" or "主队不败" in rec or rec.startswith("主胜/平"):
         return {"home", "draw"}
-    if "客队不败" in rec or rec.startswith("客胜/平"):
+    if rec == "负/平" or "客队不败" in rec or rec.startswith("客胜/平"):
         return {"away", "draw"}
-    if "防平" in rec or rec.startswith("主胜/客胜"):
+    if rec == "胜/负" or "防平" in rec or rec.startswith("主胜/客胜"):
         return {"home", "away"}
-    if rec == "主胜":
+    if rec in {"胜", "主胜"}:
         return {"home"}
-    if rec == "平局":
+    if rec in {"平", "平局"}:
         return {"draw"}
-    if rec == "客胜":
+    if rec in {"负", "客胜"}:
         return {"away"}
     return None
 
@@ -192,6 +223,19 @@ def _odd_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return n if n > 0 else None
+
+
+def _implied_two_way(
+    first: float | None,
+    second: float | None,
+) -> tuple[float, float]:
+    if first is None or second is None:
+        return 0.5, 0.5
+    inv_first, inv_second = 1.0 / first, 1.0 / second
+    total = inv_first + inv_second
+    if total <= 0:
+        return 0.5, 0.5
+    return inv_first / total, inv_second / total
 
 
 def _parse_ou_line(line: Any) -> float | None:
@@ -438,34 +482,12 @@ def _split_score(total: int, probs: dict[str, float]) -> tuple[int, int]:
     return home, away
 
 
-def _handicap_lean(
-    odds: dict[str, Any] | None,
-    recommendation: str | None = None,
-    *,
-    league_id: int | None = None,
-    features: dict[str, float] | None = None,
-    probs: dict[str, float] | None = None,
-    score_hint: str | None = None,
-) -> str:
-    """Asian handicap lean via ah_predictor (structural → score → ML → multifactor)."""
-    lean, _ = _handicap_bundle(
-        odds,
-        recommendation,
-        league_id=league_id,
-        features=features,
-        probs=probs,
-        score_hint=score_hint,
-    )
-    return lean
-
-
 def _handicap_bundle(
     odds: dict[str, Any] | None,
     recommendation: str | None = None,
     *,
     league_id: int | None = None,
     features: dict[str, float] | None = None,
-    probs: dict[str, float] | None = None,
     score_hint: str | None = None,
 ) -> tuple[str, str]:
     from app.services.ah_predictor import handicap_bundle_from_markets
@@ -473,40 +495,15 @@ def _handicap_bundle(
     return handicap_bundle_from_markets(
         odds,
         recommendation,
-        probs_1x2=probs,
         league_id=league_id,
         features=features,
         score_hint=score_hint,
     )
-
-
-def resolve_handicap_lean(
-    odds: dict[str, Any] | None,
-    recommendation: str | None,
-    probs: dict[str, float] | None = None,
-    *,
-    league_id: int | None = None,
-    features: dict[str, float] | None = None,
-    stored: str | None = None,
-    score_hint: str | None = None,
-) -> str:
-    """Recompute AH lean from stored odds when available (algorithm fixes apply on read)."""
-    lean, _ = resolve_handicap_bundle(
-        odds,
-        recommendation,
-        probs,
-        league_id=league_id,
-        features=features,
-        stored=stored,
-        score_hint=score_hint,
-    )
-    return lean
 
 
 def resolve_handicap_bundle(
     odds: dict[str, Any] | None,
     recommendation: str | None,
-    probs: dict[str, float] | None = None,
     *,
     league_id: int | None = None,
     features: dict[str, float] | None = None,
@@ -521,7 +518,6 @@ def resolve_handicap_bundle(
             recommendation,
             league_id=league_id,
             features=features,
-            probs=probs,
             score_hint=score_hint,
         )
     text = (stored or "").strip()
@@ -564,29 +560,29 @@ def _score_hints_for_recommendation(
             return 0, 0
         return _draw_scoreline(draw_total)
 
-    if outcomes == {"draw"} or rec == "平局":
+    if outcomes == {"draw"}:
         lines.append(_draw_ref())
-    elif outcomes == {"home", "draw"} or "主队不败" in rec or rec.startswith("主胜/平"):
+    elif outcomes == {"home", "draw"}:
         lines.append((1, 0) if total <= 2 else (2, 1))
         if btts_yes:
             draw_total = 2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1)
             lines.append(_draw_scoreline(draw_total))
         else:
             lines.append((0, 0))
-    elif outcomes == {"away", "draw"} or "客队不败" in rec or rec.startswith("客胜/平"):
+    elif outcomes == {"away", "draw"}:
         lines.append((0, 1) if total <= 2 else (1, 2))
         if btts_yes:
             draw_total = 2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1)
             lines.append(_draw_scoreline(draw_total))
         else:
             lines.append((0, 0))
-    elif outcomes == {"home", "away"} or "防平" in rec:
+    elif outcomes == {"home", "away"}:
         ht = max(1, total if total > 0 else 1)
         lines.append((1, 0) if ht <= 2 else (2, 1))
         lines.append((0, 1) if ht <= 2 else (1, 2))
-    elif outcomes == {"home"} or rec == "主胜":
+    elif outcomes == {"home"}:
         lines.append(_split_score(max(1, total), probs))
-    elif outcomes == {"away"} or rec == "客胜":
+    elif outcomes == {"away"}:
         lines.append(_split_score(max(1, total), probs))
     else:
         lines.append(_split_score(max(0, total), probs))
@@ -621,12 +617,12 @@ def derive_prediction_leans(
     this function only affects **future** analyses (historical audit stays).
     """
     normalized = resolve_match_probabilities(probs, odds)
-    if _is_flat_prior(normalized):
+    if is_flat_prior(normalized):
         has_ah = isinstance((odds or {}).get("asian_handicap"), dict) if odds else False
         return {
-            "goal_lean": "大小球：待分析",
-            "both_score_lean": "双方进球：待分析",
-            "score_hint": "待分析",
+            "goal_lean": "大小：待分析",
+            "both_score_lean": "双进:待分析",
+            "score_hint": "比分:待分析",
             "handicap_lean": "让球：待分析" if has_ah else "缺少盘口数据分析",
             "handicap_market_note": "",
         }
@@ -634,9 +630,18 @@ def derive_prediction_leans(
     ou = (odds or {}).get("goals_ou") if isinstance(odds, dict) else None
     ou = ou if isinstance(ou, dict) else {}
     line = _parse_ou_line(ou.get("line")) or 2.5
+    from app.services.goal_predictor import distribution_summary, predict_goals
+
+    goal_prediction = predict_goals(features, odds)
+    distribution = (
+        distribution_summary(goal_prediction, total_line=line)
+        if goal_prediction is not None
+        else None
+    )
+
     over = _odd_float(ou.get("home"))
     under = _odd_float(ou.get("away"))
-    model_driven = not _is_flat_prior(normalize_probabilities(probs or {}))
+    model_driven = not is_flat_prior(normalize_probabilities(probs or {}))
     side = _resolve_ou_side(
         normalized,
         over=over,
@@ -644,39 +649,78 @@ def derive_prediction_leans(
         model_driven=model_driven,
         features=features,
     )
+    if (
+        goal_prediction is not None
+        and goal_prediction.deploy_ou
+        and distribution is not None
+    ):
+        side = "over" if distribution["over_prob"] >= 0.5 else "under"
     total = _target_total(line, side)
     line_label = _format_line(line)
     goal_lean = (
-        f"倾向大球（{line_label}）" if side == "over" else f"倾向小球（{line_label}）"
+        f"大（{line_label}）" if side == "over" else f"小（{line_label}）"
     )
 
     recommendation = get_recommendation(normalized, features=features)
     btts_yes = _btts_yes(
         normalized, ou_side=side, line=line, features=features
     )
-    _, score_lines = _score_hints_for_recommendation(
-        recommendation,
-        normalized,
-        total,
-        btts_yes=btts_yes,
-        ou_side=side,
+    if (
+        goal_prediction is not None
+        and goal_prediction.deploy_btts
+        and distribution is not None
+    ):
+        btts_yes = distribution["btts_prob"] >= 0.5
+    if (
+        goal_prediction is not None
+        and goal_prediction.deploy_score
+        and distribution is not None
+    ):
+        score_lines = [(h, a) for h, a, _ in distribution["scores"]]
+    else:
+        _, score_lines = _score_hints_for_recommendation(
+            recommendation,
+            normalized,
+            total,
+            btts_yes=btts_yes,
+            ou_side=side,
+        )
+        score_lines = _align_score_with_btts(
+            score_lines, btts_yes=btts_yes, probs=normalized, total=total
+        )
+        btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
+    score_hint = (
+        f"比分:{' / '.join(f'{h}-{a}' for h, a in score_lines)}"
+        if score_lines
+        else "比分:待分析"
     )
-    score_lines = _align_score_with_btts(
-        score_lines, btts_yes=btts_yes, probs=normalized, total=total
-    )
-    btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
-    score_hint = " / ".join(f"{h}-{a}" for h, a in score_lines) if score_lines else "待分析"
+    both_score_lean = "双进:是" if btts_yes else "双进:否"
+    if goal_prediction is not None:
+        if not goal_prediction.deploy_score:
+            score_hint = "比分:待分析"
+        if not goal_prediction.deploy_btts:
+            both_score_lean = "双进:待分析"
+        if not goal_prediction.deploy_ou:
+            market_over, market_under = _implied_two_way(over, under)
+            if max(market_over, market_under) >= 0.56:
+                market_side = "over" if market_over > market_under else "under"
+                goal_lean = (
+                    f"大（{line_label}）"
+                    if market_side == "over"
+                    else f"小（{line_label}）"
+                )
+            else:
+                goal_lean = "大小：待分析"
     handicap_lean, handicap_market_note = _handicap_bundle(
         odds if isinstance(odds, dict) else None,
         recommendation=recommendation,
         league_id=league_id,
         features=features,
-        probs=normalized,
         score_hint=score_hint,
     )
     return {
         "goal_lean": goal_lean,
-        "both_score_lean": "双方进球：是" if btts_yes else "双方进球：否",
+        "both_score_lean": both_score_lean,
         "score_hint": score_hint,
         "handicap_lean": handicap_lean,
         "handicap_market_note": handicap_market_note,
@@ -747,12 +791,12 @@ def _parse_score_hint(score_hint: str) -> list[tuple[int, int]]:
 
 
 def _parse_goal_lean(goal_lean: str) -> tuple[str, float] | None:
-    """Return ('over'|'under', line) from strings like 倾向大球（2.5）."""
+    """Parse current ``大（2.5）`` and historical ``倾向大球（2.5）``."""
     text = (goal_lean or "").strip()
-    match = re.search(r"倾向(大球|小球)[（(](.+?)[）)]", text)
+    match = re.search(r"(?:倾向)?(大球|小球|大|小)[（(](.+?)[）)]", text)
     if not match:
         return None
-    side = "over" if match.group(1) == "大球" else "under"
+    side = "over" if match.group(1) in {"大球", "大"} else "under"
     try:
         line = float(str(match.group(2)).replace(",", ".").strip())
     except ValueError:
@@ -826,7 +870,7 @@ def evaluate_prediction_vs_score(
 
 
 def summarize_accuracy(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Aggregate per-fixture hit flags into rates for 1X2 / score / O/U / BTTS."""
+    """Aggregate hit rates for all frozen pre-match prediction dimensions."""
 
     def _rate(key: str) -> dict[str, Any]:
         judged = [r[key] for r in rows if r.get(key) is not None]
@@ -840,9 +884,11 @@ def summarize_accuracy(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     return {
         "result": _rate("result_hit"),
+        "single_result": _rate("single_result_hit"),
         "score": _rate("score_hit"),
         "ou": _rate("ou_hit"),
         "btts": _rate("btts_hit"),
+        "handicap": _rate("handicap_hit"),
         "fixtures_with_prediction": sum(1 for r in rows if r.get("has_prediction")),
         "fixtures_finished": sum(1 for r in rows if r.get("evaluable")),
     }

@@ -223,18 +223,25 @@ def _injury_count(injuries: dict[str, Any] | None, side: str) -> float:
     return 0.0
 
 
-def _odds_implied(odds: dict[str, Any] | None) -> tuple[float, float, float, float]:
+def has_match_winner_odds(odds: dict[str, Any] | None) -> bool:
+    """Whether a package contains a complete, positive pre-match 1X2 board."""
     if not isinstance(odds, dict) or not odds.get("available"):
-        return DEFAULT_PROB, DEFAULT_PROB, DEFAULT_PROB, 0.0
+        return False
     mw = odds.get("match_winner")
     if not isinstance(mw, dict):
-        return DEFAULT_PROB, DEFAULT_PROB, DEFAULT_PROB, 0.0
+        return False
     try:
         h, d, a = float(mw["home"]), float(mw["draw"]), float(mw["away"])
     except (KeyError, TypeError, ValueError):
+        return False
+    return min(h, d, a) > 0
+
+
+def _odds_implied(odds: dict[str, Any] | None) -> tuple[float, float, float, float]:
+    if not has_match_winner_odds(odds):
         return DEFAULT_PROB, DEFAULT_PROB, DEFAULT_PROB, 0.0
-    if min(h, d, a) <= 0:
-        return DEFAULT_PROB, DEFAULT_PROB, DEFAULT_PROB, 0.0
+    mw = odds["match_winner"]
+    h, d, a = float(mw["home"]), float(mw["draw"]), float(mw["away"])
     inv_h, inv_d, inv_a = 1.0 / h, 1.0 / d, 1.0 / a
     total = inv_h + inv_d + inv_a
     if total <= 0:

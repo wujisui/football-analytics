@@ -5,21 +5,16 @@ import { ref, watch } from 'vue'
 import ResultsFilterPanel from '@/components/ResultsFilterPanel.vue'
 import {
   RESULTS_ALL_HIT_KEYS,
-  type ResultsFilterConfirm,
   type ResultsHitKey,
 } from '@/utils/resultsPageState'
 
-withDefaults(
-  defineProps<{
-    selectedHitKeys: ResultsHitKey[]
-    hideWithoutPrediction?: boolean
-    filterActive?: boolean
-  }>(),
-  { hideWithoutPrediction: false, filterActive: false },
-)
+defineProps<{
+  selectedHitKeys: ResultsHitKey[]
+  filterActive?: boolean
+}>()
 
 const emit = defineEmits<{
-  confirm: [payload: ResultsFilterConfirm]
+  confirm: [hitKeys: ResultsHitKey[]]
 }>()
 
 const show = ref(false)
@@ -29,9 +24,9 @@ watch(show, (open) => {
   if (open) panelKey.value += 1
 })
 
-function confirm(payload: ResultsFilterConfirm) {
-  if (!payload.hitKeys.length) return
-  emit('confirm', payload)
+function confirm(hitKeys: ResultsHitKey[]) {
+  if (!hitKeys.length) return
+  emit('confirm', hitKeys)
   show.value = false
 }
 </script>
@@ -67,7 +62,6 @@ function confirm(payload: ResultsFilterConfirm) {
       :initial-hit-keys="
         selectedHitKeys.length ? [...selectedHitKeys] : [...RESULTS_ALL_HIT_KEYS]
       "
-      :initial-hide-without-prediction="hideWithoutPrediction"
       compact-actions
       @confirm="confirm"
     />

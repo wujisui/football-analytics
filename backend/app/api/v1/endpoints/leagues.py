@@ -17,14 +17,13 @@ from app.schemas.response import (
     LeagueSummaryResponse,
 )
 from app.services.league_names import league_name_zh
-from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
 
 router = APIRouter(prefix="/leagues", tags=["leagues"])
 
 
 @router.get("/catalog", response_model=LeagueCatalogResponse)
 async def get_league_catalog() -> LeagueCatalogResponse:
-    """Configured leagues only. Prefer ``/leagues/filter-options`` (embeds catalog)."""
+    """Configured leagues only. Use ``/leagues/filter-options`` for sidebar filters."""
     settings = get_settings()
     items: list[LeagueCatalogItemResponse] = []
     for name, league_id in settings.LEAGUE_IDS.items():
@@ -46,17 +45,9 @@ async def get_league_filter_options(
         alias="date",
         description="日历日 YYYY-MM-DD，默认今天（筛选先按「今天」匹配）",
     ),
-    discover: bool = Query(
-        default=True,
-        description="缓存未命中时是否打 1 次官方 fixtures?date= 发现今日联赛",
-    ),
     db: AsyncSession = Depends(get_db),
 ) -> LeagueFilterOptionsResponse:
-    """Home filter popover options for **today**.
-
-    Discovery uses one worldwide ``fixtures?date=`` call per day (cached).
-    Every league returned by the API for that day is listed and default-checked.
-    """
+    """Home filter options from local unfinished fixtures (odds may open later)."""
     settings = get_settings()
     if date_str:
         try:
@@ -68,7 +59,8 @@ async def get_league_filter_options(
 
     configured_ids = set(settings.LEAGUE_IDS.values())
 
-    # Local unfinished counts for today (any league already in DB).
+    # Keep schedule-visible even before bookmakers open 1X2 — pruning only
+    # applies after a fixture is finished and still has no odds/recommendation.
     local_counts: dict[int, int] = {}
     local_stmt = (
         select(Fixture.league_id, func.count())
@@ -81,71 +73,28 @@ async def get_league_filter_options(
     for lid, cnt in (await db.execute(local_stmt)).all():
         local_counts[int(lid)] = int(cnt)
 
-    playing_ids: set[int] = set(local_counts.keys())
-    discovery_meta: dict[int, dict] = {}
-    discovery_source = "local"
-    message: str | None = None
-
-    if discover:
-        try:
-            async with FootballFetcher(session=db) as fetcher:
-                summary = await fetcher.discover_playing_leagues_for_date(day, force=False)
-            discovery_source = str(summary.get("source") or "api")
-            if summary.get("error"):
-                message = str(summary["error"])
-                if discovery_source in {"unavailable", "error"}:
-                    discovery_source = str(summary.get("source") or "unavailable")
-            for lid in summary.get("league_ids") or []:
-                playing_ids.add(int(lid))
-            leagues_map = summary.get("leagues") or {}
-            if isinstance(leagues_map, dict):
-                for key, meta in leagues_map.items():
-                    try:
-                        discovery_meta[int(key)] = meta if isinstance(meta, dict) else {}
-                    except (TypeError, ValueError):
-                        continue
-            if discovery_source == "api" and not message:
-                # Distinguish fresh API vs cache hit served as api payload from store.
-                discovery_source = "api"
-        except ApiKeyNotConfiguredError as exc:
-            discovery_source = "unavailable"
-            message = str(exc)
-        except Exception as exc:
-            discovery_source = "error"
-            message = str(exc)
+    # A date filter should only contain leagues that actually have local
+    # fixtures on that date. Catalog membership controls grouping/defaults,
+    # not whether a zero-match option is displayed.
+    playing_ids = set(local_counts)
 
     def _country(league_id: int) -> str | None:
         if league_id in settings.LEAGUE_COUNTRIES:
             return settings.LEAGUE_COUNTRIES[league_id]
-        if league_id in settings.REFERENCE_LEAGUE_COUNTRIES:
-            return settings.REFERENCE_LEAGUE_COUNTRIES[league_id]
-        meta = discovery_meta.get(league_id) or {}
-        country = meta.get("country")
-        return str(country) if country else None
+        return settings.REFERENCE_LEAGUE_COUNTRIES.get(league_id)
 
     def _name(league_id: int) -> str:
-        if league_id in configured_ids:
-            raw = settings.league_display_name(league_id)
-        else:
-            raw = settings.reference_display_name(
-                league_id,
-                str((discovery_meta.get(league_id) or {}).get("league_name") or ""),
-            )
+        raw = (
+            settings.league_display_name(league_id)
+            if league_id in configured_ids
+            else settings.reference_display_name(league_id, "")
+        )
         return league_name_zh(
             raw,
             league_id=league_id,
             country=_country(league_id),
             settings=settings,
         )
-
-    def _count(league_id: int) -> int:
-        if league_id in local_counts:
-            return local_counts[league_id]
-        meta = discovery_meta.get(league_id) or {}
-        try:
-            return int(meta.get("fixtures_count") or 0)
-        except (TypeError, ValueError):
-            return 0
 
     configured: list[LeagueFilterOptionResponse] = []
     extra: list[LeagueFilterOptionResponse] = []
@@ -155,33 +104,16 @@ async def get_league_filter_options(
             league_id=league_id,
             league_name=_name(league_id),
             country=_country(league_id),
-            fixtures_count=_count(league_id),
+            fixtures_count=local_counts.get(league_id, 0),
             tier=tier,
-            default_checked=True,
-            locally_loaded=league_id in local_counts,
+            default_checked=tier == "configured",
         )
-        if tier == "configured":
-            configured.append(option)
-        else:
-            extra.append(option)
-
-    catalog = [
-        LeagueCatalogItemResponse(
-            league_id=league_id,
-            league_name=name,
-            country=settings.LEAGUE_COUNTRIES.get(league_id),
-            season=settings.configured_season(league_id),
-        )
-        for name, league_id in settings.LEAGUE_IDS.items()
-    ]
+        (configured if tier == "configured" else extra).append(option)
 
     return LeagueFilterOptionsResponse(
         date=day.isoformat(),
         configured=configured,
         extra=extra,
-        catalog=catalog,
-        discovery_source=discovery_source,
-        message=message,
     )
 
 

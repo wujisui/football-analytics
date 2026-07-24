@@ -14,6 +14,7 @@ from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.services.analyzer import AnalyzerService
 from app.services.api_utils import extract_items, first_value, map_fixture_status
+from app.services.data_cleanup import prune_low_value_data
 from app.services.fetcher import FootballFetcher
 from app.services.fixtures_sync import scheduled_fixtures_sync
 
@@ -75,13 +76,6 @@ async def run_scheduled_fixtures_sync(task_name: str = "scheduled_fixtures_sync"
             finished_at=_utc_now().isoformat(),
         )
         logger.error("Task %s failed: %s", task_name, exc, exc_info=True)
-
-
-async def midday_fixtures_sync() -> None:
-    """Backward-compatible alias for admin CLI."""
-    await run_scheduled_fixtures_sync("midday_fixtures_sync")
-
-
 async def pre_match_update() -> None:
     settings = get_settings()
     task_name = "pre_match_update"
@@ -183,9 +177,11 @@ async def clean_old_data() -> None:
     cutoff = _utc_now().replace(tzinfo=None) - timedelta(days=settings.CLEANUP_DAYS)
     deleted_analysis = 0
     removed_logs = 0
+    prune_report: dict[str, Any] = {}
 
     try:
         async with AsyncSessionLocal() as session:
+            prune_report = (await prune_low_value_data(session, apply=True)).to_dict()
             old_fixtures = await session.execute(
                 select(Fixture.id).where(
                     Fixture.date < cutoff,
@@ -202,6 +198,19 @@ async def clean_old_data() -> None:
                 deleted_analysis = result.rowcount or 0
                 await session.commit()
 
+            if prune_report.get("features_deleted"):
+                from app.services.ah_predictor import (
+                    train_model_from_db as train_ah_model_from_db,
+                )
+                from app.services.goal_predictor import (
+                    train_model_from_db as train_goal_model_from_db,
+                )
+                from app.services.ml_predictor import train_model_from_db
+
+                await train_model_from_db(session)
+                await train_ah_model_from_db(session)
+                await train_goal_model_from_db(session)
+
         log_dir = Path(settings.LOG_DIR)
         if log_dir.exists():
             for log_file in log_dir.glob("football-analytics.log.*"):
@@ -217,12 +226,14 @@ async def clean_old_data() -> None:
             task_name,
             "completed",
             deleted_analysis=deleted_analysis,
+            prune=prune_report,
             removed_logs=removed_logs,
             finished_at=_utc_now().isoformat(),
         )
         logger.info(
-            "Task clean_old_data completed. deleted_analysis=%s removed_logs=%s",
+            "Task clean_old_data completed. deleted_analysis=%s prune=%s removed_logs=%s",
             deleted_analysis,
+            prune_report,
             removed_logs,
         )
     except Exception as exc:
@@ -243,6 +254,7 @@ async def capture_results() -> None:
         # After new FT labels land, try auto-train so inference can switch to ml.
         train_info: dict[str, Any] = {}
         ah_train_info: dict[str, Any] = {}
+        goal_train_info: dict[str, Any] = {}
         try:
             from app.services.ml_predictor import maybe_auto_train_model
 
@@ -259,12 +271,23 @@ async def capture_results() -> None:
             logger.warning("AH ML auto-train after capture_results failed: %s", train_exc)
             ah_train_info = {"ok": False, "error": str(train_exc)}
 
+        try:
+            from app.services.goal_predictor import (
+                maybe_auto_train_model as maybe_auto_train_goals,
+            )
+
+            goal_train_info = await maybe_auto_train_goals()
+        except Exception as train_exc:
+            logger.warning("Goal ML auto-train after capture_results failed: %s", train_exc)
+            goal_train_info = {"ok": False, "error": str(train_exc)}
+
         _set_task_status(
             task_name,
             "completed",
             fixtures_saved=saved,
             ml_train=train_info,
             ah_ml_train=ah_train_info,
+            goal_ml_train=goal_train_info,
             finished_at=_utc_now().isoformat(),
         )
         logger.info(
@@ -318,7 +341,6 @@ async def train_model() -> None:
 
 TASK_HANDLERS = {
     "scheduled_fixtures_sync": run_scheduled_fixtures_sync,
-    "midday_fixtures_sync": midday_fixtures_sync,
     "pre_match_update": pre_match_update,
     "capture_results": capture_results,
     "clean_old_data": clean_old_data,
@@ -340,9 +362,6 @@ def register_jobs() -> None:
     # Remove legacy 06:00 daily_init if still registered from an older process.
     if scheduler.get_job("daily_init") is not None:
         scheduler.remove_job("daily_init")
-
-    if scheduler.get_job("midday_fixtures_sync") is not None:
-        scheduler.remove_job("midday_fixtures_sync")
 
     for hour in (6, 12, 18):
         job_id = f"scheduled_fixtures_sync_{hour:02d}"

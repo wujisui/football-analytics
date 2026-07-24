@@ -3,7 +3,6 @@
 export const HOME_DATE_RADIUS = 7
 
 const WEEKDAY_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-const FINISHED_STATUSES = new Set(['finished', 'cancelled', 'postponed'])
 const ACTIVE_STATUSES = new Set(['pending', 'live'])
 
 function parseIso(iso: string): Date {
@@ -68,40 +67,8 @@ export function buildHomeDateTabs(
   return tabs
 }
 
-export type HomeDayKind = 'past' | 'today' | 'future'
-
-export function homeDayKind(day: string, today: string = todayDate()): HomeDayKind {
-  if (day < today) return 'past'
-  if (day > today) return 'future'
-  return 'today'
-}
-
-/** Which fixtures to show on Home for the selected calendar day. */
-export function isHomeFixtureVisible(
-  status: string,
-  day: string,
-  today: string = todayDate(),
-): boolean {
-  const s = status.toLowerCase()
-  const kind = homeDayKind(day, today)
-  if (kind === 'past') return FINISHED_STATUSES.has(s)
-  if (kind === 'future') return s === 'pending'
-  return s === 'pending' || s === 'live' || s === 'finished'
-}
-
-export function homeDayStatusHint(kind: HomeDayKind): string {
-  if (kind === 'past') return '完场'
-  if (kind === 'future') return '未开赛'
-  return '当日'
-}
-
-export function homeDayCountLabel(kind: HomeDayKind, count: number): string {
-  if (kind === 'past') return `完场 ${count} 场`
-  if (kind === 'future') return `未开赛 ${count} 场`
-  return `当日 ${count} 场`
-}
-
-export function isPredictionsFixtureVisible(status: string): boolean {
+/** Prematch lists (即时 / 预测): unfinished only. Finished matches belong on 赛果. */
+export function isPrematchFixtureVisible(status: string): boolean {
   return ACTIVE_STATUSES.has(status.toLowerCase())
 }
 
@@ -119,8 +86,4 @@ export function scheduleDayCountLabel(count: number): string {
 
 export function isScheduleFutureDay(day: string, today: string = todayDate()): boolean {
   return day > today
-}
-
-export function isResultsHistoryDay(day: string, today: string = todayDate()): boolean {
-  return day <= today
 }

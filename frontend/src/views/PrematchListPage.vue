@@ -17,21 +17,16 @@ const listShellRef = ref<HTMLElement | null>(null)
 
 const {
   contentLoading,
-  homeDisplayedFixtures,
+  prematchDisplayedFixtures,
   homeEmptyText,
-  predictionsDisplayedFixtures,
   predictionsEmptyText,
-  forceRefreshDay,
+  reloadPrematchDay,
   homeDay,
 } = useFixturesShell()
 
 const { error, syncHomeListAfterDetail } = useHomeFixtures()
 
-const fixtures = computed(() =>
-  props.mode === 'prediction'
-    ? predictionsDisplayedFixtures.value
-    : homeDisplayedFixtures.value,
-)
+const fixtures = computed(() => prematchDisplayedFixtures.value)
 
 const emptyText = computed(() =>
   props.mode === 'prediction' ? predictionsEmptyText.value : homeEmptyText.value,
@@ -52,7 +47,7 @@ onActivated(() => {
       <n-alert v-if="error" type="error" title="获取失败" class="fa-page-list-state">
         <n-space align="center" :size="12">
           <span>{{ error }}</span>
-          <n-button size="small" type="primary" @click="forceRefreshDay()">重试</n-button>
+          <n-button size="small" type="primary" @click="reloadPrematchDay(true)">重试</n-button>
         </n-space>
       </n-alert>
 

@@ -1,25 +1,42 @@
 <script setup lang="ts">
-import type { ResultFixture } from '@/api/fixtures'
-import { hitLabel, hitTagType } from '@/utils/resultsDisplay'
+import { hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 
 defineProps<{
-  fixture: ResultFixture
+  fixture: HitTagFixture
 }>()
 </script>
 
 <template>
-  <n-space v-if="fixture.has_prediction" :size="6" wrap>
+  <div v-if="fixture.has_prediction" class="hit-tags">
     <n-tag size="small" :type="hitTagType(fixture.result_hit)" :bordered="false">
-      胜平负 {{ hitLabel(fixture.result_hit) }}
+      胜平负
     </n-tag>
     <n-tag size="small" :type="hitTagType(fixture.score_hit)" :bordered="false">
-      比分 {{ hitLabel(fixture.score_hit) }}
+      比分
     </n-tag>
     <n-tag size="small" :type="hitTagType(fixture.ou_hit)" :bordered="false">
-      大小 {{ hitLabel(fixture.ou_hit) }}
+      大小
     </n-tag>
     <n-tag size="small" :type="hitTagType(fixture.btts_hit)" :bordered="false">
-      双方进球 {{ hitLabel(fixture.btts_hit) }}
+      双进
     </n-tag>
-  </n-space>
+    <n-tag
+      v-if="fixture.handicap_result && fixture.handicap_hit != null"
+      size="small"
+      :type="hitTagType(fixture.handicap_hit)"
+      :bordered="false"
+    >
+      {{ fixture.handicap_result }}
+    </n-tag>
+  </div>
 </template>
+
+<style scoped>
+.hit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+</style>

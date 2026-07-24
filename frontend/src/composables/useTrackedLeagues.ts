@@ -7,30 +7,42 @@ import {
 } from '@/api/leagues'
 import { resolveTrackedSelection } from '@/utils/leagueFilterSelection'
 
-const STORAGE_KEY = 'fa-tracked-league-ids'
+const STORAGE_KEY = 'fa-tracked-league-ids-by-date-v3'
 
 const filterOptions = ref<LeagueFilterOptionsResponse | null>(null)
 const trackedIds = ref<number[]>([])
 const filterOptionsError = ref('')
+let activeFilterDate = ''
 
 let inflightFilterOptions: Promise<LeagueFilterOptionsResponse> | null = null
 let inflightFilterOptionsKey = ''
 
-function readStoredIds(): number[] | null {
+function readStoredIds(date: string): number[] | null {
+  if (!date) return null
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return null
-    return parsed.map(Number).filter((n) => Number.isFinite(n))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const ids = (parsed as Record<string, unknown>)[date]
+    if (!Array.isArray(ids)) return null
+    return ids.map(Number).filter((n) => Number.isFinite(n))
   } catch {
     return null
   }
 }
 
-function persistTracked(ids: number[]) {
+function persistTracked(ids: number[], date: string) {
+  if (!date) return
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
+    const raw = localStorage.getItem(STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) : {}
+    const byDate =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {}
+    byDate[date] = ids
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(byDate))
   } catch {
     /* ignore */
   }
@@ -39,7 +51,7 @@ function persistTracked(ids: number[]) {
 function setTrackedIds(ids: number[]) {
   const unique = [...new Set(ids.map(Number).filter((n) => Number.isFinite(n)))]
   trackedIds.value = unique
-  persistTracked(unique)
+  persistTracked(unique, activeFilterDate)
 }
 
 function allFilterOptions(): LeagueFilterOption[] {
@@ -51,14 +63,15 @@ function allFilterOptions(): LeagueFilterOption[] {
 function syncTrackedWithFilterOptions() {
   const options = allFilterOptions()
   if (!options.length) return
-  setTrackedIds(resolveTrackedSelection(options, readStoredIds() ?? []))
+  setTrackedIds(
+    resolveTrackedSelection(options, readStoredIds(activeFilterDate) ?? []),
+  )
 }
 
 async function loadFilterOptions(options?: {
   date?: string
-  discover?: boolean
 }): Promise<LeagueFilterOptionsResponse> {
-  const key = `${options?.date ?? ''}|${options?.discover ?? true}`
+  const key = options?.date ?? ''
   if (inflightFilterOptions && inflightFilterOptionsKey === key) {
     return inflightFilterOptions
   }
@@ -69,9 +82,9 @@ async function loadFilterOptions(options?: {
     try {
       const data = await fetchLeagueFilterOptions({
         date: options?.date,
-        discover: options?.discover ?? true,
       })
       filterOptions.value = data
+      activeFilterDate = data.date
       syncTrackedWithFilterOptions()
       return data
     } catch (err) {

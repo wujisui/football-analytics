@@ -81,6 +81,42 @@ python -m pip install -U pip
 pip install -r requirements.txt
 ```
 
+### 换机后启用最新预测算法
+
+`pip install` 只负责准备 Python 运行环境，算法代码仍来自仓库。某个终端出现 SSL 安装失败，**不等于这台电脑不能使用新算法**：如果 PyCharm / 后端实际使用的解释器已经安装 `numpy`、`sqlalchemy` 等依赖，更新代码并重启后端后即可运行。先在后端实际使用的解释器中检查：
+
+```powershell
+cd backend
+python -c "import numpy, sqlalchemy, httpx; print('依赖正常')"
+python manage.py model-status
+```
+
+回家电脑首次部署或虚拟环境缺少依赖时，按以下顺序执行：
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+
+python manage.py init-db
+python manage.py backfill-features
+python manage.py backfill-ah-features
+python manage.py train-model
+python manage.py train-goals-model
+python manage.py train-ah-model
+python manage.py model-status
+python -m unittest discover -s tests -v
+```
+
+- 已有 `data/football.db` 时，上述回填与训练使用本地历史数据，不消耗官方 API 配额。
+- 新电脑没有历史数据库时，可以启动和预测，但 ML 模型要等本地积累到最低样本数；不要为了训练批量探测官方接口。
+- `model-status` 中 1X2 或某个目标显示未通过基线门禁时，系统会使用盘口基线或显示“待分析”，这是预期保护，不是安装失败。
+- 每次更新算法代码后无需重新安装全部依赖；只有 `requirements.txt` 变化、虚拟环境不存在或导入报错时才需要重新安装。
+
+若 `pip` 报 `CERTIFICATE_VERIFY_FAILED`，这是 Python 包下载链路的证书问题，与 `.env` 的 `HTTP_VERIFY_SSL`（官方足球 API 请求）不是同一设置。优先在家庭网络执行，或为 `pip` 配置公司提供的根证书；不要长期关闭 pip 的证书校验。
+
 若在 Python 3.13 上 `pandas`/`numpy` 安装失败，可先装核心依赖跑通 API（ML 训练相关能力暂不可用）：
 
 ```bash
@@ -193,8 +229,9 @@ npm run dev
 | 现象 | 处理 |
 |------|------|
 | 前端网络错误 | 先起后端；确认代理目标 `127.0.0.1:8000` |
-| 赛程为空 | `fetch-upcoming` / 首页「强制刷新」（耗官方配额） |
-| SSL 证书错误 | `.env` 设 `HTTP_VERIFY_SSL=false` |
+| 赛程为空 | 等待后端定时任务，或点击工具栏「同步」（耗官方配额） |
+| 官方足球 API SSL 证书错误 | `.env` 设 `HTTP_VERIFY_SSL=false`（仅影响官方接口请求） |
+| pip `CERTIFICATE_VERIFY_FAILED` | 换可信网络或配置公司根证书；不要用 `HTTP_VERIFY_SSL` 处理 |
 | pandas 安装失败 | 换 Python 3.12，或先装核心依赖（见 §4） |
 | 配额用尽 | `check-quota`；开发少打官方，优先读本地库 |
 

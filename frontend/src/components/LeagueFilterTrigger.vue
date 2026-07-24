@@ -12,14 +12,12 @@ const props = withDefaults(
     trackedIds: number[]
     iconOnly?: boolean
     filterActive?: boolean
-    confirming?: boolean
     finishedMode?: boolean
     drawerMode?: boolean
   }>(),
   {
     iconOnly: false,
     filterActive: false,
-    confirming: false,
     finishedMode: false,
     drawerMode: false,
   },
@@ -77,7 +75,6 @@ function confirm() {
         :options="options"
         :finished-mode="finishedMode"
         stacked
-        :confirming="confirming"
         @confirm="confirm"
       />
     </n-modal>
@@ -114,7 +111,6 @@ function confirm() {
       :options="options"
       :finished-mode="finishedMode"
       compact-actions
-      :confirming="confirming"
       @confirm="confirm"
     />
   </n-popover>

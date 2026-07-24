@@ -11,7 +11,18 @@ from sqlalchemy.orm import selectinload
 
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
+from app.services.ah_features import (
+    extract_main_ah_line,
+    handicap_line_from_lean,
+    handicap_pick_from_lean,
+    settle_handicap_result,
+)
+from app.services.prematch_package import package_from_record
 from app.services.prediction import (
+    canonical_btts_lean,
+    canonical_goal_lean,
+    canonical_recommendation,
+    canonical_score_hint,
     evaluate_prediction_vs_score,
     summarize_accuracy,
 )
@@ -28,10 +39,14 @@ def evaluate_fixture_prediction(
         "score_hint": None,
         "goal_lean": None,
         "both_score_lean": None,
+        "handicap_lean": None,
+        "handicap_result": None,
+        "handicap_hit": None,
         "score_hit": None,
         "ou_hit": None,
         "btts_hit": None,
         "result_hit": None,
+        "single_result_hit": None,
         "evaluable": fixture.home_goals is not None and fixture.away_goals is not None,
     }
 
@@ -46,6 +61,7 @@ def evaluate_fixture_prediction(
     score_hint = (getattr(stored, "score_hint", None) or "").strip()
     goal_lean = (getattr(stored, "goal_lean", None) or "").strip()
     both_score_lean = (getattr(stored, "both_score_lean", None) or "").strip()
+    handicap_lean = (getattr(stored, "handicap_lean", None) or "").strip()
     if not recommendation or recommendation == "待分析":
         return payload
     if not score_hint or score_hint == "待分析":
@@ -55,12 +71,28 @@ def evaluate_fixture_prediction(
     payload.update(
         {
             "has_prediction": True,
-            "recommendation": recommendation,
-            "score_hint": score_hint or None,
-            "goal_lean": goal_lean or None,
-            "both_score_lean": both_score_lean or None,
+            "recommendation": canonical_recommendation(recommendation),
+            "score_hint": canonical_score_hint(score_hint) or None,
+            "goal_lean": canonical_goal_lean(goal_lean) or None,
+            "both_score_lean": canonical_btts_lean(both_score_lean) or None,
+            "handicap_lean": handicap_lean or None,
         }
     )
+
+    package = package_from_record(stored)
+    odds = package.get("odds") if isinstance(package, dict) else None
+    line_f, _, _ = extract_main_ah_line(odds if isinstance(odds, dict) else None)
+    if line_f is None:
+        line_f = handicap_line_from_lean(handicap_lean)
+    handicap_result = settle_handicap_result(
+        fixture.home_goals,
+        fixture.away_goals,
+        line_f,
+    )
+    predicted_handicap = handicap_pick_from_lean(handicap_lean)
+    payload["handicap_result"] = handicap_result
+    if handicap_result is not None and predicted_handicap is not None:
+        payload["handicap_hit"] = predicted_handicap == handicap_result
 
     hits = evaluate_prediction_vs_score(
         home_goals=fixture.home_goals,
@@ -71,6 +103,23 @@ def evaluate_fixture_prediction(
         recommendation=recommendation or "",
     )
     payload["result_hit"] = hits["result_hit"]
+    if fixture.home_goals is not None and fixture.away_goals is not None:
+        predicted = max(
+            ("home", "draw", "away"),
+            key=lambda key: {
+                "home": float(stored.home_win_prob or 0.0),
+                "draw": float(stored.draw_prob or 0.0),
+                "away": float(stored.away_win_prob or 0.0),
+            }[key],
+        )
+        actual = (
+            "home"
+            if fixture.home_goals > fixture.away_goals
+            else "away"
+            if fixture.home_goals < fixture.away_goals
+            else "draw"
+        )
+        payload["single_result_hit"] = predicted == actual
     payload["score_hit"] = hits["score_hit"]
     payload["ou_hit"] = hits["ou_hit"]
     payload["btts_hit"] = hits["btts_hit"]
@@ -162,9 +211,15 @@ async def build_history_accuracy(
             "has_prediction": evaluated["has_prediction"],
             "evaluable": evaluated["evaluable"],
             "result_hit": evaluated["result_hit"] if evaluated["has_prediction"] else None,
+            "single_result_hit": (
+                evaluated["single_result_hit"] if evaluated["has_prediction"] else None
+            ),
             "score_hit": evaluated["score_hit"] if evaluated["has_prediction"] else None,
             "ou_hit": evaluated["ou_hit"] if evaluated["has_prediction"] else None,
             "btts_hit": evaluated["btts_hit"] if evaluated["has_prediction"] else None,
+            "handicap_hit": (
+                evaluated["handicap_hit"] if evaluated["has_prediction"] else None
+            ),
         }
         overall_rows.append(row)
         day = _day_key(fx.date)
@@ -184,10 +239,12 @@ async def build_history_accuracy(
                 "score_rate": day_summary["score"]["rate"],
                 "ou_rate": day_summary["ou"]["rate"],
                 "btts_rate": day_summary["btts"]["rate"],
+                "handicap_rate": day_summary["handicap"]["rate"],
                 "result": day_summary["result"],
                 "score": day_summary["score"],
                 "ou": day_summary["ou"],
                 "btts": day_summary["btts"],
+                "handicap": day_summary["handicap"],
                 "fixtures_with_prediction": day_summary["fixtures_with_prediction"],
                 "fixtures_finished": day_summary["fixtures_finished"],
             }

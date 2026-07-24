@@ -31,6 +31,7 @@ def _to_favorite_response(
         _list_extras_from_stored,
         _team_display_name,
     )
+    from app.services.results_accuracy import evaluate_fixture_prediction
 
     analysis = _list_analysis_from_fixture(fixture, stored)
     _, _, odds_snippet = _list_extras_from_stored(stored)
@@ -38,6 +39,36 @@ def _to_favorite_response(
     ready = bool(probs.available)
     rec = (analysis.recommendation or "").strip()
     has_prediction = ready or (bool(rec) and rec != "待分析")
+
+    recommendation = analysis.recommendation if has_prediction else None
+    handicap_lean = analysis.handicap_lean or None
+    score_hint = analysis.score_hint if has_prediction else None
+    goal_lean = analysis.goal_lean if has_prediction else None
+    both_score_lean = analysis.both_score_lean if has_prediction else None
+    handicap_result = None
+    handicap_hit = None
+    score_hit = None
+    ou_hit = None
+    btts_hit = None
+    result_hit = None
+    single_result_hit = None
+
+    # Finished rows: settle vs frozen snapshot (same path as results list).
+    evaluated = evaluate_fixture_prediction(fixture, stored)
+    if evaluated["evaluable"] and evaluated["has_prediction"]:
+        has_prediction = True
+        recommendation = evaluated["recommendation"]
+        handicap_lean = evaluated["handicap_lean"]
+        score_hint = evaluated["score_hint"]
+        goal_lean = evaluated["goal_lean"]
+        both_score_lean = evaluated["both_score_lean"]
+        handicap_result = evaluated["handicap_result"]
+        handicap_hit = evaluated["handicap_hit"]
+        score_hit = evaluated["score_hit"]
+        ou_hit = evaluated["ou_hit"]
+        btts_hit = evaluated["btts_hit"]
+        result_hit = evaluated["result_hit"]
+        single_result_hit = evaluated["single_result_hit"]
 
     return FavoriteFixtureResponse(
         fixture_id=fixture.id,
@@ -58,11 +89,18 @@ def _to_favorite_response(
         away_goals=fixture.away_goals,
         saved_at=fav.saved_at,
         has_prediction=has_prediction,
-        recommendation=analysis.recommendation if has_prediction else None,
-        handicap_lean=analysis.handicap_lean or None,
-        score_hint=analysis.score_hint if has_prediction else None,
-        goal_lean=analysis.goal_lean if has_prediction else None,
-        both_score_lean=analysis.both_score_lean if has_prediction else None,
+        recommendation=recommendation,
+        handicap_lean=handicap_lean,
+        score_hint=score_hint,
+        goal_lean=goal_lean,
+        both_score_lean=both_score_lean,
+        handicap_result=handicap_result,
+        handicap_hit=handicap_hit,
+        score_hit=score_hit,
+        ou_hit=ou_hit,
+        btts_hit=btts_hit,
+        result_hit=result_hit,
+        single_result_hit=single_result_hit,
         probabilities_available=ready,
         home_win_prob=probs.home_win_prob if ready else None,
         draw_prob=probs.draw_prob if ready else None,

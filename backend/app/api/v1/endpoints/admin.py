@@ -21,7 +21,7 @@ def verify_admin_key(x_admin_key: str | None = Header(default=None)) -> None:
 class TriggerTaskRequest(BaseModel):
     name: str = Field(
         ...,
-        description="任务名称：scheduled_fixtures_sync / midday_fixtures_sync / pre_match_update / capture_results / clean_old_data / train_model",
+        description="任务名称：scheduled_fixtures_sync / pre_match_update / capture_results / clean_old_data / train_model",
     )
 
 

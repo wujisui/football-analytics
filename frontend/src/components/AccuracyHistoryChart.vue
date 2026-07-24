@@ -11,6 +11,7 @@ import { computed } from 'vue'
 import VChart from 'vue-echarts'
 
 import type { AccuracyDayPoint } from '@/api/fixtures'
+import { ACCURACY_COLORS } from '@/utils/accuracyColors'
 
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
 
@@ -48,7 +49,6 @@ function formatAxisTooltip(
 const option = computed(() => {
   const dates = props.series.map((p) => p.date.slice(5)) // MM-DD
   return {
-    color: ['#d03050', '#2080f0', '#f0a020', '#18a058'],
     tooltip: {
       trigger: 'axis',
       formatter: formatAxisTooltip,
@@ -56,7 +56,7 @@ const option = computed(() => {
     legend: {
       top: 4,
       left: 'center',
-      data: ['胜平负', '比分', '大小球', '双方进球'],
+      data: ['胜平负', '让球胜平负', '比分', '大小球', '双方进球'],
     },
     grid: {
       left: 8,
@@ -84,14 +84,28 @@ const option = computed(() => {
         name: '胜平负',
         type: 'line',
         smooth: true,
+        itemStyle: { color: ACCURACY_COLORS.result },
+        lineStyle: { color: ACCURACY_COLORS.result },
         showSymbol: props.series.length <= 14,
         connectNulls: false,
         data: props.series.map((p) => toPct(p.result_rate)),
       },
       {
+        name: '让球胜平负',
+        type: 'line',
+        smooth: true,
+        itemStyle: { color: ACCURACY_COLORS.handicap },
+        lineStyle: { color: ACCURACY_COLORS.handicap },
+        showSymbol: props.series.length <= 14,
+        connectNulls: false,
+        data: props.series.map((p) => toPct(p.handicap_rate)),
+      },
+      {
         name: '比分',
         type: 'line',
         smooth: true,
+        itemStyle: { color: ACCURACY_COLORS.score },
+        lineStyle: { color: ACCURACY_COLORS.score },
         showSymbol: props.series.length <= 14,
         connectNulls: false,
         data: props.series.map((p) => toPct(p.score_rate)),
@@ -100,6 +114,8 @@ const option = computed(() => {
         name: '大小球',
         type: 'line',
         smooth: true,
+        itemStyle: { color: ACCURACY_COLORS.ou },
+        lineStyle: { color: ACCURACY_COLORS.ou },
         showSymbol: props.series.length <= 14,
         connectNulls: false,
         data: props.series.map((p) => toPct(p.ou_rate)),
@@ -108,6 +124,8 @@ const option = computed(() => {
         name: '双方进球',
         type: 'line',
         smooth: true,
+        itemStyle: { color: ACCURACY_COLORS.btts },
+        lineStyle: { color: ACCURACY_COLORS.btts },
         showSymbol: props.series.length <= 14,
         connectNulls: false,
         data: props.series.map((p) => toPct(p.btts_rate)),

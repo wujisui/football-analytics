@@ -27,7 +27,6 @@ from app.services.cache import (
     fixture_cache_key,
     fixture_detail_ttl,
     fixtures_cache_key,
-    fixtures_day_leagues_cache_key,
     fixtures_league_date_cache_key,
     fixtures_league_range_cache_key,
     get_cache_service,
@@ -111,6 +110,37 @@ def ensure_api_key_configured(settings: Settings | None = None) -> str:
     return key
 
 
+def _round_robin_fixture_ids(
+    fixture_ids: list[int],
+    fixtures_by_id: dict[int, Fixture],
+    take: int,
+) -> list[int]:
+    """Fair-share missing odds across leagues so one league isn't starved."""
+    from collections import defaultdict, deque
+
+    if take <= 0 or not fixture_ids:
+        return []
+    buckets: dict[int, deque[int]] = defaultdict(deque)
+    for fid in fixture_ids:
+        fx = fixtures_by_id.get(fid)
+        lid = int(fx.league_id) if fx is not None else 0
+        buckets[lid].append(fid)
+
+    out: list[int] = []
+    while len(out) < take and buckets:
+        empty: list[int] = []
+        for lid, queue in list(buckets.items()):
+            if not queue:
+                empty.append(lid)
+                continue
+            out.append(queue.popleft())
+            if len(out) >= take:
+                break
+        for lid in empty:
+            del buckets[lid]
+    return out
+
+
 class FootballFetcher:
     def __init__(
         self,
@@ -186,50 +216,67 @@ class FootballFetcher:
         ttl: int,
         operation: str,
         fetch_callback: Callable[[httpx.AsyncClient], Awaitable[dict[str, Any]]],
+        *,
+        force: bool = False,
     ) -> dict[str, Any]:
         """Local-first: Redis → SQLite snapshot → official API.
+
+        ``force=True`` skips Redis/SQLite and always hits the official API
+        (used by result capture / sync so finished scores are not stuck on an
+        earlier NS snapshot).
 
         Never cache / re-serve payloads that only contain upstream ``errors``
         (free-plan season blocks, rate limits, etc.) — those must not poison
         later syncs.
         """
-        cached = await self.cache.get(cache_key)
-        if cached is not None and "payload" in cached:
-            cached_payload = cached["payload"]
-            if _api_payload_unusable(cached_payload):
-                logger.warning(
-                    "Dropping unusable cached payload for %s: %s",
-                    cache_key,
-                    _api_payload_errors(cached_payload),
-                )
-                await self.cache.delete(cache_key)
-            else:
-                self.cache.record_hit()
-                logger.info(
-                    "Cache hit for %s (cached at %s)",
-                    cache_key,
-                    cached.get("_cached_at"),
-                )
-                return cached_payload
-
-        if self.settings.LOCAL_FIRST and self.session is not None:
-            async with self._db_lock:
-                store = SnapshotStore(self.session)
-                db_payload = await store.get_valid(cache_key)
-            if db_payload is not None:
-                if _api_payload_unusable(db_payload):
+        if not force:
+            cached = await self.cache.get(cache_key)
+            if cached is not None and "payload" in cached:
+                cached_payload = cached["payload"]
+                if _api_payload_unusable(cached_payload):
                     logger.warning(
-                        "Ignoring unusable snapshot for %s: %s",
+                        "Dropping unusable cached payload for %s: %s",
                         cache_key,
-                        _api_payload_errors(db_payload),
+                        _api_payload_errors(cached_payload),
                     )
+                    await self.cache.delete(cache_key)
                 else:
                     self.cache.record_hit()
-                    await self.cache.set(cache_key, db_payload, ttl)
-                    return db_payload
+                    logger.info(
+                        "Cache hit for %s (cached at %s)",
+                        cache_key,
+                        cached.get("_cached_at"),
+                    )
+                    return cached_payload
+
+            if self.settings.LOCAL_FIRST and self.session is not None:
+                async with self._db_lock:
+                    store = SnapshotStore(self.session)
+                    db_payload = await store.get_valid(cache_key)
+                if db_payload is not None:
+                    if _api_payload_unusable(db_payload):
+                        logger.warning(
+                            "Ignoring unusable snapshot for %s: %s",
+                            cache_key,
+                            _api_payload_errors(db_payload),
+                        )
+                    else:
+                        self.cache.record_hit()
+                        await self.cache.set(cache_key, db_payload, ttl)
+                        return db_payload
+        else:
+            await self.cache.delete(cache_key)
+            if self.session is not None:
+                async with self._db_lock:
+                    store = SnapshotStore(self.session)
+                    await store.invalidate(cache_key)
 
         self.cache.record_miss()
-        logger.info("Cache/DB miss for %s — calling official API", cache_key)
+        logger.info(
+            "%s for %s — calling official API",
+            "Forced refresh" if force else "Cache/DB miss",
+            cache_key,
+        )
         payload = await self._run_with_retry(operation, fetch_callback)
         if _api_payload_unusable(payload):
             logger.warning(
@@ -578,104 +625,6 @@ class FootballFetcher:
             return season
         return str((hint_date or date.today()).year)
 
-    async def discover_playing_leagues_for_date(
-        self,
-        day: date | None = None,
-        *,
-        force: bool = False,
-    ) -> dict[str, Any]:
-        """One worldwide ``fixtures?date=`` → unique leagues playing that day.
-
-        Cached under ``fixtures_day_leagues_cache_key`` so filter extras cost at
-        most ~1 request/day (plus free-plan pagination if any).
-        """
-        target = day or date.today()
-        date_str = target.isoformat()
-        summary_key = fixtures_day_leagues_cache_key(date_str)
-        if force:
-            await self.cache.delete(summary_key)
-
-        cached = await self.cache.get(summary_key)
-        if cached is not None and "payload" in cached and not force:
-            payload = cached["payload"]
-            if isinstance(payload, dict) and payload.get("league_ids") is not None:
-                self.cache.record_hit()
-                return payload
-
-        if self.settings.LOCAL_FIRST and self.session is not None and not force:
-            async with self._db_lock:
-                store = SnapshotStore(self.session)
-                db_payload = await store.get_valid(summary_key)
-            if isinstance(db_payload, dict) and db_payload.get("league_ids") is not None:
-                self.cache.record_hit()
-                await self.cache.set(summary_key, db_payload, TTL_FIXTURES_TODAY)
-                return db_payload
-
-        # Reuse worldwide day fixtures cache when present; else one API call.
-        day_key = fixtures_cache_key(date_str)
-        if force:
-            await self.cache.delete(day_key)
-        try:
-            raw = await self._get_or_fetch(
-                day_key,
-                TTL_FIXTURES_TODAY,
-                "discover_playing_leagues_for_date",
-                lambda client, d=date_str: self.provider.fetch_fixtures_payload(client, d),
-            )
-        except Exception as exc:
-            logger.warning("discover_playing_leagues_for_date %s failed: %s", date_str, exc)
-            return {
-                "date": date_str,
-                "league_ids": [],
-                "leagues": {},
-                "source": "error",
-                "error": str(exc),
-            }
-
-        if _api_payload_unusable(raw):
-            return {
-                "date": date_str,
-                "league_ids": [],
-                "leagues": {},
-                "source": "unavailable",
-                "error": str(_api_payload_errors(raw)),
-            }
-
-        counts: dict[int, int] = {}
-        meta: dict[int, dict[str, Any]] = {}
-        for fx in self.provider.parse_fixtures(raw):
-            try:
-                lid = int(fx["league_id"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            counts[lid] = counts.get(lid, 0) + 1
-            if lid not in meta:
-                meta[lid] = {
-                    "league_id": lid,
-                    "league_name": str(fx.get("league_name") or ""),
-                    "country": fx.get("country"),
-                }
-
-        leagues_out = {
-            str(lid): {
-                **meta[lid],
-                "fixtures_count": counts[lid],
-            }
-            for lid in counts
-        }
-        summary: dict[str, Any] = {
-            "date": date_str,
-            "league_ids": sorted(counts.keys()),
-            "leagues": leagues_out,
-            "source": "api",
-        }
-        await self.cache.set(summary_key, summary, TTL_FIXTURES_TODAY)
-        if self.session is not None:
-            async with self._db_lock:
-                store = SnapshotStore(self.session)
-                await store.save(summary_key, summary, TTL_FIXTURES_TODAY)
-        return summary
-
     async def _fetch_day_worldwide_filtered(
         self,
         day: date,
@@ -687,15 +636,13 @@ class FootballFetcher:
         """Worldwide ``date=``; optionally keep only ``allowed`` league IDs."""
         date_str = day.isoformat()
         cache_key = fixtures_cache_key(date_str)
-        if force:
-            await self.cache.delete(cache_key)
-            await self.invalidate_fixtures_day_cache(date_str)
         try:
             payload = await self._get_or_fetch(
                 cache_key,
                 TTL_FIXTURES_TODAY,
                 "fetch_fixtures_worldwide_day",
                 lambda client, d=date_str: self.provider.fetch_fixtures_payload(client, d),
+                force=force,
             )
             if _api_payload_unusable(payload):
                 logger.warning(
@@ -746,8 +693,6 @@ class FootballFetcher:
             if not allowed:
                 logger.warning("No leagues to fetch for date %s", day.isoformat())
                 return 0
-        if force:
-            await self.invalidate_fixtures_day_cache(day.isoformat())
         saved = await self._fetch_day_worldwide_filtered(
             day,
             allowed,
@@ -835,34 +780,41 @@ class FootballFetcher:
             start, end, force=force, league_ids=league_ids
         )
 
-    async def capture_finished_results(self, lookback_days: int = 3) -> int:
+    async def capture_finished_results(
+        self,
+        lookback_days: int = 3,
+        *,
+        on_days: list[date] | None = None,
+    ) -> int:
         """
         One-shot result backfill for recently kicked-off fixtures still missing FT scores.
 
         Fetches by calendar date (not per-fixture live polling). Safe for quota.
+        ``on_days`` limits capture to those calendar days (e.g. sync window);
+        otherwise uses ``lookback_days`` from today.
         """
         assert self.session is not None
-        from sqlalchemy import or_, select
-
-        now = datetime.utcnow()
-        # Matches usually finish within ~2h of kickoff; wait a bit before capturing.
-        cutoff = now - timedelta(hours=2)
-        start = (now - timedelta(days=max(1, lookback_days))).replace(
-            hour=0, minute=0, second=0, microsecond=0
+        from app.services.results_capture import (
+            results_capture_cutoff,
+            select_stale_pending_fixtures,
         )
+
+        cutoff = results_capture_cutoff()
+        if on_days:
+            day_set = set(on_days)
+            start = datetime.combine(min(day_set), datetime.min.time())
+        else:
+            day_set = None
+            start = (datetime.utcnow() - timedelta(days=max(1, lookback_days))).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
 
         result = await self.session.execute(
-            select(Fixture).where(
-                Fixture.date >= start,
-                Fixture.date <= cutoff,
-                or_(
-                    Fixture.status.in_(["pending", "live"]),
-                    Fixture.home_goals.is_(None),
-                    Fixture.away_goals.is_(None),
-                ),
-            )
+            select_stale_pending_fixtures(start=start, cutoff=cutoff)
         )
         fixtures = list(result.scalars().all())
+        if day_set is not None:
+            fixtures = [fx for fx in fixtures if fx.date.date() in day_set]
         if not fixtures:
             logger.info("capture_finished_results: nothing to update.")
             return 0
@@ -906,9 +858,9 @@ class FootballFetcher:
         return updated
 
     async def _label_match_features_for_finished(self) -> int:
-        """Stamp outcome labels onto stored match_features after FT scores land."""
+        """Stamp 1X2 and goal labels onto frozen pre-match features."""
         assert self.session is not None
-        from sqlalchemy import select
+        from sqlalchemy import or_, select
 
         from app.models.match_feature import MatchFeature
         from app.services.ml_predictor import outcome_label
@@ -920,7 +872,11 @@ class FootballFetcher:
                 Fixture.status == "finished",
                 Fixture.home_goals.is_not(None),
                 Fixture.away_goals.is_not(None),
-                MatchFeature.label.is_(None),
+                or_(
+                    MatchFeature.label.is_(None),
+                    MatchFeature.home_goals_label.is_(None),
+                    MatchFeature.away_goals_label.is_(None),
+                ),
             )
         )
         updated = 0
@@ -928,6 +884,8 @@ class FootballFetcher:
             label = outcome_label(fixture.home_goals, fixture.away_goals)
             if label:
                 feat.label = label
+                feat.home_goals_label = int(fixture.home_goals)
+                feat.away_goals_label = int(fixture.away_goals)
                 updated += 1
         if updated:
             await self.session.commit()
@@ -1134,12 +1092,18 @@ class FootballFetcher:
                 source=pred.source,
             )
             from app.services.ah_predictor import persist_ah_fields
+            from app.services.goal_predictor import persist_goal_features
 
+            await persist_goal_features(
+                self.session,
+                fixture_id,
+                pred.features,
+                odds_pkg,
+            )
             await persist_ah_fields(
                 self.session,
                 fixture_id,
                 package,
-                probs,
                 league_id=fixture.league_id if fixture else None,
             )
             # Ensure TTL freshness sees this write (SQLite onupdate can be flaky).
@@ -1165,11 +1129,11 @@ class FootballFetcher:
         - ``/odds?date=`` only first 3 worldwide pages → misses our leagues.
         - ``/odds?fixture=`` works for open boards.
 
-        Default (scheduler / background): **gap-fill** missing boards only.
-        Force sync (``refresh_existing=True``): also re-pull boards that already
-        exist so afternoon line moves update local 即时盘 **and** recompute 1X2.
+        Default (scheduler / multi-day): gap-fill missing boards within ``budget``.
+        Focused sync (single day or explicit ``league_ids``): fill **all** missing
+        boards for the selected leagues (round-robin so evening leagues are not
+        starved), then optionally refresh existing boards up to ``budget``.
         ``set_opening=True`` (midday job): freeze 初盘 on first available board.
-        Missing fixtures are always prioritized within ``budget``.
         """
         from sqlalchemy import select
 
@@ -1211,6 +1175,7 @@ class FootballFetcher:
 
         missing: list[int] = []
         refreshable: list[int] = []
+        fixtures_by_id = {fx.id: fx for fx in fixtures}
         for fx in fixtures:
             stored = odds_by_fid.get(fx.id)
             odds = loads_json(getattr(stored, "odds_json", None), {}) or {}
@@ -1219,21 +1184,42 @@ class FootballFetcher:
             elif refresh_existing:
                 refreshable.append(fx.id)
 
-        queue = missing + (refreshable if refresh_existing else [])
-        take = min(len(queue), max(1, budget))
+        # Free plan blocks /odds?league=&season= for current seasons, so we still
+        # pull per fixture. Manual/single-day or league-filtered sync must fill
+        # every missing board for the selected leagues — not stop at ``budget``
+        # after only the earliest kickoffs (which starved evening leagues like CSL).
+        focused = len(days) <= 1 or allowed_filter is not None
+        missing_hard_cap = 250
+        if focused:
+            missing_take = min(len(missing), missing_hard_cap)
+        else:
+            missing_take = min(len(missing), max(1, budget))
+        refresh_take = (
+            min(len(refreshable), max(0, budget)) if refresh_existing else 0
+        )
+
+        missing_queue = _round_robin_fixture_ids(
+            missing, fixtures_by_id, missing_take
+        )
+        refresh_queue = refreshable[:refresh_take]
+        queue = missing_queue + refresh_queue
+        take = len(queue)
 
         logger.info(
-            "Odds sync: missing=%s refreshable=%s take=%s/%s pending "
+            "Odds sync: missing=%s refreshable=%s take_missing=%s "
+            "take_refresh=%s/%s pending focused=%s "
             "(refresh_existing=%s set_opening=%s)",
             len(missing),
             len(refreshable),
-            take,
+            len(missing_queue),
+            len(refresh_queue),
             len(fixtures),
+            focused,
             refresh_existing,
             set_opening,
         )
 
-        for index, fixture_id in enumerate(queue[:take]):
+        for index, fixture_id in enumerate(queue):
             try:
                 # Bust Redis odds cache so force refresh never serves a stale board.
                 await self.cache.delete(odds_cache_key(fixture_id))

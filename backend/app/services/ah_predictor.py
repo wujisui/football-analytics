@@ -41,7 +41,6 @@ class HandicapPrediction:
     cover_prob: float
     pick: str  # cover | no_cover | push
     source: str  # ml | multifactor | structural | score_hint
-    reason: str
     line_f: float | None = None
     market_note: str = ""
 
@@ -110,6 +109,9 @@ def load_trained_model() -> tuple[_BinaryLogReg | None, dict[str, Any]]:
         return None, {}
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if meta.get("ah_feature_version") != AH_FEATURE_VERSION:
+            logger.warning("Trained AH model ah_feature_version mismatch; ignoring artifact")
+            return None, meta
         model = _BinaryLogReg.load(weights_path)
         return model, meta
     except Exception as exc:
@@ -155,31 +157,25 @@ def _structural_pick(
     rec = (recommendation or "").strip()
     half_giving = -0.85 <= line_f <= -0.4
     half_receiving = 0.4 <= line_f <= 0.85
-    home_undivided = "主队不败" in rec or rec.startswith("主胜/平")
-    away_undivided = "客队不败" in rec or rec.startswith("客胜/平")
+    home_undivided = rec == "胜/平" or "主队不败" in rec or rec.startswith("主胜/平")
+    away_undivided = rec == "负/平" or "客队不败" in rec or rec.startswith("客胜/平")
 
     if home_undivided and half_giving:
-        return HandicapPrediction(
-            0.35, "no_cover", "structural", "胜平双选+主让半球，平局即输盘", line_f
-        )
+        return HandicapPrediction(0.35, "no_cover", "structural", line_f)
     if home_undivided and half_receiving:
-        return HandicapPrediction(
-            0.72, "cover", "structural", "胜平双选+主受让半球，平局即赢盘", line_f
-        )
+        return HandicapPrediction(0.72, "cover", "structural", line_f)
     if away_undivided and half_receiving:
-        return HandicapPrediction(0.68, "cover", "structural", "客不败双选+主受让半球", line_f)
+        return HandicapPrediction(0.68, "cover", "structural", line_f)
     if away_undivided and half_giving:
-        return HandicapPrediction(
-            0.32, "no_cover", "structural", "客不败双选+主让半球，平局即输盘", line_f
-        )
-    if rec == "客胜" and half_receiving:
-        return HandicapPrediction(0.28, "no_cover", "structural", "客胜+主受让半球", line_f)
-    if rec == "客胜" and half_giving:
-        return HandicapPrediction(0.25, "no_cover", "structural", "客胜+主让半球", line_f)
-    if rec == "平局" and half_giving:
-        return HandicapPrediction(0.30, "no_cover", "structural", "平局+主让半球", line_f)
-    if rec == "平局" and half_receiving:
-        return HandicapPrediction(0.70, "cover", "structural", "", line_f)
+        return HandicapPrediction(0.32, "no_cover", "structural", line_f)
+    if rec in {"负", "客胜"} and half_receiving:
+        return HandicapPrediction(0.28, "no_cover", "structural", line_f)
+    if rec in {"负", "客胜"} and half_giving:
+        return HandicapPrediction(0.25, "no_cover", "structural", line_f)
+    if rec in {"平", "平局"} and half_giving:
+        return HandicapPrediction(0.30, "no_cover", "structural", line_f)
+    if rec in {"平", "平局"} and half_receiving:
+        return HandicapPrediction(0.70, "cover", "structural", line_f)
     return None
 
 
@@ -191,11 +187,11 @@ def _pick_from_score_hint(score_hint: str | None, line_f: float) -> HandicapPred
     home_g, away_g = scores[0]
     label = settle_ah_label(home_g, away_g, line_f)
     if label == "cover":
-        return HandicapPrediction(0.68, "cover", "score_hint", "", line_f)
+        return HandicapPrediction(0.68, "cover", "score_hint", line_f)
     if label == "no_cover":
-        return HandicapPrediction(0.32, "no_cover", "score_hint", "", line_f)
+        return HandicapPrediction(0.32, "no_cover", "score_hint", line_f)
     if label == "push":
-        return HandicapPrediction(0.5, "push", "score_hint", "", line_f)
+        return HandicapPrediction(0.5, "push", "score_hint", line_f)
     return None
 
 
@@ -220,32 +216,11 @@ def _market_water_note(ah_features: dict[str, float], score_pick: str) -> str:
     )
 
 
-def _build_reason(
-    pick: str,
-    cover_prob: float,
-    *,
-    source: str,
-    n_trained: int,
-    threshold: int,
-) -> str:
-    """Internal detail copy only; list/card uses ``format_handicap_lean`` without this."""
-    if pick == "push":
-        return "走盘"
-    pct = int(round(cover_prob * 100)) if pick == "cover" else int(round((1 - cover_prob) * 100))
-    side = "主队赢盘" if pick == "cover" else "主队输盘"
-    prefix = "模型" if source == "ml" else "估算"
-    text = f"{prefix}{side} {pct}%"
-    if source == "multifactor" and n_trained < threshold:
-        text += f"（让球模型积累中，需≥{threshold}场）"
-    return text
-
-
 def predict_handicap(
     odds: dict[str, Any] | None,
     recommendation: str | None,
     *,
     package: dict[str, Any] | None = None,
-    probs_1x2: dict[str, float] | None = None,
     league_id: int | None = None,
     ah_features: dict[str, float] | None = None,
     features: dict[str, float] | None = None,
@@ -257,7 +232,7 @@ def predict_handicap(
         pkg = {**pkg, "odds": odds}
 
     if ah_features is None:
-        ah_features, line_f, _, _ = build_ah_features(pkg, probs_1x2, league_id=league_id)
+        ah_features, line_f, _, _ = build_ah_features(pkg, league_id=league_id)
     else:
         line_f, _, _ = extract_main_ah_line(pkg.get("odds") if isinstance(pkg.get("odds"), dict) else odds)
 
@@ -294,42 +269,13 @@ def predict_handicap(
         source = "multifactor"
 
     pick = "cover" if cover_prob >= 0.5 else "no_cover"
-    reason = _build_reason(
-        pick, cover_prob, source=source, n_trained=n_trained, threshold=threshold
-    )
-
-    return HandicapPrediction(cover_prob, pick, source, reason, line_f)
+    return HandicapPrediction(cover_prob, pick, source, line_f)
 
 
-def format_handicap_lean(pred: HandicapPrediction, *, verbose: bool = False) -> str:
+def format_handicap_lean(pred: HandicapPrediction) -> str:
     """Product default: pick + main line only (fits list tag)."""
     line_label = format_ah_line(pred.line_f) if pred.line_f is not None else "?"
-    text = f"{pick_to_lean(pred.pick)}（{line_label}）"
-    if verbose and (pred.reason or "").strip():
-        text += f" · {pred.reason.strip()}"
-    return text
-
-
-def handicap_lean_from_markets(
-    odds: dict[str, Any] | None,
-    recommendation: str | None = None,
-    *,
-    package: dict[str, Any] | None = None,
-    probs_1x2: dict[str, float] | None = None,
-    league_id: int | None = None,
-    features: dict[str, float] | None = None,
-    score_hint: str | None = None,
-) -> str:
-    lean, _ = handicap_bundle_from_markets(
-        odds,
-        recommendation,
-        package=package,
-        probs_1x2=probs_1x2,
-        league_id=league_id,
-        features=features,
-        score_hint=score_hint,
-    )
-    return lean
+    return f"{pick_to_lean(pred.pick)}（{line_label}）"
 
 
 def handicap_bundle_from_markets(
@@ -337,7 +283,6 @@ def handicap_bundle_from_markets(
     recommendation: str | None = None,
     *,
     package: dict[str, Any] | None = None,
-    probs_1x2: dict[str, float] | None = None,
     league_id: int | None = None,
     features: dict[str, float] | None = None,
     score_hint: str | None = None,
@@ -364,7 +309,6 @@ def handicap_bundle_from_markets(
         odds,
         recommendation,
         package=pkg,
-        probs_1x2=probs_1x2,
         league_id=league_id,
         features=features,
         score_hint=score_hint,
@@ -437,23 +381,22 @@ async def persist_ah_fields(
     session: Any,
     fixture_id: int,
     package: dict[str, Any] | None,
-    probs_1x2: dict[str, float] | None,
     *,
     league_id: int | None = None,
     label: str | None = None,
+    force: bool = False,
 ) -> None:
     from sqlalchemy import select
 
     from app.models.match_feature import MatchFeature
 
     ah_features, line_f, home_f, away_f = build_ah_features(
-        package, probs_1x2, league_id=league_id
+        package, league_id=league_id
     )
     pred = predict_handicap(
         (package or {}).get("odds") if isinstance((package or {}).get("odds"), dict) else None,
         None,
         package=package,
-        probs_1x2=probs_1x2,
         league_id=league_id,
         ah_features=ah_features,
     )
@@ -477,6 +420,15 @@ async def persist_ah_fields(
     if label:
         payload["ah_label"] = label
 
+    frozen_ah_keys = frozenset(
+        {
+            "ah_feature_version",
+            "ah_features_json",
+            "ah_line",
+            "ah_home_odd",
+            "ah_away_odd",
+        }
+    )
     if row is None:
         base = extract_features(package or {})
         session.add(
@@ -488,6 +440,8 @@ async def persist_ah_fields(
             )
         )
     else:
+        if not force and row.ah_features_json:
+            payload = {k: v for k, v in payload.items() if k not in frozen_ah_keys}
         for key, value in payload.items():
             setattr(row, key, value)
 
@@ -545,15 +499,7 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
             pkg = package_from_record(stored) or {
                 "odds": loads_json(stored.odds_json, {"available": False}),
             }
-            _, line_f, _, _ = build_ah_features(
-                pkg,
-                {
-                    "home": feat.home_win_prob or 1 / 3,
-                    "draw": feat.draw_prob or 1 / 3,
-                    "away": feat.away_win_prob or 1 / 3,
-                },
-                league_id=fixture.league_id,
-            )
+            _, line_f, _, _ = build_ah_features(pkg, league_id=fixture.league_id)
         label = settle_ah_label(fixture.home_goals, fixture.away_goals, line_f)
         if label not in TRAIN_LABELS:
             continue
@@ -564,13 +510,7 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
                 "odds": loads_json(stored.odds_json, {"available": False}),
             }
             features, _, _, _ = build_ah_features(
-                pkg,
-                {
-                    "home": feat.home_win_prob or 1 / 3,
-                    "draw": feat.draw_prob or 1 / 3,
-                    "away": feat.away_win_prob or 1 / 3,
-                },
-                league_id=fixture.league_id,
+                pkg, league_id=fixture.league_id
             )
         else:
             continue
@@ -611,31 +551,26 @@ async def backfill_ah_features(session: Any) -> int:
             "standings": loads_json(stored.standings_json, {}),
             "injuries": loads_json(stored.injuries_json, {}),
         }
-        probs = {
-            "home": feat.home_win_prob or stored.home_win_prob or 1 / 3,
-            "draw": feat.draw_prob or stored.draw_prob or 1 / 3,
-            "away": feat.away_win_prob or stored.away_win_prob or 1 / 3,
-        }
         label = None
         if fixture.status == "finished" and fixture.home_goals is not None:
             ah_features, line_f, _, _ = build_ah_features(
-                package, probs, league_id=fixture.league_id
+                package, league_id=fixture.league_id
             )
             settled = settle_ah_label(fixture.home_goals, fixture.away_goals, line_f)
             if settled in TRAIN_LABELS:
                 label = settled
         else:
             ah_features, _, _, _ = build_ah_features(
-                package, probs, league_id=fixture.league_id
+                package, league_id=fixture.league_id
             )
 
         await persist_ah_fields(
             session,
             fixture.id,
             package,
-            probs,
             league_id=fixture.league_id,
             label=label,
+            force=True,
         )
         updated += 1
 

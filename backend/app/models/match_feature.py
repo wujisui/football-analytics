@@ -43,6 +43,11 @@ class MatchFeature(Base):
     ah_cover_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
     ah_model_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     ah_feature_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Goal-distribution model inputs/labels, frozen before kickoff.
+    goal_features_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    goal_feature_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    home_goals_label: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_goals_label: Mapped[int | None] = mapped_column(Integer, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),

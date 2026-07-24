@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import type { FixtureResponse } from '@/api/types'
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import FixtureCard from '@/components/FixtureCard.vue'
+import type { DetailFrom } from '@/utils/detailNav'
 import { formatDate, toLocalDayKey } from '@/utils/format'
 
 const props = withDefaults(
@@ -14,8 +15,10 @@ const props = withDefaults(
     mode?: 'full' | 'prediction'
     /** Date section bands (07/17 周五); off for single-day home list. */
     groupByDay?: boolean
+    from?: DetailFrom
+    date?: string | null
   }>(),
-  { mode: 'full', groupByDay: true },
+  { mode: 'full', groupByDay: true, from: 'home', date: null },
 )
 
 type DayGroup = {
@@ -85,6 +88,8 @@ const dayGroups = computed((): DayGroup[] => {
               v-for="fixture in group.fixtures"
               :key="fixture.fixture_id"
               :fixture="fixture"
+              :from="from"
+              :date="date"
             />
           </template>
         </n-space>
@@ -105,6 +110,8 @@ const dayGroups = computed((): DayGroup[] => {
           v-for="fixture in fixtures"
           :key="fixture.fixture_id"
           :fixture="fixture"
+          :from="from"
+          :date="date"
         />
       </template>
     </n-space>

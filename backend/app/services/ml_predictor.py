@@ -1,14 +1,10 @@
-"""1X2 probability model: multi-factor heuristic + optional trained logistic.
+"""1X2 probability model: market baseline + optional trained logistic.
 
-Design goals
-------------
-- While labeled samples are scarce (``source=multifactor``), **odds are a strong
-  prior**: bookmakers are not charities; the board aggregates information.
-  Match-fixing / one-off shocks exist but are not the base rate for every game.
-- Form, H2H, ranks, injuries, and streak / mean-reversion still matter; odds
-  should not be the *only* driver, but they must move the output when lines shift.
-- When enough labeled ``match_features`` rows exist, fit multinomial logistic
-  regression and prefer it; learned weights then replace these hand constants.
+Inference priority
+------------------
+1. ``source=ml`` when artifact is deployable (beats market holdout)
+2. ``source=market_baseline`` when odds exist but ML is not deployable
+3. ``source=multifactor`` / ``form_fallback`` when odds or form are thin
 """
 
 from __future__ import annotations
@@ -31,6 +27,7 @@ from app.services.features import (
     loads_features,
     softmax3,
 )
+from app.services.prediction import normalize_probabilities
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +52,9 @@ _W_DRAW_BASE = 0.05
 @dataclass
 class ProbabilityPrediction:
     probs: dict[str, float]
-    source: str  # "ml" | "multifactor" | "form_fallback"
+    source: str  # "ml" | "market_baseline" | "multifactor" | "form_fallback"
     features: dict[str, float]
     feature_version: str = FEATURE_VERSION
-
-
-def normalize_probabilities(probs: dict[str, float]) -> dict[str, float]:
-    total = sum(max(float(v), 0.0) for v in probs.values())
-    if total <= 0:
-        return {"home": DEFAULT_PROB, "draw": DEFAULT_PROB, "away": DEFAULT_PROB}
-    return {k: max(float(v), 0.0) / total for k, v in probs.items()}
 
 
 def multifactor_probabilities(features: dict[str, float]) -> dict[str, float]:
@@ -136,9 +126,12 @@ class _SoftmaxLogReg:
         rng = np.random.default_rng(seed)
         self.W = rng.normal(0, 0.01, size=(n_classes, n_features))
         self.b = np.zeros(n_classes)
+        self.mean = np.zeros(n_features)
+        self.scale = np.ones(n_features)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        logits = X @ self.W.T + self.b
+        Xs = (X - self.mean) / self.scale
+        logits = Xs @ self.W.T + self.b
         logits = logits - logits.max(axis=1, keepdims=True)
         exp = np.exp(logits)
         return exp / exp.sum(axis=1, keepdims=True)
@@ -152,6 +145,10 @@ class _SoftmaxLogReg:
         lr: float = 0.08,
         l2: float = 0.02,
     ) -> dict[str, float]:
+        self.mean = X.mean(axis=0)
+        self.scale = X.std(axis=0)
+        self.scale[self.scale < 1e-6] = 1.0
+        Xs = (X - self.mean) / self.scale
         n = X.shape[0]
         history: dict[str, float] = {}
         for epoch in range(epochs):
@@ -160,7 +157,7 @@ class _SoftmaxLogReg:
             Y = np.zeros_like(probs)
             Y[np.arange(n), y] = 1.0
             grad_logits = (probs - Y) / n
-            grad_W = grad_logits.T @ X + l2 * self.W
+            grad_W = grad_logits.T @ Xs + l2 * self.W
             grad_b = grad_logits.sum(axis=0)
             self.W -= lr * grad_W
             self.b -= lr * grad_b
@@ -172,7 +169,13 @@ class _SoftmaxLogReg:
         return history
 
     def save(self, path: Path) -> None:
-        np.savez_compressed(path, W=self.W, b=self.b)
+        np.savez_compressed(
+            path,
+            W=self.W,
+            b=self.b,
+            mean=self.mean,
+            scale=self.scale,
+        )
 
     @classmethod
     def load(cls, path: Path) -> "_SoftmaxLogReg":
@@ -180,6 +183,9 @@ class _SoftmaxLogReg:
         obj = cls(n_features=data["W"].shape[1], n_classes=data["W"].shape[0])
         obj.W = data["W"]
         obj.b = data["b"]
+        if "mean" in data and "scale" in data:
+            obj.mean = data["mean"]
+            obj.scale = data["scale"]
         return obj
 
 
@@ -215,23 +221,41 @@ def min_train_samples() -> int:
         return MIN_TRAIN_SAMPLES
 
 
-def predict_probabilities(package: dict[str, Any] | None) -> ProbabilityPrediction:
-    """Primary inference: trained model when ready, else multi-factor.
+def _has_market_odds(features: dict[str, float]) -> bool:
+    """Only odds-backed rows belong in the trained 1X2 market model."""
+    return float(features.get("has_odds", 0.0)) > 0
 
-    Switch rule: if ``data/models/1x2_*.`` exists and was trained on
-    ``>= ML_MIN_TRAIN_SAMPLES`` labeled rows, use ``source=ml``; otherwise
-    ``multifactor`` (or flat prior). No manual toggle required.
-    """
+
+def predict_probabilities(package: dict[str, Any] | None) -> ProbabilityPrediction:
+    """Primary inference: deployable ML → market baseline → multifactor."""
     features = extract_features(package)
     model, meta = load_trained_model()
     threshold = min_train_samples()
-    if model is not None and int(meta.get("n_samples", 0)) >= threshold:
+    if (
+        _has_market_odds(features)
+        and model is not None
+        and int(meta.get("n_samples", 0)) >= threshold
+        and bool(meta.get("deployable", False))
+    ):
         X = np.asarray([feature_vector(features)], dtype=np.float64)
         proba = model.predict_proba(X)[0]
         probs = normalize_probabilities(
             {"home": float(proba[0]), "draw": float(proba[1]), "away": float(proba[2])}
         )
         return ProbabilityPrediction(probs=probs, source="ml", features=features)
+
+    if _has_market_odds(features):
+        return ProbabilityPrediction(
+            probs=normalize_probabilities(
+                {
+                    "home": features["odds_home"],
+                    "draw": features["odds_draw"],
+                    "away": features["odds_away"],
+                }
+            ),
+            source="market_baseline",
+            features=features,
+        )
 
     pkg = package or {}
     home_played = int((pkg.get("home_form") or {}).get("played") or 0) if isinstance(pkg.get("home_form"), dict) else 0
@@ -291,11 +315,64 @@ def train_from_rows(
 
     train_m = _metrics(X_train, y_train)
     val_m = _metrics(X_val, y_val) if len(y_val) else train_m
+    odds_indices = [FEATURE_NAMES.index(name) for name in ("odds_home", "odds_draw", "odds_away")]
+
+    def _market_metrics(Xm: np.ndarray, ym: np.ndarray) -> dict[str, float]:
+        market = Xm[:, odds_indices]
+        market = market / np.clip(market.sum(axis=1, keepdims=True), 1e-9, None)
+        eps = 1e-9
+        return {
+            "log_loss": float(
+                -np.mean(np.log(market[np.arange(len(ym)), ym] + eps))
+            ),
+            "accuracy": float(np.mean(np.argmax(market, axis=1) == ym)),
+        }
+
+    market_val_m = _market_metrics(X_val, y_val) if len(y_val) else _market_metrics(X_train, y_train)
+    eval_X = X_val if len(y_val) else X_train
+    eval_y = y_val if len(y_val) else y_train
+    model_eval_probs = model.predict_proba(eval_X)
+    market_eval_probs = eval_X[:, odds_indices]
+    market_eval_probs = market_eval_probs / np.clip(
+        market_eval_probs.sum(axis=1, keepdims=True), 1e-9, None
+    )
+
+    def _confidence_bins(probs: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
+        confidence = probs.max(axis=1)
+        predicted = probs.argmax(axis=1)
+        bins = {
+            "low": (0.0, 0.45),
+            "medium": (0.45, 0.60),
+            "high": (0.60, 1.01),
+        }
+        out: dict[str, Any] = {}
+        for name, (lower, upper) in bins.items():
+            mask = (confidence >= lower) & (confidence < upper)
+            count = int(mask.sum())
+            out[name] = {
+                "count": count,
+                "accuracy": (
+                    float(np.mean(predicted[mask] == labels[mask])) if count else None
+                ),
+                "avg_confidence": float(np.mean(confidence[mask])) if count else None,
+            }
+        return out
+
+    confidence_metrics = {
+        "model": _confidence_bins(model_eval_probs, eval_y),
+        "market": _confidence_bins(market_eval_probs, eval_y),
+    }
+    majority_class = int(np.bincount(y_train, minlength=3).argmax())
+    majority_accuracy = float(np.mean(y_val == majority_class)) if len(y_val) else float(
+        np.mean(y_train == majority_class)
+    )
+    deployable = val_m["log_loss"] < market_val_m["log_loss"]
 
     # Refit on all data for deployment.
-    model.fit(X, y, epochs=500)
+    final_model = _SoftmaxLogReg(n_features=X.shape[1])
+    final_model.fit(X, y, epochs=500)
     weights_path, meta_path = model_paths()
-    model.save(weights_path)
+    final_model.save(weights_path)
     meta = {
         "feature_version": FEATURE_VERSION,
         "feature_names": FEATURE_NAMES,
@@ -303,6 +380,10 @@ def train_from_rows(
         "min_train_samples": threshold,
         "train_metrics": train_m,
         "val_metrics": val_m,
+        "market_val_metrics": market_val_m,
+        "confidence_metrics": confidence_metrics,
+        "majority_val_accuracy": majority_accuracy,
+        "deployable": deployable,
         "fit_history": history,
         "classes": ["home", "draw", "away"],
         "trained_at": __import__("datetime").datetime.now(
@@ -311,10 +392,11 @@ def train_from_rows(
     }
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info(
-        "Trained 1X2 model n=%s val_logloss=%s val_acc=%s → inference will use source=ml",
+        "Trained 1X2 model n=%s val_logloss=%s market_logloss=%s deployable=%s",
         n,
         val_m.get("log_loss"),
-        val_m.get("accuracy"),
+        market_val_m.get("log_loss"),
+        deployable,
     )
     return {"ok": True, **meta, "weights_path": str(weights_path)}
 
@@ -336,6 +418,7 @@ async def persist_match_features(
     probs: dict[str, float],
     source: str,
     label: str | None = None,
+    force: bool = False,
 ) -> None:
     """Upsert match_features row (does not commit)."""
     from sqlalchemy import select
@@ -351,7 +434,6 @@ async def persist_match_features(
     )
     row = result.scalar_one_or_none()
     payload = {
-        "features_json": dumps_features(features),
         "model_source": source,
         "home_win_prob": probs.get("home"),
         "draw_prob": probs.get("draw"),
@@ -364,10 +446,13 @@ async def persist_match_features(
             MatchFeature(
                 fixture_id=fixture_id,
                 feature_version=FEATURE_VERSION,
+                features_json=dumps_features(features),
                 **payload,
             )
         )
     else:
+        if force or not (row.features_json or "").strip():
+            payload["features_json"] = dumps_features(features)
         for key, value in payload.items():
             setattr(row, key, value)
 
@@ -401,6 +486,8 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
         if not label:
             continue
         features = loads_features(feat.features_json)
+        if not _has_market_odds(features):
+            continue
         rows.append((features, label))
         seen.add(fixture.id)
 
@@ -433,6 +520,8 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
         if not label:
             continue
         features = extract_features(package)
+        if not _has_market_odds(features):
+            continue
         rows.append((features, label))
         # Persist for next train / cleanup survival
         await persist_match_features(
@@ -446,6 +535,7 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
             },
             source="backfill",
             label=label,
+            force=True,
         )
         seen.add(fixture.id)
 
@@ -462,8 +552,7 @@ async def maybe_auto_train_model(session: Any | None = None) -> dict[str, Any]:
     """Retrain when local labeled rows grew past the threshold / last fit.
 
     Intended to run after ``capture_finished_results`` labels new FT outcomes.
-    Until the threshold is met, returns skipped and inference stays multifactor.
-    Once a model is written, ``predict_probabilities`` automatically uses it.
+    Until deployable, odds-backed fixtures use ``market_baseline`` inference.
     """
     settings = get_settings()
     if not settings.ML_AUTO_TRAIN:
@@ -478,7 +567,7 @@ async def maybe_auto_train_model(session: Any | None = None) -> dict[str, Any]:
 
         if n < threshold:
             logger.info(
-                "ML auto-train skipped: labeled=%s < threshold=%s (keep multifactor)",
+                "ML auto-train skipped: labeled=%s < threshold=%s (keep market_baseline)",
                 n,
                 threshold,
             )
@@ -488,7 +577,7 @@ async def maybe_auto_train_model(session: Any | None = None) -> dict[str, Any]:
                 "reason": "below_threshold",
                 "n_samples": n,
                 "min_train_samples": threshold,
-                "inference": "multifactor",
+                "inference": "market_baseline",
             }
 
         if prev_n > 0 and n <= prev_n:
@@ -503,7 +592,9 @@ async def maybe_auto_train_model(session: Any | None = None) -> dict[str, Any]:
                 "reason": "no_new_labels",
                 "n_samples": n,
                 "last_trained_n": prev_n,
-                "inference": "ml",
+                "inference": (
+                    "ml" if bool(meta.get("deployable", False)) else "market_baseline"
+                ),
             }
 
         result = train_from_rows(rows)
@@ -526,16 +617,23 @@ def model_status() -> dict[str, Any]:
     threshold = min_train_samples()
     model, meta = load_trained_model()
     ready = model is not None and int(meta.get("n_samples", 0)) >= threshold
+    deployable = ready and bool(meta.get("deployable", False))
+    if deployable:
+        inference_mode = "ml"
+    elif ready:
+        inference_mode = "market_baseline"
+    else:
+        inference_mode = "multifactor"
     return {
-        "inference_mode": "ml" if ready else "multifactor",
+        "inference_mode": inference_mode,
         "min_train_samples": threshold,
         "trained_n_samples": int(meta.get("n_samples", 0)) if meta else 0,
         "artifact_ready": ready,
+        "deployable": deployable,
+        "val_metrics": meta.get("val_metrics") if meta else None,
+        "market_val_metrics": meta.get("market_val_metrics") if meta else None,
+        "confidence_metrics": meta.get("confidence_metrics") if meta else None,
         "feature_version": FEATURE_VERSION,
         "trained_at": meta.get("trained_at") if meta else None,
     }
 
-
-def label_finished_features(session_sync_note: str = "") -> None:
-    """Placeholder for sync helpers; async path uses outcome_label."""
-    _ = session_sync_note

@@ -73,9 +73,17 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     saved_at: new Date().toISOString(),
     has_prediction: hasPrediction,
     recommendation: fixture.recommendation ?? undefined,
+    handicap_lean: fixture.handicap_lean ?? undefined,
     score_hint: fixture.score_hint ?? undefined,
     goal_lean: fixture.goal_lean ?? undefined,
     both_score_lean: fixture.both_score_lean ?? undefined,
+    handicap_result: fixture.handicap_result,
+    handicap_hit: fixture.handicap_hit,
+    score_hit: fixture.score_hit,
+    ou_hit: fixture.ou_hit,
+    btts_hit: fixture.btts_hit,
+    result_hit: fixture.result_hit,
+    single_result_hit: fixture.single_result_hit,
   }
 }
 

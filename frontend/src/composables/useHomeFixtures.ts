@@ -2,7 +2,7 @@ import { ref } from 'vue'
 
 import { fetchTodayFixtures } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
-import { oddsSnippetFromFixture } from '@/utils/oddsDisplay'
+import { mergeDetailIntoListFixture } from '@/utils/oddsDisplay'
 import { todayDate } from '@/utils/homeDateStrip'
 
 export { todayDate }
@@ -34,20 +34,6 @@ function cacheFresh(date: string, days: number): boolean {
   )
 }
 
-function mergeDetailIntoFixture(
-  prev: FixtureResponse,
-  detail: FixtureResponse,
-): FixtureResponse {
-  const snippet = oddsSnippetFromFixture(detail) ?? prev.odds_snippet
-  return {
-    ...prev,
-    home_rank: detail.home_rank ?? prev.home_rank,
-    away_rank: detail.away_rank ?? prev.away_rank,
-    odds_snippet: snippet,
-    analysis: detail.analysis ?? prev.analysis,
-  }
-}
-
 function applyPendingPatches(): void {
   if (!pendingDetailPatches.size || !allFixtures.value.length) return
 
@@ -57,7 +43,7 @@ function applyPendingPatches(): void {
     const idx = rows.findIndex((f) => f.fixture_id === fixtureId)
     if (idx < 0) continue
     rows = rows.map((row, i) =>
-      i === idx ? mergeDetailIntoFixture(row, detail) : row,
+      i === idx ? mergeDetailIntoListFixture(row, detail) : row,
     )
     pendingDetailPatches.delete(fixtureId)
     changed = true
@@ -77,7 +63,7 @@ export function patchFixtureFromDetail(detail: FixtureResponse): void {
   if (idx < 0) return
 
   allFixtures.value = allFixtures.value.map((row, i) =>
-    i === idx ? mergeDetailIntoFixture(row, detail) : row,
+    i === idx ? mergeDetailIntoListFixture(row, detail) : row,
   )
   pendingDetailPatches.delete(detail.fixture_id)
 }

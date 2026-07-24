@@ -206,7 +206,7 @@ class AnalysisResponse(BaseModel):
     confidence: str = Field(..., description="置信度：高/中/低")
     recommendation: str = Field(
         ...,
-        description="推荐：主胜/平局/客胜，或双选主胜/平等；待分析表示尚无模型输出",
+        description="推荐：胜/平/负，或双选胜/平、负/平；待分析表示尚无模型输出",
     )
     goal_lean: str = Field(default="", description="大小球倾向（相对主盘）")
     both_score_lean: str = Field(default="", description="双方进球倾向")
@@ -317,16 +317,24 @@ class ResultFixtureResponse(BaseModel):
     et_away_goals: int | None = Field(default=None, description="加时结束比分（通常含 90'）客")
     pen_home: int | None = Field(default=None, description="点球大战主队")
     pen_away: int | None = Field(default=None, description="点球大战客队")
-    # Pre-match prediction snapshot (recomputed from stored probs + odds)
+    # Frozen pre-match prediction snapshot + result settlement.
     has_prediction: bool = False
     recommendation: str | None = None
     score_hint: str | None = None
     goal_lean: str | None = None
     both_score_lean: str | None = None
+    handicap_lean: str | None = Field(default=None, description="冻结的赛前让球推荐")
+    handicap_result: str | None = Field(
+        default=None, description="按常规时间比分及赛前盘口结算的让球胜/平/负"
+    )
+    handicap_hit: bool | None = Field(default=None, description="让球推荐是否命中")
     score_hit: bool | None = None
     ou_hit: bool | None = None
     btts_hit: bool | None = None
     result_hit: bool | None = None
+    single_result_hit: bool | None = Field(
+        default=None, description="最高概率胜平负单选是否命中"
+    )
 
     @field_serializer("fixture_date")
     def serialize_fixture_date(self, value: datetime) -> str:
@@ -353,6 +361,14 @@ class FavoriteFixtureResponse(BaseModel):
     score_hint: str | None = None
     goal_lean: str | None = None
     both_score_lean: str | None = None
+    # Finished settlement (same flags as results list); null while not evaluable.
+    handicap_result: str | None = None
+    handicap_hit: bool | None = None
+    score_hit: bool | None = None
+    ou_hit: bool | None = None
+    btts_hit: bool | None = None
+    result_hit: bool | None = None
+    single_result_hit: bool | None = None
     probabilities_available: bool = False
     home_win_prob: float | None = None
     draw_prob: float | None = None
@@ -383,10 +399,16 @@ class ResultsAccuracyResponse(BaseModel):
     result: AccuracyStatResponse = Field(
         default_factory=AccuracyStatResponse, description="胜平负命中（含双选）"
     )
+    single_result: AccuracyStatResponse = Field(
+        default_factory=AccuracyStatResponse, description="最高概率胜平负单选命中"
+    )
     score: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse, description="比分命中")
     ou: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse, description="大小球命中")
     btts: AccuracyStatResponse = Field(
         default_factory=AccuracyStatResponse, description="双方进球命中"
+    )
+    handicap: AccuracyStatResponse = Field(
+        default_factory=AccuracyStatResponse, description="让球胜平负推荐命中"
     )
     fixtures_with_prediction: int = 0
     fixtures_finished: int = 0
@@ -398,10 +420,12 @@ class AccuracyDayPointResponse(BaseModel):
     score_rate: float | None = None
     ou_rate: float | None = None
     btts_rate: float | None = None
+    handicap_rate: float | None = None
     result: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     score: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     ou: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     btts: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
+    handicap: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     fixtures_with_prediction: int = 0
     fixtures_finished: int = 0
 
@@ -423,26 +447,11 @@ class ResultsResponse(BaseModel):
 
 
 class SyncFixturesResponse(BaseModel):
-    status: str = Field(
-        ...,
-        description="ok | accepted | running — accepted/running 表示后台任务",
-    )
+    status: str = Field(..., description="ok")
     fixtures_saved: int = Field(default=0, description="写入/更新的场次数")
     days: int = Field(default=1, description="同步窗口天数")
     date: str | None = Field(default=None, description="单日同步时的日期")
     message: str = Field(default="")
-
-
-class SyncFixturesStatusResponse(BaseModel):
-    running: bool = Field(default=False, description="是否有后台同步进行中")
-    last_status: str | None = Field(
-        default=None,
-        description="最近一次后台同步结果：ok | failed",
-    )
-    last_message: str = Field(default="", description="最近一次同步说明")
-    last_error: str | None = Field(default=None, description="失败时的错误信息")
-    fixtures_saved: int = Field(default=0, description="最近一次写入场次数")
-    finished_at: str | None = Field(default=None, description="最近一次完成时间 ISO8601")
 
 
 class LeagueCatalogItemResponse(BaseModel):
@@ -476,15 +485,11 @@ class LeagueFilterOptionResponse(BaseModel):
     fixtures_count: int = Field(0, description="当日场次（发现或本地）")
     tier: Literal["configured", "extra"] = Field(
         ...,
-        description="configured=leagues.json 显示名；extra=API 当日发现的其他联赛",
+        description="configured=默认顶级/洲际目录；extra=可选次级/其他目录",
     )
     default_checked: bool = Field(
         ...,
-        description="筛选弹层默认勾选（当日 API 联赛全部默认勾选）",
-    )
-    locally_loaded: bool = Field(
-        False,
-        description="本地库当日是否已有该联赛赛程",
+        description="筛选弹层默认勾选",
     )
 
 
@@ -492,15 +497,6 @@ class LeagueFilterOptionsResponse(BaseModel):
     date: str = Field(..., description="统计日 YYYY-MM-DD（先做「今天」）")
     configured: list[LeagueFilterOptionResponse] = Field(default_factory=list)
     extra: list[LeagueFilterOptionResponse] = Field(default_factory=list)
-    catalog: list[LeagueCatalogItemResponse] = Field(
-        default_factory=list,
-        description="完整 leagues.json 目录（供强制刷新回退，避免再调 /catalog）",
-    )
-    discovery_source: str = Field(
-        default="local",
-        description="api|cache|local|unavailable|error",
-    )
-    message: str | None = Field(default=None)
 
 
 class LeaguesListResponse(BaseModel):
@@ -547,15 +543,28 @@ def analysis_to_response(analysis) -> AnalysisResponse:
     frozen = bool(getattr(analysis, "leans_frozen", False))
     if frozen:
         recommendation = analysis.recommendation or "待分析"
-        goal_lean = getattr(analysis, "goal_lean", None) or "大小球：待分析"
-        both_score_lean = getattr(analysis, "both_score_lean", None) or "双方进球：待分析"
-        score_hint = getattr(analysis, "score_hint", None) or "待分析"
-        from app.services.prediction import resolve_handicap_bundle
+        from app.services.prediction import (
+            canonical_btts_lean,
+            canonical_goal_lean,
+            canonical_recommendation,
+            canonical_score_hint,
+            resolve_handicap_bundle,
+        )
+
+        recommendation = canonical_recommendation(recommendation)
+        goal_lean = canonical_goal_lean(
+            getattr(analysis, "goal_lean", None) or "大小：待分析"
+        )
+        both_score_lean = canonical_btts_lean(
+            getattr(analysis, "both_score_lean", None) or "双进:待分析"
+        )
+        score_hint = canonical_score_hint(
+            getattr(analysis, "score_hint", None) or "待分析"
+        )
 
         handicap_lean, handicap_market_note = resolve_handicap_bundle(
             odds if isinstance(odds, dict) else None,
             recommendation,
-            probs if ready else None,
             league_id=league_id,
             stored=getattr(analysis, "handicap_lean", None),
             score_hint=score_hint,
@@ -567,9 +576,9 @@ def analysis_to_response(analysis) -> AnalysisResponse:
             league_id=league_id,
         )
         recommendation = get_recommendation(probs) if ready else "待分析"
-        goal_lean = leans["goal_lean"] if ready else "大小球：待分析"
-        both_score_lean = leans["both_score_lean"] if ready else "双方进球：待分析"
-        score_hint = leans["score_hint"] if ready else "待分析"
+        goal_lean = leans["goal_lean"] if ready else "大小：待分析"
+        both_score_lean = leans["both_score_lean"] if ready else "双进:待分析"
+        score_hint = leans["score_hint"] if ready else "比分:待分析"
         handicap_lean = leans["handicap_lean"]
         handicap_market_note = leans.get("handicap_market_note", "")
 

@@ -125,6 +125,17 @@ def _implied_cover_prob(home_odd: float, away_odd: float) -> float:
     return inv_h / total
 
 
+def _market_1x2_probs(base: dict[str, float]) -> tuple[float, float, float]:
+    """Normalize 1X2 implied probs from frozen market odds (never model output)."""
+    ph = float(base.get("odds_home", 1 / 3))
+    pd = float(base.get("odds_draw", 1 / 3))
+    pa = float(base.get("odds_away", 1 / 3))
+    total = ph + pd + pa
+    if total <= 0:
+        return 1 / 3, 1 / 3, 1 / 3
+    return ph / total, pd / total, pa / total
+
+
 def _line_tier_flags(line_f: float) -> tuple[float, float, float]:
     al = abs(line_f)
     if al <= 0.75:
@@ -148,22 +159,53 @@ def settle_ah_label(
     return "cover" if margin > 0 else "no_cover"
 
 
+def settle_handicap_result(
+    home_goals: int | None,
+    away_goals: int | None,
+    line_f: float | None,
+) -> str | None:
+    """Settle the home-side handicap as 让球胜 / 让球平 / 让球负."""
+    label = settle_ah_label(home_goals, away_goals, line_f)
+    if label is None:
+        return None
+    return pick_to_lean(label)
+
+
+def handicap_pick_from_lean(lean: str | None) -> str | None:
+    text = (lean or "").strip()
+    if text.startswith("让球胜"):
+        return "让球胜"
+    if text.startswith("让球平"):
+        return "让球平"
+    if text.startswith("让球负"):
+        return "让球负"
+    return None
+
+
+def handicap_line_from_lean(lean: str | None) -> float | None:
+    """Fallback line parser for frozen rows whose odds package is unavailable."""
+    text = (lean or "").strip()
+    match = re.search(r"[（(]\s*([+-]?\d+(?:\.\d+)?)\s*[）)]", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
 def build_ah_features(
     package: dict[str, Any] | None,
-    probs_1x2: dict[str, float] | None,
     *,
     league_id: int | None = None,
 ) -> tuple[dict[str, float], float | None, float | None, float | None]:
-    """Build full AH feature dict + raw (line, home_odd, away_odd)."""
+    """Build AH features using market inputs only, plus raw main-line values."""
     package = package or {}
     base = extract_features(package)
     odds = package.get("odds") if isinstance(package.get("odds"), dict) else {}
     line_f, home_f, away_f = extract_main_ah_line(odds)
 
-    probs = probs_1x2 or {}
-    ph = float(probs.get("home", 1 / 3))
-    pd = float(probs.get("draw", 1 / 3))
-    pa = float(probs.get("away", 1 / 3))
+    ph, pd, pa = _market_1x2_probs(base)
 
     top5, asia = _league_tier_flags(league_id)
     has_ah = 1.0 if line_f is not None and home_f and away_f else 0.0

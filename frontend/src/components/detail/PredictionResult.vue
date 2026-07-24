@@ -6,6 +6,10 @@ import ProbabilityChart from '@/components/ProbabilityChart.vue'
 import type { FixtureResponse } from '@/api/types'
 import { predictionDiffKeys, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import { toPercent } from '@/utils/format'
+import {
+  HANDICAP_MISSING_LABEL,
+  isHandicapPending,
+} from '@/utils/handicapDisplay'
 
 const props = defineProps<{
   fixture?: FixtureResponse
@@ -30,10 +34,6 @@ function rowClass(key: string): string {
 
 function isPendingRec(text: string): boolean {
   return !text || text === '待分析'
-}
-
-function isPendingHandicap(text: string): boolean {
-  return !text || text.includes('缺少盘口') || text.includes('待分析')
 }
 </script>
 
@@ -66,11 +66,11 @@ function isPendingHandicap(text: string): boolean {
               {{ original.recommendation }}
             </n-tag>
             <n-tag
-              :type="isPendingHandicap(original.handicap_lean) ? 'default' : 'warning'"
+              :type="isHandicapPending(original.handicap_lean) ? 'default' : 'warning'"
               size="small"
               class="rec-tag"
             >
-              {{ original.handicap_lean || '缺少盘口数据分析' }}
+              {{ original.handicap_lean || HANDICAP_MISSING_LABEL }}
             </n-tag>
           </div>
           <p v-if="handicapMarketNote" class="handicap-note">{{ handicapMarketNote }}</p>
@@ -81,7 +81,7 @@ function isPendingHandicap(text: string): boolean {
               <li>客胜 {{ toPercent(original.away_win_prob) }}</li>
               <li class="soft">{{ original.goal_lean }}</li>
               <li class="soft">{{ original.both_score_lean }}</li>
-              <li class="soft">参考比分 {{ original.score_hint }}</li>
+              <li class="soft">{{ original.score_hint }}</li>
             </ul>
             <ProbabilityChart
               :probabilities="{
@@ -122,7 +122,7 @@ function isPendingHandicap(text: string): boolean {
                 class="rec-tag"
                 :class="rowClass('handicap')"
               >
-                {{ adjusted.handicap_lean || '缺少盘口数据分析' }}
+                {{ adjusted.handicap_lean || HANDICAP_MISSING_LABEL }}
               </n-tag>
             </div>
             <template v-if="adjusted.probabilitiesAvailable">
@@ -130,9 +130,15 @@ function isPendingHandicap(text: string): boolean {
                 <li :class="rowClass('home')">主胜 {{ toPercent(adjusted.home_win_prob) }}</li>
                 <li :class="rowClass('draw')">平局 {{ toPercent(adjusted.draw_prob) }}</li>
                 <li :class="rowClass('away')">客胜 {{ toPercent(adjusted.away_win_prob) }}</li>
-                <li class="soft" :class="rowClass('goal_lean')">{{ adjusted.goal_lean }}</li>
-                <li class="soft" :class="rowClass('both_score')">{{ adjusted.both_score_lean }}</li>
-                <li class="soft" :class="rowClass('score')">参考比分 {{ adjusted.score_hint }}</li>
+                <li class="soft" :class="rowClass('goal_lean')">
+                  {{ adjusted.goal_lean }}
+                </li>
+                <li class="soft" :class="rowClass('both_score')">
+                  {{ adjusted.both_score_lean }}
+                </li>
+                <li class="soft" :class="rowClass('score')">
+                  {{ adjusted.score_hint }}
+                </li>
               </ul>
               <ProbabilityChart
                 :probabilities="{

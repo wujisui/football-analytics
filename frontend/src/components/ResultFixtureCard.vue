@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import type { FavoriteFixtureRecord } from '@/api/favorites'
 import type { ResultFixture } from '@/api/fixtures'
 import FavoriteButton from '@/components/FavoriteButton.vue'
-import ResultHitTags from '@/components/ResultHitTags.vue'
+import ResultPredictionSummary from '@/components/ResultPredictionSummary.vue'
 import {
   formatDate,
   formatTime,
   leagueTagColor,
+  resultStatusTagType,
   statusLabel,
-  statusTagType,
 } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 import {
@@ -17,26 +18,28 @@ import {
   resultScoreText,
 } from '@/utils/resultsDisplay'
 
-const props = defineProps<{
-  fixture: ResultFixture
-}>()
+const props = withDefaults(defineProps<{
+  fixture: ResultFixture | FavoriteFixtureRecord
+  oddsClickable?: boolean
+}>(), {
+  oddsClickable: false,
+})
 
 const emit = defineEmits<{
   openDetail: [fixtureId: number]
+  openOdds: []
 }>()
 
 const homeName = computed(() => props.fixture.home_team_name || '—')
 const awayName = computed(() => props.fixture.away_team_name || '—')
 const scoreText = computed(() => resultScoreText(props.fixture))
 const extraScoreLine = computed(() => resultExtraScoreLine(props.fixture))
-
-function statusTag(
-  status: string,
-  statusShort?: string | null,
-): ReturnType<typeof statusTagType> {
-  if (status.toLowerCase() === 'finished') return 'error'
-  return statusTagType(status, statusShort)
-}
+const statusShort = computed(() =>
+  'status_short' in props.fixture ? props.fixture.status_short : undefined,
+)
+const resultFixturePayload = computed(() =>
+  'home_team_id' in props.fixture ? props.fixture : undefined,
+)
 
 function openDetail() {
   emit('openDetail', props.fixture.fixture_id)
@@ -61,14 +64,14 @@ function openDetail() {
       </span>
       <n-tag
         size="small"
-        :type="statusTag(fixture.status, fixture.status_short)"
+        :type="resultStatusTagType(fixture.status || '', statusShort)"
         :bordered="false"
       >
-        {{ statusLabel(fixture.status, fixture.status_short) }}
+        {{ statusLabel(fixture.status || '', statusShort) }}
       </n-tag>
       <FavoriteButton
         :fixture-id="fixture.fixture_id"
-        :result-fixture="fixture"
+        :result-fixture="resultFixturePayload"
         size="tiny"
       />
     </header>
@@ -87,16 +90,11 @@ function openDetail() {
     </div>
     <p v-if="extraScoreLine" class="score-extra">{{ extraScoreLine }}</p>
 
-    <template v-if="fixture.has_prediction">
-      <n-text depth="3" class="pred-line">
-        {{ fixture.recommendation || '—' }}
-        · {{ fixture.score_hint || '—' }}
-        · {{ fixture.goal_lean || '—' }}
-        · {{ fixture.both_score_lean || '—' }}
-      </n-text>
-      <ResultHitTags :fixture="fixture" />
-    </template>
-    <n-text v-else depth="3" class="no-pred">无赛前预测</n-text>
+    <ResultPredictionSummary
+      :fixture="fixture"
+      :odds-clickable="oddsClickable"
+      @open-odds="emit('openOdds')"
+    />
   </article>
 </template>
 
@@ -180,15 +178,5 @@ function openDetail() {
   text-align: center;
   font-size: 11px;
   color: var(--fa-text-secondary);
-}
-
-.pred-line {
-  display: block;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.no-pred {
-  font-size: 11px;
 }
 </style>

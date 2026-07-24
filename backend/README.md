@@ -142,26 +142,55 @@ python manage.py test-api         # 测试 API 连通性
 python manage.py clear-cache      # 清空足球 API 缓存
 python manage.py cache-stats      # 查看缓存命中率
 python manage.py list-tasks       # 列出定时任务
-python manage.py trigger-task --name midday_fixtures_sync   # 手动触发中午赛程同步
+python manage.py trigger-task --name scheduled_fixtures_sync  # 手动触发赛程窗口同步
 python manage.py run-scheduler    # 前台运行调度器（调试用）
 python manage.py backfill-features  # 从已结束场次回填 match_features 训练行
 python manage.py train-model      # 用赛果标签训练 1X2（需 ≥ ML_MIN_TRAIN_SAMPLES）
-python manage.py model-status     # 查看 1X2 / 让球标签数与 multifactor / ml
+python manage.py train-goals-model  # 用赛前盘口与终场进球训练 Poisson 分布
+python manage.py model-status     # 查看 1X2 / 让球 / 进球分布模型及基线门禁
 python manage.py backfill-ah-features  # 回填让球特征与 AH 标签
 python manage.py train-ah-model   # 训练让球穿盘模型（需 ≥ ML_AH_MIN_TRAIN_SAMPLES）
 ```
 
-可触发的任务名：`midday_fixtures_sync`、`pre_match_update`、`capture_results`、`clean_old_data`、`train_model`。
+### 换机后启用模型
 
-### 概率模型（多因子 → 自动切 ML）
+新电脑需先在 `backend/.venv` 中执行 `python -m pip install -r requirements.txt`，再依次运行：
+
+```powershell
+python manage.py init-db
+python manage.py backfill-features
+python manage.py backfill-ah-features
+python manage.py train-model
+python manage.py train-goals-model
+python manage.py train-ah-model
+python manage.py model-status
+python -m unittest discover -s tests -v
+```
+
+已有本地数据库时，这些回填/训练命令不调用官方 API。完整的换机步骤、依赖检查及 pip SSL 故障处理见根目录 [`DEV_SETUP.md`](../DEV_SETUP.md)。
+
+可触发的任务名：`scheduled_fixtures_sync`、`pre_match_update`、`capture_results`、`clean_old_data`、`train_model`。
+
+### 概率模型（时间验证 + 基线门禁）
 
 本地数据从现在起积累。链路：
 
-1. 赛前分析写入 `match_features`（特征 + 当时概率）
-2. 赛果回写打 `label`；`capture_results` 后若标签 ≥ `ML_MIN_TRAIN_SAMPLES`（默认 30）且有新增 → **自动训练**
-3. 有合格模型后，新分析自动 `source=ml`；否则继续 `multifactor`
+1. 赛前分析写入 `match_features`（冻结特征 + 仅供审计的当时概率）
+2. 赛果回写打 `label`；训练输入只使用赛前特征/盘口，标签只使用终场赛果，绝不把旧预测作为训练特征
+3. `clean_old_data` 只物理删除「已完场且无赛前 1X2、也无算法推荐」的场次；未开赛赛程保留（盘口可能尚未开出）
+4. 1X2 使用时间顺序 80/20 验证；拟合模型只有 log-loss 优于去水盘口基线才启用，否则 `source=market_baseline`
 
-配置见 `.env`：`ML_MIN_TRAIN_SAMPLES`、`ML_AUTO_TRAIN`。盘口权重刻意偏低；长连胜淡化、长不胜抬升反弹。
+配置见 `.env`：`ML_MIN_TRAIN_SAMPLES`、`ML_AUTO_TRAIN`。
+
+### 进球分布模型
+
+`goal_predictor.py` 使用赛前 1X2、大小球、亚盘、近况等冻结特征，以终场主客进球为标签训练双 Poisson 模型：
+
+1. `goal_features_json` 与主客进球标签持久化在 `match_features`，不依赖会被清理的展示数据
+2. 时间验证总 MAE 必须优于常数均值基线，模型才标记为 `deployable`
+3. 比分、大小球、BTTS 分别设门禁：对应验证指标必须胜过常见比分、盘口方向、类别多数基线
+4. 未过门禁的预测不再强行输出；大小球只有市场优势足够明确时采用盘口方向，其余显示待分析
+5. `capture_results` 有新增标签时自动重训；也可运行 `python manage.py train-goals-model`
 
 ### 让球模型（M-AH）
 
@@ -183,7 +212,7 @@ python manage.py train-ah-model   # 训练让球穿盘模型（需 ≥ ML_AH_MIN
 | GET | `/health`                         | 服务状态与缓存统计                    |
 | GET | `/leagues`                        | 已配置联赛列表；可选 `date`、`days`；含今日/近期场次数 |
 | GET | `/fixtures/today`                 | 赛程列表；可选 `league_id`、`date`、`days`（默认仅当天） |
-| POST | `/fixtures/sync`                 | 强制同步赛程（绕过日缓存）；可选 `days` / `date`；约 90s 冷却 |
+| POST | `/fixtures/sync`                 | 手动同步赛程/盘口/赛果（阻塞至完成）；可选 `days` / `date` |
 | GET | `/fixtures/results`               | 按日查赛果 + 当日预测命中；必填 `date=YYYY-MM-DD` |
 | GET | `/fixtures/results/history`       | 历史准确率汇总 + 按日序列；`days=0`（默认）全部本地样本，`>0` 为近 N 日 |
 | GET | `/fixtures/{fixture_id}/analysis` | 单场比赛详细分析                     |
@@ -201,16 +230,16 @@ GET /api/v1/fixtures/today?league_id=39
 | 方法   | 路径                     | 说明                                    |
 |------|------------------------|---------------------------------------|
 | GET  | `/admin/tasks`         | 调度器与任务状态                              |
-| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "midday_fixtures_sync"|"pre_match_update"|"capture_results"|"clean_old_data"|"train_model"}` |
+| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"pre_match_update"|"capture_results"|"clean_old_data"|"train_model"}` |
 
 ### 常用联赛 ID
 
-**生效目录**：`config/leagues.json`（也可设环境变量 `LEAGUES_JSON`）。  
-**参考目录**：`config/leagues.example.json`（全球一级联赛清单；后端会加载为筛选「额外联赛」与 sync 白名单，**不会**替代 `leagues.json` 的默认勾选集）。
+**默认目录**：`config/leagues.json`（也可设环境变量 `LEAGUES_JSON`）——各国顶级联赛与主要洲际赛事，定时/手动同步默认获取。
+**可选目录**：`config/leagues.example.json`——次级联赛与其他杯赛，显示在筛选勾选框中，未勾选不消耗同步配额。
 
-用法：从 example 里复制需要的条目到 `leagues.json`，保存后**重启后端**。条目字段：`name`（中文显示名）、`id`（API-Sports）、`country`；可选 `season`（如世界杯）、`region`（仅注释用，程序忽略）。
+API-Sports 没有跨国家统一可靠的“第几级联赛”字段，因此分级由这两个目录按稳定 `league.id` 人工维护。条目字段：`name`（中文显示名）、`id`（API-Sports）、`country`；可选 `season`（如世界杯）、`region`（仅注释用，程序忽略）。修改后需**重启后端**。
 
-增删联赛只改 `leagues.json`；左侧菜单、筛选目录与强制刷新都只认该文件。
+筛选只展示所选日期在本地已有赛程的联赛，并按默认/可选目录分组。点击「同步」时按**默认勾选的一级联赛**批量补齐赛前盘口；次级联赛仅在勾选后一并同步。
 
 | 联赛（当前 `leagues.json` 常用） | ID |
 |-----|------|
@@ -230,9 +259,7 @@ GET /api/v1/fixtures/today?league_id=39
 | 日职联 | 98   |
 | 韩K联 | 292  |
 
-更多一级联赛（荷甲/土超/墨超/沙特联/解放者杯等）见 `leagues.example.json`。
-
-赛程同步按**配置联赛**调用 `fixtures?league=&season=&from=&to=`；免费套餐对当前赛季受限时会回退到按日 `date=` 并过滤目录联赛。
+赛程同步按日读取官方赛程并以勾选的 `league_ids` 过滤；未显式传选择时只使用默认目录，禁止无条件保存全球全部赛事。
 
 ## 定时任务
 
@@ -240,14 +267,14 @@ GET /api/v1/fixtures/today?league_id=39
 
 | 任务                     | 触发规则      | 作用                                      |
 |------------------------|-----------|-----------------------------------------|
-| `midday_fixtures_sync` | 每天 12:00  | 强制拉取近期窗口赛程 + 缺盘补全（对齐首页同步窗口）              |
+| `scheduled_fixtures_sync` | 每天 06/12/18 点 | 强制拉取近期窗口赛程 + 缺盘补全 |
 | `pre_match_update`     | 每 5 分钟    | 更新开赛前 2 小时内的比赛数据与分析                     |
 | `capture_results`      | 每 30 分钟   | 回写近日终场比分                                  |
-| `clean_old_data`       | 每周一 03:00 | 清理 7 天前的分析数据与过期日志                       |
+| `clean_old_data`       | 每周一 03:00 | 物理删除「完场且无盘口/推荐」的场次、空联赛行与孤立球队，并清理过期分析与日志 |
 
 时区由 `SCHEDULER_TIMEZONE` 控制（默认 `Asia/Shanghai`）。  
-官网文档：赛前 `/odds` 约每 3 小时更新；赛程类日更一次即可。本项目用中午任务对齐「日更」，并把该次首次落库的盘口冻为**初盘**；首页强制刷新 / 详情补拉写入**即时盘**。  
-手动：`python manage.py trigger-task midday_fixtures_sync`。
+官网文档：赛前 `/odds` 约每 3 小时更新；赛程类日更一次即可。本项目由后端定时任务保鲜，并把首次落库的盘口冻为**初盘**；用户点击工具栏「同步」时按勾选联赛**补齐缺失盘口**（免费套餐当前赛季无法用 `/odds?league=`，改为按场次拉取并按联赛轮询），详情补拉也会写入**即时盘**。页面加载本身只读本地库。
+手动：`python manage.py trigger-task --name scheduled_fixtures_sync`。
 
 ## 前端对接提示
 
@@ -270,7 +297,7 @@ python manage.py fetch-upcoming
 公司网络代理会拦截 HTTPS，在 `.env` 中设置 `HTTP_VERIFY_SSL=false`。
 
 **今日比赛为空**  
-先执行 `python manage.py fetch-upcoming`，或等待中午 `midday_fixtures_sync` / 首页强制刷新。
+先执行 `python manage.py fetch-upcoming`，或等待后端定时任务 / 点击前端工具栏「同步」。
 
 **API 配额不足**  
 用 `python manage.py check-quota` 查看剩余次数；缓存开启后可减少重复请求。

@@ -45,3 +45,18 @@ export function oddsSnippetFromFixture(
     oddsPackageToSnippet(fixture.analysis?.package?.odds ?? null)
   )
 }
+
+/** Merge detail analysis/odds into a list-row fixture (home or schedule). */
+export function mergeDetailIntoListFixture(
+  prev: FixtureResponse,
+  detail: FixtureResponse,
+): FixtureResponse {
+  const snippet = oddsSnippetFromFixture(detail) ?? prev.odds_snippet
+  return {
+    ...prev,
+    home_rank: detail.home_rank ?? prev.home_rank,
+    away_rank: detail.away_rank ?? prev.away_rank,
+    odds_snippet: snippet,
+    analysis: detail.analysis ?? prev.analysis,
+  }
+}

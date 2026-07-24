@@ -235,6 +235,15 @@ export function statusTagType(
   return STATUS_META[status.toLowerCase()]?.tag ?? 'default'
 }
 
+/** Results cards consistently mark finished fixtures as red. */
+export function resultStatusTagType(
+  status: string,
+  statusShort?: string | null,
+): NaiveTagType {
+  if (status.toLowerCase() === 'finished') return 'error'
+  return statusTagType(status, statusShort)
+}
+
 export function leagueTagColor(leagueId: number): string {
   return LEAGUE_COLORS[Math.abs(leagueId) % LEAGUE_COLORS.length]
 }

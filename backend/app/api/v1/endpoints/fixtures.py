@@ -24,7 +24,6 @@ from app.schemas.response import (
     ResultsHistoryResponse,
     ResultsResponse,
     SyncFixturesResponse,
-    SyncFixturesStatusResponse,
     TodayFixturesResponse,
     analysis_to_response,
 )
@@ -33,12 +32,7 @@ from app.services.analyzer import (
     AnalyzerService,
 )
 from app.services.fetcher import ApiKeyNotConfiguredError
-from app.services.fixtures_sync import (
-    build_sync_params,
-    enqueue_fixtures_sync,
-    execute_fixtures_sync,
-    sync_status_response,
-)
+from app.services.fixtures_sync import build_sync_params, execute_fixtures_sync
 from app.services.prediction import (
     OPINION_FACTORS,
     adjust_probabilities_with_factors,
@@ -152,15 +146,28 @@ def _list_analysis_from_fixture(
     frozen_rec = (getattr(stored, "recommendation", None) or "").strip() if stored else ""
     if stored and frozen_rec and frozen_rec != "待分析":
         recommendation = frozen_rec
-        goal_lean = getattr(stored, "goal_lean", None) or "大小球：待分析"
-        both_score_lean = getattr(stored, "both_score_lean", None) or "双方进球：待分析"
-        score_hint = getattr(stored, "score_hint", None) or "待分析"
-        from app.services.prediction import resolve_handicap_bundle
+        from app.services.prediction import (
+            canonical_btts_lean,
+            canonical_goal_lean,
+            canonical_recommendation,
+            canonical_score_hint,
+            resolve_handicap_bundle,
+        )
+
+        recommendation = canonical_recommendation(recommendation)
+        goal_lean = canonical_goal_lean(
+            getattr(stored, "goal_lean", None) or "大小：待分析"
+        )
+        both_score_lean = canonical_btts_lean(
+            getattr(stored, "both_score_lean", None) or "双进:待分析"
+        )
+        score_hint = canonical_score_hint(
+            getattr(stored, "score_hint", None) or "待分析"
+        )
 
         handicap_lean, handicap_market_note = resolve_handicap_bundle(
             odds if isinstance(odds, dict) else None,
             recommendation,
-            probs if ready else None,
             league_id=fixture.league_id,
             stored=getattr(stored, "handicap_lean", None),
             score_hint=score_hint,
@@ -172,9 +179,9 @@ def _list_analysis_from_fixture(
             league_id=fixture.league_id,
         )
         recommendation = get_recommendation(probs) if ready else "待分析"
-        goal_lean = leans["goal_lean"] if ready else "大小球：待分析"
-        both_score_lean = leans["both_score_lean"] if ready else "双方进球：待分析"
-        score_hint = leans["score_hint"] if ready else "待分析"
+        goal_lean = leans["goal_lean"] if ready else "大小：待分析"
+        both_score_lean = leans["both_score_lean"] if ready else "双进:待分析"
+        score_hint = leans["score_hint"] if ready else "比分:待分析"
         handicap_lean = leans["handicap_lean"]
         handicap_market_note = leans.get("handicap_market_note", "")
 
@@ -395,9 +402,11 @@ async def get_fixture_results(
                 "has_prediction": evaluated["has_prediction"],
                 "evaluable": evaluated["evaluable"],
                 "result_hit": evaluated["result_hit"],
+                "single_result_hit": evaluated["single_result_hit"],
                 "score_hit": evaluated["score_hit"],
                 "ou_hit": evaluated["ou_hit"],
                 "btts_hit": evaluated["btts_hit"],
+                "handicap_hit": evaluated["handicap_hit"],
             }
         )
         items.append(
@@ -430,7 +439,11 @@ async def get_fixture_results(
                 score_hint=evaluated["score_hint"],
                 goal_lean=evaluated["goal_lean"],
                 both_score_lean=evaluated["both_score_lean"],
+                handicap_lean=evaluated["handicap_lean"],
+                handicap_result=evaluated["handicap_result"],
+                handicap_hit=evaluated["handicap_hit"],
                 result_hit=evaluated["result_hit"],
+                single_result_hit=evaluated["single_result_hit"],
                 score_hit=evaluated["score_hit"],
                 ou_hit=evaluated["ou_hit"],
                 btts_hit=evaluated["btts_hit"],
@@ -509,32 +522,27 @@ async def sync_fixtures(
     ),
     odds_refresh_existing: bool = Query(
         default=True,
-        description="False 时仅补缺失盘口（联赛筛选入库更快）；True 时强制刷新已有盘",
+        description="False 时仅补缺失盘口；True 时强制刷新已有盘",
     ),
     odds_budget: int = Query(
         default=100,
         ge=1,
-        le=200,
-        description="单次同步最多拉取多少场 fixture 盘口",
+        le=300,
+        description=(
+            "刷新已有盘口的场次上限；单日/勾选联赛同步时，"
+            "缺失盘口会尽量按联赛全量补齐（不单靠此上限截断）"
+        ),
     ),
     league_ids: list[int] | None = Query(
         default=None,
-        description="仅同步勾选的联赛 ID；默认当日 API 返回的全部联赛",
+        description="仅同步勾选的联赛 ID；默认使用配置目录联赛",
     ),
     odds_only: bool = Query(
         default=False,
-        description="仅批量补缺失盘口，不重新拉取赛程（本地已有赛程时省配额）",
-    ),
-    background: bool = Query(
-        default=True,
-        description="True 时立即返回并在后台同步（首页不阻塞）；False 时等待完成",
+        description="跳过赛程拉取，仅跑盘口/赛果 follow-up（本地已有赛程时省配额）",
     ),
 ) -> SyncFixturesResponse:
-    """
-    从官方拉取赛程/盘口并写入本地库。
-
-    默认 ``background=true``：立即返回，任务在服务端后台执行；前端读本地列表即可。
-    """
+    """从官方拉取赛程/盘口并写入本地库；请求阻塞至同步完成。"""
     try:
         params = build_sync_params(
             date_str=date_str,
@@ -549,9 +557,6 @@ async def sync_fixtures(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if background:
-        return await enqueue_fixtures_sync(params)
-
     try:
         return await execute_fixtures_sync(params)
     except ApiKeyNotConfiguredError as exc:
@@ -559,12 +564,6 @@ async def sync_fixtures(
     except Exception as exc:
         logger.error("sync_fixtures failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=503, detail=f"同步失败：{exc}") from exc
-
-
-@router.get("/sync/status", response_model=SyncFixturesStatusResponse)
-async def get_fixtures_sync_status() -> SyncFixturesStatusResponse:
-    """Poll background ``POST /fixtures/sync`` completion."""
-    return sync_status_response()
 
 
 @router.get("/opinion-factors", response_model=OpinionFactorsResponse)

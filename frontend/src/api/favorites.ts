@@ -19,6 +19,14 @@ export interface FavoriteFixtureRecord {
   score_hint?: string
   goal_lean?: string
   both_score_lean?: string
+  /** Finished settlement (same as results list); omitted while not evaluable. */
+  handicap_result?: string | null
+  handicap_hit?: boolean | null
+  score_hit?: boolean | null
+  ou_hit?: boolean | null
+  btts_hit?: boolean | null
+  result_hit?: boolean | null
+  single_result_hit?: boolean | null
   probabilities_available?: boolean
   home_win_prob?: number
   draw_prob?: number

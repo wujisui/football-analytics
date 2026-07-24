@@ -10,13 +10,11 @@ const props = withDefaults(
     finishedMode?: boolean
     stacked?: boolean
     compactActions?: boolean
-    confirming?: boolean
   }>(),
   {
     finishedMode: false,
     stacked: false,
     compactActions: false,
-    confirming: false,
   },
 )
 
@@ -35,7 +33,7 @@ const extraOptions = computed(() =>
 )
 
 const extraSectionTitle = computed(() =>
-  props.finishedMode ? '完场联赛' : '其他联赛',
+  props.finishedMode ? '完场联赛' : '次级 / 其他联赛（勾选后同步）',
 )
 
 const actionSize = computed(() => (props.compactActions ? 'tiny' : 'small'))
@@ -44,9 +42,7 @@ function labelOf(opt: LeagueFilterOption): string {
   const name = leagueLabel(opt.league_name)
   const n = opt.fixtures_count
   const suffix = n > 0 ? ` (${n})` : ''
-  const tag =
-    opt.tier === 'extra' && !opt.locally_loaded && !props.finishedMode ? ' · 未入库' : ''
-  return `${name}${suffix}${tag}`
+  return `${name}${suffix}`
 }
 
 function selectConfigured() {
@@ -71,7 +67,7 @@ function invertSelection() {
       <n-checkbox-group v-model:value="draft">
         <div class="sections-row" :class="{ stacked }">
           <div v-if="!finishedMode" class="section">
-            <div class="section-title">联赛</div>
+            <div class="section-title">一级联赛 / 主要洲际赛事（默认）</div>
             <n-space vertical :size="6">
               <n-checkbox
                 v-for="opt in configuredOptions"
@@ -82,7 +78,7 @@ function invertSelection() {
             </n-space>
             <n-empty
               v-if="!configuredOptions.length"
-              description="暂无配置联赛"
+              description="暂无默认联赛"
               style="padding: 8px 0;"
             />
           </div>
@@ -98,7 +94,7 @@ function invertSelection() {
             </n-space>
             <n-empty
               v-if="!extraOptions.length"
-              :description="finishedMode ? '当日暂无完场联赛' : '暂无其他联赛'"
+              :description="finishedMode ? '当日暂无完场联赛' : '暂无可选联赛'"
               style="padding: 8px 0;"
             />
           </div>
@@ -118,7 +114,7 @@ function invertSelection() {
         :disabled="!configuredOptions.length"
         @click="selectConfigured"
       >
-        仅配置
+        仅默认
       </n-button>
       <n-button :size="actionSize" :disabled="!options.length" @click="selectAll">
         全选
@@ -129,7 +125,6 @@ function invertSelection() {
       <n-button
         :size="actionSize"
         type="primary"
-        :loading="confirming"
         :disabled="!options.length"
         @click="emit('confirm')"
       >

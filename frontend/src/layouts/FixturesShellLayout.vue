@@ -33,7 +33,8 @@ const {
   breadcrumbRoot,
   breadcrumbFilter,
   dayCountLabel,
-  filterConfirming,
+  syncCurrentDay,
+  syncLoading,
   confirmFilter,
   selectLeague,
   isResultsPage,
@@ -82,7 +83,6 @@ onActivated(() => {
               :tracked-ids="shellTrackedIds"
               :icon-only="siderCollapsed"
               :filter-active="shellFilterActive"
-              :confirming="filterConfirming"
               :finished-mode="isResultsPage && !isScheduleFutureDay"
               @confirm="confirmFilter"
             />
@@ -121,6 +121,15 @@ onActivated(() => {
 
           <div class="shell-list-meta">
             <span class="day-stat">{{ dayCountLabel }}</span>
+            <n-button
+              size="small"
+              secondary
+              :loading="syncLoading"
+              :disabled="syncLoading"
+              @click="syncCurrentDay"
+            >
+              同步
+            </n-button>
             <PageToolbarSearch
               v-if="!(isResultsPage && !isScheduleFutureDay)"
               v-model="teamSearch"
@@ -168,7 +177,6 @@ onActivated(() => {
               :options="shellFilterOptions"
               :tracked-ids="shellTrackedIds"
               :filter-active="shellFilterActive"
-              :confirming="filterConfirming"
               :finished-mode="isResultsPage && !isScheduleFutureDay"
               @confirm="confirmFilter"
             />

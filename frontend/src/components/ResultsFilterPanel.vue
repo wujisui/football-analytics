@@ -3,25 +3,22 @@ import { ref } from 'vue'
 
 import {
   RESULTS_HIT_OPTIONS,
-  type ResultsFilterConfirm,
   type ResultsHitKey,
 } from '@/utils/resultsPageState'
 
 const props = withDefaults(
   defineProps<{
     initialHitKeys: ResultsHitKey[]
-    initialHideWithoutPrediction?: boolean
     compactActions?: boolean
   }>(),
-  { initialHideWithoutPrediction: false, compactActions: true },
+  { compactActions: true },
 )
 
 const emit = defineEmits<{
-  confirm: [payload: ResultsFilterConfirm]
+  confirm: [hitKeys: ResultsHitKey[]]
 }>()
 
 const draftHits = ref<ResultsHitKey[]>([...props.initialHitKeys])
-const hideWithoutPrediction = ref(props.initialHideWithoutPrediction)
 
 const actionSize = props.compactActions ? 'tiny' : 'small'
 
@@ -31,21 +28,12 @@ function selectAll() {
 
 function confirm() {
   if (!draftHits.value.length) return
-  emit('confirm', {
-    hitKeys: [...draftHits.value],
-    hideWithoutPrediction: hideWithoutPrediction.value,
-  })
+  emit('confirm', [...draftHits.value])
 }
 </script>
 
 <template>
   <div class="results-filter-panel">
-    <div class="section">
-      <div class="section-title">赛前预测</div>
-      <n-checkbox v-model:checked="hideWithoutPrediction">
-        隐藏无赛前预测
-      </n-checkbox>
-    </div>
     <div class="section">
       <div class="section-title">预测结果</div>
       <n-checkbox-group v-model:value="draftHits">

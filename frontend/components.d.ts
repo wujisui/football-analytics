@@ -8,6 +8,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AccuracyHistoryChart: typeof import('./src/components/AccuracyHistoryChart.vue')['default']
+    AccuracyStatistic: typeof import('./src/components/AccuracyStatistic.vue')['default']
     AlgorithmPredictionCard: typeof import('./src/components/AlgorithmPredictionCard.vue')['default']
     BasicInfo: typeof import('./src/components/detail/BasicInfo.vue')['default']
     BriefingTab: typeof import('./src/components/detail/BriefingTab.vue')['default']
@@ -73,6 +74,7 @@ declare module 'vue' {
     ProbabilityChart: typeof import('./src/components/ProbabilityChart.vue')['default']
     ResultFixtureCard: typeof import('./src/components/ResultFixtureCard.vue')['default']
     ResultHitTags: typeof import('./src/components/ResultHitTags.vue')['default']
+    ResultPredictionSummary: typeof import('./src/components/ResultPredictionSummary.vue')['default']
     ResultsFilterPanel: typeof import('./src/components/ResultsFilterPanel.vue')['default']
     ResultsFilterTrigger: typeof import('./src/components/ResultsFilterTrigger.vue')['default']
     ResultsListToolbar: typeof import('./src/components/ResultsListToolbar.vue')['default']

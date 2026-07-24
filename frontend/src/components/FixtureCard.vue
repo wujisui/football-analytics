@@ -16,11 +16,19 @@ import {
   statusTagType,
 } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
-import { FIXTURE_DETAIL_TOOLTIP, fixtureDetailRoute } from '@/utils/detailNav'
+import { FIXTURE_DETAIL_TOOLTIP, fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
 
-const props = defineProps<{
-  fixture: FixtureResponse
-}>()
+const props = withDefaults(
+  defineProps<{
+    fixture: FixtureResponse
+    from?: DetailFrom
+    date?: string | null
+  }>(),
+  {
+    from: 'home',
+    date: null,
+  },
+)
 
 const router = useRouter()
 const isPhone = useIsPhone()
@@ -46,7 +54,12 @@ const scoreText = computed(() => {
 })
 
 function goDetail() {
-  void router.push(fixtureDetailRoute(props.fixture.fixture_id, { from: 'home' }))
+  void router.push(
+    fixtureDetailRoute(props.fixture.fixture_id, {
+      from: props.from,
+      date: props.date,
+    }),
+  )
 }
 </script>
 
@@ -116,10 +129,16 @@ function goDetail() {
           :away-name="awayName"
           link-middle-to-detail
           :fixture-id="fixture.fixture_id"
-          from="home"
+          :from="from"
+          :date="date"
           detail-tab="prediction"
         />
-      <AlgorithmPredictionCard :fixture="fixture" :link-to-detail="isPhone" />
+      <AlgorithmPredictionCard
+        :fixture="fixture"
+        :link-to-detail="isPhone"
+        :from="from"
+        :date="date"
+      />
     </div>
   </article>
 </template>
@@ -137,7 +156,7 @@ function goDetail() {
     box-shadow 0.15s ease;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 3px;
   color: var(--fa-text);
 }
 
