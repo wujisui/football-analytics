@@ -5,7 +5,6 @@ import type { HitTagFixture } from '@/utils/resultsDisplay'
 /** Prediction fields shown on the results list card. */
 export type ResultPredictionFields = HitTagFixture & {
   recommendation?: string | null
-  handicap_lean?: string | null
   score_hint?: string | null
   goal_lean?: string | null
   both_score_lean?: string | null

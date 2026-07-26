@@ -160,6 +160,13 @@ def _structural_pick(
     home_undivided = rec == "胜/平" or "主队不败" in rec or rec.startswith("主胜/平")
     away_undivided = rec == "负/平" or "客队不败" in rec or rec.startswith("客胜/平")
 
+    # Single 胜 + home gives up to one goal (-0.5 / -0.75 …): any 1-goal win covers.
+    if rec in {"胜", "主胜"} and -1.0 < line_f < -0.05:
+        return HandicapPrediction(0.72, "cover", "structural", line_f)
+    # Single 负 + home receives up to one goal (+0.5 …): away 1-goal win still fails cover.
+    if rec in {"负", "客胜"} and 0.05 < line_f < 1.0:
+        return HandicapPrediction(0.28, "no_cover", "structural", line_f)
+
     if home_undivided and half_giving:
         return HandicapPrediction(0.35, "no_cover", "structural", line_f)
     if home_undivided and half_receiving:

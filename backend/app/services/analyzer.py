@@ -103,10 +103,15 @@ def get_confidence_level(data_completeness: float) -> str:
     return "低"
 
 
-def get_recommendation(probs: dict[str, float], features: dict[str, float] | None = None) -> str:
+def get_recommendation(
+    probs: dict[str, float],
+    *,
+    odds: dict[str, Any] | None = None,
+    features: dict[str, float] | None = None,
+) -> str:
     from app.services.prediction import get_recommendation as _rec
 
-    return _rec(probs, features=features)
+    return _rec(probs, odds=odds, features=features)
 
 
 def prematch_package_needs_refresh(
@@ -122,6 +127,7 @@ def prematch_package_needs_refresh(
     briefing = package.get("briefing") or {}
     odds = package.get("odds") or {}
     lineups = package.get("lineups") or {}
+    injuries = package.get("injuries") or {}
 
     stale = (
         "fetched" not in h2h
@@ -129,8 +135,10 @@ def prematch_package_needs_refresh(
         or home_form.get("source") != history_tag
         or away_form.get("source") != history_tag
         or not standings.get("fetched")
-        or (briefing and not briefing.get("fetched"))
+        or not briefing.get("fetched")
         or (not odds.get("available") and not odds.get("fetched"))
+        or "available" not in lineups
+        or "available" not in injuries
     )
     useful = bool(
         home_form.get("played")
@@ -141,7 +149,9 @@ def prematch_package_needs_refresh(
         or (h2h.get("matches") or [])
         or odds.get("available")
         or lineups.get("available")
+        or injuries.get("available")
         or standings.get("available")
+        or briefing.get("available")
     )
     return not useful or stale
 
@@ -171,6 +181,7 @@ def prematch_package_needs_refresh_from_stored(
         "briefing": loads_json(getattr(stored, "briefing_json", None), {}) or {},
         "odds": loads_json(stored.odds_json, {"available": False}) or {},
         "lineups": loads_json(stored.lineups_json, {}) or {},
+        "injuries": loads_json(getattr(stored, "injuries_json", None), {}) or {},
     }
     return prematch_package_needs_refresh(package, history_tag=history_tag)
 
@@ -277,21 +288,56 @@ class AnalyzerService:
         away_lineup = lineups.get("away") or {}
         injuries = package.get("injuries") or {}
 
-        fields: dict[str, Any] = {
-            "home_formation": home_lineup.get("formation"),
-            "away_formation": away_lineup.get("formation"),
-            "injuries_home": dumps_json(injuries.get("home")),
-            "injuries_away": dumps_json(injuries.get("away")),
-            "lineups_json": dumps_json(package.get("lineups")),
-            "injuries_json": dumps_json(package.get("injuries")),
-            "h2h_json": dumps_json(package.get("head_to_head")),
-            "home_form_json": dumps_json(package.get("home_form")),
-            "away_form_json": dumps_json(package.get("away_form")),
-            "standings_json": dumps_json(package.get("standings")),
-        }
+        def _keep_existing(field: str, incoming: Any) -> bool:
+            """Avoid wiping a populated package section with an empty shell."""
+            if record is None:
+                return False
+            existing_raw = getattr(record, field, None)
+            if not existing_raw:
+                return False
+            existing = loads_json(existing_raw, {}) or {}
+            if not isinstance(existing, dict):
+                return False
+            incoming_dict = incoming if isinstance(incoming, dict) else {}
+            existing_useful = bool(
+                existing.get("available")
+                or existing.get("played")
+                or existing.get("matches")
+                or existing.get("home")
+                or existing.get("away")
+                or existing.get("fetched")
+            )
+            incoming_useful = bool(
+                incoming_dict.get("available")
+                or incoming_dict.get("played")
+                or incoming_dict.get("matches")
+                or incoming_dict.get("home")
+                or incoming_dict.get("away")
+                or incoming_dict.get("fetched")
+            )
+            return existing_useful and not incoming_useful
+
+        fields: dict[str, Any] = {}
+        if not _keep_existing("lineups_json", package.get("lineups")):
+            fields["lineups_json"] = dumps_json(package.get("lineups"))
+            fields["home_formation"] = home_lineup.get("formation")
+            fields["away_formation"] = away_lineup.get("formation")
+        if not _keep_existing("injuries_json", package.get("injuries")):
+            fields["injuries_json"] = dumps_json(package.get("injuries"))
+            fields["injuries_home"] = dumps_json(injuries.get("home"))
+            fields["injuries_away"] = dumps_json(injuries.get("away"))
+        if not _keep_existing("h2h_json", package.get("head_to_head")):
+            fields["h2h_json"] = dumps_json(package.get("head_to_head"))
+        if not _keep_existing("home_form_json", package.get("home_form")):
+            fields["home_form_json"] = dumps_json(package.get("home_form"))
+        if not _keep_existing("away_form_json", package.get("away_form")):
+            fields["away_form_json"] = dumps_json(package.get("away_form"))
+        if not _keep_existing("standings_json", package.get("standings")):
+            fields["standings_json"] = dumps_json(package.get("standings"))
         briefing_pkg = package.get("briefing") if isinstance(package.get("briefing"), dict) else None
         if briefing_pkg and briefing_pkg.get("fetched"):
-            fields["briefing_json"] = dumps_json(briefing_pkg)
+            if not _keep_existing("briefing_json", briefing_pkg):
+                fields["briefing_json"] = dumps_json(briefing_pkg)
         # Never wipe a good local board with an empty package result.
         odds_pkg = package.get("odds") if isinstance(package.get("odds"), dict) else None
         if odds_pkg and odds_pkg.get("available"):
@@ -418,6 +464,8 @@ class AnalyzerService:
             league_id=fixture.league_id,
             stored=getattr(stored, "handicap_lean", None),
             score_hint=score_hint,
+            # Same freeze rule as results list: do not rewrite exam snapshot.
+            prefer_stored=has_frozen,
         )
         return AnalysisResult(
             fixture_id=fixture.id,
@@ -892,6 +940,8 @@ class AnalyzerService:
         refresh_ttl = self._analysis_refresh_ttl(fixture) or TTL_ANALYSIS
 
         if include_package:
+            # Persist odds ASAP for list cards, but do not short-circuit detail
+            # when form / standings / lineups / injuries / briefing are still missing.
             early = await self._try_serve_after_early_odds(
                 fixture=fixture,
                 fixture_id=fixture_id,
@@ -902,7 +952,16 @@ class AnalyzerService:
                 refresh_ttl=refresh_ttl,
             )
             if early is not None:
-                return early
+                stored_after_odds = await self._get_stored_pre_match_row(fixture_id)
+                if stored_after_odds is not None and not prematch_package_needs_refresh_from_stored(
+                    stored_after_odds,
+                    history_tag=settings.history_source_tag,
+                ):
+                    return early
+                logger.info(
+                    "Early odds ready for fixture %s but display package incomplete — continue enrich",
+                    fixture_id,
+                )
 
         # Local-first: reuse stored analysis until kickoff-based refresh is due.
         if settings.LOCAL_FIRST:

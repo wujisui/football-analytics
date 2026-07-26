@@ -508,7 +508,6 @@ class LeaguesListResponse(BaseModel):
 def analysis_to_response(analysis) -> AnalysisResponse:
     from app.services.prediction import (
         derive_prediction_leans,
-        get_recommendation,
         is_flat_prior,
         resolve_match_probabilities,
     )
@@ -562,12 +561,15 @@ def analysis_to_response(analysis) -> AnalysisResponse:
             getattr(analysis, "score_hint", None) or "待分析"
         )
 
+        # Exam snapshot: keep the frozen handicap lean for audit consistency
+        # with the results list (do not recompute with today's AH model).
         handicap_lean, handicap_market_note = resolve_handicap_bundle(
             odds if isinstance(odds, dict) else None,
             recommendation,
             league_id=league_id,
             stored=getattr(analysis, "handicap_lean", None),
             score_hint=score_hint,
+            prefer_stored=True,
         )
     else:
         leans = derive_prediction_leans(
@@ -575,7 +577,7 @@ def analysis_to_response(analysis) -> AnalysisResponse:
             odds if isinstance(odds, dict) else None,
             league_id=league_id,
         )
-        recommendation = get_recommendation(probs) if ready else "待分析"
+        recommendation = leans["recommendation"] if ready else "待分析"
         goal_lean = leans["goal_lean"] if ready else "大小：待分析"
         both_score_lean = leans["both_score_lean"] if ready else "双进:待分析"
         score_hint = leans["score_hint"] if ready else "比分:待分析"

@@ -221,6 +221,57 @@ async def run_backfill_features() -> None:
     print(f"Backfilled / collected {len(rows)} labeled training row(s).")
 
 
+async def run_refresh_pending_predictions() -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.ml_predictor import refresh_pending_prediction_snapshots
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        result = await refresh_pending_prediction_snapshots(session)
+    print(
+        f"Refreshed pending predictions: updated={result['updated']} "
+        f"skipped_no_odds={result['skipped_no_odds']}"
+    )
+
+
+async def run_upgrade_models() -> None:
+    """Backfill odds+FT labels, retrain 1X2/AH/goals, refresh pending leans."""
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.ah_predictor import (
+        backfill_ah_features,
+        train_model_from_db as train_ah,
+    )
+    from app.services.goal_predictor import train_model_from_db as train_goals
+    from app.services.ml_predictor import (
+        collect_training_rows,
+        refresh_pending_prediction_snapshots,
+        train_model_from_db,
+    )
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        rows = await collect_training_rows(session)
+        print(f"1X2 labeled rows: {len(rows)}")
+        ah_n = await backfill_ah_features(session)
+        print(f"AH features backfilled: {ah_n}")
+
+    async with AsyncSessionLocal() as session:
+        r1 = await train_model_from_db(session)
+        print(f"1X2 train: ok={r1.get('ok')} deployable={r1.get('deployable')} n={r1.get('n_samples')} reason={r1.get('reason')}")
+    async with AsyncSessionLocal() as session:
+        r2 = await train_ah(session)
+        print(f"AH train: ok={r2.get('ok')} n={r2.get('n_samples')} reason={r2.get('reason')}")
+    async with AsyncSessionLocal() as session:
+        r3 = await train_goals(session)
+        print(f"Goals train: ok={r3.get('ok')} deployable={r3.get('deployable')} n={r3.get('n_samples')} gates={r3.get('target_gates')} reason={r3.get('reason')}")
+    async with AsyncSessionLocal() as session:
+        refreshed = await refresh_pending_prediction_snapshots(session)
+        print(
+            f"Pending refresh: updated={refreshed['updated']} "
+            f"skipped_no_odds={refreshed['skipped_no_odds']}"
+        )
+
+
 async def run_prune_low_value_data(*, apply: bool) -> None:
     from app.core.database import AsyncSessionLocal, init_db
     from app.services.data_cleanup import prune_low_value_data
@@ -410,6 +461,14 @@ def main() -> None:
         "backfill-features",
         help="Build match_features from finished fixtures + pre_match packages",
     )
+    subparsers.add_parser(
+        "refresh-pending-predictions",
+        help="Recompute pending recommendation leans from local odds (no API)",
+    )
+    subparsers.add_parser(
+        "upgrade-models",
+        help="Backfill odds+FT samples, retrain 1X2/AH/goals, refresh pending leans",
+    )
     prune_parser = subparsers.add_parser(
         "prune-low-value-data",
         help=(
@@ -486,6 +545,8 @@ def main() -> None:
         "run-scheduler": run_scheduler_loop,
         "backfill-team-names": run_backfill_team_names,
         "backfill-features": run_backfill_features,
+        "refresh-pending-predictions": run_refresh_pending_predictions,
+        "upgrade-models": run_upgrade_models,
         "train-model": run_train_model,
         "model-status": run_model_status,
         "backfill-ah-features": run_backfill_ah_features,

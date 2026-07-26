@@ -4,6 +4,10 @@ import { hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 defineProps<{
   fixture: HitTagFixture
 }>()
+
+function handicapTagLabel(lean: string): string {
+  return lean.replace(/\s*[（(][+-]?\d+(?:\.\d+)?[）)]\s*$/, '')
+}
 </script>
 
 <template>
@@ -21,12 +25,12 @@ defineProps<{
       双进
     </n-tag>
     <n-tag
-      v-if="fixture.handicap_result && fixture.handicap_hit != null"
+      v-if="fixture.handicap_lean && fixture.handicap_hit != null"
       size="small"
       :type="hitTagType(fixture.handicap_hit)"
       :bordered="false"
     >
-      {{ fixture.handicap_result }}
+      {{ handicapTagLabel(fixture.handicap_lean) }}
     </n-tag>
   </div>
 </template>

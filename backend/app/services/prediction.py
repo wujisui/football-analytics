@@ -10,6 +10,10 @@ DEFAULT_PROB = 1 / 3
 _FLAT_EPS = 0.02
 # Below this gap between #1 and #2 → double-chance (双选) instead of single.
 _DOUBLE_CHANCE_EDGE = 0.08
+# Market-structure gates for 1X2 recommendation (not per-league tuning).
+_MARKET_FLAT_SPREAD = 0.10
+_SINGLE_PICK_GAP = 0.10
+_DRAW_INCLUDE_MIN = 0.26
 
 # Explicit factors users can toggle — same IDs used by POST /fixtures/{id}/adjust
 OPINION_FACTORS: list[dict[str, str]] = [
@@ -142,59 +146,92 @@ def resolve_match_probabilities(
 
 def get_recommendation(
     probs: dict[str, float],
+    *,
+    odds: dict[str, Any] | None = None,
     features: dict[str, float] | None = None,
 ) -> str:
-    """Single pick or 双选 (主胜/平、客胜/平). Flat prior → 待分析.
+    """Market-structured 1X2 lean; model only breaks ties / upgrades clear edges.
 
-    仅在「胜+平」或「负+平」接近时双选。主客接近时不推「防平」
-   （几乎包圆且易与参考比分打架），改为单选概率更高的一侧。
-
-    When streak/mean-reversion features are extreme, widen the double-chance
-    edge so we do not over-commit to a side that is statistically due to fade
-    or bounce. When model top disagrees with odds-implied top and the edge is
-    thin, also soften toward 双选 (future matches only; frozen snaps untouched).
+    Uses de-vigged 1X2 odds for market shape (flat vs favorite). Display probabilities
+    may come from ML; recommendation follows盘口胶着度 + AH 水位, not argmax alone.
     """
-    normalized = normalize_probabilities(probs)
-    if is_flat_prior(normalized):
+    model = normalize_probabilities(probs)
+    market = implied_probs_from_odds(odds)
+    if market is None:
+        market = model
+    if is_flat_prior(model) and is_flat_prior(market):
         return "待分析"
-    edge = _DOUBLE_CHANCE_EDGE
-    if features:
-        # Long winning streak on the favorite → prefer softer (双选) picks.
-        top_key = max(("home", "draw", "away"), key=lambda k: normalized[k])
-        if top_key == "home" and features.get("home_win_streak", 0) >= 4:
-            edge = 0.12
-        elif top_key == "away" and features.get("away_win_streak", 0) >= 4:
-            edge = 0.12
-        # Long winless underdog as top pick → also soften (bounce is noisy).
-        if top_key == "home" and features.get("home_winless_streak", 0) >= 5:
-            edge = max(edge, 0.11)
-        elif top_key == "away" and features.get("away_winless_streak", 0) >= 5:
-            edge = max(edge, 0.11)
-        # Model vs market disagreement → widen edge slightly.
-        if float(features.get("has_odds", 0) or 0) >= 1.0:
-            odds_top = max(
-                (
-                    ("home", float(features.get("odds_home", 0) or 0)),
-                    ("draw", float(features.get("odds_draw", 0) or 0)),
-                    ("away", float(features.get("odds_away", 0) or 0)),
-                ),
-                key=lambda x: x[1],
-            )[0]
-            if odds_top != top_key:
-                edge = max(edge, 0.11)
-    ranked = sorted(
-        (("home", normalized["home"]), ("draw", normalized["draw"]), ("away", normalized["away"])),
-        key=lambda x: x[1],
-        reverse=True,
+
+    def _ranked(p: dict[str, float]) -> list[tuple[str, float]]:
+        return sorted(
+            (
+                ("home", p["home"]),
+                ("draw", p["draw"]),
+                ("away", p["away"]),
+            ),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+
+    m_rank = _ranked(market)
+    d_rank = _ranked(model)
+    m_top, m_second, m_third = m_rank[0], m_rank[1], m_rank[2]
+    d_top, d_second = d_rank[0], d_rank[1]
+    m_spread = m_top[1] - m_third[1]
+    m_gap = m_top[1] - m_second[1]
+    d_gap = d_top[1] - d_second[1]
+    d_draw = model["draw"]
+    m_draw = market["draw"]
+
+    d_spread = d_top[1] - d_rank[2][1]
+
+    # Draw is market top.
+    if m_rank[0][0] == "draw":
+        if m_gap >= _SINGLE_PICK_GAP:
+            return "平"
+        other = "home" if market["home"] >= market["away"] else "away"
+        return _DOUBLE[frozenset({"draw", other})]
+
+    # Contested board: tight triangle on market or model, or weak single favorite.
+    weak_home = d_top[0] == "home" and model["home"] < 0.50 and d_draw >= 0.24
+    weak_away = d_top[0] == "away" and model["away"] < 0.50 and d_draw >= 0.24
+    contested = (
+        m_spread <= _MARKET_FLAT_SPREAD
+        or d_spread <= _MARKET_FLAT_SPREAD
+        or (m_draw >= _DRAW_INCLUDE_MIN and m_gap < _SINGLE_PICK_GAP)
+        or weak_home
+        or weak_away
     )
-    top_key, top_p = ranked[0]
-    second_key, second_p = ranked[1]
-    if top_p - second_p < edge:
-        pair = frozenset({top_key, second_key})
-        if pair == frozenset({"home", "away"}):
-            return _LABEL[top_key]
-        return _DOUBLE[pair]
-    return _LABEL[top_key]
+    if contested:
+        fav = d_top[0]
+        if fav == "home":
+            return "胜/平" if d_draw >= _DRAW_INCLUDE_MIN - 0.02 else "胜/负"
+        if fav == "away":
+            return "负/平" if d_draw >= _DRAW_INCLUDE_MIN - 0.02 else "胜/负"
+        return "胜/平"
+
+    # Clear market favorite — allow single pick when model agrees or extends edge.
+    if m_gap >= _SINGLE_PICK_GAP:
+        if d_top[0] == m_top[0] and d_gap >= 0.08:
+            return _LABEL[m_top[0]]
+        if model[m_top[0]] - market[m_top[0]] >= 0.04 and d_gap >= 0.08:
+            return _LABEL[m_top[0]]
+        if d_second[0] == "draw" or d_draw >= _DRAW_INCLUDE_MIN:
+            return _DOUBLE[frozenset({m_top[0], "draw"})]
+        ah_side = _ah_market_favorite(odds)
+        if ah_side:
+            return _LABEL[ah_side]
+        return _LABEL[m_top[0]]
+
+    # Moderate gap → double chance (include draw when non-trivial).
+    if m_second[0] == "draw" or m_draw >= _DRAW_INCLUDE_MIN:
+        return _DOUBLE[frozenset({m_top[0], "draw"})]
+    if frozenset({m_top[0], m_second[0]}) == frozenset({"home", "away"}):
+        ah_side = _ah_market_favorite(odds)
+        if ah_side:
+            return _LABEL[ah_side]
+        return _DOUBLE[frozenset({m_top[0], "draw"})]
+    return _LABEL[m_top[0]]
 
 
 def recommendation_outcomes(recommendation: str) -> set[str] | None:
@@ -262,6 +299,23 @@ def _format_line(line: float | str) -> str:
     return str(n)
 
 
+def _ah_market_favorite(odds: dict[str, Any] | None) -> str | None:
+    """Lower AH price ≈ market lean (home-side line)."""
+    if not isinstance(odds, dict):
+        return None
+    ah = odds.get("asian_handicap")
+    if not isinstance(ah, dict):
+        return None
+    home = _odd_float(ah.get("home"))
+    away = _odd_float(ah.get("away"))
+    if home is None or away is None:
+        return None
+    gap = abs(home - away) / max(min(home, away), 1e-6)
+    if gap < 0.04:
+        return None
+    return "home" if home < away else "away"
+
+
 def _market_ou_side(over: float | None, under: float | None) -> str | None:
     """Lower odd ≈ more likely. Always pick a side when both odds exist."""
     if over is None or under is None:
@@ -317,11 +371,10 @@ def _resolve_ou_side(
     if not model_driven:
         return market_side or feat_side or model_side
 
-    # Soft model + clear market price gap → follow market.
-    if market_side and market_side != model_side and over is not None and under is not None:
+    # Clear market price on O/U → follow market over multifactor noise.
+    if market_side and over is not None and under is not None:
         gap = abs(over - under) / max(min(over, under), 1e-6)
-        soft = probs["draw"] >= 0.28 or abs(probs["home"] - probs["away"]) < 0.12
-        if soft and gap >= 0.08:
+        if gap >= 0.06:
             return market_side
 
     # Form agrees with market → that side.
@@ -341,35 +394,44 @@ def _btts_yes(
     ou_side: str,
     line: float,
     features: dict[str, float] | None,
+    odds: dict[str, Any] | None = None,
 ) -> bool:
-    """Independent BTTS lean — not derived from reference scorelines.
-
-    Score is the hardest market; BTTS is a binary product lean driven by O/U
-    shape, 1X2 balance, and recent goal-diff features when present.
-    """
+    """BTTS lean from O/U market shape + 1X2 balance (+ optional form)."""
     score = 0.0
+    ou = (odds or {}).get("goals_ou") if isinstance(odds, dict) else None
+    ou = ou if isinstance(ou, dict) else {}
+    over_odd = _odd_float(ou.get("home"))
+    under_odd = _odd_float(ou.get("away"))
+    market_side = _market_ou_side(over_odd, under_odd)
+    if market_side == "under" and under_odd and over_odd:
+        score -= 1.0 if line <= 2.5 else 0.75
+    elif market_side == "over" and under_odd and over_odd:
+        score += 1.0 if line >= 2.5 else 0.55
+
     if ou_side == "over":
-        score += 1.15 if line >= 2.5 else 0.55
+        score += 0.35 if line >= 2.5 else 0.15
     else:
-        score -= 1.15 if line <= 2.5 else 0.45
+        score -= 0.35 if line <= 2.5 else 0.20
 
     spread = abs(probs["home"] - probs["away"])
     top = max(probs["home"], probs["away"])
+    favorite = _primary_1x2_key(probs)
     if probs["draw"] >= 0.30:
-        score += 0.1 if ou_side == "over" else -0.5
+        score += 0.1 if ou_side == "over" else -0.35
     if top >= 0.55 and probs["draw"] < 0.24:
-        # Blowout favorites more often keep a clean sheet.
         score -= 0.75
+    if ou_side == "under" and favorite in ("home", "away") and top >= 0.45:
+        score -= 0.40
     if spread < 0.10 and top < 0.46:
-        score += 0.5
+        score += 0.35
 
     if features:
         hgd = float(features.get("home_gd_avg_5", 0.0) or 0.0)
         agd = float(features.get("away_gd_avg_5", 0.0) or 0.0)
         if hgd > 0.35 and agd > 0.25:
-            score += 0.55
+            score += 0.45
         if hgd < 0.05 and agd < 0.05:
-            score -= 0.55
+            score -= 0.45
 
     return score >= 0.0
 
@@ -378,16 +440,53 @@ def _reconcile_btts_with_scores(
     lines: list[tuple[int, int]],
     model_btts: bool,
 ) -> bool:
-    """Align BTTS lean with reference scorelines when they are unambiguous."""
+    """Tighten BTTS only when every reference score is a clean sheet.
+
+    BTTS lean is model/market driven; do **not** promote 否→是 just because a
+    secondary reference scoreline shows both teams scoring.
+    """
     if not lines:
         return model_btts
-    any_both = any(h > 0 and a > 0 for h, a in lines)
-    all_one_sided = all(h == 0 or a == 0 for h, a in lines)
-    if any_both:
-        return True
-    if all_one_sided:
+    if all(h == 0 or a == 0 for h, a in lines):
         return False
     return model_btts
+
+
+def _btts_score_for_outcomes(
+    outcomes: set[str],
+    probs: dict[str, float],
+) -> tuple[int, int] | None:
+    """Both-teams-score reference line consistent with 1X2 outcomes + strength."""
+    h, d, a = probs["home"], probs["draw"], probs["away"]
+    if outcomes == {"home"}:
+        if h >= 0.54 and h - a >= 0.18:
+            return (3, 1)
+        if h >= 0.52:
+            return (2, 1)
+        return (3, 2) if d >= 0.27 else (2, 1)
+    if outcomes == {"away"}:
+        if a >= 0.54 and a - h >= 0.18:
+            return (1, 3)
+        if a >= 0.50:
+            return (1, 2)
+        return (1, 2)
+    if outcomes == {"draw"}:
+        return (1, 1)
+    if outcomes == {"home", "draw"}:
+        return (1, 1) if d >= 0.26 else (2, 1)
+    if outcomes == {"away", "draw"}:
+        return (1, 1) if d >= 0.26 else (1, 2)
+    return None
+
+
+def _score_matches_outcomes(h: int, a: int, outcomes: set[str]) -> bool:
+    if "home" in outcomes and h > a:
+        return True
+    if "away" in outcomes and a > h:
+        return True
+    if "draw" in outcomes and h == a:
+        return True
+    return False
 
 
 def _align_score_with_btts(
@@ -396,29 +495,38 @@ def _align_score_with_btts(
     btts_yes: bool,
     probs: dict[str, float],
     total: int,
+    recommendation: str = "",
 ) -> list[tuple[int, int]]:
-    """Keep score as display reference; nudge so it does not fight BTTS lean."""
+    """Keep score as display reference; nudge so it does not fight BTTS / 1X2 leans."""
     if not lines:
         return lines
+    outcomes = recommendation_outcomes(recommendation) or {_primary_1x2_key(probs)}
+    single_outcome = len(outcomes) == 1
     out: list[tuple[int, int]] = []
     for h, a in lines:
-        if btts_yes and (h == 0 or a == 0):
+        if btts_yes:
+            if single_outcome:
+                fixed = _btts_score_for_outcomes(outcomes, probs)
+                if fixed and (h == 0 or a == 0 or not _score_matches_outcomes(h, a, outcomes)):
+                    out.append(fixed)
+                    continue
             if h == 0 and a == 0:
                 out.append((1, 1))
             elif h == 0:
                 out.append((1, max(1, a)))
-            else:
+            elif a == 0:
                 out.append((max(1, h), 1))
+            else:
+                out.append((h, a))
         elif not btts_yes and h > 0 and a > 0:
             key = _primary_1x2_key(probs)
             if key == "draw":
                 out.append((0, 0))
             elif key == "home":
-                t = max(1, h + a)
-                out.append((t, 0) if t <= 3 else (t - 1, 0))
+                # Keep winner's goals; drop opponent only (2-1 → 2-0, not 3-0).
+                out.append((max(h, 1), 0))
             else:
-                t = max(1, h + a)
-                out.append((0, t) if t <= 3 else (0, t - 1))
+                out.append((0, max(a, 1)))
         else:
             out.append((h, a))
     seen: set[tuple[int, int]] = set()
@@ -431,8 +539,17 @@ def _align_score_with_btts(
 
 
 def _target_total(line: float, side: str) -> int:
+    """Map O/U line + side to a reference goal total for score hints.
+
+    Under 3.5 must not anchor at 3 goals — that collapses many「小+主胜+否」
+    fixtures to identical 3-0 after BTTS alignment.
+    """
     if side == "under":
-        return max(0, int(line // 1))
+        base = max(0, int(line // 1))
+        # Half-lines at 3.5+ (小 3.5 / 4.5 …): anchor one below the line cap.
+        if line > int(line) and line >= 3.0:
+            base = max(1, base - 1)
+        return base
     return max(1, int(-(-line // 1)))  # ceil
 
 
@@ -456,8 +573,10 @@ def _split_score(total: int, probs: dict[str, float]) -> tuple[int, int]:
     if key == "home":
         if close_sides:
             return (1, 0) if total <= 2 else (2, 1)
-        if h >= 0.55 and d < 0.24 and total <= 3:
-            return total, 0
+        if h >= 0.55 and d < 0.24 and total >= 3:
+            return min(total, 3), 0
+        if total == 2:
+            return (2, 0) if h >= 0.50 else (1, 0)
         away = (total - 1) // 2
         if away >= total - away:
             away = max(0, total - away - 1)
@@ -469,8 +588,10 @@ def _split_score(total: int, probs: dict[str, float]) -> tuple[int, int]:
         return home, away
     if close_sides:
         return (0, 1) if total <= 2 else (1, 2)
-    if a >= 0.55 and d < 0.24 and total <= 3:
-        return 0, total
+    if a >= 0.55 and d < 0.24 and total >= 3:
+        return 0, min(total, 3)
+    if total == 2:
+        return (0, 2) if a >= 0.50 else (0, 1)
     home = (total - 1) // 2
     if home >= total - home:
         home = max(0, total - home - 1)
@@ -509,8 +630,13 @@ def resolve_handicap_bundle(
     features: dict[str, float] | None = None,
     stored: str | None = None,
     score_hint: str | None = None,
+    prefer_stored: bool = False,
 ) -> tuple[str, str]:
-    """Recompute handicap lean + optional market note for detail views."""
+    """Resolve handicap lean; frozen exam snapshots must not be recomputed."""
+    text = (stored or "").strip()
+    if prefer_stored and text:
+        return text, ""
+
     ah = (odds or {}).get("asian_handicap") if isinstance(odds, dict) else None
     if isinstance(odds, dict) and odds.get("available") and isinstance(ah, dict):
         return _handicap_bundle(
@@ -520,7 +646,6 @@ def resolve_handicap_bundle(
             features=features,
             score_hint=score_hint,
         )
-    text = (stored or "").strip()
     return (text if text else "缺少盘口数据分析"), ""
 
 
@@ -563,14 +688,24 @@ def _score_hints_for_recommendation(
     if outcomes == {"draw"}:
         lines.append(_draw_ref())
     elif outcomes == {"home", "draw"}:
-        lines.append((1, 0) if total <= 2 else (2, 1))
+        if total <= 2:
+            lines.append((1, 0))
+        elif btts_yes:
+            lines.append((2, 1))
+        else:
+            lines.append((2, 0))
         if btts_yes:
             draw_total = 2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1)
             lines.append(_draw_scoreline(draw_total))
         else:
             lines.append((0, 0))
     elif outcomes == {"away", "draw"}:
-        lines.append((0, 1) if total <= 2 else (1, 2))
+        if total <= 2:
+            lines.append((0, 1))
+        elif btts_yes:
+            lines.append((1, 2))
+        else:
+            lines.append((0, 2))
         if btts_yes:
             draw_total = 2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1)
             lines.append(_draw_scoreline(draw_total))
@@ -578,8 +713,15 @@ def _score_hints_for_recommendation(
             lines.append((0, 0))
     elif outcomes == {"home", "away"}:
         ht = max(1, total if total > 0 else 1)
-        lines.append((1, 0) if ht <= 2 else (2, 1))
-        lines.append((0, 1) if ht <= 2 else (1, 2))
+        if ht <= 2:
+            lines.append((1, 0))
+            lines.append((0, 1))
+        elif btts_yes:
+            lines.append((2, 1))
+            lines.append((1, 2))
+        else:
+            lines.append((2, 0))
+            lines.append((0, 2))
     elif outcomes == {"home"}:
         lines.append(_split_score(max(1, total), probs))
     elif outcomes == {"away"}:
@@ -612,6 +754,9 @@ def derive_prediction_leans(
 
     Flat prior with local odds → use odds-implied 1X2 (no API).
     Flat prior and no usable odds → 待分析.
+
+    ML goal model only **overrides** a lean when that target gate is open.
+    Closed gates keep the heuristic/market lean — never blank to 待分析.
 
     Frozen ``pre_match_data`` snapshots are written at analysis time; changing
     this function only affects **future** analyses (historical audit stays).
@@ -661,9 +806,15 @@ def derive_prediction_leans(
         f"大（{line_label}）" if side == "over" else f"小（{line_label}）"
     )
 
-    recommendation = get_recommendation(normalized, features=features)
+    recommendation = get_recommendation(
+        normalized, odds=odds, features=features
+    )
     btts_yes = _btts_yes(
-        normalized, ou_side=side, line=line, features=features
+        normalized,
+        ou_side=side,
+        line=line,
+        features=features,
+        odds=odds if isinstance(odds, dict) else None,
     )
     if (
         goal_prediction is not None
@@ -671,13 +822,15 @@ def derive_prediction_leans(
         and distribution is not None
     ):
         btts_yes = distribution["btts_prob"] >= 0.5
+
+    score_lines: list[tuple[int, int]] = []
     if (
         goal_prediction is not None
         and goal_prediction.deploy_score
         and distribution is not None
     ):
         score_lines = [(h, a) for h, a, _ in distribution["scores"]]
-    else:
+    if not score_lines:
         _, score_lines = _score_hints_for_recommendation(
             recommendation,
             normalized,
@@ -685,32 +838,20 @@ def derive_prediction_leans(
             btts_yes=btts_yes,
             ou_side=side,
         )
-        score_lines = _align_score_with_btts(
-            score_lines, btts_yes=btts_yes, probs=normalized, total=total
-        )
-        btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
+    score_lines = _align_score_with_btts(
+        score_lines,
+        btts_yes=btts_yes,
+        probs=normalized,
+        total=total,
+        recommendation=recommendation,
+    )
+    btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
     score_hint = (
         f"比分:{' / '.join(f'{h}-{a}' for h, a in score_lines)}"
         if score_lines
         else "比分:待分析"
     )
     both_score_lean = "双进:是" if btts_yes else "双进:否"
-    if goal_prediction is not None:
-        if not goal_prediction.deploy_score:
-            score_hint = "比分:待分析"
-        if not goal_prediction.deploy_btts:
-            both_score_lean = "双进:待分析"
-        if not goal_prediction.deploy_ou:
-            market_over, market_under = _implied_two_way(over, under)
-            if max(market_over, market_under) >= 0.56:
-                market_side = "over" if market_over > market_under else "under"
-                goal_lean = (
-                    f"大（{line_label}）"
-                    if market_side == "over"
-                    else f"小（{line_label}）"
-                )
-            else:
-                goal_lean = "大小：待分析"
     handicap_lean, handicap_market_note = _handicap_bundle(
         odds if isinstance(odds, dict) else None,
         recommendation=recommendation,
@@ -719,6 +860,7 @@ def derive_prediction_leans(
         score_hint=score_hint,
     )
     return {
+        "recommendation": recommendation,
         "goal_lean": goal_lean,
         "both_score_lean": both_score_lean,
         "score_hint": score_hint,
@@ -763,7 +905,8 @@ def build_prediction_snapshot(
     *,
     league_id: int | None = None,
 ) -> dict[str, Any]:
-    normalized = normalize_probabilities(probs)
+    # Odds-implied fills flat placeholders so 1X2 + leans stay consistent.
+    normalized = resolve_match_probabilities(probs, odds)
     leans = derive_prediction_leans(
         normalized, odds, features=features, league_id=league_id
     )
@@ -771,7 +914,6 @@ def build_prediction_snapshot(
         "home_win_prob": round(normalized["home"], 4),
         "draw_prob": round(normalized["draw"], 4),
         "away_win_prob": round(normalized["away"], 4),
-        "recommendation": get_recommendation(normalized, features=features),
         **leans,
     }
 

@@ -13,10 +13,13 @@ export interface ExtraScore extends RegulationScore {
 /** Minimal shape for ResultHitTags (results list + finished favorites). */
 export interface HitTagFixture {
   has_prediction?: boolean
+  /** Frozen handicap prediction copy (handicap tag label). */
+  handicap_lean?: string | null
   result_hit?: boolean | null
   score_hit?: boolean | null
   ou_hit?: boolean | null
   btts_hit?: boolean | null
+  /** Present when handicap was evaluable. */
   handicap_result?: string | null
   handicap_hit?: boolean | null
 }

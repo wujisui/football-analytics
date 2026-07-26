@@ -80,24 +80,43 @@ def record_has_prematch_1x2(
     return _stored_has_1x2(stored) or _feature_has_1x2(feature)
 
 
+_PLACEHOLDER_MARKERS = ("待分析", "缺少盘口")
+
+
+def _is_real_prediction_text(text: str | None) -> bool:
+    """True for a frozen lean/recommendation that is not an empty placeholder."""
+    value = (text or "").strip()
+    if not value:
+        return False
+    return not any(marker in value for marker in _PLACEHOLDER_MARKERS)
+
+
 def record_has_algorithm_recommendation(
     stored: PreMatchData | None,
-    feature: MatchFeature | None,
+    feature: MatchFeature | None = None,
 ) -> bool:
-    """Whether a frozen algorithm recommendation / analysis snapshot exists."""
-    if stored is not None:
-        recommendation = (stored.recommendation or "").strip()
-        if recommendation and recommendation != "待分析":
-            return True
-        if None not in (stored.home_win_prob, stored.draw_prob, stored.away_win_prob):
-            return True
-    if feature is not None and None not in (
-        feature.home_win_prob,
-        feature.draw_prob,
-        feature.away_win_prob,
-    ):
+    """Whether a real frozen algorithm prediction exists.
+
+    Flat 1/3·1/3·1/3 probabilities and ``待分析`` / ``缺少盘口`` placeholders do
+    **not** count. Keep terminal fixtures only when a concrete recommendation or
+    lean was frozen (or when ``record_has_prematch_1x2`` already keeps them).
+    ``feature`` is accepted for call-site compatibility; probs-only MatchFeature
+    rows are not enough without odds.
+    """
+    _ = feature
+    if stored is None:
+        return False
+    if _is_real_prediction_text(stored.recommendation):
         return True
-    return False
+    return any(
+        _is_real_prediction_text(getattr(stored, field, None))
+        for field in (
+            "score_hint",
+            "goal_lean",
+            "both_score_lean",
+            "handicap_lean",
+        )
+    )
 
 
 def should_prune_terminal_fixture(
@@ -105,7 +124,7 @@ def should_prune_terminal_fixture(
     stored: PreMatchData | None,
     feature: MatchFeature | None,
 ) -> bool:
-    """Delete only finished-like rows with neither 1X2 nor algorithm recommendation."""
+    """Delete finished-like rows with neither 1X2 nor a real algorithm prediction."""
     if fixture.status not in TERMINAL_STATUSES:
         return False
     if record_has_prematch_1x2(stored, feature):

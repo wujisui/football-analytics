@@ -637,3 +637,68 @@ def model_status() -> dict[str, Any]:
         "trained_at": meta.get("trained_at") if meta else None,
     }
 
+
+async def refresh_pending_prediction_snapshots(session: Any) -> dict[str, int]:
+    """Recompute pending 1X2 / leans from local odds packages (no official API).
+
+    Used after model upgrades so list cards pick up heuristic/ML leans instead of
+    stale ``待分析`` placeholders. Finished exam snapshots stay frozen.
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.models.fixture import Fixture
+    from app.models.pre_match_data import PreMatchData
+    from app.services.cache import analysis_cache_key, get_cache_service
+    from app.services.prediction import build_prediction_snapshot, implied_probs_from_odds
+    from app.services.prematch_package import package_from_record, rehydrate_odds_markets
+
+    rows = (
+        await session.execute(
+            select(PreMatchData, Fixture)
+            .join(Fixture, Fixture.id == PreMatchData.fixture_id)
+            .where(Fixture.status.in_(("pending", "postponed")))
+        )
+    ).all()
+
+    updated = 0
+    skipped = 0
+    cache = get_cache_service()
+    for stored, fixture in rows:
+        package = package_from_record(stored)
+        odds = package.get("odds") if isinstance(package, dict) else None
+        if not isinstance(odds, dict) or not odds.get("available"):
+            skipped += 1
+            continue
+        odds = rehydrate_odds_markets(odds)
+        pred = predict_probabilities(package)
+        probs = pred.probs
+        if pred.source == "form_fallback":
+            implied = implied_probs_from_odds(odds)
+            if implied:
+                probs = implied
+        snap = build_prediction_snapshot(
+            probs,
+            odds,
+            features=pred.features,
+            league_id=fixture.league_id,
+        )
+        stored.home_win_prob = snap["home_win_prob"]
+        stored.draw_prob = snap["draw_prob"]
+        stored.away_win_prob = snap["away_win_prob"]
+        stored.recommendation = snap.get("recommendation")
+        stored.score_hint = snap.get("score_hint")
+        stored.goal_lean = snap.get("goal_lean")
+        stored.both_score_lean = snap.get("both_score_lean")
+        stored.handicap_lean = snap.get("handicap_lean")
+        stored.updated_at = datetime.now(timezone.utc)
+        updated += 1
+        try:
+            await cache.delete(analysis_cache_key(fixture.id))
+        except Exception:
+            pass
+
+    await session.commit()
+    return {"updated": updated, "skipped_no_odds": skipped}
+

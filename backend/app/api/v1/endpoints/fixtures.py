@@ -38,7 +38,6 @@ from app.services.prediction import (
     adjust_probabilities_with_factors,
     build_prediction_snapshot,
     derive_prediction_leans,
-    get_recommendation,
     implied_probs_from_odds,
     resolve_match_probabilities,
     summarize_accuracy,
@@ -171,6 +170,7 @@ def _list_analysis_from_fixture(
             league_id=fixture.league_id,
             stored=getattr(stored, "handicap_lean", None),
             score_hint=score_hint,
+            prefer_stored=True,
         )
     else:
         leans = derive_prediction_leans(
@@ -178,7 +178,7 @@ def _list_analysis_from_fixture(
             odds if isinstance(odds, dict) else None,
             league_id=fixture.league_id,
         )
-        recommendation = get_recommendation(probs) if ready else "待分析"
+        recommendation = leans["recommendation"] if ready else "待分析"
         goal_lean = leans["goal_lean"] if ready else "大小：待分析"
         both_score_lean = leans["both_score_lean"] if ready else "双进:待分析"
         score_hint = leans["score_hint"] if ready else "比分:待分析"

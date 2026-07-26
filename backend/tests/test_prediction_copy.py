@@ -52,6 +52,23 @@ class PredictionCopyTests(unittest.TestCase):
             self.assertTrue(compact[key])
             self.assertTrue(historical[key])
 
+    def test_resolve_handicap_prefers_frozen_stored(self) -> None:
+        from app.services.prediction import resolve_handicap_bundle
+
+        odds = {
+            "available": True,
+            "asian_handicap": {"line": -0.5, "home": 1.95, "away": 1.80},
+        }
+        frozen = "让球负（-0.5）"
+        lean, _ = resolve_handicap_bundle(
+            odds,
+            "胜",
+            league_id=253,
+            stored=frozen,
+            prefer_stored=True,
+        )
+        self.assertEqual(lean, frozen)
+
     def test_summary_includes_handicap_accuracy(self) -> None:
         summary = summarize_accuracy(
             [
@@ -61,6 +78,36 @@ class PredictionCopyTests(unittest.TestCase):
             ]
         )
         self.assertEqual(summary["handicap"], {"hits": 1, "total": 2, "rate": 0.5})
+
+    def test_closed_goal_gates_keep_heuristic_leans(self) -> None:
+        """ML OU/BTTS/score gates must not blank already-computed market leans."""
+        from unittest.mock import patch
+
+        from app.services.goal_predictor import GoalPrediction
+        from app.services.prediction import derive_prediction_leans
+
+        odds = {
+            "available": True,
+            "match_winner": {"home": 2.1, "draw": 3.3, "away": 3.4},
+            "goals_ou": {"line": 2.5, "home": 1.95, "away": 1.85},
+            "asian_handicap": {"line": -0.25, "home": 1.9, "away": 1.9},
+        }
+        probs = {"home": 0.46, "draw": 0.28, "away": 0.26}
+        fake = GoalPrediction(
+            home_lambda=1.2,
+            away_lambda=1.1,
+            source="poisson_ml",
+            deploy_score=False,
+            deploy_ou=False,
+            deploy_btts=False,
+        )
+        with patch("app.services.goal_predictor.predict_goals", return_value=fake):
+            leans = derive_prediction_leans(probs, odds, features={"has_odds": 1.0})
+        self.assertNotIn("待分析", leans["goal_lean"])
+        self.assertNotIn("待分析", leans["both_score_lean"])
+        self.assertNotIn("待分析", leans["score_hint"])
+        self.assertTrue(leans["goal_lean"].startswith("大") or leans["goal_lean"].startswith("小"))
+        self.assertTrue(leans["score_hint"].startswith("比分:"))
 
 
 if __name__ == "__main__":

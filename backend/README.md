@@ -147,6 +147,8 @@ python manage.py run-scheduler    # 前台运行调度器（调试用）
 python manage.py backfill-features  # 从已结束场次回填 match_features 训练行
 python manage.py train-model      # 用赛果标签训练 1X2（需 ≥ ML_MIN_TRAIN_SAMPLES）
 python manage.py train-goals-model  # 用赛前盘口与终场进球训练 Poisson 分布
+python manage.py upgrade-models   # 回填+重训 1X2/AH/进球，并刷新未完赛推荐（不打官方 API）
+python manage.py refresh-pending-predictions  # 仅用本地盘口重算未完赛 leans
 python manage.py model-status     # 查看 1X2 / 让球 / 进球分布模型及基线门禁
 python manage.py backfill-ah-features  # 回填让球特征与 AH 标签
 python manage.py train-ah-model   # 训练让球穿盘模型（需 ≥ ML_AH_MIN_TRAIN_SAMPLES）
@@ -177,7 +179,7 @@ python -m unittest discover -s tests -v
 
 1. 赛前分析写入 `match_features`（冻结特征 + 仅供审计的当时概率）
 2. 赛果回写打 `label`；训练输入只使用赛前特征/盘口，标签只使用终场赛果，绝不把旧预测作为训练特征
-3. `clean_old_data` 只物理删除「已完场且无赛前 1X2、也无算法推荐」的场次；未开赛赛程保留（盘口可能尚未开出）
+3. `clean_old_data` 只物理删除「已完场且无赛前 1X2、也无有效算法预测」的场次；`待分析` / 缺少盘口占位与 1/3·1/3·1/3 概率不算有效预测；未开赛赛程保留（盘口可能尚未开出）
 4. 1X2 使用时间顺序 80/20 验证；拟合模型只有 log-loss 优于去水盘口基线才启用，否则 `source=market_baseline`
 
 配置见 `.env`：`ML_MIN_TRAIN_SAMPLES`、`ML_AUTO_TRAIN`。
@@ -189,8 +191,8 @@ python -m unittest discover -s tests -v
 1. `goal_features_json` 与主客进球标签持久化在 `match_features`，不依赖会被清理的展示数据
 2. 时间验证总 MAE 必须优于常数均值基线，模型才标记为 `deployable`
 3. 比分、大小球、BTTS 分别设门禁：对应验证指标必须胜过常见比分、盘口方向、类别多数基线
-4. 未过门禁的预测不再强行输出；大小球只有市场优势足够明确时采用盘口方向，其余显示待分析
-5. `capture_results` 有新增标签时自动重训；也可运行 `python manage.py train-goals-model`
+4. 未过门禁时**保留**盘口/启发式 lean，不覆盖成「待分析」；只有无概率且无盘口时才显示待分析
+5. `capture_results` 有新增标签时自动重训；也可运行 `python manage.py upgrade-models`
 
 ### 让球模型（M-AH）
 
