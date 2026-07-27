@@ -17,6 +17,8 @@ const loading = ref(false)
 const error = ref('')
 let loadedKey = ''
 let inflight: Promise<void> | null = null
+let inflightKey = ''
+let loadSeq = 0
 
 /** Detail wrote odds/analysis to DB — refresh list when returning to Home. */
 let detailListDirty = false
@@ -32,6 +34,12 @@ function cacheFresh(date: string, days: number): boolean {
     loadedAt.value > 0 &&
     Date.now() - loadedAt.value < CACHE_TTL_MS
   )
+}
+
+/** True when shared list cache matches 即时 UTC today + span. */
+export function isPrematchListCacheFresh(now = new Date()): boolean {
+  const { date, days } = prematchFetchParams(now)
+  return cacheFresh(date, days)
 }
 
 function applyPendingPatches(): void {
@@ -69,7 +77,7 @@ export function patchFixtureFromDetail(detail: FixtureResponse): void {
 }
 
 /** Apply queued patches; reload local list only when a patch could not merge yet. */
-export function syncHomeListAfterDetail(date: string): void {
+export function syncHomeListAfterDetail(_date: string): void {
   applyPendingPatches()
   if (!detailListDirty) return
   detailListDirty = false
@@ -80,8 +88,9 @@ export function syncHomeListAfterDetail(date: string): void {
 }
 
 /**
- * Load fixtures for a single calendar day from local API only.
+ * Load fixtures for the prematch window from local API only.
  * Client filters by tracked league ids — do not narrow with league_ids here.
+ * Do not call with 赛程 selectedDay; that must stay in scheduleFixtures.
  */
 async function loadHomeFixtures(options?: {
   force?: boolean
@@ -90,29 +99,48 @@ async function loadHomeFixtures(options?: {
 }): Promise<void> {
   const date = options?.date ?? todayDate()
   const days = options?.days ?? DEFAULT_DAYS
+  const key = cacheKey(date, days)
 
   if (!options?.force && cacheFresh(date, days)) {
     loading.value = false
     applyPendingPatches()
     return
   }
-  if (inflight) return inflight
+  if (inflight && inflightKey === key) return inflight
+  if (inflight) {
+    try {
+      await inflight
+    } catch {
+      /* previous request failed; continue with this key */
+    }
+    if (!options?.force && cacheFresh(date, days)) {
+      applyPendingPatches()
+      return
+    }
+  }
 
+  const seq = ++loadSeq
   loading.value = true
   error.value = ''
+  inflightKey = key
   inflight = (async () => {
     try {
       const fixturesData = await fetchTodayFixtures({ date, days })
+      if (seq !== loadSeq) return
       allFixtures.value = fixturesData.fixtures
       loadedAt.value = Date.now()
-      loadedKey = cacheKey(date, days)
+      loadedKey = key
       applyPendingPatches()
     } catch (err) {
+      if (seq !== loadSeq) return
       error.value = err instanceof Error ? err.message : '获取失败'
       throw err
     } finally {
-      loading.value = false
-      inflight = null
+      if (seq === loadSeq) {
+        loading.value = false
+        inflight = null
+        inflightKey = ''
+      }
     }
   })()
 

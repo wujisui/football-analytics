@@ -5,11 +5,18 @@ import { useMessage } from 'naive-ui'
 import { syncFixtures } from '@/api/fixtures'
 import { resolveSyncLeagueIds } from '@/utils/leagueFilterSelection'
 import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
-import { useHomeFixtures } from '@/composables/useHomeFixtures'
+import {
+  isPrematchListCacheFresh,
+  useHomeFixtures,
+} from '@/composables/useHomeFixtures'
 import type { LeagueSummaryResponse } from '@/api/types'
 import { useIsPhone, useIsTabletDown } from '@/composables/useMediaQuery'
 import { useResultsLeagues } from '@/composables/useResultsLeagues'
-import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
+import {
+  endScheduleFilterOverride,
+  getActiveFilterDate,
+  useTrackedLeagues,
+} from '@/composables/useTrackedLeagues'
 import { sortFixturesFavoritesFirst } from '@/utils/fixtureSort'
 import {
   fixturesShellContext,
@@ -328,16 +335,8 @@ export function useFixturesShell() {
     return isResultsPage.value ? 1 : prematchFetchParams().days
   }
 
+  /** Prematch list only — never write 赛程 selectedDay into shared allFixtures. */
   async function loadDayLocal(force = false) {
-    if (isResultsPage.value) {
-      const day = selectedDay.value
-      try {
-        await loadHomeFixtures({ force, date: day, days: 1 })
-      } catch {
-        // error already set in composable
-      }
-      return
-    }
     const { date, days } = prematchFetchParams()
     try {
       await loadHomeFixtures({ force, date, days })
@@ -392,6 +391,14 @@ export function useFixturesShell() {
     } catch {
       if (filterOptionsError.value) message.warning(filterOptionsError.value)
     }
+  }
+
+  /** Leave 赛程: restore frozen 即时 filter, then refresh list/filter if stale. */
+  function restorePrematchAfterResults() {
+    endScheduleFilterOverride()
+    const force =
+      getActiveFilterDate() !== homeDay.value || !isPrematchListCacheFresh()
+    void reloadPrematchDay(force)
   }
 
   async function confirmFilter(ids: number[]) {
@@ -535,7 +542,7 @@ export function useFixturesShell() {
         syncLeagueFromRoute()
         const prematch = name === 'home' || name === 'predictions'
         if (prematch && prev === 'results') {
-          void reloadPrematchDay()
+          restorePrematchAfterResults()
         }
       },
     )
@@ -562,7 +569,6 @@ export function useFixturesShell() {
     prematchDisplayedFixtures,
     homeEmptyText,
     predictionsEmptyText,
-    loadDayLocal,
     syncCurrentDay,
     syncLoading,
     manualSyncRevision,

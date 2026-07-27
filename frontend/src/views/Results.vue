@@ -29,6 +29,10 @@ import {
   setResultsLoading,
   useResultsLeagues,
 } from '@/composables/useResultsLeagues'
+import {
+  beginScheduleFilterOverride,
+  endScheduleFilterOverride,
+} from '@/composables/useTrackedLeagues'
 import { todayDate, yesterdayDate } from '@/utils/homeDateStrip'
 import { ACCURACY_COLORS } from '@/utils/accuracyColors'
 import { sortFixturesFavoritesFirst } from '@/utils/fixtureSort'
@@ -356,7 +360,8 @@ async function loadScheduleDay() {
   loading.value = true
   setResultsLoading(true)
   error.value = ''
-  // Catalog is local-only; expose optional leagues before the user presses sync.
+  // Future-day catalog overrides shared prematch filter; freeze 即时 first.
+  beginScheduleFilterOverride()
   void loadFilterOptions({ date: selectedDay.value }).catch(() => undefined)
   try {
     const data = await fetchTodayFixtures({ date: selectedDay.value, days: 1 })
@@ -398,6 +403,10 @@ async function loadSelectedDay(force = false) {
 
   await loadDayResults()
 }
+
+watch(isScheduleFutureDay, (future, wasFuture) => {
+  if (wasFuture && !future) endScheduleFilterOverride()
+})
 
 watch(selectedDay, () => {
   if (route.name !== 'results') return

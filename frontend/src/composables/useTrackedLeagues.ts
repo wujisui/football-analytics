@@ -16,6 +16,14 @@ let activeFilterDate = ''
 
 let inflightFilterOptions: Promise<LeagueFilterOptionsResponse> | null = null
 let inflightFilterOptionsKey = ''
+let filterLoadSeq = 0
+
+/** Prematch filter frozen while 赛程 future-day overrides shared options. */
+let frozenPrematch: {
+  filterOptions: LeagueFilterOptionsResponse | null
+  trackedIds: number[]
+  activeFilterDate: string
+} | null = null
 
 function readStoredIds(date: string): number[] | null {
   if (!date) return null
@@ -68,6 +76,32 @@ function syncTrackedWithFilterOptions() {
   )
 }
 
+/**
+ * Before 赛程 loads filter-options for a future day: keep 即时 selection so
+ * returning home can restore instantly (no flash of future-day leagues).
+ */
+export function beginScheduleFilterOverride(): void {
+  if (frozenPrematch) return
+  frozenPrematch = {
+    filterOptions: filterOptions.value,
+    trackedIds: [...trackedIds.value],
+    activeFilterDate,
+  }
+}
+
+/** Restore 即时 filter after leaving future schedule. */
+export function endScheduleFilterOverride(): void {
+  if (!frozenPrematch) return
+  filterOptions.value = frozenPrematch.filterOptions
+  trackedIds.value = frozenPrematch.trackedIds
+  activeFilterDate = frozenPrematch.activeFilterDate
+  frozenPrematch = null
+}
+
+export function getActiveFilterDate(): string {
+  return activeFilterDate
+}
+
 async function loadFilterOptions(options?: {
   date?: string
 }): Promise<LeagueFilterOptionsResponse> {
@@ -76,6 +110,7 @@ async function loadFilterOptions(options?: {
     return inflightFilterOptions
   }
 
+  const seq = ++filterLoadSeq
   filterOptionsError.value = ''
   inflightFilterOptionsKey = key
   inflightFilterOptions = (async () => {
@@ -83,17 +118,22 @@ async function loadFilterOptions(options?: {
       const data = await fetchLeagueFilterOptions({
         date: options?.date,
       })
+      if (seq !== filterLoadSeq) return data
       filterOptions.value = data
       activeFilterDate = data.date
       syncTrackedWithFilterOptions()
       return data
     } catch (err) {
-      filterOptionsError.value =
-        err instanceof Error ? err.message : '加载联赛筛选选项失败'
+      if (seq === filterLoadSeq) {
+        filterOptionsError.value =
+          err instanceof Error ? err.message : '加载联赛筛选选项失败'
+      }
       throw err
     } finally {
-      inflightFilterOptions = null
-      inflightFilterOptionsKey = ''
+      if (seq === filterLoadSeq) {
+        inflightFilterOptions = null
+        inflightFilterOptionsKey = ''
+      }
     }
   })()
 
