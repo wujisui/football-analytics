@@ -19,13 +19,17 @@ import {
 } from '@/utils/fixturesLeagueFilter'
 import {
   isPrematchFixtureVisible,
+  isPrematchMatchDay,
   isScheduleFutureDay,
   predictionsDayCountLabel,
+  prematchFetchParams,
   resultsDayCountLabel,
   scheduleDayCountLabel,
+  scheduleTodayDate,
   todayDate,
   yesterdayDate,
 } from '@/utils/homeDateStrip'
+import { toScheduleDayKey } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
 
@@ -86,7 +90,7 @@ export function useFixturesShell() {
   const isScheduleFutureDayRef = computed(
     () => isResultsPage.value && isScheduleFutureDay(selectedDay.value, todayDate()),
   )
-  const homeDay = computed(() => todayDate())
+  const homeDay = computed(() => scheduleTodayDate())
   const shellContext = computed(() => fixturesShellContext(pageName.value))
 
   const selectedLeagueId = computed({
@@ -112,9 +116,13 @@ export function useFixturesShell() {
 
   const prematchVisibleFixtures = computed(() => {
     const tracked = prematchTrackedIdSet.value
-    return allFixtures.value.filter(
-      (f) => tracked.has(f.league_id) && isPrematchFixtureVisible(f.status),
-    )
+    const scheduleToday = scheduleTodayDate()
+    return allFixtures.value.filter((f) => {
+      if (!tracked.has(f.league_id) || !isPrematchFixtureVisible(f.status)) {
+        return false
+      }
+      return isPrematchMatchDay(toScheduleDayKey(f.fixture_date), scheduleToday)
+    })
   })
 
   const prematchCountByLeague = computed(() => {
@@ -228,7 +236,7 @@ export function useFixturesShell() {
 
   const homeEmptyText = computed(() => {
     if (error.value) return ''
-    const day = homeDay.value
+    const day = scheduleTodayDate()
     if (!prematchFilterOptions.value.length && !prematchVisibleFixtures.value.length) {
       return '暂无本地赛程，可点击「同步」手动更新'
     }
@@ -251,7 +259,7 @@ export function useFixturesShell() {
 
   const predictionsEmptyText = computed(() => {
     if (error.value) return ''
-    const day = homeDay.value
+    const day = scheduleTodayDate()
     if (!prematchTrackedIds.value.length) return '请先在「筛选」中勾选联赛'
     if (!prematchDisplayedFixtures.value.length && !teamSearch.value.trim()) {
       return `${day} 暂无未完赛预测`
@@ -313,14 +321,27 @@ export function useFixturesShell() {
   }
 
   function syncCalendarDay() {
-    return isResultsPage.value ? selectedDay.value : homeDay.value
+    return isResultsPage.value ? selectedDay.value : prematchFetchParams().date
+  }
+
+  function syncCalendarDays() {
+    return isResultsPage.value ? 1 : prematchFetchParams().days
   }
 
   async function loadDayLocal(force = false) {
-    const day = isResultsPage.value ? selectedDay.value : homeDay.value
+    if (isResultsPage.value) {
+      const day = selectedDay.value
+      try {
+        await loadHomeFixtures({ force, date: day, days: 1 })
+      } catch {
+        // error already set in composable
+      }
+      return
+    }
+    const { date, days } = prematchFetchParams()
     try {
-      await loadHomeFixtures({ force, date: day, days: 1 })
-      if (!isResultsPage.value) syncLeagueFromRoute()
+      await loadHomeFixtures({ force, date, days })
+      syncLeagueFromRoute()
     } catch {
       // error already set in composable
     }
@@ -337,7 +358,7 @@ export function useFixturesShell() {
     try {
       const res = await syncFixtures({
         date: day,
-        days: 1,
+        days: syncCalendarDays(),
         includeResults: !futureResultsDay,
         includeOdds: !syncingResultsPage || futureResultsDay,
         // Future schedule: spend quota filling missing boards for primary

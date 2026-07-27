@@ -31,6 +31,7 @@ from app.services.analyzer import (
     DEFAULT_PROB,
     AnalyzerService,
 )
+from app.services.calendar_tz import utc_span_range, utc_today
 from app.services.fetcher import ApiKeyNotConfiguredError
 from app.services.fixtures_sync import build_sync_params, execute_fixtures_sync
 from app.services.prediction import (
@@ -246,13 +247,13 @@ async def get_today_fixtures(
     date_str: str | None = Query(
         default=None,
         alias="date",
-        description="起始日期 YYYY-MM-DD，默认今天",
+        description="起始比赛日 YYYY-MM-DD（开赛时刻的 UTC 日期 / API 赛程日），默认 UTC 今天",
     ),
     days: int | None = Query(
         default=None,
         ge=1,
         le=60,
-        description="从起始日起未来几天（含当天），默认 1（仅当天）；联赛页可用 7",
+        description="从起始比赛日起连续几天（含当天），默认 1；即时列表用 2 覆盖今天+明天",
     ),
     db: AsyncSession = Depends(get_db),
 ) -> TodayFixturesResponse:
@@ -264,12 +265,11 @@ async def get_today_fixtures(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
     else:
-        base_date = date.today()
+        base_date = utc_today()
 
     window_days = days if days is not None else 1
     end_date = base_date + timedelta(days=window_days - 1)
-    start_dt = datetime.combine(base_date, datetime.min.time())
-    end_dt = datetime.combine(end_date, datetime.max.time())
+    start_dt, end_dt = utc_span_range(base_date, end_date)
 
     if league_ids is not None:
         allowed = {int(x) for x in league_ids}
@@ -282,7 +282,7 @@ async def get_today_fixtures(
         select(Fixture)
         .where(
             Fixture.date >= start_dt,
-            Fixture.date <= end_dt,
+            Fixture.date < end_dt,
         )
         .options(
             selectinload(Fixture.home_team),
@@ -356,7 +356,7 @@ async def get_fixture_results(
     date_str: str = Query(
         ...,
         alias="date",
-        description="查询日期 YYYY-MM-DD（按开赛日）",
+        description="查询比赛日 YYYY-MM-DD（开赛时刻的 UTC 日期 / API 赛程日）",
     ),
     league_id: int | None = Query(default=None, description="按联赛 ID 过滤"),
     db: AsyncSession = Depends(get_db),
@@ -368,14 +368,13 @@ async def get_fixture_results(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
 
-    start_dt = datetime.combine(base_date, datetime.min.time())
-    end_dt = datetime.combine(base_date, datetime.max.time())
+    start_dt, end_dt = utc_span_range(base_date, base_date)
 
     stmt = (
         select(Fixture)
         .where(
             Fixture.date >= start_dt,
-            Fixture.date <= end_dt,
+            Fixture.date < end_dt,
             Fixture.status.in_(["finished", "cancelled", "postponed"]),
         )
         .options(
@@ -482,7 +481,7 @@ async def get_results_accuracy_history(
         league_ids: list[int] = [league_id]
     else:
         league_ids = []
-    today = date.today()
+    today = utc_today()
     end_day = today
     if end_date_str:
         try:

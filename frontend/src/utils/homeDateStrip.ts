@@ -2,12 +2,19 @@
 
 export const HOME_DATE_RADIUS = 7
 
+/** 即时：UTC 比赛日今天 + 明天（与 API date= / 入库赛程日一致） */
+export const PREMATCH_MATCH_DAY_SPAN = 2
+
 const WEEKDAY_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const ACTIVE_STATUSES = new Set(['pending', 'live'])
 
 function parseIso(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y, m - 1, d)
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
 }
 
 export function isoDate(d: Date): string {
@@ -17,10 +24,16 @@ export function isoDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+/** 浏览器本地日历「今天」（日期条展示用） */
 export function todayDate(): string {
   const d = new Date()
   d.setHours(0, 0, 0, 0)
   return isoDate(d)
+}
+
+/** UTC 赛程「今天」——场次比赛日基准（巴甲当晚仍属该 UTC 日） */
+export function scheduleTodayDate(now = new Date()): string {
+  return `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}-${pad2(now.getUTCDate())}`
 }
 
 /** Calendar day before today (local). */
@@ -86,4 +99,30 @@ export function scheduleDayCountLabel(count: number): string {
 
 export function isScheduleFutureDay(day: string, today: string = todayDate()): boolean {
   return day > today
+}
+
+/** 即时可见的 UTC 比赛日集合 */
+export function prematchAllowedMatchDays(
+  scheduleToday: string = scheduleTodayDate(),
+): Set<string> {
+  const days = new Set<string>()
+  for (let i = 0; i < PREMATCH_MATCH_DAY_SPAN; i += 1) {
+    days.add(addCalendarDays(scheduleToday, i))
+  }
+  return days
+}
+
+export function isPrematchMatchDay(
+  matchDay: string,
+  scheduleToday: string = scheduleTodayDate(),
+): boolean {
+  return prematchAllowedMatchDays(scheduleToday).has(matchDay)
+}
+
+/** 拉取即时列表：从 UTC 今天起共 2 个比赛日 */
+export function prematchFetchParams(now = new Date()): {
+  date: string
+  days: number
+} {
+  return { date: scheduleTodayDate(now), days: PREMATCH_MATCH_DAY_SPAN }
 }

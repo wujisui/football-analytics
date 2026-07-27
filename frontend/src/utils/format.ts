@@ -76,9 +76,8 @@ export function toLocalDayKey(dateStr: string | Date): string {
 }
 
 /**
- * Schedule calendar day (UTC date of kickoff), aligned with `/fixtures/today?date=`.
- * Home lists fixtures by this day; local display may show the next calendar date
- * for late UTC kickoffs (e.g. 03:00 北京时间仍归属前一日赛程).
+ * 场次比赛日 = 开赛时刻的 UTC 日期（与 API ``date=`` / 入库赛程日一致）。
+ * 例：巴甲 22:00 UTC 7/26 → 比赛日 7/26；北京已是 7/27 06:00 仍属 7/26。
  */
 export function toScheduleDayKey(dateStr: string | Date): string {
   const d = dateStr instanceof Date ? dateStr : parseApiDate(dateStr)

@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { fetchTodayFixtures } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
 import { mergeDetailIntoListFixture } from '@/utils/oddsDisplay'
-import { todayDate } from '@/utils/homeDateStrip'
+import { prematchFetchParams, todayDate } from '@/utils/homeDateStrip'
 
 export { todayDate }
 
@@ -74,7 +74,8 @@ export function syncHomeListAfterDetail(date: string): void {
   if (!detailListDirty) return
   detailListDirty = false
   if (pendingDetailPatches.size > 0) {
-    void loadHomeFixtures({ force: true, date, days: 1 })
+    const { date: fetchDate, days } = prematchFetchParams()
+    void loadHomeFixtures({ force: true, date: fetchDate, days })
   }
 }
 
