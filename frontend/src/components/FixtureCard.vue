@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
+import ScoreDetailLink from '@/components/ScoreDetailLink.vue'
 import type { FixtureResponse } from '@/api/types'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import {
@@ -16,7 +17,7 @@ import {
   statusTagType,
 } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
-import { FIXTURE_DETAIL_TOOLTIP, fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
+import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
 
 const props = withDefaults(
   defineProps<{
@@ -89,50 +90,29 @@ function goDetail() {
       />
     </header>
 
-    <div v-if="!isPhone" class="matchup">
+    <div class="matchup" :class="{ 'phone-matchup': isPhone }">
       <span class="team home">{{ homeLabel }}</span>
-      <n-tooltip placement="top">
-        <template #trigger>
-          <button
-            type="button"
-            class="vs"
-            :class="{ score: scoreText }"
-            :aria-label="FIXTURE_DETAIL_TOOLTIP"
-            @click="goDetail"
-          >
-            {{ scoreText ?? 'VS' }}
-          </button>
-        </template>
-        {{ FIXTURE_DETAIL_TOOLTIP }}
-      </n-tooltip>
-      <span class="team away">{{ awayLabel }}</span>
-    </div>
-
-    <div v-else class="matchup phone-matchup">
-      <span class="team home">{{ homeLabel }}</span>
-      <button
-        type="button"
+      <ScoreDetailLink
         class="vs"
         :class="{ score: scoreText }"
-        :aria-label="FIXTURE_DETAIL_TOOLTIP"
+        :label="scoreText ?? 'VS'"
         @click="goDetail"
-      >
-        {{ scoreText ?? 'VS' }}
-      </button>
+      />
       <span class="team away">{{ awayLabel }}</span>
     </div>
 
     <div class="summary-grid" :class="{ 'predict-only': isPhone }">
-      <PreMatchOddsTable v-if="!isPhone"
-          :odds="fixture.odds_snippet"
-          :home-name="homeName"
-          :away-name="awayName"
-          link-middle-to-detail
-          :fixture-id="fixture.fixture_id"
-          :from="from"
-          :date="date"
-          detail-tab="prediction"
-        />
+      <PreMatchOddsTable
+        v-if="!isPhone"
+        :odds="fixture.odds_snippet"
+        :home-name="homeName"
+        :away-name="awayName"
+        link-middle-to-detail
+        :fixture-id="fixture.fixture_id"
+        :from="from"
+        :date="date"
+        detail-tab="prediction"
+      />
       <AlgorithmPredictionCard
         :fixture="fixture"
         :link-to-detail="isPhone"
@@ -195,44 +175,19 @@ function goDetail() {
 }
 
 .vs {
-  appearance: none;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--fa-text-strong);
-  font: inherit;
+  flex-shrink: 0;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.06em;
-  line-height: 1;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.15s ease;
-}
-
-.vs:hover {
-  color: var(--fa-highlight-text);
-}
-
-.vs:focus-visible {
-  outline: 2px solid var(--fa-highlight-border);
-  outline-offset: 2px;
-  border-radius: 2px;
 }
 
 .vs.score {
   font-size: 18px;
-  font-variant-numeric: tabular-nums;
   letter-spacing: 0;
 }
 
 .phone-matchup {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 8px;
-  padding: 2px 0;
 }
 
 .summary-grid {
@@ -268,10 +223,6 @@ function goDetail() {
 @media (max-width: 767px) {
   .phone-compact .card-head {
     gap: 6px;
-  }
-
-  .phone-compact .kickoff {
-    flex: 1 1 auto;
   }
 }
 </style>

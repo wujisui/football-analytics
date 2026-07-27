@@ -472,21 +472,20 @@ onMounted(() => {
             "
           >
             <template #header>
-              <button
-                type="button"
+              <n-button
+                text
                 class="accuracy-card-toggle"
-                :class="{ phone: isPhone }"
                 :disabled="!isPhone"
                 :aria-expanded="!isPhone || dayAccuracyExpanded"
                 @click="togglePhonePanel('day')"
               >
-                <span>当日统计</span>
+                当日统计
                 <n-icon
                   v-if="isPhone"
                   :component="dayAccuracyExpanded ? ChevronUpOutline : ChevronDownOutline"
                   :size="16"
                 />
-              </button>
+              </n-button>
             </template>
             <template #header-extra>
               <n-text depth="3" style="font-size: 12px;">{{ dayAccuracyHeaderExtra }}</n-text>
@@ -569,21 +568,20 @@ onMounted(() => {
             "
           >
             <template #header>
-              <button
-                type="button"
+              <n-button
+                text
                 class="accuracy-card-toggle"
-                :class="{ phone: isPhone }"
                 :disabled="!isPhone"
                 :aria-expanded="!isPhone || historyAccuracyExpanded"
                 @click="togglePhonePanel('history')"
               >
-                <span>历史统计</span>
+                历史统计
                 <n-icon
                   v-if="isPhone"
                   :component="historyAccuracyExpanded ? ChevronUpOutline : ChevronDownOutline"
                   :size="16"
                 />
-              </button>
+              </n-button>
             </template>
             <template #header-extra>
               <n-tooltip placement="bottom">
@@ -663,21 +661,20 @@ onMounted(() => {
         "
       >
         <template #header>
-          <button
-            type="button"
+          <n-button
+            text
             class="accuracy-card-toggle"
-            :class="{ phone: isPhone }"
             :disabled="!isPhone"
             :aria-expanded="!isPhone || historyChartExpanded"
             @click="togglePhonePanel('chart')"
           >
-            <span>准确率走势</span>
+            准确率走势
             <n-icon
               v-if="isPhone"
               :component="historyChartExpanded ? ChevronUpOutline : ChevronDownOutline"
               :size="16"
             />
-          </button>
+          </n-button>
         </template>
         <template #header-extra>
           <n-tooltip placement="bottom">
@@ -912,28 +909,14 @@ onMounted(() => {
 }
 
 .accuracy-card-toggle {
-  appearance: none;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
   font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  text-align: left;
-  cursor: default;
-}
-
-.accuracy-card-toggle.phone {
-  cursor: pointer;
+  padding: 0;
 }
 
 .accuracy-card-toggle:disabled {
+  opacity: 1;
   cursor: default;
+  color: inherit;
 }
 
 .accuracy-stat-card.collapsed :deep(.n-card-header),

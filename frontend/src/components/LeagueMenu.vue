@@ -92,60 +92,71 @@ function countOf(leagueId: number): number {
         class="lm-empty"
       />
       <n-scrollbar v-else class="lm-scroll">
-        <div class="lm-list" role="list">
-          <button
+        <n-list
+          class="lm-list"
+          hoverable
+          clickable
+          :show-divider="false"
+        >
+          <n-list-item
             v-if="showAllRow"
-            type="button"
-            role="listitem"
-            class="lm-row"
+            class="lm-item"
             :class="{ active: selectedLeagueId == null }"
             :title="collapsed ? `全部 (${totalPending})` : undefined"
             @click="selectAll"
           >
-            <span class="lm-chip lm-chip-all" aria-hidden="true">全</span>
-            <span v-if="!collapsed" class="lm-name">全部</span>
-            <span v-if="!collapsed" class="lm-meta">
-              <span v-if="totalPending > 0" class="lm-count">{{ totalPending }}</span>
-              <n-icon :component="ChevronForwardOutline" :size="14" class="lm-chevron" />
-            </span>
-          </button>
+            <template #prefix>
+              <span class="lm-chip lm-chip-all" aria-hidden="true">全</span>
+            </template>
+            <template v-if="!collapsed">全部</template>
+            <template v-if="!collapsed" #suffix>
+              <span class="lm-suffix">
+                <span v-if="totalPending > 0" class="lm-count">{{ totalPending }}</span>
+                <n-icon class="lm-chevron" :component="ChevronForwardOutline" :size="14" />
+              </span>
+            </template>
+          </n-list-item>
 
-          <button
+          <n-list-item
             v-for="league in filteredLeagues"
             :key="league.league_id"
-            type="button"
-            role="listitem"
-            class="lm-row"
+            class="lm-item"
             :class="{ active: selectedLeagueId === league.league_id }"
             :title="collapsed ? leagueLabel(league.league_name) : undefined"
             @click="selectLeague(league.league_id)"
           >
-            <span
-              class="lm-chip"
-              :style="{
-                background: `${leagueTagColor(league.league_id)}18`,
-                color: leagueTagColor(league.league_id),
-                borderColor: `${leagueTagColor(league.league_id)}40`,
-              }"
-              aria-hidden="true"
-            >
-              {{ abbrOf(leagueLabel(league.league_name)) }}
-            </span>
-            <span v-if="!collapsed" class="lm-name">{{ leagueLabel(league.league_name) }}</span>
-            <span v-if="!collapsed" class="lm-meta">
-              <span v-if="countOf(league.league_id) > 0" class="lm-count">
-                {{ countOf(league.league_id) }}
+            <template #prefix>
+              <span
+                class="lm-chip"
+                :style="{
+                  background: `${leagueTagColor(league.league_id)}18`,
+                  color: leagueTagColor(league.league_id),
+                  borderColor: `${leagueTagColor(league.league_id)}40`,
+                }"
+                aria-hidden="true"
+              >
+                {{ abbrOf(leagueLabel(league.league_name)) }}
               </span>
-              <n-icon :component="ChevronForwardOutline" :size="14" class="lm-chevron" />
-            </span>
-          </button>
+            </template>
+            <template v-if="!collapsed">
+              {{ leagueLabel(league.league_name) }}
+            </template>
+            <template v-if="!collapsed" #suffix>
+              <span class="lm-suffix">
+                <span v-if="countOf(league.league_id) > 0" class="lm-count">
+                  {{ countOf(league.league_id) }}
+                </span>
+                <n-icon class="lm-chevron" :component="ChevronForwardOutline" :size="14" />
+              </span>
+            </template>
+          </n-list-item>
+        </n-list>
 
-          <div
-            v-if="!loading && !showAllRow && filteredLeagues.length === 0"
-            class="lm-no-match"
-          >
-            无匹配联赛
-          </div>
+        <div
+          v-if="!loading && !showAllRow && filteredLeagues.length === 0"
+          class="lm-no-match"
+        >
+          无匹配联赛
         </div>
       </n-scrollbar>
     </n-spin>
@@ -223,52 +234,23 @@ function countOf(leagueId: number): number {
 }
 
 .lm-list {
-  padding: 0 8px 12px;
-}
-
-.lm-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  margin: 0;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 4px;
+  padding: 0 4px 12px;
   background: transparent;
-  color: var(--fa-text);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
 }
 
-.league-menu.collapsed .lm-row {
-  justify-content: center;
-  padding: 8px 4px;
+.lm-item {
+  padding: 8px 4px !important;
+  margin: 2px 4px;
 }
 
-.lm-row:hover:not(.active) {
-  background: color-mix(in srgb, var(--fa-text) 7%, transparent);
-}
-
-.lm-row.active {
+.lm-item.active {
   color: var(--n-primary-color, #18a058);
   background: color-mix(in srgb, var(--n-primary-color, #18a058) 14%, transparent);
-}
-
-.lm-row.active .lm-name {
   font-weight: 600;
-  color: inherit;
 }
 
-.lm-row.active .lm-meta,
-.lm-row.active .lm-count,
-.lm-row.active .lm-chevron {
-  color: inherit;
-  opacity: 1;
+.league-menu.collapsed .lm-item :deep(.n-list-item__prefix) {
+  margin-right: 0;
 }
 
 .lm-chip {
@@ -277,13 +259,11 @@ function countOf(leagueId: number): number {
   justify-content: center;
   width: 28px;
   height: 28px;
-  min-width: 28px;
   border-radius: 6px;
   border: 1px solid var(--fa-border);
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
-  flex-shrink: 0;
 }
 
 .lm-chip-all {
@@ -291,37 +271,35 @@ function countOf(leagueId: number): number {
   color: var(--fa-text-secondary);
 }
 
-.lm-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lm-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  color: var(--fa-text-muted);
-}
-
-.lm-count {
-  min-width: 1.2em;
-  text-align: right;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.lm-chevron {
-  opacity: 0.55;
-}
-
-.lm-row.active .lm-chip-all {
+.lm-item.active .lm-chip-all {
   color: inherit;
   border-color: color-mix(in srgb, var(--n-primary-color, #18a058) 35%, transparent);
   background: color-mix(in srgb, var(--n-primary-color, #18a058) 10%, transparent);
+}
+
+.lm-suffix {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 34px;
+  color: var(--fa-text-muted);
+  white-space: nowrap;
+}
+
+.lm-item.active .lm-suffix {
+  color: inherit;
+}
+
+.lm-count {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lm-chevron {
+  flex-shrink: 0;
+  opacity: 0.65;
 }
 
 .lm-empty {

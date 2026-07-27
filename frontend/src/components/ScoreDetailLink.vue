@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { FIXTURE_DETAIL_TOOLTIP } from '@/utils/detailNav'
 
+defineOptions({ inheritAttrs: false })
+
 defineProps<{
   label: string
 }>()
@@ -13,14 +15,15 @@ defineEmits<{
 <template>
   <n-tooltip placement="top">
     <template #trigger>
-      <button
-        type="button"
+      <n-button
+        v-bind="$attrs"
+        text
         class="score-detail-link"
         :aria-label="FIXTURE_DETAIL_TOOLTIP"
         @click="$emit('click')"
       >
         {{ label }}
-      </button>
+      </n-button>
     </template>
     {{ FIXTURE_DETAIL_TOOLTIP }}
   </n-tooltip>
@@ -28,26 +31,12 @@ defineEmits<{
 
 <style scoped>
 .score-detail-link {
-  appearance: none;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition: color 0.15s ease;
+  color: var(--fa-text-strong);
 }
 
 .score-detail-link:hover {
   color: var(--fa-highlight-text);
-}
-
-.score-detail-link:focus-visible {
-  outline: 2px solid var(--fa-highlight-border);
-  outline-offset: 2px;
-  border-radius: 2px;
 }
 </style>

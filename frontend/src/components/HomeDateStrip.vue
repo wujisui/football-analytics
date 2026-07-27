@@ -20,8 +20,12 @@ const tabRefs = new Map<string, HTMLElement>()
 const today = computed(() => todayDate())
 const tabs = computed(() => buildHomeDateTabs(today.value))
 
-function setTabRef(iso: string, el: HTMLElement | null) {
-  if (el) tabRefs.set(iso, el)
+function setTabRef(iso: string, el: unknown) {
+  const node =
+    el && typeof el === 'object' && '$el' in el
+      ? ((el as { $el: HTMLElement }).$el as HTMLElement)
+      : (el as HTMLElement | null)
+  if (node instanceof HTMLElement) tabRefs.set(iso, node)
   else tabRefs.delete(iso)
 }
 
@@ -34,6 +38,10 @@ function isDisabled(iso: string): boolean {
 function selectTab(iso: string) {
   if (isDisabled(iso)) return
   selected.value = iso
+}
+
+function tabType(iso: string) {
+  return selected.value === iso ? 'primary' : 'default'
 }
 
 async function scrollActiveIntoView(behavior: ScrollBehavior = 'smooth') {
@@ -75,21 +83,25 @@ onMounted(() => {
 
 <template>
   <div class="date-strip" role="tablist" aria-label="赛程日期">
-    <button
+    <n-button
       v-for="tab in tabs"
       :key="tab.iso"
-      :ref="(el) => setTabRef(tab.iso, el as HTMLElement | null)"
-      type="button"
+      :ref="(el) => setTabRef(tab.iso, el)"
+      size="small"
       role="tab"
       class="date-tab"
-      :class="{ active: selected === tab.iso, disabled: isDisabled(tab.iso) }"
+      :type="tabType(tab.iso)"
+      :secondary="selected === tab.iso"
+      :quaternary="selected !== tab.iso"
       :aria-selected="selected === tab.iso"
       :disabled="isDisabled(tab.iso)"
       @click="selectTab(tab.iso)"
     >
-      <span class="tab-top">{{ tab.topLabel }}</span>
-      <span class="tab-bottom">{{ tab.bottomLabel }}</span>
-    </button>
+      <span class="tab-stack">
+        <span class="tab-top">{{ tab.topLabel }}</span>
+        <span class="tab-bottom">{{ tab.bottomLabel }}</span>
+      </span>
+    </n-button>
   </div>
 </template>
 
@@ -111,63 +123,32 @@ onMounted(() => {
 }
 
 .date-tab {
-  appearance: none;
   flex: 0 0 auto;
-  min-width: 54px;
-  padding: 6px 10px 5px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--fa-text-secondary);
-  cursor: pointer;
+  height: auto;
+  padding: 4px 10px;
+}
+
+.tab-stack {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.date-tab:hover:not(.active):not(.disabled) {
-  background: color-mix(in srgb, var(--fa-text) 6%, transparent);
-  color: var(--fa-text);
-}
-
-.date-tab.active {
-  background: color-mix(in srgb, var(--n-primary-color, #18a058) 16%, transparent);
-  color: var(--n-primary-color, #18a058);
-}
-
-.date-tab.active .tab-bottom {
-  font-weight: 700;
-}
-
-.date-tab.disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.date-tab.disabled:hover {
-  background: transparent;
-  color: var(--fa-text-secondary);
-}
-
-.date-tab:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--n-primary-color, #18a058) 45%, transparent);
-  outline-offset: 1px;
+  line-height: 1.2;
 }
 
 .tab-top {
   font-size: 12px;
-  line-height: 1.2;
   white-space: nowrap;
 }
 
 .tab-bottom {
   font-size: 13px;
-  line-height: 1.2;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.date-tab.n-button--primary-type .tab-bottom,
+.date-tab.n-button--primary-type.n-button--secondary .tab-bottom {
+  font-weight: 700;
 }
 </style>

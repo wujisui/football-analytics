@@ -5,6 +5,7 @@ import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
+import ScoreDetailLink from '@/components/ScoreDetailLink.vue'
 import {
   favoriteHasPredictSnapshot,
   snapshotFromFavorite,
@@ -137,14 +138,11 @@ function openDetail() {
 
     <div class="matchup">
       <span class="team home">{{ homeName }}</span>
-      <button
-        type="button"
+      <ScoreDetailLink
         class="score-btn"
-        :aria-label="`查看 ${homeName} 对 ${awayName} 详情`"
+        :label="scoreText ?? 'VS'"
         @click="openDetail"
-      >
-        {{ scoreText ?? 'VS' }}
-      </button>
+      />
       <span class="team away">{{ awayName }}</span>
     </div>
 
@@ -294,29 +292,8 @@ function openDetail() {
 }
 
 .score-btn {
-  appearance: none;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--fa-text-strong);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  cursor: pointer;
   flex-shrink: 0;
-}
-
-.score-btn:hover {
-  color: var(--fa-highlight-text);
-}
-
-.score-btn:focus-visible {
-  outline: 2px solid var(--fa-highlight-border);
-  outline-offset: 2px;
-  border-radius: 2px;
+  font-size: 14px;
 }
 
 .summary-grid {
