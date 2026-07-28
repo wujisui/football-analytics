@@ -1,10 +1,6 @@
 import { computed, ref } from 'vue'
 
-import type {
-  ResultFixture,
-  ResultsAccuracy,
-  ResultsHistoryResponse,
-} from '@/api/fixtures'
+import type { ResultFixture, ResultsHistoryResponse } from '@/api/fixtures'
 import { fetchLeagueCatalog, type LeagueFilterOption } from '@/api/leagues'
 import type { FixtureResponse, LeagueSummaryResponse } from '@/api/types'
 import { leagueLabel } from '@/utils/leagueNames'
@@ -16,12 +12,8 @@ const scheduleMode = ref(false)
 const resultsTrackedIds = ref<number[]>([])
 const resultsLoading = ref(false)
 const resultsLoadedDay = ref('')
-const resultsAccuracy = ref<ResultsAccuracy | null>(null)
 const resultsHistory = ref<ResultsHistoryResponse | null>(null)
-const resultsByDay = new Map<
-  string,
-  { fixtures: ResultFixture[]; accuracy: ResultsAccuracy | null }
->()
+const resultsByDay = new Map<string, ResultFixture[]>()
 const scheduleByDay = new Map<string, FixtureResponse[]>()
 
 /**
@@ -119,24 +111,14 @@ function syncResultsTrackedWithDay() {
 }
 
 /** Push finished fixtures for the selected day into the schedule shell. */
-export function publishResultsFixtures(
-  fixtures: ResultFixture[],
-  day: string,
-  accuracy?: ResultsAccuracy | null,
-) {
+export function publishResultsFixtures(fixtures: ResultFixture[], day: string) {
   const dayChanged = day !== resultsLoadedDay.value
   const prevLeagueIds = new Set(resultsFixtures.value.map((fx) => fx.league_id))
   scheduleMode.value = false
   scheduleFixtures.value = []
   resultsFixtures.value = fixtures
   resultsLoadedDay.value = day
-  if (accuracy !== undefined) resultsAccuracy.value = accuracy
-  if (day) {
-    resultsByDay.set(day, {
-      fixtures: [...fixtures],
-      accuracy: resultsAccuracy.value,
-    })
-  }
+  if (day) resultsByDay.set(day, [...fixtures])
   if (dayChanged) {
     syncResultsTrackedWithDay()
     return
@@ -158,7 +140,6 @@ export function publishScheduleFixtures(fixtures: FixtureResponse[], day: string
   scheduleMode.value = true
   scheduleFixtures.value = pending
   resultsFixtures.value = []
-  resultsAccuracy.value = null
   resultsLoadedDay.value = day
   if (day) scheduleByDay.set(day, [...pending])
   if (dayChanged) {
@@ -191,7 +172,7 @@ export function restoreCachedResultsDay(day: string, schedule: boolean): boolean
   }
   const cached = resultsByDay.get(day)
   if (!cached) return false
-  publishResultsFixtures(cached.fixtures, day, cached.accuracy)
+  publishResultsFixtures(cached, day)
   return true
 }
 
@@ -308,7 +289,6 @@ export function useResultsLeagues() {
     scheduleFixtures,
     scheduleMode,
     resultsLoadedDay,
-    resultsAccuracy,
     resultsHistory,
     resultsTrackedIds,
     setResultsTrackedIds,

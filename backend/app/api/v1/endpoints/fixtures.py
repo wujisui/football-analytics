@@ -20,7 +20,6 @@ from app.schemas.response import (
     PredictionSnapshotResponse,
     ProbabilitiesResponse,
     ResultFixtureResponse,
-    ResultsAccuracyResponse,
     ResultsHistoryResponse,
     ResultsResponse,
     SyncFixturesResponse,
@@ -41,7 +40,6 @@ from app.services.prediction import (
     derive_prediction_leans,
     implied_probs_from_odds,
     resolve_match_probabilities,
-    summarize_accuracy,
 )
 from app.services.prematch_package import loads_json, rehydrate_odds_markets
 from app.services.results_accuracy import (
@@ -403,21 +401,8 @@ async def get_fixture_results(
     stored_by_id = await load_stored_by_fixture_ids(db, [f.id for f in fixtures])
 
     items: list[ResultFixtureResponse] = []
-    accuracy_rows: list[dict] = []
     for fx in fixtures:
         evaluated = evaluate_fixture_prediction(fx, stored_by_id.get(fx.id))
-        accuracy_rows.append(
-            {
-                "has_prediction": evaluated["has_prediction"],
-                "evaluable": evaluated["evaluable"],
-                "result_hit": evaluated["result_hit"],
-                "single_result_hit": evaluated["single_result_hit"],
-                "score_hit": evaluated["score_hit"],
-                "ou_hit": evaluated["ou_hit"],
-                "btts_hit": evaluated["btts_hit"],
-                "handicap_hit": evaluated["handicap_hit"],
-            }
-        )
         items.append(
             ResultFixtureResponse(
                 fixture_id=fx.id,
@@ -459,13 +444,11 @@ async def get_fixture_results(
             )
         )
 
-    summary = summarize_accuracy(accuracy_rows)
     _set_response_headers(response, "database", max_age=60)
     return ResultsResponse(
         date=base_date.isoformat(),
         total=len(items),
         fixtures=items,
-        accuracy=ResultsAccuracyResponse.model_validate(summary),
     )
 
 

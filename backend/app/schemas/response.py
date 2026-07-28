@@ -443,7 +443,6 @@ class ResultsResponse(BaseModel):
     date: str = Field(..., description="查询日期 YYYY-MM-DD")
     total: int = Field(..., description="赛果场次")
     fixtures: list[ResultFixtureResponse] = Field(default_factory=list)
-    accuracy: ResultsAccuracyResponse = Field(default_factory=ResultsAccuracyResponse)
 
 
 class SyncFixturesResponse(BaseModel):

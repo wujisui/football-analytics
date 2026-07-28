@@ -91,7 +91,6 @@ const {
   resultsFixtures,
   scheduleFixtures,
   resultsLoadedDay,
-  resultsAccuracy,
   resultsHistory,
 } = useResultsLeagues()
 const {
@@ -110,7 +109,6 @@ const desktopListShellRef = ref<HTMLElement | null>(null)
 const phoneListShellRef = ref<HTMLElement | null>(null)
 
 const fixtures = resultsFixtures
-const dayAccuracy = resultsAccuracy
 const history = resultsHistory
 const loading = ref(false)
 const historyLoading = ref(false)
@@ -233,13 +231,10 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
   }
 }
 
-/** Day panel always shows full-day (or league-scoped) stats, never hit-filtered. */
-const displayAccuracy = computed(() => {
-  if (selectedLeagueId.value == null) {
-    return dayAccuracy.value
-  }
-  return summarizeFiltered(leagueScopedFixtures.value)
-})
+/** Day panel follows the league filter/selection, but never the hit filter. */
+const displayAccuracy = computed(() =>
+  summarizeFiltered(leagueScopedFixtures.value),
+)
 
 const emptyText = computed(() => {
   if (!selectedDay.value) return '请选择日期'
@@ -323,8 +318,7 @@ function applySavedFiltersIfAny() {
 async function loadDayResults() {
   if (!selectedDay.value) {
     fixtures.value = []
-    dayAccuracy.value = null
-    publishResultsFixtures([], selectedDay.value, null)
+    publishResultsFixtures([], selectedDay.value)
     return
   }
   loading.value = true
@@ -332,15 +326,11 @@ async function loadDayResults() {
   error.value = ''
   try {
     const data = await fetchResults(selectedDay.value)
-    publishResultsFixtures(
-      data.fixtures,
-      selectedDay.value,
-      data.accuracy ?? null,
-    )
+    publishResultsFixtures(data.fixtures, selectedDay.value)
     hint.value = data.total ? `共 ${data.total} 场` : ''
   } catch (err) {
     error.value = err instanceof Error ? err.message : '获取失败'
-    publishResultsFixtures([], selectedDay.value, null)
+    publishResultsFixtures([], selectedDay.value)
     invalidateCachedResultsDay(selectedDay.value, false)
   } finally {
     loading.value = false
@@ -392,7 +382,6 @@ async function loadScheduleDay() {
 async function loadSelectedDay(force = false) {
   if (!selectedDay.value) {
     fixtures.value = []
-    dayAccuracy.value = null
     publishResultsFixtures([], selectedDay.value)
     publishScheduleFixtures([], selectedDay.value)
     return

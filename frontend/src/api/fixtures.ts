@@ -144,7 +144,6 @@ export interface ResultsResponse {
   date: string
   total: number
   fixtures: ResultFixture[]
-  accuracy?: ResultsAccuracy
 }
 
 /** Finished/cancelled fixtures for a calendar day or contiguous span (local DB only). */
