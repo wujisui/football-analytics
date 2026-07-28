@@ -11,7 +11,10 @@ import {
 } from '@/composables/useHomeFixtures'
 import type { LeagueSummaryResponse } from '@/api/types'
 import { useIsPhone, useIsTabletDown } from '@/composables/useMediaQuery'
-import { useResultsLeagues } from '@/composables/useResultsLeagues'
+import {
+  ensureResultsConfiguredLeagueIds,
+  useResultsLeagues,
+} from '@/composables/useResultsLeagues'
 import {
   endScheduleFilterOverride,
   getActiveFilterDate,
@@ -472,6 +475,8 @@ export function useFixturesShell() {
       },
       { immediate: true },
     )
+
+    void ensureResultsConfiguredLeagueIds()
 
     watch(prematchTrackedIds, () => {
       syncFutureScheduleSelection()

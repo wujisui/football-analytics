@@ -5,6 +5,7 @@ import type { FavoriteFixtureRecord } from '@/api/favorites'
 import type { ResultFixture } from '@/api/fixtures'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import ResultPredictionSummary from '@/components/ResultPredictionSummary.vue'
+import ScoreDetailLink from '@/components/ScoreDetailLink.vue'
 import {
   formatDate,
   formatTime,
@@ -21,8 +22,10 @@ import {
 const props = withDefaults(defineProps<{
   fixture: ResultFixture | FavoriteFixtureRecord
   oddsClickable?: boolean
+  showProbabilities?: boolean
 }>(), {
   oddsClickable: false,
+  showProbabilities: false,
 })
 
 const emit = defineEmits<{
@@ -40,6 +43,12 @@ const statusShort = computed(() =>
 const resultFixturePayload = computed(() =>
   'home_team_id' in props.fixture ? props.fixture : undefined,
 )
+const hasProbabilityRow = computed(
+  () =>
+    props.showProbabilities
+    && 'probabilities_available' in props.fixture
+    && !!props.fixture.probabilities_available,
+)
 
 function openDetail() {
   emit('openDetail', props.fixture.fixture_id)
@@ -47,7 +56,10 @@ function openDetail() {
 </script>
 
 <template>
-  <article class="result-fixture-card">
+  <article
+    class="result-fixture-card"
+    :class="{ 'with-probabilities': hasProbabilityRow }"
+  >
     <header class="card-head">
       <n-tag
         size="small"
@@ -78,14 +90,11 @@ function openDetail() {
 
     <div class="matchup">
       <span class="team home">{{ homeName }}</span>
-      <button
-        type="button"
-        class="score-btn"
-        :aria-label="`查看 ${homeName} 对 ${awayName} 详情`"
+      <ScoreDetailLink
+        class="score"
+        :label="scoreText"
         @click="openDetail"
-      >
-        {{ scoreText }}
-      </button>
+      />
       <span class="team away">{{ awayName }}</span>
     </div>
     <p v-if="extraScoreLine" class="score-extra">{{ extraScoreLine }}</p>
@@ -93,6 +102,7 @@ function openDetail() {
     <ResultPredictionSummary
       :fixture="fixture"
       :odds-clickable="oddsClickable"
+      :show-probabilities="showProbabilities"
       @open-odds="emit('openOdds')"
     />
   </article>
@@ -106,6 +116,11 @@ function openDetail() {
   padding: 10px;
   border-radius: 8px;
   background: var(--fa-bg-soft);
+}
+
+.result-fixture-card.with-probabilities {
+  gap: 6px;
+  justify-content: space-between;
 }
 
 .card-head {
@@ -147,30 +162,9 @@ function openDetail() {
   text-align: left;
 }
 
-.score-btn {
-  appearance: none;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--fa-text-strong);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  cursor: pointer;
+.score {
   flex-shrink: 0;
-}
-
-.score-btn:hover {
-  color: var(--fa-highlight-text);
-}
-
-.score-btn:focus-visible {
-  outline: 2px solid var(--fa-highlight-border);
-  outline-offset: 2px;
-  border-radius: 2px;
+  font-size: 14px;
 }
 
 .score-extra {

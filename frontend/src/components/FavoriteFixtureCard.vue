@@ -31,7 +31,7 @@ const emit = defineEmits<{
 }>()
 
 const isPhone = useIsPhone()
-const showOddsPopover = ref(false)
+const showOddsModal = ref(false)
 
 const homeName = computed(() => props.item.home_team_name || '—')
 const awayName = computed(() => props.item.away_team_name || '—')
@@ -52,46 +52,27 @@ const isFinished = computed(() => {
 })
 
 const showPredictBlock = computed(() => hasPredict.value)
+const oddsModalTitle = computed(
+  () => `${homeName.value} vs ${awayName.value} · 赛前盘口`,
+)
 
 function openDetail() {
   emit('openDetail', props.item.fixture_id)
 }
 
+function openOddsModal() {
+  showOddsModal.value = true
+}
 </script>
 
 <template>
-  <n-popover
+  <ResultFixtureCard
     v-if="isFinished && isPhone"
-    v-model:show="showOddsPopover"
-    trigger="manual"
-    placement="bottom"
-    :show-arrow="false"
-    to="body"
-    display-directive="show"
-    :style="{ width: 'min(360px, calc(100vw - 24px))' }"
-  >
-    <template #trigger>
-      <ResultFixtureCard
-        :fixture="item"
-        odds-clickable
-        @open-detail="openDetail"
-        @open-odds="showOddsPopover = true"
-      />
-    </template>
-    <div class="favorite-odds-popover">
-      <p class="odds-popover-title">
-        {{ homeName }} vs {{ awayName }} · 赛前盘口
-      </p>
-      <PreMatchOddsTable
-        :odds="item.odds_snippet"
-        :home-name="homeName"
-        :away-name="awayName"
-        link-middle-to-detail
-        :fixture-id="item.fixture_id"
-        from="favorites"
-      />
-    </div>
-  </n-popover>
+    :fixture="item"
+    odds-clickable
+    @open-detail="openDetail"
+    @open-odds="openOddsModal"
+  />
 
   <article v-else-if="isFinished" class="favorite-fixture-card">
     <div class="finished-favorite-grid">
@@ -105,6 +86,7 @@ function openDetail() {
       />
       <ResultFixtureCard
         :fixture="item"
+        show-probabilities
         @open-detail="openDetail"
       />
     </div>
@@ -161,50 +143,15 @@ function openDetail() {
         from="favorites"
       />
 
-      <!-- Phone: keep card visible; odds open beside the trigger -->
-      <n-popover
+      <div
         v-if="isPhone"
-        v-model:show="showOddsPopover"
-        trigger="click"
-        placement="bottom"
-        :show-arrow="false"
-        to="body"
-        display-directive="show"
-        :style="{ width: 'min(360px, calc(100vw - 24px))' }"
+        class="odds-modal-trigger"
+        role="button"
+        tabindex="0"
+        aria-label="查看赛前盘口"
+        @click="openOddsModal"
+        @keydown.enter.prevent="openOddsModal"
       >
-        <template #trigger>
-          <div
-            class="odds-popover-trigger"
-            :class="{ open: showOddsPopover }"
-            role="button"
-            tabindex="0"
-            aria-label="查看赛前盘口"
-          >
-            <AlgorithmPredictionCard
-              :snapshot="predictionSnapshot"
-              :fixture-id="item.fixture_id"
-              :show-matchup-title="false"
-              from="favorites"
-              class="predict-slot"
-            />
-          </div>
-        </template>
-        <div class="favorite-odds-popover">
-          <p class="odds-popover-title">
-            {{ homeName }} vs {{ awayName }} · 赛前盘口
-          </p>
-          <PreMatchOddsTable
-            :odds="item.odds_snippet"
-            :home-name="homeName"
-            :away-name="awayName"
-            link-middle-to-detail
-            :fixture-id="item.fixture_id"
-            from="favorites"
-          />
-        </div>
-      </n-popover>
-
-      <template v-else>
         <AlgorithmPredictionCard
           :snapshot="predictionSnapshot"
           :fixture-id="item.fixture_id"
@@ -212,12 +159,38 @@ function openDetail() {
           from="favorites"
           class="predict-slot"
         />
-      </template>
+      </div>
+      <AlgorithmPredictionCard
+        v-else
+        :snapshot="predictionSnapshot"
+        :fixture-id="item.fixture_id"
+        :show-matchup-title="false"
+        from="favorites"
+        class="predict-slot"
+      />
     </div>
     <n-text v-if="!hasPredict" depth="3" class="no-predict">
       暂无预测快照
     </n-text>
   </article>
+
+  <n-modal
+    v-if="isPhone"
+    v-model:show="showOddsModal"
+    preset="card"
+    :title="oddsModalTitle"
+    :style="{ width: 'min(360px, calc(100vw - 24px))' }"
+    :segmented="{ content: true, footer: false }"
+  >
+    <PreMatchOddsTable
+      :odds="item.odds_snippet"
+      :home-name="homeName"
+      :away-name="awayName"
+      link-middle-to-detail
+      :fixture-id="item.fixture_id"
+      from="favorites"
+    />
+  </n-modal>
 </template>
 
 <style scoped>
@@ -313,7 +286,7 @@ function openDetail() {
   height: 100%;
 }
 
-.odds-popover-trigger {
+.odds-modal-trigger {
   min-width: 0;
   max-width: 100%;
   border-radius: 6px;
@@ -321,31 +294,13 @@ function openDetail() {
   transition: background-color 0.2s var(--n-bezier, ease);
 }
 
-.odds-popover-trigger:hover,
-.odds-popover-trigger:focus-visible,
-.odds-popover-trigger.open {
+.odds-modal-trigger:hover,
+.odds-modal-trigger:focus-visible {
   outline: none;
   background: var(--fa-bg-soft);
 }
 
 .no-predict {
   font-size: 11px;
-}
-</style>
-
-<style>
-.favorite-odds-popover {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 100%;
-}
-
-.favorite-odds-popover .odds-popover-title {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fa-text-strong);
-  line-height: 1.4;
 }
 </style>

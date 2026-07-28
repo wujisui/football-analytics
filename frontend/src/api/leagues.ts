@@ -15,6 +15,23 @@ export interface LeagueFilterOptionsResponse {
   extra: LeagueFilterOption[]
 }
 
+export interface LeagueCatalogItem {
+  league_id: number
+  league_name: string
+  country: string | null
+  season: string | null
+}
+
+export interface LeagueCatalogResponse {
+  leagues: LeagueCatalogItem[]
+}
+
+/** Primary leagues from config/leagues.json (热门 / 一级目录). */
+export async function fetchLeagueCatalog(): Promise<LeagueCatalogResponse> {
+  const { data } = await apiClient.get<LeagueCatalogResponse>('/leagues/catalog')
+  return data
+}
+
 /** Locally stored, odds-backed filter options for the selected day. */
 export async function fetchLeagueFilterOptions(params?: {
   date?: string

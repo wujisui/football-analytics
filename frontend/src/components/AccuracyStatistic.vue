@@ -78,9 +78,10 @@ function onHitsClick(event: MouseEvent) {
 .accuracy-statistic :deep(.n-statistic-value__content) {
   display: inline-flex;
   align-items: baseline;
-  flex-wrap: wrap;
-  font-size: 24px;
-  line-height: 1.2;
+  flex-wrap: nowrap;
+  font-size: 20px;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .hits-btn {

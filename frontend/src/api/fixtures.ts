@@ -147,12 +147,16 @@ export interface ResultsResponse {
   accuracy?: ResultsAccuracy
 }
 
-/** Finished/cancelled fixtures for a calendar day (local DB only). */
-export async function fetchResults(date: string, leagueId?: number): Promise<ResultsResponse> {
+/** Finished/cancelled fixtures for a calendar day or contiguous span (local DB only). */
+export async function fetchResults(
+  date: string,
+  options?: { leagueId?: number; days?: number },
+): Promise<ResultsResponse> {
   const { data } = await apiClient.get<ResultsResponse>('/fixtures/results', {
     params: {
       date,
-      league_id: leagueId,
+      days: options?.days ?? 1,
+      league_id: options?.leagueId,
     },
   })
   return data

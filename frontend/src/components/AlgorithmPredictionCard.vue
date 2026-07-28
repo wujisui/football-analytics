@@ -87,17 +87,19 @@ const probs = computed(() => {
   ]
 })
 
-function goDetail() {
-  if (!canNavigate.value || resolvedFixtureId.value == null) return
+function goStats(event?: Event) {
+  event?.stopPropagation()
+  if (resolvedFixtureId.value == null) return
   void router.push(
     fixtureDetailRoute(resolvedFixtureId.value, {
       from: props.from,
+      tab: 'record',
       date: props.date,
     }),
   )
 }
 
-function goBriefing(event: MouseEvent) {
+function goBriefing(event: Event) {
   event.stopPropagation()
   if (resolvedFixtureId.value == null) return
   void router.push(
@@ -107,6 +109,11 @@ function goBriefing(event: MouseEvent) {
       date: props.date,
     }),
   )
+}
+
+function onCardActivate() {
+  if (!canNavigate.value) return
+  goStats()
 }
 </script>
 
@@ -121,8 +128,8 @@ function goBriefing(event: MouseEvent) {
     }"
     :role="canNavigate ? 'link' : undefined"
     :tabindex="canNavigate ? 0 : undefined"
-    @click="goDetail"
-    @keydown.enter="goDetail"
+    @click="onCardActivate"
+    @keydown.enter="onCardActivate"
   >
     <div class="rec-row">
       <n-button
@@ -131,18 +138,31 @@ function goBriefing(event: MouseEvent) {
         type="primary"
         size="small"
         class="zone-matchup"
-        @click="goBriefing"
+        @click="goStats"
       >
         {{ matchupTitle }}
       </n-button>
-      <span class="rec-label">推荐</span>
-      <n-tag :type="recommendationPending ? 'default' : 'primary'" size="small">
+      <n-button
+        text
+        size="small"
+        class="rec-label"
+        @click="goBriefing"
+      >
+        推荐
+      </n-button>
+      <n-tag
+        :type="recommendationPending ? 'default' : 'primary'"
+        size="small"
+        class="rec-chip"
+        @click="goBriefing"
+      >
         {{ prediction.recommendation }}
       </n-tag>
       <n-tag
         :type="handicapPending ? 'default' : 'warning'"
         size="small"
-        class="rec-tag"
+        class="rec-tag rec-chip"
+        @click="goBriefing"
       >
         {{ prediction.handicap_lean || HANDICAP_MISSING_LABEL }}
       </n-tag>
@@ -237,6 +257,12 @@ function goBriefing(event: MouseEvent) {
   font-size: 13px;
   color: var(--fa-text-secondary);
   flex-shrink: 0;
+  padding: 0 2px;
+  height: auto;
+}
+
+.rec-chip {
+  cursor: pointer;
 }
 
 .rec-tag {

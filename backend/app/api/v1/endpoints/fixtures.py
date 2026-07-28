@@ -356,19 +356,29 @@ async def get_fixture_results(
     date_str: str = Query(
         ...,
         alias="date",
-        description="查询比赛日 YYYY-MM-DD（开赛时刻的 UTC 日期 / API 赛程日）",
+        description="起始比赛日 YYYY-MM-DD（开赛时刻的 UTC 日期 / API 赛程日）",
+    ),
+    days: int = Query(
+        default=1,
+        ge=1,
+        le=366,
+        description="从 date 起共 N 个比赛日（含起始日）；默认 1=单日",
     ),
     league_id: int | None = Query(default=None, description="按联赛 ID 过滤"),
     db: AsyncSession = Depends(get_db),
 ) -> ResultsResponse:
-    """按日期查看本地已落库赛果，并对照赛前预测计算命中（只读本地）。"""
-    settings = get_settings()
+    """按日期（或连续多日）查看本地已落库赛果，并对照赛前预测计算命中（只读本地）。"""
     try:
         base_date = date.fromisoformat(date_str)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
 
-    start_dt, end_dt = utc_span_range(base_date, base_date)
+    today = utc_today()
+    end_date = min(base_date + timedelta(days=days - 1), today)
+    if end_date < base_date:
+        end_date = base_date
+
+    start_dt, end_dt = utc_span_range(base_date, end_date)
 
     stmt = (
         select(Fixture)

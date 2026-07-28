@@ -12,13 +12,11 @@ const props = withDefaults(
     trackedIds: number[]
     iconOnly?: boolean
     filterActive?: boolean
-    finishedMode?: boolean
     drawerMode?: boolean
   }>(),
   {
     iconOnly: false,
     filterActive: false,
-    finishedMode: false,
     drawerMode: false,
   },
 )
@@ -73,7 +71,6 @@ function confirm() {
       <LeagueFilterPanel
         v-model:draft="draft"
         :options="options"
-        :finished-mode="finishedMode"
         stacked
         @confirm="confirm"
       />
@@ -109,7 +106,6 @@ function confirm() {
     <LeagueFilterPanel
       v-model:draft="draft"
       :options="options"
-      :finished-mode="finishedMode"
       compact-actions
       @confirm="confirm"
     />

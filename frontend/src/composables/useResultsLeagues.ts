@@ -5,7 +5,7 @@ import type {
   ResultsAccuracy,
   ResultsHistoryResponse,
 } from '@/api/fixtures'
-import type { LeagueFilterOption } from '@/api/leagues'
+import { fetchLeagueCatalog, type LeagueFilterOption } from '@/api/leagues'
 import type { FixtureResponse, LeagueSummaryResponse } from '@/api/types'
 import { leagueLabel } from '@/utils/leagueNames'
 import { mergeDetailIntoListFixture } from '@/utils/oddsDisplay'
@@ -23,6 +23,37 @@ const resultsByDay = new Map<
   { fixtures: ResultFixture[]; accuracy: ResultsAccuracy | null }
 >()
 const scheduleByDay = new Map<string, FixtureResponse[]>()
+
+/**
+ * Primary (热门) league ids from /leagues/catalog — not day filter-options.
+ * filter-options only lists unfinished fixtures that day, so past 完场 days
+ * would incorrectly clear this set if we derived it from there.
+ */
+const configuredLeagueIds = ref<Set<number>>(new Set())
+let configuredIdsInflight: Promise<void> | null = null
+
+function setResultsConfiguredLeagueIds(ids: Iterable<number>) {
+  configuredLeagueIds.value = new Set(
+    [...ids].map(Number).filter((n) => Number.isFinite(n)),
+  )
+}
+
+/** Load leagues.json primary catalog once for 热门 grouping on 赛程. */
+export async function ensureResultsConfiguredLeagueIds(): Promise<void> {
+  if (configuredLeagueIds.value.size > 0) return
+  if (configuredIdsInflight) return configuredIdsInflight
+  configuredIdsInflight = (async () => {
+    try {
+      const data = await fetchLeagueCatalog()
+      setResultsConfiguredLeagueIds(data.leagues.map((l) => l.league_id))
+    } catch {
+      /* keep empty; filter falls back to 其他 only */
+    } finally {
+      configuredIdsInflight = null
+    }
+  })()
+  return configuredIdsInflight
+}
 
 function setResultsTrackedIds(ids: number[]) {
   resultsTrackedIds.value = [...new Set(ids.map(Number).filter((n) => Number.isFinite(n)))]
@@ -50,17 +81,22 @@ function buildFilterOptionsFromFixtures(
     }
   }
   return [...map.entries()]
-    .sort((a, b) =>
-      leagueLabel(a[1].name).localeCompare(leagueLabel(b[1].name), 'zh'),
-    )
-    .map(([league_id, { name, country, count }]) => ({
-      league_id,
-      league_name: name,
-      country,
-      fixtures_count: count,
-      tier: 'extra' as const,
-      default_checked: true,
-    }))
+    .map(([league_id, { name, country, count }]) => {
+      const configured = configuredLeagueIds.value.has(league_id)
+      return {
+        league_id,
+        league_name: name,
+        country,
+        fixtures_count: count,
+        tier: (configured ? 'configured' : 'extra') as LeagueFilterOption['tier'],
+        // Results day still defaults to all leagues checked; tier only drives UI groups.
+        default_checked: true,
+      }
+    })
+    .sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier === 'configured' ? -1 : 1
+      return leagueLabel(a.league_name).localeCompare(leagueLabel(b.league_name), 'zh')
+    })
 }
 
 /** Each day defaults to all leagues on that day checked (no cross-day persistence). */

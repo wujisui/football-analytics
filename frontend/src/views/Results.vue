@@ -279,13 +279,24 @@ const historyRangeLabel = computed(() => {
     : `${historySampleCount.value} 场`
 })
 
+const chartSeries = computed(() => history.value?.series ?? [])
+
 const chartHeaderExtra = computed(() =>
   historySampleCount.value ? `${historySampleCount.value} 场` : '暂无样本',
 )
 
 const hasChartData = computed(
-  () => (history.value?.series ?? []).some((p) => p.fixtures_with_prediction > 0),
+  () => chartSeries.value.some((p) => p.fixtures_with_prediction > 0),
 )
+
+/** Chart point click: jump list + 当日统计 to that sample day (full history picker). */
+function selectChartDay(day: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return
+  if (day > todayDate()) return
+  if (day === selectedDay.value) return
+  filterHitKeys.value = [...RESULTS_ALL_HIT_KEYS]
+  selectedDay.value = day
+}
 
 function goDetail(fixtureId: number) {
   writeResultsPageState({
@@ -688,11 +699,11 @@ onMounted(() => {
         <template #header-extra>
           <n-tooltip placement="bottom">
             <template #trigger>
-              <n-text depth="3" style="font-size: 12px;">
+              <n-text depth="3" class="chart-sample-count">
                 {{ chartHeaderExtra }}
               </n-text>
             </template>
-            走势截止 {{ todayDate() }}，与顶部日期选择无关
+            点击走势点查看当天联赛与场次；点数多时可拖动 / 滚轮左右滑动
           </n-tooltip>
         </template>
         <n-spin
@@ -707,7 +718,11 @@ onMounted(() => {
             style="padding: 16px 0;"
           />
           <div v-else-if="history" class="chart-fill">
-            <AccuracyHistoryChart :series="history.series" />
+            <AccuracyHistoryChart
+              :series="chartSeries"
+              :selected-day="isResultsDay ? selectedDay : null"
+              @select-day="selectChartDay"
+            />
           </div>
         </n-spin>
       </n-card>
@@ -954,6 +969,11 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.chart-sample-count {
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .chart-fill {

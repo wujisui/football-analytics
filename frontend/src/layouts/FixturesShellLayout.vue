@@ -83,7 +83,6 @@ onActivated(() => {
               :tracked-ids="shellTrackedIds"
               :icon-only="siderCollapsed"
               :filter-active="shellFilterActive"
-              :finished-mode="isResultsPage && !isScheduleFutureDay"
               @confirm="confirmFilter"
             />
           </template>
@@ -177,7 +176,6 @@ onActivated(() => {
               :options="shellFilterOptions"
               :tracked-ids="shellTrackedIds"
               :filter-active="shellFilterActive"
-              :finished-mode="isResultsPage && !isScheduleFutureDay"
               @confirm="confirmFilter"
             />
           </template>

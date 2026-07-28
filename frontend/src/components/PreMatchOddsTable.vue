@@ -4,7 +4,7 @@ import type { DataTableColumns } from 'naive-ui'
 import { NButton, NDataTable, NPopover } from 'naive-ui'
 import { useRouter } from 'vue-router'
 
-import type { DetailFrom } from '@/utils/detailNav'
+import type { DetailFrom, DetailTab } from '@/utils/detailNav'
 import { fixtureDetailRoute } from '@/utils/detailNav'
 import { formatOdd } from '@/utils/format'
 import { ahLinesOf, hasOddsMarkets, type OddsLike } from '@/utils/oddsDisplay'
@@ -26,7 +26,7 @@ const props = withDefaults(
     linkMiddleToDetail?: boolean
     fixtureId?: number
     from?: DetailFrom
-    detailTab?: 'prediction' | 'briefing'
+    detailTab?: DetailTab
     date?: string | null
     emptyText?: string
   }>(),
