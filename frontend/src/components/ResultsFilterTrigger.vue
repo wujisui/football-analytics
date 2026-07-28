@@ -3,6 +3,7 @@ import { FilterOutline } from '@vicons/ionicons5'
 import { ref, watch } from 'vue'
 
 import ResultsFilterPanel from '@/components/ResultsFilterPanel.vue'
+import { useIsPhone } from '@/composables/useMediaQuery'
 import {
   RESULTS_ALL_HIT_KEYS,
   type ResultsHitKey,
@@ -17,6 +18,7 @@ const emit = defineEmits<{
   confirm: [hitKeys: ResultsHitKey[]]
 }>()
 
+const isPhone = useIsPhone()
 const show = ref(false)
 const panelKey = ref(0)
 
@@ -32,7 +34,41 @@ function confirm(hitKeys: ResultsHitKey[]) {
 </script>
 
 <template>
+  <template v-if="isPhone">
+    <n-button
+      size="small"
+      quaternary
+      class="results-filter-btn"
+      :type="filterActive ? 'primary' : 'default'"
+      aria-label="筛选赛果"
+      @click="show = true"
+    >
+      <template #icon>
+        <n-icon :component="FilterOutline" :size="14" />
+      </template>
+      筛选
+    </n-button>
+
+    <n-modal
+      v-model:show="show"
+      preset="card"
+      title="筛选赛果"
+      :style="{ width: 'min(320px, 92vw)' }"
+      :segmented="{ content: true, footer: false }"
+    >
+      <ResultsFilterPanel
+        :key="panelKey"
+        :initial-hit-keys="
+          selectedHitKeys.length ? [...selectedHitKeys] : [...RESULTS_ALL_HIT_KEYS]
+        "
+        :compact-actions="false"
+        @confirm="confirm"
+      />
+    </n-modal>
+  </template>
+
   <n-popover
+    v-else
     v-model:show="show"
     trigger="hover"
     :delay="80"

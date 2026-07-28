@@ -70,11 +70,9 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
         :fixture-id="fixture.fixture_id"
         :from="from"
         :date="date"
-        detail-tab="record"
       />
       <AlgorithmPredictionCard
         :fixture="fixture"
-        link-to-detail
         :from="from"
         :date="date"
       />

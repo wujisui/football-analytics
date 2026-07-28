@@ -18,8 +18,6 @@ const props = withDefaults(
     fixtureId?: number
     /** Elevated card for the predictions list. */
     standalone?: boolean
-    /** Navigate to fixture detail on click (standalone implies true). */
-    linkToDetail?: boolean
     /** Show home vs away title link above recommendation row. */
     showMatchupTitle?: boolean
     from?: DetailFrom
@@ -27,7 +25,6 @@ const props = withDefaults(
   }>(),
   {
     standalone: false,
-    linkToDetail: false,
     showMatchupTitle: true,
     from: 'home',
     date: null,
@@ -35,8 +32,6 @@ const props = withDefaults(
 )
 
 const router = useRouter()
-
-const canNavigate = computed(() => props.standalone || props.linkToDetail)
 
 const resolvedFixtureId = computed(
   () => props.fixture?.fixture_id ?? props.fixtureId ?? null,
@@ -87,8 +82,7 @@ const probs = computed(() => {
   ]
 })
 
-function goStats(event?: Event) {
-  event?.stopPropagation()
+function goStats() {
   if (resolvedFixtureId.value == null) return
   void router.push(
     fixtureDetailRoute(resolvedFixtureId.value, {
@@ -99,8 +93,7 @@ function goStats(event?: Event) {
   )
 }
 
-function goBriefing(event: Event) {
-  event.stopPropagation()
+function goBriefing() {
   if (resolvedFixtureId.value == null) return
   void router.push(
     fixtureDetailRoute(resolvedFixtureId.value, {
@@ -110,26 +103,13 @@ function goBriefing(event: Event) {
     }),
   )
 }
-
-function onCardActivate() {
-  if (!canNavigate.value) return
-  goStats()
-}
 </script>
 
 <template>
   <component
     :is="standalone ? 'article' : 'section'"
     class="predict-card"
-    :class="{
-      standalone,
-      zone: !standalone,
-      clickable: canNavigate,
-    }"
-    :role="canNavigate ? 'link' : undefined"
-    :tabindex="canNavigate ? 0 : undefined"
-    @click="onCardActivate"
-    @keydown.enter="onCardActivate"
+    :class="{ standalone, zone: !standalone }"
   >
     <div class="rec-row">
       <n-button
@@ -138,7 +118,7 @@ function onCardActivate() {
         type="primary"
         size="small"
         class="zone-matchup"
-        @click="goStats"
+        @click.stop="goStats"
       >
         {{ matchupTitle }}
       </n-button>
@@ -146,7 +126,7 @@ function onCardActivate() {
         text
         size="small"
         class="rec-label"
-        @click="goBriefing"
+        @click.stop="goBriefing"
       >
         推荐
       </n-button>
@@ -154,7 +134,7 @@ function onCardActivate() {
         :type="recommendationPending ? 'default' : 'primary'"
         size="small"
         class="rec-chip"
-        @click="goBriefing"
+        @click.stop="goBriefing"
       >
         {{ prediction.recommendation }}
       </n-tag>
@@ -162,7 +142,7 @@ function onCardActivate() {
         :type="handicapPending ? 'default' : 'warning'"
         size="small"
         class="rec-tag rec-chip"
-        @click="goBriefing"
+        @click.stop="goBriefing"
       >
         {{ prediction.handicap_lean || HANDICAP_MISSING_LABEL }}
       </n-tag>
@@ -215,25 +195,14 @@ function onCardActivate() {
   border-radius: 8px;
   padding: 14px;
   min-width: 0;
-  cursor: pointer;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
 }
 
-.predict-card.standalone:hover,
-.predict-card.clickable:hover {
+.predict-card.standalone:hover {
   border-color: var(--fa-hover-border);
   box-shadow: 0 2px 10px var(--fa-hover-shadow);
-}
-
-.predict-card.clickable {
-  cursor: pointer;
-}
-
-.predict-card.clickable:focus-visible {
-  outline: 2px solid var(--fa-highlight-border);
-  outline-offset: 2px;
 }
 
 .rec-row {

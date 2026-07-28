@@ -188,6 +188,8 @@ function rowKey(row: FormMatch): string | number {
 :deep(.score-ft) {
   font-weight: 700;
   font-size: 14px;
+  color: var(--fa-highlight-text);
+  font-variant-numeric: tabular-nums;
 }
 
 :deep(.score-ht) {

@@ -53,14 +53,6 @@ const awayLabel = computed(() => {
   return ar ? `${awayName} ${ar}` : awayName
 })
 
-/** Breadcrumb / title: show local score between teams when available. */
-const matchTitle = computed(() => {
-  if (scoreText.value) {
-    return `${homeLabel.value} ${scoreText.value} ${awayLabel.value}`
-  }
-  return `${homeLabel.value} VS ${awayLabel.value}`
-})
-
 function goBack() {
   void router.push(
     detailBackRoute(from.value, {
@@ -87,15 +79,31 @@ function goLeague() {
       <n-breadcrumb-item>
         <n-tooltip v-if="scoreText" placement="bottom">
           <template #trigger>
-            <span class="crumb-match">{{ matchTitle }}</span>
+            <span class="match-title crumb-match">
+              <span>{{ homeLabel }}</span>
+              <span class="score-value">{{ scoreText }}</span>
+              <span>{{ awayLabel }}</span>
+            </span>
           </template>
           本地比分（非实时）
         </n-tooltip>
-        <span v-else class="crumb-match">{{ matchTitle }}</span>
+        <span v-else class="match-title crumb-match">
+          <span>{{ homeLabel }}</span>
+          <span>VS</span>
+          <span>{{ awayLabel }}</span>
+        </span>
       </n-breadcrumb-item>
     </n-breadcrumb>
 
-    <n-page-header :title="matchTitle" @back="goBack">
+    <n-page-header @back="goBack">
+      <template #title>
+        <span class="match-title page-match-title">
+          <span>{{ homeLabel }}</span>
+          <span v-if="scoreText" class="score-value">{{ scoreText }}</span>
+          <span v-else>VS</span>
+          <span>{{ awayLabel }}</span>
+        </span>
+      </template>
       <template #subtitle>
         <div class="subtitle-row">
           <n-tag
@@ -146,6 +154,24 @@ function goLeague() {
 }
 
 .crumb-match {
+  font-variant-numeric: tabular-nums;
+}
+
+.match-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45em;
+  min-width: 0;
+}
+
+.page-match-title {
+  font-weight: 600;
+}
+
+.score-value {
+  flex-shrink: 0;
+  color: var(--fa-highlight-text);
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 

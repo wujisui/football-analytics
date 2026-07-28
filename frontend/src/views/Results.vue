@@ -33,6 +33,7 @@ import {
   beginScheduleFilterOverride,
   endScheduleFilterOverride,
 } from '@/composables/useTrackedLeagues'
+import { fixtureDetailRoute } from '@/utils/detailNav'
 import { todayDate, yesterdayDate } from '@/utils/homeDateStrip'
 import { ACCURACY_COLORS } from '@/utils/accuracyColors'
 import { sortFixturesFavoritesFirst } from '@/utils/fixtureSort'
@@ -299,11 +300,13 @@ function goDetail(fixtureId: number) {
     filterHitKeys: filterHitKeys.value,
     teamSearch: teamSearch.value,
   })
-  void router.push({
-    name: 'fixture-detail',
-    params: { fixtureId },
-    query: { from: 'results', date: selectedDay.value },
-  })
+  void router.push(
+    fixtureDetailRoute(fixtureId, {
+      from: 'results',
+      tab: 'prediction',
+      date: selectedDay.value,
+    }),
+  )
 }
 
 function applySavedFiltersIfAny() {
@@ -867,7 +870,7 @@ onMounted(() => {
 }
 
 .results-list-inner {
-  padding: 0 8px 8px;
+  padding: 10px 12px 12px;
   box-sizing: border-box;
 }
 

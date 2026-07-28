@@ -1,15 +1,19 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import { FIXTURE_DETAIL_TOOLTIP } from '@/utils/detailNav'
 
 defineOptions({ inheritAttrs: false })
 
-defineProps<{
+const props = defineProps<{
   label: string
 }>()
 
 defineEmits<{
   click: []
 }>()
+
+const hasScore = computed(() => /\d+\s*[:：-]\s*\d+/.test(props.label))
 </script>
 
 <template>
@@ -19,6 +23,7 @@ defineEmits<{
         v-bind="$attrs"
         text
         class="score-detail-link"
+        :class="{ 'has-score': hasScore }"
         :aria-label="FIXTURE_DETAIL_TOOLTIP"
         @click="$emit('click')"
       >
@@ -36,7 +41,11 @@ defineEmits<{
   color: var(--fa-text-strong);
 }
 
-.score-detail-link:hover {
+.score-detail-link.has-score {
   color: var(--fa-highlight-text);
+}
+
+.score-detail-link.has-score:hover {
+  filter: brightness(1.15);
 }
 </style>

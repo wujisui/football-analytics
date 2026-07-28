@@ -56,7 +56,8 @@ function confirm() {
 
 <style scoped>
 .results-filter-panel {
-  width: min(240px, 86vw);
+  min-width: min(240px, 86vw);
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 10px;
