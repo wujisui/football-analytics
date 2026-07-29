@@ -86,7 +86,8 @@ class Settings(BaseSettings):
     ANALYSIS_API_BUDGET_SECONDS: float = 12.0
     LOG_LEVEL: str = "INFO"
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
-    PRE_MATCH_WINDOW_HOURS: int = 2
+    # One forced final odds refresh per fixture inside this pre-kickoff window.
+    FINAL_ODDS_WINDOW_MINUTES: int = 30
     CLEANUP_DAYS: int = 7
     ADMIN_API_KEY: str = ""
     LOG_DIR: str = "logs"

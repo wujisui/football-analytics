@@ -147,18 +147,17 @@ function goBriefing() {
         {{ prediction.handicap_lean || HANDICAP_MISSING_LABEL }}
       </n-tag>
     </div>
-    <div
-      v-if="predictionReady"
-      class="prob-row"
-    >
+    <div v-if="predictionReady" class="prob-row">
       <div v-for="p in probs" :key="p.key" class="prob-item">
-        <span class="prob-label">{{ p.label }}</span>
-        <span class="prob-value">{{ toPercent(p.value) }}</span>
+        <span class="prob-head">
+          <span>{{ p.label }}</span>
+          <strong>{{ toPercent(p.value) }}</strong>
+        </span>
         <n-progress
           type="line"
           :percentage="Math.round(p.value * 100)"
           :show-indicator="false"
-          :height="6"
+          :height="standalone ? 6 : 8"
           processing
         />
       </div>
@@ -209,8 +208,8 @@ function goBriefing() {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .zone-matchup {
@@ -246,25 +245,29 @@ function goBriefing() {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .prob-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 
-.prob-label {
-  font-size: 12px;
+.prob-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.2;
   color: var(--fa-text-faint);
 }
 
-.prob-value {
-  font-size: 16px;
-  font-weight: 700;
+.prob-head strong {
   color: var(--fa-text-strong);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -278,5 +281,26 @@ function goBriefing() {
   margin: 0 0 8px;
   font-size: 13px;
   color: var(--fa-text-faint);
+}
+
+.predict-card.standalone .rec-row,
+.predict-card.standalone .prob-row {
+  margin-bottom: 10px;
+}
+
+.predict-card.standalone .prob-item {
+  gap: 4px;
+}
+
+.predict-card.standalone .prob-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.predict-card.standalone .prob-head strong {
+  font-size: 16px;
+  font-weight: 700;
 }
 </style>

@@ -94,16 +94,24 @@ function openOddsModal() {
 
   <article v-else class="favorite-fixture-card">
     <header class="card-head">
-      <n-tag
-        size="small"
-        :bordered="false"
-        :color="{
-          color: `${leagueTagColor(item.league_id)}18`,
-          textColor: leagueTagColor(item.league_id),
-        }"
-      >
-        {{ leagueLabel(item.league_name) }}
-      </n-tag>
+      <span class="league-tag-tip">
+        <n-tooltip :trigger="isPhone ? 'click' : 'hover'" placement="top">
+          <template #trigger>
+            <n-tag
+              class="league-tag"
+              size="small"
+              :bordered="false"
+              :color="{
+                color: `${leagueTagColor(item.league_id)}18`,
+                textColor: leagueTagColor(item.league_id),
+              }"
+            >
+              {{ leagueLabel(item.league_name) }}
+            </n-tag>
+          </template>
+          {{ leagueLabel(item.league_name) }}
+        </n-tooltip>
+      </span>
       <span class="kickoff">
         {{ formatDate(item.fixture_date) }} {{ formatTime(item.fixture_date) }}
       </span>
@@ -230,6 +238,29 @@ function openOddsModal() {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.league-tag-tip {
+  flex: 0 1 42%;
+  min-width: 0;
+  max-width: 42%;
+}
+
+.league-tag-tip :deep(.n-tooltip) {
+  display: block;
+  max-width: 100%;
+}
+
+.league-tag {
+  max-width: 100%;
+}
+
+:deep(.league-tag .n-tag__content) {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kickoff {

@@ -1,19 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
-import FavoriteButton from '@/components/FavoriteButton.vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
+import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
 import type { FixtureResponse } from '@/api/types'
 import { useIsPhone } from '@/composables/useMediaQuery'
-import {
-  formatDate,
-  formatTime,
-  leagueTagColor,
-  statusLabel,
-  statusTagType,
-} from '@/utils/format'
-import { leagueLabel } from '@/utils/leagueNames'
 import type { DetailFrom } from '@/utils/detailNav'
 
 const props = withDefaults(
@@ -35,34 +26,16 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
 </script>
 
 <template>
-  <article class="fixture-card" :class="{ 'phone-compact': isPhone }">
-    <header class="card-head">
-      <n-tag
-        size="small"
-        :bordered="false"
-        :color="{
-          color: `${leagueTagColor(fixture.league_id)}18`,
-          textColor: leagueTagColor(fixture.league_id),
-        }"
-      >
-        {{ leagueLabel(fixture.league_name) }}
-      </n-tag>
-      <span class="kickoff">
-        {{ formatDate(fixture.fixture_date) }} {{ formatTime(fixture.fixture_date) }}
-      </span>
-      <n-tag size="small" :type="statusTagType(fixture.status)" :bordered="false">
-        {{ statusLabel(fixture.status) }}
-      </n-tag>
-      <FavoriteButton
-        :fixture-id="fixture.fixture_id"
-        :fixture="fixture"
-        size="tiny"
-      />
-    </header>
+  <ResultFixtureCard
+    v-if="isPhone"
+    :fixture="fixture"
+    :from="from"
+    :date="date"
+  />
 
-    <div class="summary-grid" :class="{ 'predict-only': isPhone }">
+  <article v-else class="fixture-card">
+    <div class="summary-grid">
       <PreMatchOddsTable
-        v-if="!isPhone"
         :odds="fixture.odds_snippet"
         :home-name="homeName"
         :away-name="awayName"
@@ -71,7 +44,7 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
         :from="from"
         :date="date"
       />
-      <AlgorithmPredictionCard
+      <ResultFixtureCard
         :fixture="fixture"
         :from="from"
         :date="date"
@@ -85,15 +58,12 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
   background: var(--fa-bg-elevated);
   border: 1px solid var(--fa-border);
   border-radius: 8px;
-  padding: 16px;
+  padding: 10px;
   cursor: default;
   user-select: text;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   color: var(--fa-text);
 }
 
@@ -102,43 +72,21 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
   box-shadow: 0 2px 10px var(--fa-hover-shadow);
 }
 
-.card-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.kickoff {
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-  flex: 1;
-}
-
 .summary-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
-.summary-grid.predict-only {
-  grid-template-columns: 1fr;
+.summary-grid :deep(.result-fixture-card) {
+  height: 100%;
+  box-sizing: border-box;
 }
 
 @media (max-width: 900px) {
-  .summary-grid:not(.predict-only) {
+  .summary-grid {
     grid-template-columns: 1fr;
-  }
-
-  .fixture-card {
-    padding: 12px;
-  }
-}
-
-@media (max-width: 767px) {
-  .phone-compact .card-head {
-    gap: 6px;
   }
 }
 </style>

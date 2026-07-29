@@ -2,6 +2,7 @@
 import { ChevronForwardOutline, SearchOutline } from '@vicons/ionicons5'
 import { computed, ref } from 'vue'
 
+import { useIsPhone } from '@/composables/useMediaQuery'
 import { fuzzyIncludes } from '@/utils/fuzzySearch'
 import type { LeagueSummaryResponse } from '@/api/types'
 import { leagueTagColor } from '@/utils/format'
@@ -20,6 +21,7 @@ const emit = defineEmits<{
   select: [leagueId: number | null]
 }>()
 
+const isPhone = useIsPhone()
 const searchQuery = ref('')
 
 function abbrOf(name: string): string {
@@ -102,11 +104,15 @@ function countOf(leagueId: number): number {
             v-if="showAllRow"
             class="lm-item"
             :class="{ active: selectedLeagueId == null }"
-            :title="collapsed ? `全部 (${totalPending})` : undefined"
             @click="selectAll"
           >
             <template #prefix>
-              <span class="lm-chip lm-chip-all" aria-hidden="true">全</span>
+              <n-tooltip :disabled="!collapsed" placement="right">
+                <template #trigger>
+                  <span class="lm-chip lm-chip-all" aria-hidden="true">全</span>
+                </template>
+                全部（{{ totalPending }}）
+              </n-tooltip>
             </template>
             <template v-if="!collapsed">全部</template>
             <template v-if="!collapsed" #suffix>
@@ -122,24 +128,41 @@ function countOf(leagueId: number): number {
             :key="league.league_id"
             class="lm-item"
             :class="{ active: selectedLeagueId === league.league_id }"
-            :title="collapsed ? leagueLabel(league.league_name) : undefined"
             @click="selectLeague(league.league_id)"
           >
             <template #prefix>
-              <span
-                class="lm-chip"
-                :style="{
-                  background: `${leagueTagColor(league.league_id)}18`,
-                  color: leagueTagColor(league.league_id),
-                  borderColor: `${leagueTagColor(league.league_id)}40`,
-                }"
-                aria-hidden="true"
+              <n-tooltip
+                :disabled="!collapsed"
+                placement="right"
               >
-                {{ abbrOf(leagueLabel(league.league_name)) }}
-              </span>
+                <template #trigger>
+                  <span
+                    class="lm-chip"
+                    :style="{
+                      background: `${leagueTagColor(league.league_id)}18`,
+                      color: leagueTagColor(league.league_id),
+                      borderColor: `${leagueTagColor(league.league_id)}40`,
+                    }"
+                    aria-hidden="true"
+                  >
+                    {{ abbrOf(leagueLabel(league.league_name)) }}
+                  </span>
+                </template>
+                {{ leagueLabel(league.league_name) }}
+              </n-tooltip>
             </template>
             <template v-if="!collapsed">
-              {{ leagueLabel(league.league_name) }}
+              <n-tooltip
+                :trigger="isPhone ? 'click' : 'hover'"
+                placement="right"
+              >
+                <template #trigger>
+                  <span class="lm-name">
+                    {{ leagueLabel(league.league_name) }}
+                  </span>
+                </template>
+                {{ leagueLabel(league.league_name) }}
+              </n-tooltip>
             </template>
             <template v-if="!collapsed" #suffix>
               <span class="lm-suffix">
@@ -241,6 +264,18 @@ function countOf(leagueId: number): number {
 .lm-item {
   padding: 8px 4px !important;
   margin: 2px 4px;
+}
+
+.lm-item :deep(.n-list-item__main) {
+  min-width: 0;
+}
+
+.lm-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lm-item.active {

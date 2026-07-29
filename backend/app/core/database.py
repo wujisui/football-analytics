@@ -59,6 +59,7 @@ async def _ensure_sqlite_columns(conn) -> None:
         {
             "odds_json": "TEXT",
             "odds_opening_json": "TEXT",
+            "final_odds_sync_at": "DATETIME",
             "lineups_json": "TEXT",
             "injuries_json": "TEXT",
             "h2h_json": "TEXT",

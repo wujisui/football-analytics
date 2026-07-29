@@ -960,6 +960,29 @@ class FootballFetcher:
             lambda client: self.provider.fetch_odds_payload(client, fixture_id),
         )
 
+    async def refresh_odds_for_fixture(
+        self,
+        fixture_id: int,
+        *,
+        set_opening: bool = False,
+    ) -> bool:
+        """Force one official odds pull, persist it, and recompute local predictions."""
+        from app.services.prematch_package import parse_odds_payload
+
+        await self.cache.delete(odds_cache_key(fixture_id))
+        raw = await self._fetch_odds_with_rate_limit(fixture_id)
+        parsed = parse_odds_payload(raw)
+        if not parsed.get("available"):
+            logger.info("No official odds yet for fixture %s", fixture_id)
+            return False
+        await self._upsert_odds_and_recompute(
+            fixture_id,
+            parsed,
+            raw,
+            set_opening=set_opening,
+        )
+        return True
+
     async def _upsert_odds_and_recompute(
         self,
         fixture_id: int,
@@ -1138,7 +1161,7 @@ class FootballFetcher:
         from sqlalchemy import select
 
         from app.models.pre_match_data import PreMatchData
-        from app.services.prematch_package import dumps_json, loads_json, parse_odds_payload
+        from app.services.prematch_package import dumps_json, loads_json
 
         assert self.session is not None
         allowed_filter: set[int] | None = None
@@ -1221,18 +1244,11 @@ class FootballFetcher:
 
         for index, fixture_id in enumerate(queue):
             try:
-                # Bust Redis odds cache so force refresh never serves a stale board.
-                await self.cache.delete(odds_cache_key(fixture_id))
-                raw = await self._fetch_odds_with_rate_limit(fixture_id)
-                parsed = parse_odds_payload(raw)
-                if not parsed.get("available"):
-                    logger.info("No official odds yet for fixture %s", fixture_id)
-                    await asyncio.sleep(0.45)
-                    continue
-                await self._upsert_odds_and_recompute(
-                    fixture_id, parsed, raw, set_opening=set_opening
-                )
-                updated += 1
+                if await self.refresh_odds_for_fixture(
+                    fixture_id,
+                    set_opening=set_opening,
+                ):
+                    updated += 1
             except Exception as exc:
                 logger.warning("Fixture odds %s failed: %s", fixture_id, exc)
             if index + 1 < take:

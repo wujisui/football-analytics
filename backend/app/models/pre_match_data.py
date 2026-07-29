@@ -34,6 +34,8 @@ class PreMatchData(Base):
     odds_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # First board from midday scheduled sync (初盘); never overwritten once set.
     odds_opening_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # At most one forced final-odds attempt in the configured pre-kickoff window.
+    final_odds_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     lineups_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     injuries_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     h2h_json: Mapped[str | None] = mapped_column(Text, nullable=True)

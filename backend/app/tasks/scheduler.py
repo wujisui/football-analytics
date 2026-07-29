@@ -12,8 +12,6 @@ from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
-from app.services.analyzer import AnalyzerService
-from app.services.api_utils import extract_items, first_value, map_fixture_status
 from app.services.data_cleanup import prune_low_value_data
 from app.services.fetcher import FootballFetcher
 from app.services.fixtures_sync import scheduled_fixtures_sync
@@ -76,24 +74,32 @@ async def run_scheduled_fixtures_sync(task_name: str = "scheduled_fixtures_sync"
             finished_at=_utc_now().isoformat(),
         )
         logger.error("Task %s failed: %s", task_name, exc, exc_info=True)
-async def pre_match_update() -> None:
+
+
+async def final_odds_update() -> None:
+    """Refresh each fixture's final pre-kickoff odds once, then recompute predictions."""
     settings = get_settings()
-    task_name = "pre_match_update"
+    task_name = "final_odds_update"
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
-    logger.info("Task pre_match_update started.")
+    logger.info("Task final_odds_update started.")
 
     now = _utc_now().replace(tzinfo=None)
-    window_end = now + timedelta(hours=settings.PRE_MATCH_WINDOW_HOURS)
+    window_minutes = max(1, int(settings.FINAL_ODDS_WINDOW_MINUTES))
+    window_end = now + timedelta(minutes=window_minutes)
+    attempted = 0
     updated = 0
     errors = 0
 
     try:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                select(Fixture).where(
+                select(Fixture)
+                .outerjoin(PreMatchData, PreMatchData.fixture_id == Fixture.id)
+                .where(
                     Fixture.status == "pending",
                     Fixture.date >= now,
                     Fixture.date <= window_end,
+                    PreMatchData.final_odds_sync_at.is_(None),
                 )
             )
             fixtures = result.scalars().all()
@@ -102,11 +108,12 @@ async def pre_match_update() -> None:
             _set_task_status(
                 task_name,
                 "completed",
+                attempted=0,
                 updated=0,
-                message="No pending fixtures in pre-match window.",
+                message="No fixtures awaiting final odds refresh.",
                 finished_at=_utc_now().isoformat(),
             )
-            logger.info("Task pre_match_update completed. No fixtures in window.")
+            logger.info("Task final_odds_update completed. No fixtures in window.")
             return
 
         async with FootballFetcher() as fetcher:
@@ -117,33 +124,29 @@ async def pre_match_update() -> None:
 
                 active_fixtures.add(fixture.id)
                 try:
-                    payload = await fetcher.fetch_fixture_details(fixture.id)
-                    items = extract_items(payload)
-                    item = items[0] if items else {}
-                    new_status = map_fixture_status(
-                        first_value(item, [["fixture", "status", "short"], ["status", "short"]])
-                    )
-
+                    # Persist the attempt before the API call: each fixture consumes
+                    # at most one final-odds request, including empty/error responses.
                     async with AsyncSessionLocal() as session:
-                        db_fixture = await session.get(Fixture, fixture.id)
-                        if db_fixture is not None and new_status:
-                            db_fixture.status = new_status
-                            await session.commit()
-
-                        if new_status == "live":
-                            logger.info(
-                                "Fixture %s is live, skipping further pre-match updates.",
-                                fixture.id,
+                        row = (
+                            await session.execute(
+                                select(PreMatchData).where(
+                                    PreMatchData.fixture_id == fixture.id
+                                )
                             )
-                            continue
+                        ).scalar_one_or_none()
+                        if row is None:
+                            row = PreMatchData(fixture_id=fixture.id)
+                            session.add(row)
+                        row.final_odds_sync_at = now
+                        await session.commit()
+                    attempted += 1
 
-                        analyzer = AnalyzerService(session)
-                        await analyzer.analyze_fixture(fixture.id)
+                    if await fetcher.refresh_odds_for_fixture(fixture.id):
                         updated += 1
                 except Exception as exc:
                     errors += 1
                     logger.error(
-                        "pre_match_update failed for fixture %s: %s",
+                        "final_odds_update failed for fixture %s: %s",
                         fixture.id,
                         exc,
                         exc_info=True,
@@ -154,18 +157,20 @@ async def pre_match_update() -> None:
         _set_task_status(
             task_name,
             "completed",
+            attempted=attempted,
             updated=updated,
             errors=errors,
             finished_at=_utc_now().isoformat(),
         )
         logger.info(
-            "Task pre_match_update completed. updated=%s errors=%s",
+            "Task final_odds_update completed. attempted=%s updated=%s errors=%s",
+            attempted,
             updated,
             errors,
         )
     except Exception as exc:
         _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
-        logger.error("Task pre_match_update failed: %s", exc, exc_info=True)
+        logger.error("Task final_odds_update failed: %s", exc, exc_info=True)
 
 
 async def clean_old_data() -> None:
@@ -341,7 +346,7 @@ async def train_model() -> None:
 
 TASK_HANDLERS = {
     "scheduled_fixtures_sync": run_scheduled_fixtures_sync,
-    "pre_match_update": pre_match_update,
+    "final_odds_update": final_odds_update,
     "capture_results": capture_results,
     "clean_old_data": clean_old_data,
     "train_model": train_model,
@@ -362,7 +367,6 @@ def register_jobs() -> None:
     # Remove legacy 06:00 daily_init if still registered from an older process.
     if scheduler.get_job("daily_init") is not None:
         scheduler.remove_job("daily_init")
-
     for hour in (6, 12, 18):
         job_id = f"scheduled_fixtures_sync_{hour:02d}"
         if scheduler.get_job(job_id) is None:
@@ -376,12 +380,12 @@ def register_jobs() -> None:
                 coalesce=True,
             )
 
-    if scheduler.get_job("pre_match_update") is None:
+    if scheduler.get_job("final_odds_update") is None:
         scheduler.add_job(
-            pre_match_update,
+            final_odds_update,
             IntervalTrigger(minutes=5),
-            id="pre_match_update",
-            name="pre_match_update",
+            id="final_odds_update",
+            name="final_odds_update",
             replace_existing=True,
             max_instances=1,
             coalesce=True,

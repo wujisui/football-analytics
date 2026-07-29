@@ -171,7 +171,7 @@ python -m unittest discover -s tests -v
 
 已有本地数据库时，这些回填/训练命令不调用官方 API。完整的换机步骤、依赖检查及 pip SSL 故障处理见根目录 [`DEV_SETUP.md`](../DEV_SETUP.md)。
 
-可触发的任务名：`scheduled_fixtures_sync`、`pre_match_update`、`capture_results`、`clean_old_data`、`train_model`。
+可触发的任务名：`scheduled_fixtures_sync`、`final_odds_update`、`capture_results`、`clean_old_data`、`train_model`。
 
 ### 概率模型（时间验证 + 基线门禁）
 
@@ -232,7 +232,7 @@ GET /api/v1/fixtures/today?league_id=39
 | 方法   | 路径                     | 说明                                    |
 |------|------------------------|---------------------------------------|
 | GET  | `/admin/tasks`         | 调度器与任务状态                              |
-| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"pre_match_update"|"capture_results"|"clean_old_data"|"train_model"}` |
+| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"final_odds_update"|"capture_results"|"clean_old_data"|"train_model"}` |
 
 ### 常用联赛 ID
 
@@ -270,12 +270,12 @@ API-Sports 没有跨国家统一可靠的“第几级联赛”字段，因此分
 | 任务                     | 触发规则      | 作用                                      |
 |------------------------|-----------|-----------------------------------------|
 | `scheduled_fixtures_sync` | 每天 06/12/18 点 | 强制拉取近期窗口赛程 + 缺盘补全 |
-| `pre_match_update`     | 每 5 分钟    | 更新开赛前 2 小时内的比赛数据与分析                     |
+| `final_odds_update`    | 每 5 分钟    | 扫描开赛前 30 分钟窗口；每场仅强制刷新一次临场盘口并重算推荐 |
 | `capture_results`      | 每 30 分钟   | 回写近日终场比分                                  |
 | `clean_old_data`       | 每周一 03:00 | 物理删除「完场且无盘口/推荐」的场次、空联赛行与孤立球队，并清理过期分析与日志 |
 
 时区由 `SCHEDULER_TIMEZONE` 控制（默认 `Asia/Shanghai`）。  
-官网文档：赛前 `/odds` 约每 3 小时更新；赛程类日更一次即可。本项目由后端定时任务保鲜，并把首次落库的盘口冻为**初盘**；用户点击工具栏「同步」时按勾选联赛**补齐缺失盘口**（免费套餐当前赛季无法用 `/odds?league=`，改为按场次拉取并按联赛轮询），详情补拉也会写入**即时盘**。页面加载本身只读本地库。
+官网文档：赛前 `/odds` 约每 3 小时更新；赛程类日更一次即可。本项目在赛程同步时只补齐缺失盘口，并把首次落库盘口冻为**初盘**；进入开赛前 30 分钟窗口后，每场只强制拉取一次临场盘口并重算本地推荐。用户点击工具栏「同步」时仍按勾选联赛补齐缺失盘口（免费套餐当前赛季无法用 `/odds?league=`，改为按场次拉取并按联赛轮询）。页面加载本身只读本地库。
 手动：`python manage.py trigger-task --name scheduled_fixtures_sync`。
 
 ## 前端对接提示

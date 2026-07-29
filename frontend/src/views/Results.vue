@@ -771,7 +771,7 @@ onMounted(() => {
         </template>
         <div ref="phoneListShellRef" class="results-list-shell phone">
           <n-scrollbar style="max-height: 100%; height: 100%;" trigger="hover">
-            <div class="results-list-inner">
+            <div class="results-list-inner phone">
               <n-spin :show="contentLoading">
                 <n-empty
                   v-if="!loading && !listedFixtures.length"
@@ -783,6 +783,7 @@ onMounted(() => {
                     v-for="fx in listedFixtures"
                     :key="fx.fixture_id"
                     :fixture="fx"
+                    :show-date="false"
                     @open-detail="goDetail"
                   />
                 </div>
@@ -836,6 +837,7 @@ onMounted(() => {
                   v-for="fx in listedFixtures"
                   :key="fx.fixture_id"
                   :fixture="fx"
+                  :show-date="false"
                   @open-detail="goDetail"
                 />
               </div>
@@ -870,8 +872,12 @@ onMounted(() => {
 }
 
 .results-list-inner {
-  padding: 10px 12px 12px;
+  padding: 4px 12px 12px;
   box-sizing: border-box;
+}
+
+.results-list-inner.phone{
+  padding: 10px 12px 12px;
 }
 
 .results-card-stack {
