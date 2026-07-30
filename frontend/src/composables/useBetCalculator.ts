@@ -4,7 +4,6 @@ import type { FixtureResponse } from '@/api/types'
 import {
   availableFoldModes,
   calculateParlay,
-  conflictWithExisting,
   foldModeLabel,
   MAX_CALC_MATCHES,
   MAX_SPF_PICKS,
@@ -50,67 +49,52 @@ export function useBetCalculator() {
     )
   }
 
-  function cellBlockedReason(
-    fixture: FixtureResponse,
-    cell: CalcCell,
-  ): string | null {
-    if (cell.disabled) return cell.disabledReason || '暂无赔率'
-    if (isSelected(fixture.fixture_id, cell)) return null
-    const ids = selectedFixtureIds(selections.value)
-    if (
-      !ids.includes(fixture.fixture_id)
-      && ids.length >= MAX_CALC_MATCHES
-    ) {
-      return `最多选择 ${MAX_CALC_MATCHES} 场`
-    }
-    const sameMatch = selections.value.filter(
-      (s) => s.fixtureId === fixture.fixture_id,
-    )
-    if (sameMatch.length && sameMatch.every((s) => s.market !== cell.market)) {
-      return '每场只能选择一种玩法，请先取消当前选项'
-    }
-    if (cell.market === 'spf') {
-      const spfCount = sameMatch.filter((s) => s.market === 'spf').length
-      if (spfCount >= MAX_SPF_PICKS) {
-        return '胜平负最多双选'
-      }
-    }
-    return conflictWithExisting(selections.value, fixture.fixture_id, cell)
-  }
-
   function toggleCell(fixture: FixtureResponse, cell: CalcCell): string | null {
     if (cell.disabled || cell.odd == null) {
       return cell.disabledReason || '暂无赔率'
     }
 
+    const fixtureId = fixture.fixture_id
     const existingIdx = selections.value.findIndex(
       (s) =>
-        s.fixtureId === fixture.fixture_id
+        s.fixtureId === fixtureId
         && s.market === cell.market
         && s.outcome === cell.outcome,
     )
+    // 再点已选项 → 取消
     if (existingIdx >= 0) {
       selections.value = selections.value.filter((_, i) => i !== existingIdx)
       return null
     }
 
-    const blocked = cellBlockedReason(fixture, cell)
-    if (blocked) return blocked
+    const ids = selectedFixtureIds(selections.value)
+    if (!ids.includes(fixtureId) && ids.length >= MAX_CALC_MATCHES) {
+      return `最多选择 ${MAX_CALC_MATCHES} 场`
+    }
 
-    let next: CalcSelection[]
+    // 冲突项直接让位：换玩法清掉本场其它玩法；同玩法按规则替换
+    let next = selections.value.filter((s) => {
+      if (s.fixtureId !== fixtureId) return true
+      if (s.market !== cell.market) return false
+      // 让球 / 大小：同玩法只留新点的一项
+      if (cell.market !== 'spf') return false
+      return true
+    })
+
     if (cell.market === 'spf') {
-      // 双选：保留同场已选的其它胜平负项
-      next = selections.value.slice()
-    } else {
-      // 让球 / 大小：同玩法替换
-      next = selections.value.filter(
-        (s) =>
-          !(s.fixtureId === fixture.fixture_id && s.market === cell.market),
+      const spfPicks = next.filter(
+        (s) => s.fixtureId === fixtureId && s.market === 'spf',
       )
+      // 已满双选时再点第三项：清掉本场胜平负，只保留当前点击
+      if (spfPicks.length >= MAX_SPF_PICKS) {
+        next = next.filter(
+          (s) => !(s.fixtureId === fixtureId && s.market === 'spf'),
+        )
+      }
     }
 
     next.push({
-      fixtureId: fixture.fixture_id,
+      fixtureId,
       homeName: fixture.home_team_name || '—',
       awayName: fixture.away_team_name || '—',
       kickoff: `${formatDate(fixture.fixture_date)} ${formatTime(fixture.fixture_date)}`,
@@ -160,7 +144,6 @@ export function useBetCalculator() {
     result,
     groupedSelections,
     isSelected,
-    cellBlockedReason,
     toggleCell,
     clearAll,
     removeFixture,

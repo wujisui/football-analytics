@@ -13,7 +13,7 @@ const props = defineProps<{
 }>()
 
 const message = useMessage()
-const { isSelected, cellBlockedReason, toggleCell } = useBetCalculator()
+const { isSelected, toggleCell } = useBetCalculator()
 
 const rows = computed(() => buildMarketRows(props.fixture))
 
@@ -52,10 +52,6 @@ function onPick(cell: CalcCell) {
 function selected(cell: CalcCell): boolean {
   return isSelected(props.fixture.fixture_id, cell)
 }
-
-function blockedReason(cell: CalcCell): string | null {
-  return cellBlockedReason(props.fixture, cell)
-}
 </script>
 
 <template>
@@ -89,26 +85,21 @@ function blockedReason(cell: CalcCell): string | null {
               v-for="cell in row.cells"
               :key="`${cell.market}-${cell.outcome}`"
             >
-              <n-tooltip :disabled="!blockedReason(cell)">
-                <template #trigger>
-                  <n-button
-                    block
-                    size="tiny"
-                    :type="selected(cell) ? 'warning' : 'default'"
-                    :secondary="!selected(cell)"
-                    :disabled="!!blockedReason(cell) && !selected(cell)"
-                    class="odd-button"
-                    @click="onPick(cell)"
-                  >
-                    <n-flex :wrap="false" align="center" justify="center" :size="4">
-                      <n-text>{{ cell.pickLabel.split(' ')[0] }}</n-text>
-                      <n-text depth="3">/</n-text>
-                      <n-text strong>{{ cell.odd ?? '—' }}</n-text>
-                    </n-flex>
-                  </n-button>
-                </template>
-                {{ blockedReason(cell) }}
-              </n-tooltip>
+              <n-button
+                block
+                size="tiny"
+                :type="selected(cell) ? 'warning' : 'default'"
+                :secondary="!selected(cell)"
+                :disabled="cell.disabled || cell.odd == null"
+                class="odd-button"
+                @click="onPick(cell)"
+              >
+                <n-flex :wrap="false" align="center" justify="center" :size="4">
+                  <n-text>{{ cell.pickLabel.split(' ')[0] }}</n-text>
+                  <n-text depth="3">/</n-text>
+                  <n-text strong>{{ cell.odd ?? '—' }}</n-text>
+                </n-flex>
+              </n-button>
             </n-gi>
           </n-grid>
         </n-gi>

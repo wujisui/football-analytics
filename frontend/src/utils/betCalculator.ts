@@ -214,57 +214,6 @@ function formatSignedLine(line: string): string {
   return String(n)
 }
 
-/**
- * Conflict between different markets on the same fixture.
- * - 让胜 ↔ 主负；主胜 ↔ 让负
- */
-function crossMarketConflict(
-  a: Pick<CalcSelection, 'market' | 'outcome'>,
-  b: Pick<CalcSelection, 'market' | 'outcome'>,
-): string | null {
-  if (a.market === 'ah' && a.outcome === 'home' && b.market === 'spf' && b.outcome === 'away') {
-    return '已选「让球胜」，与「主负」冲突'
-  }
-  if (b.market === 'ah' && b.outcome === 'home' && a.market === 'spf' && a.outcome === 'away') {
-    return '已选「让球胜」，与「主负」冲突'
-  }
-  if (a.market === 'spf' && a.outcome === 'home' && b.market === 'ah' && b.outcome === 'away') {
-    return '已选「主胜」，与「让球负」冲突'
-  }
-  if (b.market === 'spf' && b.outcome === 'home' && a.market === 'ah' && a.outcome === 'away') {
-    return '已选「主胜」，与「让球负」冲突'
-  }
-
-  return null
-}
-
-/** Whether picking `next` conflicts with existing selections on same fixture. */
-export function conflictWithExisting(
-  existing: CalcSelection[],
-  fixtureId: number,
-  next: Pick<CalcSelection, 'market' | 'outcome'>,
-): string | null {
-  for (const sel of existing) {
-    if (sel.fixtureId !== fixtureId) continue
-    if (sel.market === next.market) {
-      if (next.market === 'spf') {
-        if (sel.outcome === next.outcome) continue
-        const spfCount = existing.filter(
-          (s) => s.fixtureId === fixtureId && s.market === 'spf',
-        ).length
-        if (spfCount >= MAX_SPF_PICKS) {
-          return '胜平负最多双选'
-        }
-        continue
-      }
-      continue
-    }
-    const reason = crossMarketConflict(sel, next)
-    if (reason) return reason
-  }
-  return null
-}
-
 export function selectedFixtureIds(selections: CalcSelection[]): number[] {
   return [...new Set(selections.map((s) => s.fixtureId))]
 }
