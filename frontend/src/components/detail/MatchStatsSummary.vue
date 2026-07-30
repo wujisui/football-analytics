@@ -2,20 +2,15 @@
 import { computed } from 'vue'
 
 import type { FormMatch } from '@/api/types'
+import { parseScoreGoals } from '@/utils/format'
 
 const props = defineProps<{
   matches: FormMatch[]
   focusTeamId?: number
 }>()
 
-function parseScore(score: string): [number, number] | null {
-  const m = String(score).match(/^(\d+)\s*-\s*(\d+)$/)
-  if (!m) return null
-  return [Number(m[1]), Number(m[2])]
-}
-
 function resultForFocus(m: FormMatch, focusTeamId?: number): 'W' | 'D' | 'L' | '' {
-  const goals = parseScore(m.score || '')
+  const goals = parseScoreGoals(m.score)
   if (focusTeamId != null && m.home_id != null && m.away_id != null && goals) {
     const [hs, as] = goals
     const hid = Number(m.home_id)
@@ -42,7 +37,7 @@ function goalsForFocus(
   m: FormMatch,
   focusTeamId?: number,
 ): { gf: number; ga: number } | null {
-  const goals = parseScore(m.score || '')
+  const goals = parseScoreGoals(m.score)
   if (!goals) return null
   const [hs, as] = goals
   if (focusTeamId != null && m.home_id != null && m.away_id != null) {

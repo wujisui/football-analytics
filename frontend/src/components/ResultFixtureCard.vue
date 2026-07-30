@@ -24,15 +24,19 @@ import {
   resultExtraScoreLine,
   resultScoreText,
 } from '@/utils/resultsDisplay'
+import type { PredictionSnapshot } from '@/utils/opinionAdjust'
 
 const props = withDefaults(defineProps<{
   fixture: FixtureResponse | ResultFixture | FavoriteFixtureRecord
+  prematch?: boolean
+  predictionSnapshot?: PredictionSnapshot
   oddsClickable?: boolean
   showProbabilities?: boolean
   showDate?: boolean
   from?: DetailFrom
   date?: string | null
 }>(), {
+  prematch: false,
   oddsClickable: false,
   showProbabilities: false,
   showDate: true,
@@ -47,9 +51,9 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const isPhone = useIsPhone()
-const isPrematch = computed(() => 'analysis' in props.fixture)
+const isPrematch = computed(() => props.prematch || 'analysis' in props.fixture)
 const prematchFixture = computed(() =>
-  isPrematch.value ? (props.fixture as FixtureResponse) : undefined,
+  'analysis' in props.fixture ? (props.fixture as FixtureResponse) : undefined,
 )
 const settledFixture = computed(() =>
   isPrematch.value
@@ -103,7 +107,7 @@ function openStats() {
 <template>
   <article
     class="result-fixture-card"
-    :class="{ dense: denseBody }"
+    :class="{ dense: denseBody, prematch: isPrematch }"
   >
     <header class="card-head">
       <span class="league-tag-tip">
@@ -169,10 +173,12 @@ function openStats() {
     <p v-if="!isPrematch && extraScoreLine" class="score-extra">{{ extraScoreLine }}</p>
 
     <AlgorithmPredictionCard
-      v-if="prematchFixture"
+      v-if="isPrematch"
       class="predict-body"
       :fixture="prematchFixture"
+      :snapshot="predictionSnapshot"
       :show-matchup-title="false"
+      flush
       :from="from"
       :date="date"
     />
@@ -188,17 +194,22 @@ function openStats() {
 
 <style scoped>
 .result-fixture-card {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-auto-flow: row;
+  align-content: start;
   gap: 8px;
   padding: 8px 10px;
   border-radius: 4px;
   background: var(--fa-bg-soft);
+  box-sizing: border-box;
 }
 
 .result-fixture-card.dense {
-  gap: 0;
-  justify-content: space-between;
+  height: 100%;
+}
+
+.result-fixture-card.prematch {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .card-head {
@@ -290,15 +301,13 @@ function openStats() {
 }
 
 .score-extra {
-  margin: -4px 0 0;
+  margin: 0;
   text-align: center;
   font-size: 11px;
   color: var(--fa-text-secondary);
 }
 
-/* Shell already provides card chrome; nested predict card is body-only. */
-.predict-body :deep(.predict-card.zone) {
-  padding: 0;
-  background: transparent;
+.predict-body {
+  min-height: 0;
 }
 </style>

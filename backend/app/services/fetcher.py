@@ -660,7 +660,7 @@ class FootballFetcher:
             logger.info(
                 "Worldwide fallback date=%s allowed=%s saved=%s",
                 date_str,
-                sorted(allowed),
+                "all" if allowed is None else sorted(allowed),
                 saved,
             )
             return saved
@@ -723,6 +723,8 @@ class FootballFetcher:
         """Fetch ``[start, end]`` via worldwide ``date=`` (one call per day).
 
         When ``league_ids`` is omitted, persist every league returned by the API.
+        Full-day ingest skips per-league team catalog pulls (fixture payload already
+        carries names/logos) to avoid burning quota across dozens of leagues.
         """
         assert self.session is not None
         if end < start:
@@ -746,7 +748,8 @@ class FootballFetcher:
                 cursor,
                 allowed,
                 force=force,
-                fetch_teams=first,
+                # Only pull team catalogs when syncing a curated league subset.
+                fetch_teams=first and allowed is not None,
             )
             first = False
             cursor += timedelta(days=1)

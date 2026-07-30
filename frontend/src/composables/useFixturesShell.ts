@@ -316,8 +316,8 @@ export function useFixturesShell() {
   }
 
   function leagueIdsForSync(): number[] | undefined {
-    // Default-checked primary leagues (+ opted-in secondary). Backend falls
-    // back to leagues.json primary catalog when this is omitted.
+    // Odds follow-up scope only (fixtures sync is always full-day).
+    // Primary defaults + any explicitly checked secondary leagues.
     const ids = resolveSyncLeagueIds(
       prematchFilterOptions.value,
       prematchTrackedIds.value,
@@ -366,8 +366,7 @@ export function useFixturesShell() {
         // Future schedule: spend quota filling missing boards for primary
         // (default-checked) leagues; home/today also refreshes existing lines.
         oddsRefreshExisting: !futureResultsDay,
-        // Batch fixtures + odds for default primary leagues; secondary only
-        // when explicitly checked.
+        // Fixtures are always full-day; leagueIds only scopes odds follow-up.
         leagueIds: leagueIdsForSync(),
       })
       if (res.status !== 'ok') {

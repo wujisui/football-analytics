@@ -82,44 +82,51 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="date-strip" role="tablist" aria-label="赛程日期">
-    <n-button
-      v-for="tab in tabs"
-      :key="tab.iso"
-      :ref="(el) => setTabRef(tab.iso, el)"
-      size="small"
-      role="tab"
-      class="date-tab"
-      :type="tabType(tab.iso)"
-      :secondary="selected === tab.iso"
-      :quaternary="selected !== tab.iso"
-      :aria-selected="selected === tab.iso"
-      :disabled="isDisabled(tab.iso)"
-      @click="selectTab(tab.iso)"
-    >
-      <span class="tab-stack">
-        <span class="tab-top">{{ tab.topLabel }}</span>
-        <span class="tab-bottom">{{ tab.bottomLabel }}</span>
-      </span>
-    </n-button>
+  <div class="date-strip-wrap">
+    <div class="date-strip" role="tablist" aria-label="赛程日期">
+      <n-button
+        v-for="tab in tabs"
+        :key="tab.iso"
+        :ref="(el) => setTabRef(tab.iso, el)"
+        size="small"
+        role="tab"
+        class="date-tab"
+        :type="tabType(tab.iso)"
+        :secondary="selected === tab.iso"
+        :quaternary="selected !== tab.iso"
+        :aria-selected="selected === tab.iso"
+        :disabled="isDisabled(tab.iso)"
+        @click="selectTab(tab.iso)"
+      >
+        <span class="tab-stack">
+          <span class="tab-top">{{ tab.topLabel }}</span>
+          <span class="tab-bottom">{{ tab.bottomLabel }}</span>
+        </span>
+      </n-button>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.date-strip {
+.date-strip-wrap {
   display: flex;
-  align-items: stretch;
-  gap: 6px;
+  justify-content: center;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 4px 2px 8px;
-  margin: 0 -2px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
 
-.date-strip::-webkit-scrollbar {
+.date-strip-wrap::-webkit-scrollbar {
   display: none;
+}
+
+.date-strip {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 4px 2px 8px;
+  margin: 0 auto;
 }
 
 .date-tab {

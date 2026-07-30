@@ -150,8 +150,9 @@ class Settings(BaseSettings):
     REFERENCE_LEAGUE_IDS: dict[str, int] = {}
     REFERENCE_LEAGUE_COUNTRIES: dict[int, str] = {}
     REFERENCE_LEAGUE_SEASONS: dict[int, str] = {}
-    # Default window (days, including today) used by leagues summary / upcoming fetch.
-    FIXTURES_LOOKAHEAD_DAYS: int = 7
+    # Inclusive forward window including today. Must cover the date-strip future
+    # span (HOME_DATE_RADIUS=7 → today..today+7 = 8 days).
+    FIXTURES_LOOKAHEAD_DAYS: int = 8
 
     @model_validator(mode="after")
     def apply_league_catalog(self) -> Settings:

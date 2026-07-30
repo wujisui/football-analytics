@@ -527,7 +527,10 @@ async def sync_fixtures(
     ),
     league_ids: list[int] | None = Query(
         default=None,
-        description="仅同步勾选的联赛 ID；默认使用配置目录联赛",
+        description=(
+            "盘口补全联赛范围；默认一级联赛目录。"
+            "赛程本身始终按日全量入库，不受此参数过滤"
+        ),
     ),
     odds_only: bool = Query(
         default=False,

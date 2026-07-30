@@ -20,12 +20,15 @@ const props = withDefaults(
     standalone?: boolean
     /** Show home vs away title link above recommendation row. */
     showMatchupTitle?: boolean
+    /** Parent card owns padding/background; render only the prediction content. */
+    flush?: boolean
     from?: DetailFrom
     date?: string | null
   }>(),
   {
     standalone: false,
     showMatchupTitle: true,
+    flush: false,
     from: 'home',
     date: null,
   },
@@ -109,7 +112,7 @@ function goBriefing() {
   <component
     :is="standalone ? 'article' : 'section'"
     class="predict-card"
-    :class="{ standalone, zone: !standalone }"
+    :class="{ standalone, zone: !standalone, flush }"
   >
     <div class="rec-row">
       <n-button
@@ -179,21 +182,35 @@ function goBriefing() {
 </template>
 
 <style scoped>
+.predict-card {
+  display: grid;
+  grid-auto-flow: row;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .predict-card.zone {
   background: var(--fa-bg-soft);
   border-radius: 6px;
   padding: 12px;
-  min-width: 0;
   height: 100%;
-  box-sizing: border-box;
+  align-content: space-between;
+}
+
+.predict-card.zone.flush {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .predict-card.standalone {
+  gap: 10px;
   background: var(--fa-bg-elevated);
   border: 1px solid var(--fa-border);
   border-radius: 8px;
   padding: 14px;
-  min-width: 0;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
@@ -209,7 +226,6 @@ function goBriefing() {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
 }
 
 .zone-matchup {
@@ -245,7 +261,6 @@ function goBriefing() {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 6px;
 }
 
 .prob-item {
@@ -278,14 +293,9 @@ function goBriefing() {
 }
 
 .predict-empty {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 13px;
   color: var(--fa-text-faint);
-}
-
-.predict-card.standalone .rec-row,
-.predict-card.standalone .prob-row {
-  margin-bottom: 10px;
 }
 
 .predict-card.standalone .prob-item {

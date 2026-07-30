@@ -59,6 +59,7 @@ type LeagueCountSeed = {
 
 function buildFilterOptionsFromFixtures(
   fixtures: LeagueCountSeed[],
+  defaultCheckAll = true,
 ): LeagueFilterOption[] {
   const map = new Map<number, { name: string; country: string | null; count: number }>()
   for (const fx of fixtures) {
@@ -81,8 +82,8 @@ function buildFilterOptionsFromFixtures(
         country,
         fixtures_count: count,
         tier: (configured ? 'configured' : 'extra') as LeagueFilterOption['tier'],
-        // Results day still defaults to all leagues checked; tier only drives UI groups.
-        default_checked: true,
+        // Results: all leagues checked; future schedule: primary catalog only.
+        default_checked: defaultCheckAll ? true : configured,
       }
     })
     .sort((a, b) => {
@@ -91,7 +92,7 @@ function buildFilterOptionsFromFixtures(
     })
 }
 
-/** Each day defaults to all leagues on that day checked (no cross-day persistence). */
+/** Results: all leagues that day; schedule: primary (configured) defaults. */
 function syncResultsTrackedWithDay() {
   const options = scheduleMode.value
     ? buildFilterOptionsFromFixtures(
@@ -99,6 +100,7 @@ function syncResultsTrackedWithDay() {
           league_id: fx.league_id,
           league_name: fx.league_name,
         })),
+        false,
       )
     : buildFilterOptionsFromFixtures(
         resultsFixtures.value.map((fx) => ({
@@ -107,7 +109,9 @@ function syncResultsTrackedWithDay() {
           country: fx.league_country,
         })),
       )
-  setResultsTrackedIds(options.map((o) => o.league_id))
+  setResultsTrackedIds(
+    options.filter((o) => o.default_checked).map((o) => o.league_id),
+  )
 }
 
 /** Push finished fixtures for the selected day into the schedule shell. */
@@ -147,7 +151,7 @@ export function publishScheduleFixtures(fixtures: FixtureResponse[], day: string
     return
   }
   const added = [...new Set(pending.map((fx) => fx.league_id))].filter(
-    (id) => !prevLeagueIds.has(id),
+    (id) => !prevLeagueIds.has(id) && configuredLeagueIds.value.has(id),
   )
   if (added.length) {
     setResultsTrackedIds([...resultsTrackedIds.value, ...added])
@@ -219,6 +223,7 @@ export function useResultsLeagues() {
             league_id: fx.league_id,
             league_name: fx.league_name,
           })),
+          false,
         )
       : buildFilterOptionsFromFixtures(
           resultsFixtures.value.map((fx) => ({

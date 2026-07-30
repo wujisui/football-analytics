@@ -166,6 +166,39 @@ export function resultToZh(code?: string | null): string {
   return RESULT_ZH[raw.toUpperCase()] ?? code
 }
 
+/** Parse "2-1" / "0 - 0" → [home, away] goals. */
+export function parseScoreGoals(score?: string | null): [number, number] | null {
+  const m = String(score ?? '')
+    .trim()
+    .match(/^(\d+)\s*-\s*(\d+)$/)
+  if (!m) return null
+  return [Number(m[1]), Number(m[2])]
+}
+
+/** Match-home W/D/L from goal counts. */
+export function homeResultCode(
+  homeGoals: number,
+  awayGoals: number,
+): 'W' | 'D' | 'L' {
+  if (homeGoals > awayGoals) return 'W'
+  if (homeGoals < awayGoals) return 'L'
+  return 'D'
+}
+
+/**
+ * 半全场 from that match's home side, e.g. 平胜 / 负胜.
+ * Empty when half-time or full-time score is missing.
+ */
+export function htftZh(
+  scoreFt?: string | null,
+  scoreHt?: string | null,
+): string {
+  const ft = parseScoreGoals(scoreFt)
+  const ht = parseScoreGoals(scoreHt)
+  if (!ft || !ht) return ''
+  return `${resultToZh(homeResultCode(ht[0], ht[1]))}${resultToZh(homeResultCode(ft[0], ft[1]))}`
+}
+
 /** Form string "WWDWL" → ["胜","胜","平","负","胜"] */
 export function formCharsZh(form?: string, limit = 5): string[] {
   if (!form) return []

@@ -18,9 +18,9 @@ export function resolveTrackedSelection(
 /**
  * Sync / odds batch allow-list for a calendar day.
  *
- * Product rule: batch fixtures + pre-match odds for **default-checked primary
- * leagues**; secondary leagues join only when the user explicitly checks them.
- * If primary checks were cleared by stale state, fall back to that day's defaults.
+ * Product rule: fixtures sync always ingests the full day. This helper only
+ * scopes **odds** follow-up to default-checked primary leagues, plus any
+ * secondary leagues the user explicitly checked.
  */
 export function resolveSyncLeagueIds(
   options: LeagueFilterOption[],

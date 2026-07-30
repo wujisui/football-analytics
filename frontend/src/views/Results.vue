@@ -464,12 +464,12 @@ onMounted(() => {
 <template>
   <n-layout
     class="results-layout"
-    :has-sider="!isPhone"
+    :has-sider="!isPhone && isResultsDay"
     content-style="display: flex; flex-direction: column; height: 100%; min-height: 0;"
   >
     <n-layout
       class="results-main"
-      content-style="display: flex; flex-direction: column; height: 100%; gap: 10px; background: var(--fa-bg); box-sizing: border-box; min-height: 0; padding: var(--fa-content-block-start) var(--fa-content-inline) var(--fa-content-block-end);"
+      content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; background: var(--fa-bg); box-sizing: border-box; padding: var(--fa-content-block-start) var(--fa-content-inline) var(--fa-content-block-end);"
     >
       <n-grid v-if="isResultsDay" :cols="isPhone ? 1 : 20" :x-gap="10" :y-gap="10" style="flex-shrink: 0;">
         <n-gi :span="isPhone ? 1 : 9">
@@ -734,22 +734,28 @@ onMounted(() => {
       <div
         v-if="isScheduleFutureDay"
         ref="desktopListShellRef"
-        class="schedule-list-shell"
+        class="list-shell"
         :class="{ phone: isPhone }"
       >
         <n-scrollbar style="height: 100%;" trigger="hover">
           <div :class="isPhone ? 'schedule-list-inner phone' : 'schedule-list-inner'">
-            <n-spin :show="contentLoading">
-              <FixtureList
-                :fixtures="scheduleDisplayedFixtures"
-                :empty-description="scheduleEmptyText"
-                :group-by-day="false"
-                from="results"
-                :date="selectedDay"
-              />
-            </n-spin>
+            <FixtureList
+              :fixtures="scheduleDisplayedFixtures"
+              :empty-description="scheduleEmptyText"
+              :group-by-day="false"
+              from="results"
+              :date="selectedDay"
+            />
           </div>
         </n-scrollbar>
+        <div
+          v-if="contentLoading"
+          class="list-loading-mask"
+          aria-busy="true"
+          aria-live="polite"
+        >
+          <n-spin :show="true" />
+        </div>
         <ListBackTop :shell="desktopListShellRef" :bottom="16" />
       </div>
 
@@ -769,27 +775,33 @@ onMounted(() => {
             @confirm-filter="confirmHitFilter"
           />
         </template>
-        <div ref="phoneListShellRef" class="results-list-shell phone">
+        <div ref="phoneListShellRef" class="list-shell phone">
           <n-scrollbar style="max-height: 100%; height: 100%;" trigger="hover">
             <div class="results-list-inner phone">
-              <n-spin :show="contentLoading">
-                <n-empty
-                  v-if="!loading && !listedFixtures.length"
-                  :description="emptyText"
-                  style="padding: 24px 12px;"
+              <n-empty
+                v-if="!loading && !listedFixtures.length"
+                :description="emptyText"
+                style="padding: 24px 12px;"
+              />
+              <div v-else class="results-card-stack">
+                <ResultFixtureCard
+                  v-for="fx in listedFixtures"
+                  :key="fx.fixture_id"
+                  :fixture="fx"
+                  :show-date="false"
+                  @open-detail="goDetail"
                 />
-                <div v-else class="results-card-stack">
-                  <ResultFixtureCard
-                    v-for="fx in listedFixtures"
-                    :key="fx.fixture_id"
-                    :fixture="fx"
-                    :show-date="false"
-                    @open-detail="goDetail"
-                  />
-                </div>
-              </n-spin>
+              </div>
             </div>
           </n-scrollbar>
+          <div
+            v-if="contentLoading"
+            class="list-loading-mask"
+            aria-busy="true"
+            aria-live="polite"
+          >
+            <n-spin :show="true" />
+          </div>
           <ListBackTop :shell="phoneListShellRef" :right="12" :bottom="12" />
         </div>
       </n-card>
@@ -823,27 +835,33 @@ onMounted(() => {
           <n-button size="small" type="primary" @click="loadDayResults()">重试</n-button>
         </n-space>
       </n-alert>
-      <div ref="desktopListShellRef" class="results-list-shell">
+      <div ref="desktopListShellRef" class="list-shell">
         <n-scrollbar style="height: 100%;" trigger="hover">
           <div class="results-list-inner">
-            <n-spin :show="contentLoading">
-              <n-empty
-                v-if="!loading && !listedFixtures.length"
-                :description="emptyText"
-                style="padding: 40px 12px;"
+            <n-empty
+              v-if="!loading && !listedFixtures.length"
+              :description="emptyText"
+              style="padding: 40px 12px;"
+            />
+            <div v-else class="results-card-stack">
+              <ResultFixtureCard
+                v-for="fx in listedFixtures"
+                :key="fx.fixture_id"
+                :fixture="fx"
+                :show-date="false"
+                @open-detail="goDetail"
               />
-              <div v-else class="results-card-stack">
-                <ResultFixtureCard
-                  v-for="fx in listedFixtures"
-                  :key="fx.fixture_id"
-                  :fixture="fx"
-                  :show-date="false"
-                  @open-detail="goDetail"
-                />
-              </div>
-            </n-spin>
+            </div>
           </div>
         </n-scrollbar>
+        <div
+          v-if="contentLoading"
+          class="list-loading-mask"
+          aria-busy="true"
+          aria-live="polite"
+        >
+          <n-spin :show="true" />
+        </div>
         <ListBackTop :shell="desktopListShellRef" :bottom="16" />
       </div>
     </n-layout-sider>
@@ -856,6 +874,20 @@ onMounted(() => {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+}
+
+.results-main {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.results-main :deep(> .n-layout-scroll-container) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
 .schedule-list-inner {
@@ -890,27 +922,34 @@ onMounted(() => {
   margin: 0 var(--fa-content-inline) 8px;
 }
 
-.schedule-list-shell {
+/* Shared viewport for schedule / results lists. */
+.list-shell {
   position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-.schedule-list-shell.phone {
-  flex: 1;
-  min-height: 0;
-}
-
-.results-list-shell {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
-.results-list-shell.phone {
+.list-shell.phone {
   height: 100%;
+}
+
+.list-shell > :deep(.n-scrollbar) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.list-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--fa-bg) 62%, transparent);
 }
 
 .chart-card {

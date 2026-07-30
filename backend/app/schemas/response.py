@@ -110,7 +110,11 @@ class FormMatchResponse(BaseModel):
     date: str | None = None
     home: str = ""
     away: str = ""
+    home_id: int | None = None
+    away_id: int | None = None
     score: str = ""
+    # Halftime score e.g. "0-1"; absent on older cached rows.
+    score_ht: str | None = None
     league_id: int | None = None
     league_name: str = ""
     league_country: str = ""

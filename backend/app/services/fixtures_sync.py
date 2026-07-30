@@ -22,7 +22,10 @@ class FixturesSyncParams:
     start: date
     window: int
     day_list: list[date]
-    selected: list[int]
+    # None = persist every league returned by official date= (full schedule).
+    fixture_league_ids: list[int] | None
+    # Odds follow-up stay scoped (primary catalog / client selection) for quota.
+    odds_league_ids: list[int]
     include_results: bool
     include_odds: bool
     odds_refresh_existing: bool
@@ -46,23 +49,25 @@ def build_sync_params(
 ) -> FixturesSyncParams:
     cfg = settings or get_settings()
     start = date.fromisoformat(date_str) if date_str else date.today()
-    window = days if days is not None else min(cfg.FIXTURES_LOOKAHEAD_DAYS, 7)
+    # Inclusive window: today .. today+(N-1). Default matches date-strip forward span.
+    window = days if days is not None else int(cfg.FIXTURES_LOOKAHEAD_DAYS)
     window = max(1, min(window, 14))
     day_list = [start + timedelta(days=i) for i in range(window)]
-    # Default = curated primary-league catalog (一级联赛 / 主要洲际赛事).
-    # Optional/secondary leagues are included only when the client passes them.
-    selected = (
+    # Schedule: always ingest every league for the day(s).
+    # Odds: client selection when provided, else primary catalog only.
+    odds_selected = (
         [int(x) for x in league_ids]
         if league_ids is not None
         else list(cfg.LEAGUE_IDS.values())
     )
-    if not selected:
-        raise ValueError("league_ids 不能为空")
+    if include_odds and not odds_selected:
+        raise ValueError("odds league_ids 不能为空")
     return FixturesSyncParams(
         start=start,
         window=window,
         day_list=day_list,
-        selected=selected,
+        fixture_league_ids=None,
+        odds_league_ids=odds_selected,
         include_results=include_results,
         include_odds=include_odds,
         odds_refresh_existing=odds_refresh_existing,
@@ -74,7 +79,7 @@ def build_sync_params(
 
 async def _sync_odds_and_results_followup(
     day_list: list[date],
-    selected: list[int],
+    odds_league_ids: list[int],
     *,
     include_odds: bool,
     include_results: bool,
@@ -93,7 +98,7 @@ async def _sync_odds_and_results_followup(
                         await fetcher.sync_odds_for_dates(
                             day_list,
                             refresh_existing=odds_refresh_existing,
-                            league_ids=selected,
+                            league_ids=odds_league_ids,
                             budget=odds_budget,
                             set_opening=set_opening,
                         )
@@ -135,13 +140,13 @@ async def execute_fixtures_sync(params: FixturesSyncParams) -> SyncFixturesRespo
                     params.day_list[0],
                     params.day_list[-1],
                     force=True,
-                    league_ids=params.selected,
+                    league_ids=params.fixture_league_ids,
                 )
 
         if params.include_odds or params.include_results:
             await _sync_odds_and_results_followup(
                 params.day_list,
-                params.selected,
+                params.odds_league_ids,
                 include_odds=params.include_odds,
                 include_results=params.include_results,
                 odds_refresh_existing=params.odds_refresh_existing,
@@ -159,7 +164,7 @@ async def execute_fixtures_sync(params: FixturesSyncParams) -> SyncFixturesRespo
 
 
 async def scheduled_fixtures_sync() -> None:
-    """Scheduler: refresh fixture window + gap-fill odds (+ recent results)."""
+    """Scheduler: full-schedule window + primary-league odds gap-fill (+ results)."""
     settings = get_settings()
     from zoneinfo import ZoneInfo
 

@@ -3,7 +3,13 @@ import { computed, h } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 
 import type { FormMatch } from '@/api/types'
-import { formatDateYyMmDd, resultToZh } from '@/utils/format'
+import {
+  formatDateYyMmDd,
+  homeResultCode,
+  htftZh,
+  parseScoreGoals,
+  resultToZh,
+} from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
 const props = withDefaults(
@@ -22,24 +28,13 @@ function competitionLabel(m: FormMatch): string {
 
 function focusResultCode(m: FormMatch): string {
   const focusTeamId = props.focusTeamId
-  if (focusTeamId != null && m.home_id != null && m.away_id != null) {
+  const goals = parseScoreGoals(m.score)
+  if (focusTeamId != null && m.home_id != null && m.away_id != null && goals) {
+    const [hs, as] = goals
     const hid = Number(m.home_id)
     const aid = Number(m.away_id)
-    const [hs, as] = String(m.score || '')
-      .split('-')
-      .map((x) => Number(x.trim()))
-    if (Number.isFinite(hs) && Number.isFinite(as)) {
-      if (hid === focusTeamId) {
-        if (hs > as) return 'W'
-        if (hs < as) return 'L'
-        return 'D'
-      }
-      if (aid === focusTeamId) {
-        if (as > hs) return 'W'
-        if (as < hs) return 'L'
-        return 'D'
-      }
-    }
+    if (hid === focusTeamId) return homeResultCode(hs, as)
+    if (aid === focusTeamId) return homeResultCode(as, hs)
   }
   if (m.result === 'W' || m.result === 'D' || m.result === 'L') return m.result
   if (m.outcome_for_current_home === 'home') return 'W'
@@ -55,12 +50,47 @@ function focusTone(code: string): string {
   return ''
 }
 
+function zhTone(zh: string): string {
+  if (zh === '胜') return 'tone-win'
+  if (zh === '平') return 'tone-draw'
+  if (zh === '负') return 'tone-loss'
+  return ''
+}
+
 function teamTone(m: FormMatch, side: 'home' | 'away'): string {
   const focusTeamId = props.focusTeamId
   if (focusTeamId == null) return ''
   const id = side === 'home' ? m.home_id : m.away_id
   if (id == null || Number(id) !== focusTeamId) return ''
   return focusTone(focusResultCode(m))
+}
+
+function renderScoreFt(row: FormMatch) {
+  const goals = parseScoreGoals(row.score)
+  if (!goals) {
+    return h('span', { class: 'score-ft' }, row.score || '—')
+  }
+  const [homeGoals, awayGoals] = goals
+  return h('span', { class: 'score-ft' }, [
+    h('span', { class: teamTone(row, 'home') || undefined }, String(homeGoals)),
+    h('span', { class: 'score-sep' }, '-'),
+    h('span', { class: teamTone(row, 'away') || undefined }, String(awayGoals)),
+  ])
+}
+
+function renderResultCell(row: FormMatch) {
+  const code = focusResultCode(row)
+  const ftZh = resultToZh(code)
+  const htft = htftZh(row.score, row.score_ht)
+  if (!htft) {
+    return h('span', { class: ['result-text', focusTone(code)] }, ftZh)
+  }
+  // 全场(关注队视角) / 半全场(该场主队视角), e.g. 胜/平胜
+  return h('span', { class: 'result-text' }, [
+    h('span', { class: focusTone(code) }, ftZh),
+    h('span', { class: 'result-sep' }, '/'),
+    ...[...htft].map((ch) => h('span', { class: zhTone(ch) }, ch)),
+  ])
 }
 
 const columns = computed<DataTableColumns<FormMatch>>(() => [
@@ -88,7 +118,7 @@ const columns = computed<DataTableColumns<FormMatch>>(() => [
           row.home || '—',
         ),
         h('span', { class: 'score-block' }, [
-          h('span', { class: 'score-ft' }, row.score),
+          renderScoreFt(row),
           row.score_ht
             ? h('span', { class: 'score-ht' }, `(${row.score_ht})`)
             : null,
@@ -105,14 +135,9 @@ const columns = computed<DataTableColumns<FormMatch>>(() => [
     title: '赛果',
     key: 'result',
     align: 'center',
-    width: 64,
+    width: 88,
     render(row) {
-      const code = focusResultCode(row)
-      return h(
-        'span',
-        { class: ['result-text', focusTone(code)] },
-        resultToZh(code),
-      )
+      return renderResultCell(row)
     },
   },
 ])
@@ -201,6 +226,13 @@ function rowKey(row: FormMatch): string | number {
 :deep(.result-text) {
   font-size: 13px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+:deep(.result-sep) {
+  margin: 0 1px;
+  color: var(--fa-text-faint);
+  font-weight: 500;
 }
 
 :deep(.tone-win) {
