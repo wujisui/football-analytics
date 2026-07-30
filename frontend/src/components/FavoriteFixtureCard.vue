@@ -56,7 +56,13 @@ function openOddsModal() {
     @open-odds="openOddsModal"
   />
 
-  <article v-else-if="isFinished" class="favorite-fixture-card">
+  <n-card
+    v-else-if="isFinished"
+    size="small"
+    :bordered="false"
+    class="favorite-fixture-card"
+    content-style="padding: 10px;"
+  >
     <div class="summary-grid">
       <PreMatchOddsTable
         :odds="item.odds_snippet"
@@ -72,7 +78,7 @@ function openOddsModal() {
         @open-detail="openDetail"
       />
     </div>
-  </article>
+  </n-card>
 
   <ResultFixtureCard
     v-else-if="isPhone"
@@ -82,7 +88,13 @@ function openOddsModal() {
     from="favorites"
   />
 
-  <article v-else class="favorite-fixture-card">
+  <n-card
+    v-else
+    size="small"
+    :bordered="false"
+    class="favorite-fixture-card"
+    content-style="padding: 10px;"
+  >
     <div class="summary-grid">
       <PreMatchOddsTable
         :odds="item.odds_snippet"
@@ -99,7 +111,7 @@ function openOddsModal() {
         from="favorites"
       />
     </div>
-  </article>
+  </n-card>
 
   <n-modal
     v-if="isPhone"
@@ -123,23 +135,9 @@ function openOddsModal() {
 <style scoped>
 .favorite-fixture-card {
   background: var(--fa-bg-elevated);
-  border: 1px solid var(--fa-border);
-  border-radius: 8px;
-  padding: 10px;
   min-width: 0;
   max-width: 100%;
-  box-sizing: border-box;
   overflow: hidden;
-  cursor: default;
-  user-select: text;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.favorite-fixture-card:hover {
-  border-color: var(--fa-hover-border);
-  box-shadow: 0 2px 10px var(--fa-hover-shadow);
 }
 
 .summary-grid {
@@ -157,6 +155,5 @@ function openOddsModal() {
 
 .summary-grid :deep(.result-fixture-card) {
   height: 100%;
-  box-sizing: border-box;
 }
 </style>

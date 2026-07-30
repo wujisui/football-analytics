@@ -62,6 +62,7 @@ defineExpose({ openFormula })
             v-else
             :key="group.fixtureId"
             size="small"
+            :bordered="false"
             class="selection-card"
           >
             <n-flex vertical :size="6">
@@ -185,6 +186,7 @@ defineExpose({ openFormula })
                 v-for="(combo, idx) in result.combos"
                 :key="idx"
                 size="small"
+                :bordered="false"
                 class="formula-card"
               >
                 <n-flex vertical :size="4">
@@ -267,6 +269,10 @@ defineExpose({ openFormula })
   padding: 24px 8px;
 }
 
+.selection-card {
+  background: var(--fa-bg-soft);
+}
+
 .selection-card :deep(.n-card-content) {
   padding: 10px;
 }
@@ -283,8 +289,8 @@ defineExpose({ openFormula })
 
 .selection-pick {
   padding: 6px 8px;
-  border-radius: var(--n-border-radius);
-  background: var(--fa-bg-soft);
+  border-radius: 4px;
+  background: var(--fa-bg-elevated);
   font-size: 12px;
 }
 
@@ -329,6 +335,7 @@ defineExpose({ openFormula })
 
 .formula-card {
   width: 100%;
+  background: var(--fa-bg-soft);
   box-sizing: border-box;
 }
 

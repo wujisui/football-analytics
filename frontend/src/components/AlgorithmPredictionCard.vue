@@ -118,7 +118,7 @@ function goBriefing() {
     class="predict-card"
     :class="{ standalone, compact, zone: !standalone, flush }"
     :size="standalone ? 'small' : undefined"
-    :hoverable="standalone || undefined"
+    :bordered="standalone ? false : undefined"
   >
     <div class="rec-row">
       <n-button
@@ -193,19 +193,15 @@ function goBriefing() {
   box-sizing: border-box;
 }
 
-.predict-card:not(.standalone) {
+.predict-card.zone {
   display: grid;
   grid-auto-flow: row;
-  align-content: start;
+  align-content: space-between;
   gap: 6px;
-}
-
-.predict-card.zone {
   background: var(--fa-bg-soft);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 12px;
   height: 100%;
-  align-content: space-between;
 }
 
 .predict-card.zone.flush {
@@ -215,24 +211,26 @@ function goBriefing() {
 }
 
 .predict-card.standalone {
+  height: 100%;
   overflow: hidden;
+  background: var(--fa-bg-soft);
 }
 
 .predict-card.standalone :deep(.n-card-content) {
   display: grid;
-  grid-auto-flow: row;
-  align-content: start;
-  gap: 10px;
-  height: 100%;
-  padding: 14px;
-  box-sizing: border-box;
-}
-
-.predict-card.standalone.compact :deep(.n-card-content) {
   grid-template-rows: auto auto auto;
   align-content: space-between;
   gap: 6px;
+  height: 100%;
   padding: 8px;
+  box-sizing: border-box;
+}
+
+.predict-card.standalone:not(.compact) :deep(.n-card-content) {
+  gap: 10px;
+  padding: 14px;
+  align-content: start;
+  grid-template-rows: none;
 }
 
 .predict-card.standalone.compact .prob-item,

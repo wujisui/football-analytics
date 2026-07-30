@@ -33,12 +33,13 @@ const {
 const { error, syncHomeListAfterDetail } = useHomeFixtures()
 const { matchCount } = useBetCalculator()
 
+const colContentStyle =
+  'position: relative; min-height: 0; overflow: hidden; padding: 0;'
+
 function syncComparisonScroll(source: 'odds' | 'calc', event: Event) {
   if (scrollSyncOrigin && scrollSyncOrigin !== source) return
-
   const container = event.target as HTMLElement | null
   if (!container) return
-
   scrollSyncOrigin = source
   const peer =
     source === 'odds' ? calcScrollbarRef.value : oddsScrollbarRef.value
@@ -67,7 +68,7 @@ onActivated(() => {
     <n-spin v-else :show="contentLoading" class="page-spin">
       <!-- 手机：计算器列表 + 选中后底部摘要 -->
       <div v-if="isPhone" class="phone-calc">
-        <div ref="phoneCalcShellRef" class="phone-calc-scroll">
+        <div ref="phoneCalcShellRef" class="scroll-shell">
           <n-scrollbar style="height: 100%;" trigger="hover">
             <div class="col-body">
               <n-empty
@@ -76,12 +77,13 @@ onActivated(() => {
                 size="small"
               />
               <n-space v-else vertical :size="10">
-                <CalcFixtureCard
+                <div
                   v-for="fixture in prematchDisplayedFixtures"
                   :key="`phone-calc-${fixture.fixture_id}`"
-                  :fixture="fixture"
-                  class="compare-card"
-                />
+                  class="compare-slot"
+                >
+                  <CalcFixtureCard :fixture="fixture" />
+                </div>
               </n-space>
             </div>
           </n-scrollbar>
@@ -91,7 +93,6 @@ onActivated(() => {
             :right="12"
           />
         </div>
-
         <div v-if="matchCount" class="phone-calc-footer">
           <BetDetailsPanel footer-only />
         </div>
@@ -103,7 +104,7 @@ onActivated(() => {
           <n-card
             size="small"
             class="pred-col"
-            content-style="position: relative; min-height: 0; overflow: hidden; padding: 0;"
+            :content-style="colContentStyle"
           >
             <template #header>
               <n-text strong>赔率 / 预测</n-text>
@@ -111,7 +112,7 @@ onActivated(() => {
             <template #header-extra>
               <n-text depth="3">{{ prematchDisplayedFixtures.length }} 场</n-text>
             </template>
-            <div ref="listShellRef" class="col-scroll-shell">
+            <div ref="listShellRef" class="scroll-shell">
               <n-scrollbar
                 ref="oddsScrollbarRef"
                 style="height: 100%;"
@@ -125,15 +126,18 @@ onActivated(() => {
                     size="small"
                   />
                   <n-space v-else vertical :size="10">
-                    <AlgorithmPredictionCard
+                    <div
                       v-for="fixture in prematchDisplayedFixtures"
                       :key="`odds-${fixture.fixture_id}`"
-                      :fixture="fixture"
-                      standalone
-                      compact
-                      from="predictions"
-                      class="compare-card"
-                    />
+                      class="compare-slot"
+                    >
+                      <AlgorithmPredictionCard
+                        :fixture="fixture"
+                        standalone
+                        compact
+                        from="predictions"
+                      />
+                    </div>
                   </n-space>
                 </div>
               </n-scrollbar>
@@ -146,7 +150,7 @@ onActivated(() => {
           <n-card
             size="small"
             class="pred-col"
-            content-style="position: relative; min-height: 0; overflow: hidden; padding: 0;"
+            :content-style="colContentStyle"
           >
             <template #header>
               <n-text strong>计算器</n-text>
@@ -154,7 +158,7 @@ onActivated(() => {
             <template #header-extra>
               <n-text depth="3">已选 {{ matchCount }} / 10</n-text>
             </template>
-            <div ref="calcShellRef" class="col-scroll-shell">
+            <div ref="calcShellRef" class="scroll-shell">
               <n-scrollbar
                 ref="calcScrollbarRef"
                 style="height: 100%;"
@@ -168,12 +172,13 @@ onActivated(() => {
                     size="small"
                   />
                   <n-space v-else vertical :size="10">
-                    <CalcFixtureCard
+                    <div
                       v-for="fixture in prematchDisplayedFixtures"
                       :key="`calc-${fixture.fixture_id}`"
-                      :fixture="fixture"
-                      class="compare-card"
-                    />
+                      class="compare-slot"
+                    >
+                      <CalcFixtureCard :fixture="fixture" />
+                    </div>
                   </n-space>
                 </div>
               </n-scrollbar>
@@ -186,7 +191,7 @@ onActivated(() => {
           <n-card
             size="small"
             class="pred-col"
-            content-style="position: relative; min-height: 0; overflow: hidden; padding: 0;"
+            :content-style="colContentStyle"
           >
             <template #header>
               <n-text strong>投注详情</n-text>
@@ -201,7 +206,7 @@ onActivated(() => {
                 奖金算式
               </n-button>
             </template>
-            <div class="col-scroll-shell prize-shell">
+            <div class="scroll-shell">
               <BetDetailsPanel ref="betDetailsRef" />
             </div>
           </n-card>
@@ -224,9 +229,7 @@ onActivated(() => {
 }
 
 .predictions-page.phone {
-  padding-inline: 0;
-  padding-top: 0;
-  padding-bottom: 0;
+  padding: 0;
 }
 
 .page-alert {
@@ -254,12 +257,6 @@ onActivated(() => {
   overflow: hidden;
 }
 
-.phone-calc-scroll {
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
-}
-
 .phone-calc-footer {
   flex-shrink: 0;
   border-top: 1px solid var(--fa-border);
@@ -270,17 +267,20 @@ onActivated(() => {
 .pred-grid {
   height: 100%;
   min-height: 0;
+  align-items: stretch;
 }
 
 .pred-grid-item {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   height: 100%;
 }
 
 .pred-col {
-  display: flex;
-  flex-direction: column;
+  flex: 1;
+  width: 100%;
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -292,7 +292,7 @@ onActivated(() => {
   flex-shrink: 0;
 }
 
-.col-scroll-shell {
+.scroll-shell {
   position: absolute;
   inset: 0;
   overflow: hidden;
@@ -302,18 +302,18 @@ onActivated(() => {
   padding: 10px;
 }
 
-.compare-card {
+/* 固定槽位高度，保证左右对照卡片一致（class 写在本页 DOM 上，避免落不到子组件根） */
+.compare-slot {
   height: 156px;
   overflow: hidden;
 }
 
-.prize-shell {
-  position: absolute;
-  inset: 0;
+.compare-slot > :deep(*) {
+  height: 100%;
 }
 
 @media (max-width: 767px) {
-  .compare-card {
+  .compare-slot {
     height: 184px;
   }
 }

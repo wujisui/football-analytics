@@ -59,7 +59,7 @@ function blockedReason(cell: CalcCell): string | null {
 </script>
 
 <template>
-  <n-card size="small" class="calc-fixture">
+  <n-card size="small" :bordered="false" class="calc-fixture">
     <n-flex :wrap="false" align="center" :size="8" class="fixture-meta">
       <n-text strong class="league" :style="{ color: leagueColor }">
         {{ leagueName }}
@@ -132,12 +132,18 @@ function blockedReason(cell: CalcCell): string | null {
 </template>
 
 <style scoped>
+.calc-fixture {
+  height: 100%;
+  overflow: hidden;
+  background: var(--fa-bg-soft);
+}
+
 .calc-fixture :deep(.n-card-content) {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 6px;
   height: 100%;
-  padding: 6px;
+  padding: 8px;
   box-sizing: border-box;
 }
 

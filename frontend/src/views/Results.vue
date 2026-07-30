@@ -993,7 +993,7 @@ onMounted(() => {
   flex: 1 1 auto;
 }
 
-.chart-card :deep(.n-card__content) {
+.chart-card :deep(.n-card-content) {
   flex: 1;
   min-height: 0;
   display: flex;

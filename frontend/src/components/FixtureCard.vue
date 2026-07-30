@@ -33,7 +33,13 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
     :date="date"
   />
 
-  <article v-else class="fixture-card">
+  <n-card
+    v-else
+    size="small"
+    :bordered="false"
+    class="fixture-card"
+    content-style="padding: 10px;"
+  >
     <div class="summary-grid">
       <PreMatchOddsTable
         :odds="fixture.odds_snippet"
@@ -50,26 +56,12 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
         :date="date"
       />
     </div>
-  </article>
+  </n-card>
 </template>
 
 <style scoped>
 .fixture-card {
   background: var(--fa-bg-elevated);
-  border: 1px solid var(--fa-border);
-  border-radius: 8px;
-  padding: 10px;
-  cursor: default;
-  user-select: text;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-  color: var(--fa-text);
-}
-
-.fixture-card:hover {
-  border-color: var(--fa-hover-border);
-  box-shadow: 0 2px 10px var(--fa-hover-shadow);
 }
 
 .summary-grid {
@@ -81,7 +73,6 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
 
 .summary-grid :deep(.result-fixture-card) {
   height: 100%;
-  box-sizing: border-box;
 }
 
 @media (max-width: 900px) {

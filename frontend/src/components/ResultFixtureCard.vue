@@ -105,7 +105,9 @@ function openStats() {
 </script>
 
 <template>
-  <article
+  <n-card
+    size="small"
+    :bordered="false"
     class="result-fixture-card"
     :class="{ dense: denseBody, prematch: isPrematch }"
   >
@@ -189,18 +191,20 @@ function openStats() {
       :show-probabilities="showProbabilities"
       @open-odds="emit('openOdds')"
     />
-  </article>
+  </n-card>
 </template>
 
 <style scoped>
 .result-fixture-card {
+  background: var(--fa-bg-soft);
+}
+
+.result-fixture-card :deep(.n-card-content) {
   display: grid;
   grid-auto-flow: row;
   align-content: start;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 4px;
-  background: var(--fa-bg-soft);
   box-sizing: border-box;
 }
 
@@ -208,7 +212,11 @@ function openStats() {
   height: 100%;
 }
 
-.result-fixture-card.prematch {
+.result-fixture-card.dense :deep(.n-card-content) {
+  height: 100%;
+}
+
+.result-fixture-card.prematch :deep(.n-card-content) {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
