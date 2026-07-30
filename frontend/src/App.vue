@@ -13,7 +13,7 @@ import {
   zhCN,
   dateZhCN,
 } from 'naive-ui'
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useFavoritesDrawer } from '@/composables/useFavoritesDrawer'
@@ -53,17 +53,6 @@ function goNav(name: 'home' | 'predictions' | 'results') {
   if (route.name === name) return
   void router.push(fixturesRouteWithLeague(name))
 }
-
-/** Phone home already shows prediction cards; hide Predictions route there. */
-watch(
-  [isPhone, () => route.name],
-  ([phone, name]) => {
-    if (phone && name === 'predictions') {
-      void router.replace(fixturesRouteWithLeague('home'))
-    }
-  },
-  { immediate: true },
-)
 </script>
 
 <template>
@@ -96,11 +85,10 @@ watch(
               <n-button-group size="small">
                 <n-button :type="navType('home')" @click="goNav('home')">即时</n-button>
                 <n-button
-                  v-if="!isPhone"
                   :type="navType('predictions')"
                   @click="goNav('predictions')"
                 >
-                  预测
+                  {{ isPhone ? '计算器' : '预测' }}
                 </n-button>
                 <n-button :type="navType('results')" @click="goNav('results')">赛程</n-button>
                 <n-button
@@ -230,7 +218,7 @@ watch(
   }
 
   .brand {
-    max-width: calc(100% - 200px);
+    max-width: calc(100% - 248px);
   }
 
   .brand-title {

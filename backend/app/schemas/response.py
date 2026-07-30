@@ -420,18 +420,12 @@ class ResultsAccuracyResponse(BaseModel):
 
 class AccuracyDayPointResponse(BaseModel):
     date: str
-    result_rate: float | None = None
-    score_rate: float | None = None
-    ou_rate: float | None = None
-    btts_rate: float | None = None
-    handicap_rate: float | None = None
     result: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     score: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     ou: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     btts: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     handicap: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     fixtures_with_prediction: int = 0
-    fixtures_finished: int = 0
 
 
 class ResultsHistoryResponse(BaseModel):

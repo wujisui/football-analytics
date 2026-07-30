@@ -235,18 +235,12 @@ async def build_history_accuracy(
         series.append(
             {
                 "date": key,
-                "result_rate": day_summary["result"]["rate"],
-                "score_rate": day_summary["score"]["rate"],
-                "ou_rate": day_summary["ou"]["rate"],
-                "btts_rate": day_summary["btts"]["rate"],
-                "handicap_rate": day_summary["handicap"]["rate"],
                 "result": day_summary["result"],
                 "score": day_summary["score"],
                 "ou": day_summary["ou"],
                 "btts": day_summary["btts"],
                 "handicap": day_summary["handicap"],
                 "fixtures_with_prediction": day_summary["fixtures_with_prediction"],
-                "fixtures_finished": day_summary["fixtures_finished"],
             }
         )
 

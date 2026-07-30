@@ -12,7 +12,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { computed } from 'vue'
 import VChart from 'vue-echarts'
 
-import type { AccuracyDayPoint } from '@/api/fixtures'
+import type { AccuracyDayPoint, AccuracyStat } from '@/api/fixtures'
 import { ACCURACY_COLORS } from '@/utils/accuracyColors'
 
 use([
@@ -30,6 +30,17 @@ const SCROLL_DAY_THRESHOLD = 14
 /** Initial visible window size (days) when scrolling is on. */
 const INITIAL_VIEW_DAYS = 21
 
+type PlayKey = 'result' | 'handicap' | 'score' | 'ou' | 'btts'
+
+/** Line order matches ``seriesIndex``; labels/colors mirror 当日统计 cards. */
+const PLAY_LINES: ReadonlyArray<{ name: string; color: string; key: PlayKey }> = [
+  { name: '推荐结果', color: ACCURACY_COLORS.result, key: 'result' },
+  { name: '让球胜平负', color: ACCURACY_COLORS.handicap, key: 'handicap' },
+  { name: '比分', color: ACCURACY_COLORS.score, key: 'score' },
+  { name: '大小球', color: ACCURACY_COLORS.ou, key: 'ou' },
+  { name: '双方进球', color: ACCURACY_COLORS.btts, key: 'btts' },
+]
+
 const props = defineProps<{
   series: AccuracyDayPoint[]
   /** Currently focused results day (YYYY-MM-DD); shown as a guide line. */
@@ -45,11 +56,18 @@ function toPct(rate: number | null | undefined): number | null {
   return Number((rate * 100).toFixed(1))
 }
 
+/** ``60%（3/5）``; each play type has its own sample size. */
+function formatStat(stat: AccuracyStat | undefined, pct: number | null): string {
+  if (!stat || stat.total <= 0 || pct == null) return '—（无样本）'
+  return `${pct}%（${stat.hits}/${stat.total}）`
+}
+
 function formatAxisTooltip(
   params: Array<{
     axisValue?: string
     dataIndex?: number
     marker?: string
+    seriesIndex?: number
     seriesName?: string
     value?: number | null
   }>,
@@ -58,11 +76,13 @@ function formatAxisTooltip(
   const idx = params[0].dataIndex ?? 0
   const point = props.series[idx]
   const dateLabel = point?.date ?? String(params[0].axisValue ?? '')
-  const matchCount = point?.fixtures_finished ?? 0
-  const header = `${dateLabel} ${matchCount}场 · 点击查看当天赛果`
+  // Chart scope = every fixture with a frozen prediction, all leagues.
+  const header = `${dateLabel} 已预测 ${point?.fixtures_with_prediction ?? 0} 场`
   const lines = params.map((item) => {
-    const value = item.value == null ? '—' : `${item.value}%`
-    return `${item.marker ?? ''}${item.seriesName ?? ''}: ${value}`
+    const play = PLAY_LINES[item.seriesIndex ?? -1]
+    const stat = play && point ? point[play.key] : undefined
+    const label = item.seriesName ?? play?.name ?? ''
+    return `${item.marker ?? ''}${label}: ${formatStat(stat, item.value ?? null)}`
   })
   return [header, ...lines].join('<br/>')
 }
@@ -105,26 +125,19 @@ const option = computed(() => {
         }
       : undefined
 
-  function line(
-    name: string,
-    color: string,
-    values: Array<number | null>,
-    withMark = false,
-  ) {
-    return {
-      name,
-      type: 'line' as const,
-      smooth: true,
-      itemStyle: { color },
-      lineStyle: { color },
-      showSymbol: true,
-      symbolSize: 6,
-      connectNulls: false,
-      cursor: 'pointer',
-      data: values,
-      ...(withMark && selectedMarkLine ? { markLine: selectedMarkLine } : {}),
-    }
-  }
+  const lines = PLAY_LINES.map((play, index) => ({
+    name: play.name,
+    type: 'line' as const,
+    smooth: true,
+    itemStyle: { color: play.color },
+    lineStyle: { color: play.color },
+    showSymbol: true,
+    symbolSize: 6,
+    connectNulls: false,
+    cursor: 'pointer',
+    data: props.series.map((p) => toPct(p[play.key]?.rate)),
+    ...(index === 0 && selectedMarkLine ? { markLine: selectedMarkLine } : {}),
+  }))
 
   return {
     tooltip: {
@@ -134,7 +147,7 @@ const option = computed(() => {
     legend: {
       top: 4,
       left: 'center',
-      data: ['胜平负', '让球胜平负', '比分', '大小球', '双方进球'],
+      data: PLAY_LINES.map((play) => play.name),
     },
     grid: {
       left: 8,
@@ -184,34 +197,7 @@ const option = computed(() => {
       axisLabel: { formatter: '{value}%', fontSize: 11 },
       splitLine: { lineStyle: { type: 'dashed', opacity: 0.45 } },
     },
-    series: [
-      line(
-        '胜平负',
-        ACCURACY_COLORS.result,
-        props.series.map((p) => toPct(p.result_rate)),
-        true,
-      ),
-      line(
-        '让球胜平负',
-        ACCURACY_COLORS.handicap,
-        props.series.map((p) => toPct(p.handicap_rate)),
-      ),
-      line(
-        '比分',
-        ACCURACY_COLORS.score,
-        props.series.map((p) => toPct(p.score_rate)),
-      ),
-      line(
-        '大小球',
-        ACCURACY_COLORS.ou,
-        props.series.map((p) => toPct(p.ou_rate)),
-      ),
-      line(
-        '双方进球',
-        ACCURACY_COLORS.btts,
-        props.series.map((p) => toPct(p.btts_rate)),
-      ),
-    ],
+    series: lines,
   }
 })
 </script>

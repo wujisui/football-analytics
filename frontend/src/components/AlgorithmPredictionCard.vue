@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NCard } from 'naive-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -18,6 +19,8 @@ const props = withDefaults(
     fixtureId?: number
     /** Elevated card for the predictions list. */
     standalone?: boolean
+    /** Compact standalone card for dense comparison lists. */
+    compact?: boolean
     /** Show home vs away title link above recommendation row. */
     showMatchupTitle?: boolean
     /** Parent card owns padding/background; render only the prediction content. */
@@ -27,6 +30,7 @@ const props = withDefaults(
   }>(),
   {
     standalone: false,
+    compact: false,
     showMatchupTitle: true,
     flush: false,
     from: 'home',
@@ -110,9 +114,11 @@ function goBriefing() {
 
 <template>
   <component
-    :is="standalone ? 'article' : 'section'"
+    :is="standalone ? NCard : 'section'"
     class="predict-card"
-    :class="{ standalone, zone: !standalone, flush }"
+    :class="{ standalone, compact, zone: !standalone, flush }"
+    :size="standalone ? 'small' : undefined"
+    :hoverable="standalone || undefined"
   >
     <div class="rec-row">
       <n-button
@@ -183,12 +189,15 @@ function goBriefing() {
 
 <style scoped>
 .predict-card {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.predict-card:not(.standalone) {
   display: grid;
   grid-auto-flow: row;
   align-content: start;
   gap: 6px;
-  min-width: 0;
-  box-sizing: border-box;
 }
 
 .predict-card.zone {
@@ -206,19 +215,29 @@ function goBriefing() {
 }
 
 .predict-card.standalone {
-  gap: 10px;
-  background: var(--fa-bg-elevated);
-  border: 1px solid var(--fa-border);
-  border-radius: 8px;
-  padding: 14px;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+  overflow: hidden;
 }
 
-.predict-card.standalone:hover {
-  border-color: var(--fa-hover-border);
-  box-shadow: 0 2px 10px var(--fa-hover-shadow);
+.predict-card.standalone :deep(.n-card-content) {
+  display: grid;
+  grid-auto-flow: row;
+  align-content: start;
+  gap: 10px;
+  height: 100%;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+.predict-card.standalone.compact :deep(.n-card-content) {
+  grid-template-rows: auto auto auto;
+  align-content: space-between;
+  gap: 6px;
+  padding: 8px;
+}
+
+.predict-card.standalone.compact .prob-item,
+.predict-card.standalone.compact .prob-head {
+  gap: 2px;
 }
 
 .rec-row {
@@ -312,5 +331,9 @@ function goBriefing() {
 .predict-card.standalone .prob-head strong {
   font-size: 16px;
   font-weight: 700;
+}
+
+.predict-card.standalone.compact .prob-head strong {
+  font-size: 14px;
 }
 </style>

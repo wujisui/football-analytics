@@ -116,18 +116,12 @@ export interface ResultsAccuracy {
 
 export interface AccuracyDayPoint {
   date: string
-  result_rate: number | null
-  score_rate: number | null
-  ou_rate: number | null
-  btts_rate: number | null
-  handicap_rate: number | null
   result: AccuracyStat
   score: AccuracyStat
   ou: AccuracyStat
   btts: AccuracyStat
   handicap: AccuracyStat
   fixtures_with_prediction: number
-  fixtures_finished: number
 }
 
 export interface ResultsHistoryResponse {

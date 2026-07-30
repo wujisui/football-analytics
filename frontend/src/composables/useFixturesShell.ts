@@ -202,7 +202,9 @@ export function useFixturesShell() {
   })
 
   const breadcrumbRoot = computed(() => {
-    if (pageName.value === 'predictions') return '预测'
+    if (pageName.value === 'predictions') {
+      return isPhone.value ? '计算器' : '预测'
+    }
     if (pageName.value === 'results') return '赛程'
     return '即时'
   })
