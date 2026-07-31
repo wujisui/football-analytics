@@ -59,16 +59,22 @@ function onSubmit() {
 </script>
 
 <template>
-  <section class="opinion-input">
-    <n-card size="small" title="主观因素（勾选）">
-      <p class="hint">
+  <n-card size="small" title="主观因素（勾选）">
+    <n-flex vertical :size="12">
+      <n-text depth="3">
         这不是 AI 自由文本分析。勾选你认可的赛前因素后，由后端按固定权重与算法预测融合对比。
-      </p>
+      </n-text>
       <n-spin :show="loadingFactors">
         <n-alert v-if="loadError" type="error" :title="loadError" style="margin-bottom: 12px" />
-        <div v-for="[group, items] in grouped" :key="group" class="group">
-          <div class="group-title">{{ group }}</div>
-          <div class="tags">
+        <n-flex
+          v-for="[group, items] in grouped"
+          :key="group"
+          vertical
+          :size="8"
+          style="margin-bottom: 12px;"
+        >
+          <n-text depth="3">{{ group }}</n-text>
+          <n-flex :size="8">
             <n-tag
               v-for="f in items"
               :key="f.id"
@@ -79,10 +85,10 @@ function onSubmit() {
             >
               {{ f.label }}
             </n-tag>
-          </div>
-        </div>
+          </n-flex>
+        </n-flex>
       </n-spin>
-      <div class="actions">
+      <n-flex justify="end">
         <n-button
           type="primary"
           :loading="submitting"
@@ -91,48 +97,7 @@ function onSubmit() {
         >
           提交因素并重新预测
         </n-button>
-      </div>
-    </n-card>
-  </section>
+      </n-flex>
+    </n-flex>
+  </n-card>
 </template>
-
-<style scoped>
-.opinion-input {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.hint {
-  margin: 0 0 12px;
-  font-size: 12px;
-  color: var(--fa-text-muted);
-  line-height: 1.5;
-}
-
-.group {
-  margin-bottom: 12px;
-}
-
-.group:last-of-type {
-  margin-bottom: 0;
-}
-
-.group-title {
-  font-size: 12px;
-  color: var(--fa-text-faint);
-  margin-bottom: 8px;
-}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.actions {
-  margin-top: 12px;
-  display: flex;
-  justify-content: flex-end;
-}
-</style>

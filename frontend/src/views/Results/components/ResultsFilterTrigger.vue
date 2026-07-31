@@ -2,7 +2,7 @@
 import { FilterOutline } from '@vicons/ionicons5'
 import { ref, watch } from 'vue'
 
-import ResultsFilterPanel from '@/components/ResultsFilterPanel.vue'
+import ResultsFilterPanel from '@/views/Results/components/ResultsFilterPanel.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import {
   RESULTS_ALL_HIT_KEYS,
@@ -38,7 +38,6 @@ function confirm(hitKeys: ResultsHitKey[]) {
     <n-button
       size="small"
       quaternary
-      class="results-filter-btn"
       :type="filterActive ? 'primary' : 'default'"
       aria-label="筛选赛果"
       @click="show = true"
@@ -82,7 +81,6 @@ function confirm(hitKeys: ResultsHitKey[]) {
       <n-button
         size="small"
         quaternary
-        class="results-filter-btn"
         :type="filterActive ? 'primary' : 'default'"
         aria-label="筛选赛果"
       >
@@ -103,10 +101,3 @@ function confirm(hitKeys: ResultsHitKey[]) {
     />
   </n-popover>
 </template>
-
-<style scoped>
-.results-filter-btn {
-  flex-shrink: 0;
-  padding-inline: 10px;
-}
-</style>

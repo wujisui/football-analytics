@@ -33,9 +33,9 @@ function confirm() {
 </script>
 
 <template>
-  <div class="results-filter-panel">
-    <div class="section">
-      <div class="section-title">预测结果</div>
+  <n-flex vertical :size="10" style="min-width: min(240px, 86vw);">
+    <n-flex vertical :size="6">
+      <n-text depth="3">预测结果</n-text>
       <n-checkbox-group v-model:value="draftHits">
         <n-space vertical :size="6">
           <n-checkbox
@@ -46,32 +46,10 @@ function confirm() {
           />
         </n-space>
       </n-checkbox-group>
-    </div>
-    <n-space justify="end" :size="8" class="actions">
+    </n-flex>
+    <n-space justify="end" :size="8">
       <n-button :size="actionSize" @click.stop="selectAll">全选</n-button>
       <n-button :size="actionSize" type="primary" @click.stop="confirm">确认</n-button>
     </n-space>
-  </div>
+  </n-flex>
 </template>
-
-<style scoped>
-.results-filter-panel {
-  min-width: min(240px, 86vw);
-  max-width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--fa-text-muted);
-  margin-bottom: 6px;
-}
-
-.actions {
-  margin-top: 2px;
-}
-</style>

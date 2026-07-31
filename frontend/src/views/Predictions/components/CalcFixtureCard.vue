@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useMessage } from 'naive-ui'
 
 import type { FixtureResponse } from '@/api/types'
-import { useBetCalculator } from '@/composables/useBetCalculator'
+import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import { buildMarketRows, type CalcCell } from '@/utils/betCalculator'
 import { formatDate, formatTime, leagueTagColor } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'

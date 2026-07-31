@@ -116,14 +116,14 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
 </script>
 
 <template>
-  <div class="briefing-tab">
+  <n-flex vertical :size="12">
     <n-empty
       v-if="!available"
       description="官方暂无赛前简报（部分联赛无 coverage.predictions）"
     />
 
     <template v-else>
-      <n-alert type="info" :bordered="false" class="source-note">
+      <n-alert type="info" :bordered="false">
         来源：API-Sports 官方 /predictions，与「我的预测」本地模型无关
       </n-alert>
 
@@ -132,7 +132,6 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
         size="small"
         title="建议"
         :bordered="false"
-        class="block"
       >
         <n-text>{{ briefing.advice }}</n-text>
       </n-card>
@@ -141,7 +140,6 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
         label-placement="left"
         :column="1"
         size="small"
-        class="block"
       >
         <n-descriptions-item v-if="briefing?.winner?.name" label="倾向胜方">
           {{ briefing.winner.name }}
@@ -199,11 +197,15 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
         </n-descriptions-item>
       </n-descriptions>
 
-      <div v-if="percent.home || percent.draw || percent.away" class="percents block">
-        <n-statistic label="主胜" :value="percent.home || '—'" />
-        <n-statistic label="平局" :value="percent.draw || '—'" />
-        <n-statistic label="客胜" :value="percent.away || '—'" />
-      </div>
+      <n-grid
+        v-if="percent.home || percent.draw || percent.away"
+        :cols="3"
+        :x-gap="12"
+      >
+        <n-gi><n-statistic label="主胜" :value="percent.home || '—'" /></n-gi>
+        <n-gi><n-statistic label="平局" :value="percent.draw || '—'" /></n-gi>
+        <n-gi><n-statistic label="客胜" :value="percent.away || '—'" /></n-gi>
+      </n-grid>
 
       <n-data-table
         v-if="comparison.length"
@@ -213,37 +215,7 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
         :columns="comparisonColumns"
         :data="comparison"
         :pagination="false"
-        class="block"
       />
     </template>
-  </div>
+  </n-flex>
 </template>
-
-<style scoped>
-.briefing-tab {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.source-note {
-  background: var(--fa-bg-muted, transparent);
-}
-
-.block {
-  background: var(--fa-bg-elevated);
-}
-
-.percents {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  padding: 8px 0;
-}
-
-@media (max-width: 767px) {
-  .percents {
-    gap: 8px;
-  }
-}
-</style>

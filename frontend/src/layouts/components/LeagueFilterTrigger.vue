@@ -2,7 +2,7 @@
 import { FilterOutline } from '@vicons/ionicons5'
 import { ref, watch } from 'vue'
 
-import LeagueFilterPanel from '@/components/LeagueFilterPanel.vue'
+import LeagueFilterPanel from '@/layouts/components/LeagueFilterPanel.vue'
 import type { LeagueFilterOption } from '@/api/leagues'
 import { resolveTrackedSelection } from '@/utils/leagueFilterSelection'
 
@@ -46,8 +46,7 @@ function confirm() {
         <n-button
           size="small"
           quaternary
-          class="league-filter-btn"
-          :class="{ 'is-icon-only': iconOnly }"
+          :circle="iconOnly"
           :type="filterActive ? 'primary' : 'default'"
           aria-label="筛选联赛"
           @click="show = true"
@@ -92,8 +91,7 @@ function confirm() {
       <n-button
         size="small"
         quaternary
-        class="league-filter-btn"
-        :class="{ 'is-icon-only': iconOnly }"
+        :circle="iconOnly"
         :type="filterActive ? 'primary' : 'default'"
         aria-label="筛选联赛"
       >
@@ -111,16 +109,3 @@ function confirm() {
     />
   </n-popover>
 </template>
-
-<style scoped>
-.league-filter-btn:not(.is-icon-only) {
-  padding-inline: 10px;
-}
-
-.league-filter-btn.is-icon-only {
-  width: var(--n-height-small);
-  height: var(--n-height-small);
-  padding: 0;
-  justify-content: center;
-}
-</style>

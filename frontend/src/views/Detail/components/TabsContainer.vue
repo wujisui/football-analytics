@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import BriefingTab from '@/components/detail/BriefingTab.vue'
-import H2HTab from '@/components/detail/H2HTab.vue'
-import LineupTab from '@/components/detail/LineupTab.vue'
-import PredictionTab from '@/components/detail/PredictionTab.vue'
-import StatsTab from '@/components/detail/StatsTab.vue'
+import BriefingTab from '@/views/Detail/components/BriefingTab.vue'
+import H2HTab from '@/views/Detail/components/H2HTab.vue'
+import LineupTab from '@/views/Detail/components/LineupTab.vue'
+import PredictionTab from '@/views/Detail/components/PredictionTab.vue'
+import StatsTab from '@/views/Detail/components/StatsTab.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import type { FixtureResponse, PrematchPackage } from '@/api/types'
 import type { DetailTab } from '@/utils/detailNav'

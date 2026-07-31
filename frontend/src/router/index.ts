@@ -1,10 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import Detail from '@/views/Detail.vue'
+import Detail from '@/views/Detail/index.vue'
 import FixturesShellLayout from '@/layouts/FixturesShellLayout.vue'
-import Home from '@/views/Home.vue'
-import Predictions from '@/views/Predictions.vue'
-import Results from '@/views/Results.vue'
+import Home from '@/views/Home/index.vue'
+import Predictions from '@/views/Predictions/index.vue'
+import Results from '@/views/Results/index.vue'
 
 const router = createRouter({
   history: createWebHistory(),

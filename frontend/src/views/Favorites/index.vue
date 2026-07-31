@@ -2,10 +2,10 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import FavoriteDatesPicker from '@/components/FavoriteDatesPicker.vue'
-import FavoriteFixtureCard from '@/components/FavoriteFixtureCard.vue'
+import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
+import FavoriteFixtureCard from '@/views/Favorites/components/FavoriteFixtureCard.vue'
 import { favoriteFixtureDays, useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
-import { useFavoritesDrawer } from '@/composables/useFavoritesDrawer'
+import { useFavoritesDrawer } from '@/views/Favorites/composables/useFavoritesDrawer'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { parseApiDate, toScheduleDayKey } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'

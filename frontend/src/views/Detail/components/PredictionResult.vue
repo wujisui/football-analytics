@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
-import ProbabilityChart from '@/components/ProbabilityChart.vue'
+import ProbabilityChart from '@/views/Detail/components/ProbabilityChart.vue'
 import type { FixtureResponse } from '@/api/types'
 import { predictionDiffKeys, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import { toPercent } from '@/utils/format'

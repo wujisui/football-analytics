@@ -2,8 +2,8 @@
 import { computed, ref } from 'vue'
 
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
-import OpinionInput from '@/components/detail/OpinionInput.vue'
-import PredictionResult from '@/components/detail/PredictionResult.vue'
+import OpinionInput from '@/views/Detail/components/OpinionInput.vue'
+import PredictionResult from '@/views/Detail/components/PredictionResult.vue'
 import { adjustFixturePrediction } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
 import { snapshotFromAnalysis, snapshotFromApi, type PredictionSnapshot } from '@/utils/opinionAdjust'

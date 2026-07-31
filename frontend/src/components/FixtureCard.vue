@@ -37,8 +37,7 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
     v-else
     size="small"
     :bordered="false"
-    class="fixture-card"
-    content-style="padding: 10px;"
+    style="background: var(--fa-bg-elevated);"
   >
     <div class="summary-grid">
       <PreMatchOddsTable
@@ -60,10 +59,6 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
 </template>
 
 <style scoped>
-.fixture-card {
-  background: var(--fa-bg-elevated);
-}
-
 .summary-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

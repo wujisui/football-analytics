@@ -61,7 +61,6 @@ function openOddsModal() {
     size="small"
     :bordered="false"
     class="favorite-fixture-card"
-    content-style="padding: 10px;"
   >
     <div class="summary-grid">
       <PreMatchOddsTable
@@ -93,7 +92,6 @@ function openOddsModal() {
     size="small"
     :bordered="false"
     class="favorite-fixture-card"
-    content-style="padding: 10px;"
   >
     <div class="summary-grid">
       <PreMatchOddsTable

@@ -244,6 +244,7 @@ frontend/src/
 
 - **组件优先**：遵守 `.cursor/rules/frontend-ui.mdc`（Layout / Menu / Breadcrumb / PageHeader 等）
 - **少写 CSS**：优先依赖 Naive 默认样式与 props；自定义 class 只留给复杂布局（见 `frontend-ui.mdc`「少写 CSS」）
+- **就近组织**：路由与应用级抽屉统一用 `views/<Feature>/index.vue`；专属子组件和 composable 分别放同目录 `components/`、`composables/`，跨功能复用代码才进入全局目录
 - 全屏壳 + 内容区滚动；勿用整站 `max-width` 居中窄栏代替布局
 - 风格：简洁、白/灰为主，信息密度适中
 - Composition API（`<script setup>`）+ TypeScript

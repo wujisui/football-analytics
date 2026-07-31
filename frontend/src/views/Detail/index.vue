@@ -2,9 +2,9 @@
 import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import BasicInfo from '@/components/detail/BasicInfo.vue'
-import TabsContainer from '@/components/detail/TabsContainer.vue'
-import { useFixtureAnalysis } from '@/composables/useFixtureAnalysis'
+import BasicInfo from '@/views/Detail/components/BasicInfo.vue'
+import TabsContainer from '@/views/Detail/components/TabsContainer.vue'
+import { useFixtureAnalysis } from '@/views/Detail/composables/useFixtureAnalysis'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import {
   detailBackRoute,

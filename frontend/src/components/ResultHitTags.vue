@@ -11,7 +11,7 @@ function handicapTagLabel(lean: string): string {
 </script>
 
 <template>
-  <div v-if="fixture.has_prediction" class="hit-tags">
+  <n-flex v-if="fixture.has_prediction" :size="6">
     <n-tag size="small" :type="hitTagType(fixture.result_hit)" :bordered="false">
       胜平负
     </n-tag>
@@ -32,15 +32,5 @@ function handicapTagLabel(lean: string): string {
     >
       {{ handicapTagLabel(fixture.handicap_lean) }}
     </n-tag>
-  </div>
+  </n-flex>
 </template>
-
-<style scoped>
-.hit-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-  max-width: 100%;
-}
-</style>

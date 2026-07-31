@@ -2,14 +2,14 @@
 import { onActivated, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
-import HomeDateStrip from '@/components/HomeDateStrip.vue'
-import LeagueFilterTrigger from '@/components/LeagueFilterTrigger.vue'
-import LeagueMenu from '@/components/LeagueMenu.vue'
+import HomeDateStrip from '@/layouts/components/HomeDateStrip.vue'
+import LeagueFilterTrigger from '@/layouts/components/LeagueFilterTrigger.vue'
+import LeagueMenu from '@/layouts/components/LeagueMenu.vue'
 import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 import {
   bootstrapFixturesShell,
   useFixturesShell,
-} from '@/composables/useFixturesShell'
+} from '@/layouts/composables/useFixturesShell'
 import { useIsPhone } from '@/composables/useMediaQuery'
 
 defineOptions({ name: 'FixturesShellLayout' })

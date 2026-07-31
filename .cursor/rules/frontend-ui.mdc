@@ -30,6 +30,26 @@ alwaysApply: false
 
 按需自动引入已配置 `unplugin-vue-components` + `NaiveUiResolver`；根布局等需显式 import 的除外。
 
+## 路由与组件目录
+
+目录按“父页面 → 专属子组件”组织，避免把所有业务组件平铺到全局 `components/`：
+
+```text
+src/views/Results/
+├── index.vue
+└── components/        # 仅 Results 页面及其后代使用
+    ├── AccuracyStatistic.vue
+    └── ResultsFilterPanel.vue
+```
+
+1. 路由页面使用 `src/views/<RouteName>/index.vue`。
+2. 只属于一个路由功能树的组件放在该路由的 `components/`；即使不是页面直接引用，只要祖先唯一也归属该路由。
+3. 被两个及以上互不从属的页面/功能树引用，才放 `src/components/`。公共目录可按稳定领域分组，禁止再次变成无层级的大杂烩。
+4. 只属于布局的组件放 `src/layouts/components/`；应用级抽屉/浮层（如收藏）也按路由功能待遇放 `src/views/<Feature>/`，不要再堆 `components/app/`。
+5. composable 遵循同一归属规则：单一功能树使用的放 `views/<Feature>/composables/`；布局树专属的放 `layouts/composables/`；只有跨功能复用的才留在全局 `src/composables/`。
+6. 迁移组件或 composable 后必须扫描旧 import / 旧路径；空目录、薄包装页面、无引用文件当次删除。
+7. 不为“一处引用”新增 re-export `index.ts` 或薄封装；直接导入实际文件，避免隐藏依赖。
+
 ## 全屏布局规则
 
 1. **应用占满视口**：根 `n-layout` 使用 `position="absolute"` + `inset: 0`（或等价 100vh），不要用 `max-width` 把整站收成居中窄栏。

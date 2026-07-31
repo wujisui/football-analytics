@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import MatchStatsSummary from '@/components/detail/MatchStatsSummary.vue'
-import MatchStatsTable from '@/components/detail/MatchStatsTable.vue'
+import MatchStatsSummary from '@/views/Detail/components/MatchStatsSummary.vue'
+import MatchStatsTable from '@/views/Detail/components/MatchStatsTable.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import type { PrematchPackage } from '@/api/types'
 import { formCharClass, formCharsZh } from '@/utils/format'

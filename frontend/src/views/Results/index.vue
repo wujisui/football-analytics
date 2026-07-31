@@ -11,13 +11,13 @@ import {
   type ResultFixture,
   type ResultsAccuracy,
 } from '@/api/fixtures'
-import AccuracyHistoryChart from '@/components/AccuracyHistoryChart.vue'
-import AccuracyStatistic from '@/components/AccuracyStatistic.vue'
+import AccuracyHistoryChart from '@/views/Results/components/AccuracyHistoryChart.vue'
+import AccuracyStatistic from '@/views/Results/components/AccuracyStatistic.vue'
 import FixtureList from '@/components/FixtureList.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
-import ResultsListToolbar from '@/components/ResultsListToolbar.vue'
-import { useFixturesShell } from '@/composables/useFixturesShell'
+import ResultsListToolbar from '@/views/Results/components/ResultsListToolbar.vue'
+import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 import {

@@ -3,15 +3,10 @@ import { computed, onActivated, ref } from 'vue'
 
 import FixtureList from '@/components/FixtureList.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
-import { useFixturesShell } from '@/composables/useFixturesShell'
+import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 
-const props = withDefaults(
-  defineProps<{
-    mode?: 'home' | 'prediction'
-  }>(),
-  { mode: 'home' },
-)
+defineOptions({ name: 'Home' })
 
 const listShellRef = ref<HTMLElement | null>(null)
 
@@ -19,7 +14,6 @@ const {
   contentLoading,
   prematchDisplayedFixtures,
   homeEmptyText,
-  predictionsEmptyText,
   reloadPrematchDay,
   homeDay,
 } = useFixturesShell()
@@ -27,10 +21,6 @@ const {
 const { error, syncHomeListAfterDetail } = useHomeFixtures()
 
 const fixtures = computed(() => prematchDisplayedFixtures.value)
-
-const emptyText = computed(() =>
-  props.mode === 'prediction' ? predictionsEmptyText.value : homeEmptyText.value,
-)
 
 onActivated(() => {
   syncHomeListAfterDetail(homeDay.value)
@@ -54,9 +44,9 @@ onActivated(() => {
       <n-spin v-else :show="contentLoading">
         <div class="fa-page-list-body">
           <FixtureList
-            :mode="mode === 'prediction' ? 'prediction' : 'full'"
+            mode="full"
             :fixtures="fixtures"
-            :empty-description="emptyText"
+            :empty-description="homeEmptyText"
             :group-by-day="false"
           />
         </div>

@@ -16,10 +16,10 @@ import {
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { useFavoritesDrawer } from '@/composables/useFavoritesDrawer'
+import { useFavoritesDrawer } from '@/views/Favorites/composables/useFavoritesDrawer'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
-import FavoritesDrawer from '@/components/FavoritesDrawer.vue'
+import FavoritesDrawer from '@/views/Favorites/index.vue'
 import { parseDetailFrom } from '@/utils/detailNav'
 import { fixturesRouteWithLeague } from '@/utils/fixturesLeagueFilter'
 

@@ -2,7 +2,7 @@
 import { TrashOutline } from '@vicons/ionicons5'
 import { ref } from 'vue'
 
-import { useBetCalculator } from '@/composables/useBetCalculator'
+import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import {
   foldModeLabel,
   outcomeTitle,
