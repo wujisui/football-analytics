@@ -137,12 +137,16 @@ function openStats() {
         size="small"
         :type="
           isPrematch
-            ? statusTagType(fixture.status || '')
-            : resultStatusTagType(fixture.status || '', statusShort)
+            ? statusTagType(fixture.status || '', statusShort, fixture.fixture_date)
+            : resultStatusTagType(
+                fixture.status || '',
+                statusShort,
+                fixture.fixture_date,
+              )
         "
         :bordered="false"
       >
-        {{ statusLabel(fixture.status || '', statusShort) }}
+        {{ statusLabel(fixture.status || '', statusShort, fixture.fixture_date) }}
       </n-tag>
       <FavoriteButton
         :fixture-id="fixture.fixture_id"

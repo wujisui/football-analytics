@@ -729,8 +729,7 @@ _BY_NAME_RAW: dict[str, str] = {
     "Hertha Berlin": "柏林赫塔",
     "Schalke": "沙尔克",
     "Schalke 04": "沙尔克04",
-    # 意甲
-    "Inter": "国米",
+    # 意甲（"Inter" 单名太泛，别的联赛也有，只按 id 505 译「国米」）
     "Inter Milan": "国际米兰",
     "Milan": "AC米兰",
     "AC Milan": "AC米兰",

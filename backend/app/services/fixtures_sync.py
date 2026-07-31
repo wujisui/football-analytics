@@ -130,8 +130,17 @@ def _result_message(params: FixturesSyncParams) -> str:
     return msg
 
 
-async def execute_fixtures_sync(params: FixturesSyncParams) -> SyncFixturesResponse:
-    """Run sync work (fixtures window + optional odds/results follow-up)."""
+async def execute_fixtures_sync(
+    params: FixturesSyncParams,
+    *,
+    wait_followup: bool = True,
+) -> SyncFixturesResponse:
+    """Run sync work (fixtures window + optional odds/results follow-up).
+
+    ``wait_followup=False`` (HTTP toolbar sync): return after fixtures so the UI
+    is not blocked for 1+ minutes of per-fixture odds pacing; odds/results continue
+    in the background under ``_odds_followup_lock``.
+    """
     async with _sync_lock:
         saved = 0
         if not params.odds_only:
@@ -143,7 +152,8 @@ async def execute_fixtures_sync(params: FixturesSyncParams) -> SyncFixturesRespo
                     league_ids=params.fixture_league_ids,
                 )
 
-        if params.include_odds or params.include_results:
+        need_followup = params.include_odds or params.include_results
+        if need_followup and wait_followup:
             await _sync_odds_and_results_followup(
                 params.day_list,
                 params.odds_league_ids,
@@ -154,12 +164,50 @@ async def execute_fixtures_sync(params: FixturesSyncParams) -> SyncFixturesRespo
                 set_opening=params.set_opening,
             )
 
+        if need_followup and not wait_followup:
+            day_list = list(params.day_list)
+            odds_league_ids = list(params.odds_league_ids)
+            include_odds = params.include_odds
+            include_results = params.include_results
+            odds_refresh_existing = params.odds_refresh_existing
+            odds_budget = params.odds_budget
+            set_opening = params.set_opening
+
+            async def _bg_followup() -> None:
+                try:
+                    await _sync_odds_and_results_followup(
+                        day_list,
+                        odds_league_ids,
+                        include_odds=include_odds,
+                        include_results=include_results,
+                        odds_refresh_existing=odds_refresh_existing,
+                        odds_budget=odds_budget,
+                        set_opening=set_opening,
+                    )
+                except Exception as exc:
+                    logger.warning("background sync follow-up failed: %s", exc, exc_info=True)
+
+            task = asyncio.create_task(_bg_followup())
+            task.add_done_callback(
+                lambda t: (
+                    logger.warning(
+                        "background sync follow-up crashed: %s",
+                        t.exception(),
+                    )
+                    if not t.cancelled() and t.exception()
+                    else None
+                )
+            )
+            message = "赛程已刷新，盘口与赛果正在后台同步"
+        else:
+            message = _result_message(params)
+
         return SyncFixturesResponse(
             status="ok",
             fixtures_saved=saved,
             days=params.window,
             date=params.start.isoformat(),
-            message=_result_message(params),
+            message=message,
         )
 
 

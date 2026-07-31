@@ -14,6 +14,12 @@ from app.models.league import League
 from app.models.team import Team
 from app.services.api_utils import parse_remaining_requests
 from app.services.league_names import league_name_zh
+from app.services.results_capture import (
+    is_stale_live_row,
+    results_capture_cutoff,
+    select_stale_pending_fixtures,
+    settled_by_full_time,
+)
 from app.services.team_names import backfill_team_names, team_name_zh
 from app.services.cache import (
     TTL_FIXTURES_TODAY,
@@ -358,6 +364,20 @@ class FootballFetcher:
         assert self.session is not None
         fixture = await self.session.get(Fixture, fixture_id)
         previous_status = fixture.status if fixture is not None else None
+        status = settled_by_full_time(
+            status=status,
+            status_short=status_short,
+            fixture_date=fixture_date,
+            has_full_time_score=home_goals is not None and away_goals is not None,
+        )
+        if fixture is not None and is_stale_live_row(previous_status, status):
+            # Keep the recorded result; a later good row will update it.
+            logger.debug(
+                "Ignored stale live row for finished fixture %s (%s)",
+                fixture_id,
+                status_short,
+            )
+            return fixture
 
         if fixture is None:
             fixture = Fixture(
@@ -389,26 +409,11 @@ class FootballFetcher:
                 fixture.home_goals = home_goals
             if away_goals is not None:
                 fixture.away_goals = away_goals
-            if status_short == "FT":
-                fixture.et_home_goals = None
-                fixture.et_away_goals = None
-                fixture.pen_home = None
-                fixture.pen_away = None
-            elif status_short in {"AET", "PEN", "ET"}:
-                # Overwrite ET/PEN boards on finished knockout results.
-                fixture.et_home_goals = et_home_goals
-                fixture.et_away_goals = et_away_goals
-                fixture.pen_home = pen_home
-                fixture.pen_away = pen_away
-            else:
-                if et_home_goals is not None:
-                    fixture.et_home_goals = et_home_goals
-                if et_away_goals is not None:
-                    fixture.et_away_goals = et_away_goals
-                if pen_home is not None:
-                    fixture.pen_home = pen_home
-                if pen_away is not None:
-                    fixture.pen_away = pen_away
+            # ET / PEN boards: the parser already nulls them unless settled.
+            fixture.et_home_goals = et_home_goals
+            fixture.et_away_goals = et_away_goals
+            fixture.pen_home = pen_home
+            fixture.pen_away = pen_away
 
         if previous_status is not None and previous_status != status:
             await self.cache.delete(fixture_cache_key(fixture_id))
@@ -797,11 +802,6 @@ class FootballFetcher:
         otherwise uses ``lookback_days`` from today.
         """
         assert self.session is not None
-        from app.services.results_capture import (
-            results_capture_cutoff,
-            select_stale_pending_fixtures,
-        )
-
         cutoff = results_capture_cutoff()
         if on_days:
             day_set = set(on_days)
@@ -1255,8 +1255,9 @@ class FootballFetcher:
             except Exception as exc:
                 logger.warning("Fixture odds %s failed: %s", fixture_id, exc)
             if index + 1 < take:
-                # Free-plan friendly pacing; 2s made force-sync feel like 1–2 min.
-                await asyncio.sleep(0.55)
+                # Free-plan friendly pacing; keep short so toolbar sync follow-up
+                # does not feel stuck for a minute on large league selections.
+                await asyncio.sleep(0.35)
 
         # Midday: promote existing 即时盘 → 初盘 when opening was never frozen
         # (e.g. board first arrived via manual sync).

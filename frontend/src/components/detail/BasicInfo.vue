@@ -116,8 +116,12 @@ function goLeague() {
           >
             {{ leagueLabelText }}
           </n-tag>
-          <n-tag size="small" :type="statusTagType(fixture.status)" :bordered="false">
-            {{ statusLabel(fixture.status) }}
+          <n-tag
+            size="small"
+            :type="statusTagType(fixture.status, null, fixture.fixture_date)"
+            :bordered="false"
+          >
+            {{ statusLabel(fixture.status, null, fixture.fixture_date) }}
           </n-tag>
           <span class="kickoff">{{ formatDateTime(fixture.fixture_date) }}</span>
         </div>

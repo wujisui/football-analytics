@@ -243,6 +243,7 @@ frontend/src/
 ## 7. UI 与质量要求
 
 - **组件优先**：遵守 `.cursor/rules/frontend-ui.mdc`（Layout / Menu / Breadcrumb / PageHeader 等）
+- **少写 CSS**：优先依赖 Naive 默认样式与 props；自定义 class 只留给复杂布局（见 `frontend-ui.mdc`「少写 CSS」）
 - 全屏壳 + 内容区滚动；勿用整站 `max-width` 居中窄栏代替布局
 - 风格：简洁、白/灰为主，信息密度适中
 - Composition API（`<script setup>`）+ TypeScript

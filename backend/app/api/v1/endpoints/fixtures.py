@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -47,6 +47,7 @@ from app.services.results_accuracy import (
     evaluate_fixture_prediction,
     load_stored_by_fixture_ids,
 )
+from app.services.results_capture import stuck_live_clause
 from app.services.league_names import league_name_zh
 from app.services.team_names import team_name_zh
 
@@ -383,7 +384,11 @@ async def get_fixture_results(
         .where(
             Fixture.date >= start_dt,
             Fixture.date < end_dt,
-            Fixture.status.in_(["finished", "cancelled", "postponed"]),
+            or_(
+                Fixture.status.in_(["finished", "cancelled", "postponed"]),
+                # Keep matches the feed left unsettled — hidden rows look like data loss.
+                stuck_live_clause(),
+            ),
         )
         .options(
             selectinload(Fixture.home_team),
@@ -537,7 +542,11 @@ async def sync_fixtures(
         description="跳过赛程拉取，仅跑盘口/赛果 follow-up（本地已有赛程时省配额）",
     ),
 ) -> SyncFixturesResponse:
-    """从官方拉取赛程/盘口并写入本地库；请求阻塞至同步完成。"""
+    """从官方拉取赛程/盘口并写入本地库。
+
+    赛程强制刷新在本请求内完成；盘口与赛果 follow-up 默认后台执行，
+    避免工具栏「同步」被逐场赔率节流拖到 1 分钟以上。
+    """
     try:
         params = build_sync_params(
             date_str=date_str,
@@ -553,7 +562,7 @@ async def sync_fixtures(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        return await execute_fixtures_sync(params)
+        return await execute_fixtures_sync(params, wait_followup=False)
     except ApiKeyNotConfiguredError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:

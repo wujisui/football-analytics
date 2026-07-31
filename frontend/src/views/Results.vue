@@ -194,7 +194,11 @@ function filterListByHitKey(key: ResultsHitKey) {
 function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
   const rows = list.map((fx) => ({
     has_prediction: !!fx.has_prediction,
-    evaluable: fx.home_goals != null && fx.away_goals != null,
+    // Unsettled rows (feed still live) carry provisional scores — never graded.
+    evaluable:
+      (fx.status || '').toLowerCase() === 'finished' &&
+      fx.home_goals != null &&
+      fx.away_goals != null,
     result_hit: fx.result_hit ?? null,
     single_result_hit: fx.single_result_hit ?? null,
     score_hit: fx.score_hit ?? null,

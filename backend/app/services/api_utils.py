@@ -137,9 +137,8 @@ def extract_fixture_scores(item: dict[str, Any]) -> dict[str, Any]:
 
     et_home: int | None = None
     et_away: int | None = None
-    if status_short in {"AET", "PEN", "ET"} or (
-        et_raw_h is not None and et_raw_a is not None
-    ):
+    # ``extratime`` is 0-0 on shootouts decided without ET — that is not an ET board.
+    if status_short in {"AET", "ET"} or et_raw_h or et_raw_a:
         if goals_home is not None and goals_away is not None:
             # goals after ET (excl. pens) — best cumulative board
             et_home, et_away = goals_home, goals_away
@@ -154,7 +153,9 @@ def extract_fixture_scores(item: dict[str, Any]) -> dict[str, Any]:
         elif et_raw_h is not None and et_raw_a is not None:
             et_home, et_away = et_raw_h, et_raw_a
 
-    if status_short == "FT":
+    if status_short not in {"AET", "PEN"}:
+        # FT never has boards, and in-play codes only carry provisional ones
+        # (e.g. ``P`` reports the shootout while it is still being taken).
         et_home = et_away = pen_home = pen_away = None
 
     return {

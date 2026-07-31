@@ -365,9 +365,9 @@ export function useFixturesShell() {
         days: syncCalendarDays(),
         includeResults: !futureResultsDay,
         includeOdds: !syncingResultsPage || futureResultsDay,
-        // Future schedule: spend quota filling missing boards for primary
-        // (default-checked) leagues; home/today also refreshes existing lines.
-        oddsRefreshExisting: !futureResultsDay,
+        // 工具栏同步：只补缺失盘口，避免对已有盘口逐场重拉把请求拖到 1 分钟+。
+        // 临场刷新仍由 final_odds_update / 详情补拉负责。
+        oddsRefreshExisting: false,
         // Fixtures are always full-day; leagueIds only scopes odds follow-up.
         leagueIds: leagueIdsForSync(),
       })
@@ -381,6 +381,15 @@ export function useFixturesShell() {
         await reloadPrematchDay(true)
       }
       message.success(res.message || `${day} 同步成功`)
+      // 盘口/赛果在后台继续；稍后静默再刷一次本地列表
+      if ((res.message || '').includes('后台')) {
+        window.setTimeout(() => {
+          manualSyncRevision.value += 1
+          if (!syncingResultsPage) {
+            void reloadPrematchDay(true)
+          }
+        }, 12_000)
+      }
     } catch (err) {
       message.error(err instanceof Error ? err.message : '同步失败')
     } finally {

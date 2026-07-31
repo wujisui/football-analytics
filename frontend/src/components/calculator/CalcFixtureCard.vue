@@ -62,7 +62,7 @@ function selected(cell: CalcCell): boolean {
       </n-text>
       <n-flex :wrap="false" justify="center" align="center" :size="6" class="matchup">
         <n-ellipsis>{{ fixture.home_team_name || '—' }}</n-ellipsis>
-        <n-text depth="3">VS</n-text>
+        <n-text depth="3" class="versus">VS</n-text>
         <n-ellipsis>{{ fixture.away_team_name || '—' }}</n-ellipsis>
       </n-flex>
       <n-text depth="3" class="kickoff">{{ kickoffText }}</n-text>
@@ -157,6 +157,11 @@ function selected(cell: CalcCell): boolean {
   flex: 0 1 auto;
   min-width: 0;
   font-weight: 600;
+}
+
+.versus {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .kickoff {

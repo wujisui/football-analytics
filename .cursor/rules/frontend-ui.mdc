@@ -46,9 +46,17 @@ Naive Layout **默认 `nativeScrollbar: true`**（浏览器原生条）。要统
 2. 顶栏 `flex-shrink: 0`；可滚区域用 `n-layout-content`：`style="flex:1;min-height:0"` + **`:native-scrollbar="false"`**（可加 `:scrollbar-props="{ trigger: 'hover' }"`）
 3. 不要手写 `::-webkit-scrollbar`；不要指望只写 `native-scrollbar=false` 却不约束高度
 
-### 少写 CSS
+### 少写 CSS（优先依赖组件默认样式）
 
-优先用组件 props / 插槽完成布局：`content-style`、`n-space`、`n-thing`、`n-grid`、`n-list`。自定义样式只留给业务特有视觉（如 VS 按钮），壳层颜色用 `--fa-*`。
+使用 Naive UI 的首要目的就是**用组件默认样式，少写甚至不写自定义 CSS**，从而减小体积、统一观感、便于维护。
+
+1. **默认先信任组件**：间距、字号、标签色、按钮态、卡片内边距等，优先用 props（`size` / `type` / `depth` / `bordered` / `quaternary`）和插槽，不要再包一层同名 class 去复刻。
+2. **禁止无必要的 class + scoped CSS**：能为 `n-tag` / `n-text` / `n-flex` / `n-card` 的默认外观解决的，不要手写 `padding` / `font-size` / `background` / `border-radius`。
+3. **内联 style 仅作一次性约束**：如单处 `flex: 1; min-width: 0`、`padding: 10px`，不必再开 class；重复出现再抽。
+4. **自定义 CSS 只留给复杂布局**：例如填满视口的 grid 壳、滚动区 `min-height: 0`、对阵行两侧 ellipsis + 中间 VS 不换行、底栏 sticky / safe-area。业务色用 `--fa-*`，禁止写死 `#fff`。
+5. **改完自检**：本次新增的 class / `:deep` 是否可删？能否换成 `n-tag` / `n-text depth` / `n-flex` props？能则删。
+
+反例：给已是 `n-tag` 的元素再写 `.selection-play { padding; border-radius; background }` —— 等于废弃组件默认样式。
 
 ## 主题
 

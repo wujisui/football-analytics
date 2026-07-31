@@ -18,6 +18,7 @@ from app.services.ah_features import (
     settle_handicap_result,
 )
 from app.services.prematch_package import package_from_record
+from app.services.ttl_policy import is_finished_status
 from app.services.prediction import (
     canonical_btts_lean,
     canonical_goal_lean,
@@ -47,7 +48,10 @@ def evaluate_fixture_prediction(
         "btts_hit": None,
         "result_hit": None,
         "single_result_hit": None,
-        "evaluable": fixture.home_goals is not None and fixture.away_goals is not None,
+        # Unsettled rows (feed still live) carry provisional scores — show, never grade.
+        "evaluable": is_finished_status(fixture.status)
+        and fixture.home_goals is not None
+        and fixture.away_goals is not None,
     }
 
     if (
@@ -78,6 +82,8 @@ def evaluate_fixture_prediction(
             "handicap_lean": handicap_lean or None,
         }
     )
+    if not payload["evaluable"]:
+        return payload
 
     package = package_from_record(stored)
     odds = package.get("odds") if isinstance(package, dict) else None
@@ -103,23 +109,22 @@ def evaluate_fixture_prediction(
         recommendation=recommendation or "",
     )
     payload["result_hit"] = hits["result_hit"]
-    if fixture.home_goals is not None and fixture.away_goals is not None:
-        predicted = max(
-            ("home", "draw", "away"),
-            key=lambda key: {
-                "home": float(stored.home_win_prob or 0.0),
-                "draw": float(stored.draw_prob or 0.0),
-                "away": float(stored.away_win_prob or 0.0),
-            }[key],
-        )
-        actual = (
-            "home"
-            if fixture.home_goals > fixture.away_goals
-            else "away"
-            if fixture.home_goals < fixture.away_goals
-            else "draw"
-        )
-        payload["single_result_hit"] = predicted == actual
+    predicted = max(
+        ("home", "draw", "away"),
+        key=lambda key: {
+            "home": float(stored.home_win_prob or 0.0),
+            "draw": float(stored.draw_prob or 0.0),
+            "away": float(stored.away_win_prob or 0.0),
+        }[key],
+    )
+    actual = (
+        "home"
+        if fixture.home_goals > fixture.away_goals
+        else "away"
+        if fixture.home_goals < fixture.away_goals
+        else "draw"
+    )
+    payload["single_result_hit"] = predicted == actual
     payload["score_hit"] = hits["score_hit"]
     payload["ou_hit"] = hits["ou_hit"]
     payload["btts_hit"] = hits["btts_hit"]

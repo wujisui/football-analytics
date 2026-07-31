@@ -23,6 +23,9 @@ const STATUS_SHORT_LABEL: Record<string, string> = {
   ET: '完场',
 }
 
+const STUCK_LIVE_MS = 4 * 60 * 60 * 1000
+const STUCK_LIVE_LABEL = '待更新'
+
 const STATUS_META: Record<string, { label: string; tag: NaiveTagType }> = {
   pending: { label: '未开始', tag: 'info' },
   live: { label: '进行中', tag: 'warning' },
@@ -250,20 +253,34 @@ export function hasRealProbabilities(
   return !flat
 }
 
-export function statusLabel(status: string, statusShort?: string | null): string {
+/** Official feeds keep replaying in-play codes after a match ends. */
+function feedIsStuck(status: string, kickoff?: string | null): boolean {
+  if (status.toLowerCase() !== 'live' || !kickoff) return false
+  const started = new Date(kickoff).getTime()
+  return Number.isFinite(started) && Date.now() - started > STUCK_LIVE_MS
+}
+
+export function statusLabel(
+  status: string,
+  statusShort?: string | null,
+  kickoff?: string | null,
+): string {
   const short = (statusShort || '').toUpperCase()
   if (short && STATUS_SHORT_LABEL[short]) return STATUS_SHORT_LABEL[short]
+  if (feedIsStuck(status, kickoff)) return STUCK_LIVE_LABEL
   return STATUS_META[status.toLowerCase()]?.label || status
 }
 
 export function statusTagType(
   status: string,
   statusShort?: string | null,
+  kickoff?: string | null,
 ): NaiveTagType {
   const short = (statusShort || '').toUpperCase()
   if (short && STATUS_SHORT_LABEL[short]) {
     return STATUS_META.finished?.tag ?? 'default'
   }
+  if (feedIsStuck(status, kickoff)) return 'default'
   return STATUS_META[status.toLowerCase()]?.tag ?? 'default'
 }
 
@@ -271,9 +288,10 @@ export function statusTagType(
 export function resultStatusTagType(
   status: string,
   statusShort?: string | null,
+  kickoff?: string | null,
 ): NaiveTagType {
   if (status.toLowerCase() === 'finished') return 'error'
-  return statusTagType(status, statusShort)
+  return statusTagType(status, statusShort, kickoff)
 }
 
 export function leagueTagColor(leagueId: number): string {
