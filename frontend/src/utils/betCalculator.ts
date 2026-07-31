@@ -12,6 +12,7 @@ export type CalcOutcome =
 
 export interface CalcSelection {
   fixtureId: number
+  leagueId: number
   homeName: string
   awayName: string
   kickoff: string

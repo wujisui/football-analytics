@@ -9,6 +9,7 @@ import {
   STAKE_PER_BET,
   type CalcSelection,
 } from '@/utils/betCalculator'
+import { leagueTagColor } from '@/utils/format'
 
 const props = withDefaults(
   defineProps<{
@@ -63,14 +64,19 @@ defineExpose({ openFormula })
             :key="group.fixtureId"
             size="small"
             :bordered="false"
+            header-style="font-size: inherit; font-weight: 400;"
             style="background: var(--fa-bg-soft);"
           >
             <template #header>
               <n-flex :wrap="false" align="center" :size="8" style="min-width: 0;">
-                <n-ellipsis style="flex: 1; min-width: 0;">
-                  <n-text depth="3">{{ group.leagueName }}</n-text>
+                <n-ellipsis style="flex: 0 1 auto; min-width: 0;">
+                  <n-text :style="{ color: leagueTagColor(group.leagueId) }">
+                    {{ group.leagueName }}
+                  </n-text>
                 </n-ellipsis>
-                <n-text depth="3">{{ group.kickoff }}</n-text>
+                <n-text depth="3" style="flex-shrink: 0; font-size: 12px;">
+                  {{ group.kickoff }}
+                </n-text>
               </n-flex>
             </template>
             <template #header-extra>

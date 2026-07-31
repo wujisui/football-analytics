@@ -191,13 +191,28 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
     }
 
 
+def _normalize_line_token(token: str) -> str:
+    try:
+        return "0" if float(token.replace(",", ".")) == 0 else token
+    except ValueError:
+        return token
+
+
+def _normalize_line_label(label: Any) -> str:
+    text = str(label or "").strip()
+    parts = text.rsplit(maxsplit=1)
+    if len(parts) == 2 and any(ch.isdigit() for ch in parts[1]):
+        return f"{parts[0]} {_normalize_line_token(parts[1])}"
+    return text
+
+
 def _line_token(label: str) -> str | None:
     parts = label.split()
     if len(parts) < 2:
         return None
     maybe = parts[-1]
     if any(ch.isdigit() for ch in maybe):
-        return maybe
+        return _normalize_line_token(maybe)
     return None
 
 
@@ -312,7 +327,9 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 values = bet.get("values") or []
                 parsed_values = [
                     {
-                        "label": first_value(v, [["value"], ["label"]], ""),
+                        "label": _normalize_line_label(
+                            first_value(v, [["value"], ["label"]], "")
+                        ),
                         "odd": first_value(v, [["odd"], ["odds"]], None),
                     }
                     for v in values

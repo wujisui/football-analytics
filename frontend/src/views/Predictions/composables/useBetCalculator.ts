@@ -95,6 +95,7 @@ export function useBetCalculator() {
 
     next.push({
       fixtureId,
+      leagueId: fixture.league_id,
       homeName: fixture.home_team_name || '—',
       awayName: fixture.away_team_name || '—',
       kickoff: `${formatDate(fixture.fixture_date)} ${formatTime(fixture.fixture_date)}`,
@@ -128,6 +129,7 @@ export function useBetCalculator() {
     }
     return [...map.entries()].map(([fixtureId, picks]) => ({
       fixtureId,
+      leagueId: picks[0].leagueId,
       picks,
       homeName: picks[0].homeName,
       awayName: picks[0].awayName,
