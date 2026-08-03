@@ -134,7 +134,8 @@ const option = computed(() => {
   const lines = PLAY_LINES.map((play, index) => ({
     name: play.name,
     type: 'line' as const,
-    smooth: true,
+    // Straight segments are cheaper than bezier smooth on mobile GPUs.
+    smooth: false,
     itemStyle: { color: play.color },
     lineStyle: { color: play.color },
     showSymbol: true,
@@ -146,6 +147,7 @@ const option = computed(() => {
   }))
 
   return {
+    animation: false,
     tooltip: {
       trigger: 'axis',
       formatter: formatAxisTooltip,

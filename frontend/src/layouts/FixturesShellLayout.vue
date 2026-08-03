@@ -163,7 +163,7 @@ onActivated(() => {
       placement="left"
       width="88%"
       to="body"
-      display-directive="show"
+      display-directive="if"
       class="league-drawer"
     >
       <n-drawer-content

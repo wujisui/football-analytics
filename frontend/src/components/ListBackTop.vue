@@ -31,6 +31,7 @@ const showBottom = ref(false)
 
 let listenEl: HTMLElement | null = null
 let resizeObserver: ResizeObserver | null = null
+let visibilityRaf = 0
 
 function scrollListenTo(shell: HTMLElement | null): HTMLElement | null {
   if (!shell) return null
@@ -54,17 +55,30 @@ function updateBottomVisibility() {
   showBottom.value = gap > props.visibilityHeight
 }
 
+/** Coalesce scroll + resize into one layout read per frame. */
+function scheduleBottomVisibility() {
+  if (visibilityRaf) return
+  visibilityRaf = requestAnimationFrame(() => {
+    visibilityRaf = 0
+    updateBottomVisibility()
+  })
+}
+
 function scrollToBottom() {
   listenEl?.scrollTo({ top: listenEl.scrollHeight, behavior: 'smooth' })
 }
 
 function detach() {
   if (listenEl) {
-    listenEl.removeEventListener('scroll', updateBottomVisibility)
+    listenEl.removeEventListener('scroll', scheduleBottomVisibility)
   }
   resizeObserver?.disconnect()
   resizeObserver = null
   listenEl = null
+  if (visibilityRaf) {
+    cancelAnimationFrame(visibilityRaf)
+    visibilityRaf = 0
+  }
   showBottom.value = false
 }
 
@@ -73,9 +87,10 @@ function attach(shell: HTMLElement | null) {
   const el = scrollListenTo(shell)
   if (!shell || !el) return
   listenEl = el
-  el.addEventListener('scroll', updateBottomVisibility, { passive: true })
-  resizeObserver = new ResizeObserver(() => updateBottomVisibility())
+  el.addEventListener('scroll', scheduleBottomVisibility, { passive: true })
+  resizeObserver = new ResizeObserver(scheduleBottomVisibility)
   resizeObserver.observe(el)
+  // List grows/shrinks without a scroll event (day switch, filter) — track content too.
   const content = el.firstElementChild
   if (content) resizeObserver.observe(content)
   updateBottomVisibility()

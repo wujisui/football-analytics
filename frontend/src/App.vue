@@ -17,7 +17,6 @@ import {
   NLayoutContent,
   NLayoutHeader,
   NMessageProvider,
-  NSpin,
   zhCN,
   dateZhCN,
 } from 'naive-ui'
@@ -128,7 +127,7 @@ const bottomItems: {
             </div>
 
             <div v-if="officialSyncing" class="header-sync-status" role="status">
-              <n-spin :size="12" />
+              <span class="header-sync-dot" aria-hidden="true" />
               <span>正在从官方同步…</span>
             </div>
 
@@ -174,8 +173,6 @@ const bottomItems: {
 
         <n-layout-content
           class="app-body"
-          :native-scrollbar="false"
-          :scrollbar-props="{ trigger: 'hover' }"
           content-style="height: 100%; overflow: hidden; position: relative;"
         >
           <router-view />
@@ -250,6 +247,15 @@ const bottomItems: {
   white-space: nowrap;
   transform: translate(-50%, -50%);
   pointer-events: none;
+}
+
+/* Static marker — avoid n-spin's continuous CSS animation during long syncs. */
+.header-sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--fa-highlight-text, #c2410c);
 }
 
 .brand {

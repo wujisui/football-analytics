@@ -90,7 +90,7 @@ const collapseExpanded = computed({
       v-else-if="groupByDay"
       class="fa-day-collapse"
       accordion
-      display-directive="show"
+      display-directive="if"
       arrow-placement="right"
       :expanded-names="collapseExpanded"
       @update:expanded-names="collapseExpanded = $event"

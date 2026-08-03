@@ -128,7 +128,7 @@ function goDetail(fixtureId: number) {
     :width="isPhone ? '100%' : 'min(820px, 92vw)'"
     placement="left"
     to="body"
-    display-directive="show"
+    display-directive="if"
   >
     <n-drawer-content closable :native-scrollbar="false" class="favorites-drawer-content">
       <template #header>
@@ -175,7 +175,7 @@ function goDetail(fixtureId: number) {
             :key="`${filterDate ?? 'all'}-${favoriteBuckets.map((b) => b.key).join('-')}`"
             class="fa-day-collapse"
             accordion
-            display-directive="show"
+            display-directive="if"
             :default-expanded-names="defaultExpandedBuckets[0] ?? null"
             arrow-placement="right"
           >

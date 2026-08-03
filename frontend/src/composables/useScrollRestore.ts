@@ -1,4 +1,11 @@
-import { onActivated, onBeforeUnmount, onDeactivated, onMounted, watch, type Ref } from 'vue'
+import {
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  watch,
+  type Ref,
+} from 'vue'
 
 const STORAGE_KEY = 'fa-scroll-offsets'
 /** Content arrives after the list request settles; retry until it fits. */
@@ -17,20 +24,33 @@ function allOffsets(): Record<string, number> {
   return offsets
 }
 
-function persist(key: string, top: number) {
-  const map = allOffsets()
-  if (top <= 0) delete map[key]
-  else map[key] = top
+function writeStorage() {
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(map))
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(allOffsets()))
   } catch {
     /* private mode / quota — keep in-memory only */
   }
 }
 
+function remember(key: string, top: number) {
+  const map = allOffsets()
+  if (top <= 0) {
+    if (!(key in map)) return false
+    delete map[key]
+    return true
+  }
+  if (map[key] === top) return false
+  map[key] = top
+  return true
+}
+
 /**
- * Remember a list's scroll offset for the browser session.
- * Covers keep-alive deactivation and full page reloads (mobile tab discard).
+ * Restore list scroll after remount / keep-alive / mobile tab discard.
+ *
+ * Does **not** write storage while scrolling. Position is read once when the
+ * page is left (route leave, keep-alive deactivate, or app background /
+ * tab discard via `pagehide`) — that is enough for “switch app and come back”.
+ * While the WebView stays alive, the browser already keeps the scrollport.
  */
 export function useScrollRestore(
   key: string,
@@ -39,78 +59,109 @@ export function useScrollRestore(
 ) {
   let bound: HTMLElement | null = null
   let frame = 0
+  let abortInput: (() => void) | null = null
 
   function container(): HTMLElement | null {
     return (
-      (shell.value?.querySelector('.n-scrollbar-container') as HTMLElement | null) ?? null
+      (shell.value?.querySelector('.n-scrollbar-container') as HTMLElement | null) ??
+      null
     )
-  }
-
-  function onScroll() {
-    if (!bound) return
-    persist(key, bound.scrollTop)
   }
 
   function bind() {
     const el = container()
-    if (!el || el === bound) return !!bound
-    unbind()
+    if (!el) return false
     bound = el
-    el.addEventListener('scroll', onScroll, { passive: true })
     return true
   }
 
   function unbind() {
-    bound?.removeEventListener('scroll', onScroll)
     bound = null
+  }
+
+  function save() {
+    const el = bound ?? container()
+    if (!el) return
+    bound = el
+    if (remember(key, el.scrollTop)) writeStorage()
+  }
+
+  /** Stop restoring: writing scrollTop while the user scrolls looks like jitter. */
+  function stopRestore() {
+    cancelAnimationFrame(frame)
+    frame = 0
+    abortInput?.()
+    abortInput = null
+  }
+
+  function watchUserInput() {
+    abortInput?.()
+    const events = ['wheel', 'touchstart', 'keydown'] as const
+    const onInput = () => stopRestore()
+    for (const type of events) {
+      window.addEventListener(type, onInput, { passive: true })
+    }
+    abortInput = () => {
+      for (const type of events) window.removeEventListener(type, onInput)
+    }
   }
 
   function restore() {
     if (options?.enabled && !options.enabled.value) return
     const target = allOffsets()[key] ?? 0
     let attempts = RESTORE_ATTEMPTS
-    cancelAnimationFrame(frame)
+    stopRestore()
+    if (!target) {
+      bind()
+      return
+    }
+    watchUserInput()
 
     const step = () => {
       const el = container()
       if (el) {
         bind()
-        if (!target) return
         const max = el.scrollHeight - el.clientHeight
         if (max >= target) {
           el.scrollTop = target
+          stopRestore()
           return
         }
         // List still rendering — hold the furthest reachable spot meanwhile.
         if (max > 0) el.scrollTop = max
       }
       if (--attempts > 0) frame = requestAnimationFrame(step)
+      else stopRestore()
     }
     frame = requestAnimationFrame(step)
   }
 
-  function save() {
-    if (bound) persist(key, bound.scrollTop)
-  }
-
   /** New content (e.g. another day) — start from the top, drop the old offset. */
   function reset() {
-    cancelAnimationFrame(frame)
-    persist(key, 0)
+    stopRestore()
+    if (remember(key, 0)) writeStorage()
     const el = container()
     if (el) el.scrollTop = 0
   }
 
-  onMounted(restore)
+  function onPageHide() {
+    save()
+  }
+
+  onMounted(() => {
+    restore()
+    window.addEventListener('pagehide', onPageHide)
+  })
   onActivated(restore)
   onDeactivated(() => {
     save()
-    cancelAnimationFrame(frame)
+    stopRestore()
     unbind()
   })
   onBeforeUnmount(() => {
     save()
-    cancelAnimationFrame(frame)
+    window.removeEventListener('pagehide', onPageHide)
+    stopRestore()
     unbind()
   })
 

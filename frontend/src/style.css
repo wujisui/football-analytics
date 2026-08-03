@@ -42,13 +42,20 @@ html[data-theme='dark'] {
   color: var(--fa-text);
   background-color: var(--fa-bg);
   font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  /* optimizeLegibility forces expensive glyph shaping on every paint — skip on phones. */
+  text-rendering: optimizeSpeed;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   --fa-page-max-width: 1520px;
   --fa-content-inline: 12px;
   --fa-content-block-start: 12px;
   --fa-content-block-end: 20px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    text-rendering: optimizeLegibility;
+  }
 }
 
 * {

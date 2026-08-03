@@ -113,7 +113,7 @@ watch(
     <n-tabs
       :value="activeTab"
       type="line"
-      :animated="isPhone"
+      :animated="false"
       :size="tabsSize"
       @update:value="onTabChange"
     >
@@ -122,7 +122,7 @@ watch(
         :key="tab.name"
         :name="tab.name"
         :tab="tab.display"
-        display-directive="show:lazy"
+        :display-directive="isPhone ? 'if' : 'show:lazy'"
       >
         <div class="pane">
           <n-spin :show="!!loading && !error">

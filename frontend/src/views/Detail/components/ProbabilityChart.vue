@@ -19,6 +19,7 @@ const props = withDefaults(
 )
 
 const option = computed(() => ({
+  animation: false,
   tooltip: {
     trigger: 'item',
     formatter: '{b}: {d}%',

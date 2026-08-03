@@ -525,7 +525,7 @@ onMounted(() => {
           :value="phoneResultsTab"
           type="line"
           size="small"
-          animated
+          :animated="false"
           class="phone-results-tabs"
           @update:value="onPhoneResultsTabChange"
       >
@@ -589,7 +589,8 @@ onMounted(() => {
           </div>
         </n-tab-pane>
 
-        <n-tab-pane name="history" tab="历史统计" display-directive="show:lazy">
+        <!-- Destroy chart when leaving — echarts+autoresize otherwise keeps GPU warm. -->
+        <n-tab-pane name="history" tab="历史统计" display-directive="if">
           <div class="phone-tab-pane">
             <n-scrollbar style="height: 100%;" trigger="hover">
               <div class="phone-stat-pane">
