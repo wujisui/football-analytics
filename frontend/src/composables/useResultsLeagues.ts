@@ -21,7 +21,7 @@ const resultsFilterOptions = ref<LeagueFilterOption[]>([])
 const resultsLoading = ref(false)
 const resultsLoadedDay = ref('')
 /** Date of the last filter-options payload — used to keep user checks within a day. */
-let resultsFilterOptionsDay = ''
+const resultsFilterOptionsDay = ref('')
 const resultsHistory = ref<ResultsHistoryResponse | null>(null)
 const resultsByDay = new Map<string, ResultFixture[]>()
 const scheduleByDay = new Map<string, FixtureResponse[]>()
@@ -91,7 +91,7 @@ export async function ensureResultsConfiguredLeagueIds(): Promise<void> {
 function setResultsTrackedIds(ids: number[]) {
   const unique = [...new Set(ids.map(Number).filter((n) => Number.isFinite(n)))]
   resultsTrackedIds.value = unique
-  const day = resultsFilterOptionsDay || resultsLoadedDay.value
+  const day = resultsFilterOptionsDay.value || resultsLoadedDay.value
   if (day) persistResultsTracked(unique, day)
 }
 
@@ -110,11 +110,11 @@ export async function loadResultsFilterOptions(options: {
   const list = [...data.configured, ...data.extra]
   resultsFilterOptions.value = list
   const allow = new Set(list.map((o) => o.league_id))
-  const sameDay = resultsFilterOptionsDay === options.date
+  const sameDay = resultsFilterOptionsDay.value === options.date
   const kept = sameDay
     ? resultsTrackedIds.value.filter((id) => allow.has(id))
     : []
-  resultsFilterOptionsDay = options.date
+  resultsFilterOptionsDay.value = options.date
   if (kept.length) {
     setResultsTrackedIds(kept)
   } else {
@@ -154,6 +154,10 @@ export function cacheResultsHistory(value: ResultsHistoryResponse | null) {
 
 /** Restore an already visited day without another local API request. */
 export function restoreCachedResultsDay(day: string, schedule: boolean): boolean {
+  // Day counts (tab badge, sidebar) come from the league checklist. Reusing a
+  // cached list while the checklist still describes another day would keep
+  // showing that day's numbers.
+  if (resultsFilterOptionsDay.value !== day) return false
   if (schedule) {
     const cached = scheduleByDay.get(day)
     if (!cached) return false
@@ -202,14 +206,26 @@ export function patchScheduleFixtureFromDetail(detail: FixtureResponse): void {
 export function useResultsLeagues() {
   const trackedIdSet = computed(() => new Set(resultsTrackedIds.value))
 
+  /**
+   * Server counts describe the checklist's day. Only trust them while that is
+   * the day on screen, so counts can never report another date.
+   */
+  const dayCountsFromServer = computed(
+    () =>
+      !resultsLoadedDay.value ||
+      resultsFilterOptionsDay.value === resultsLoadedDay.value,
+  )
+
   const countByLeague = computed(() => {
     const map = new Map<number, number>()
     // Prefer server count from filter-options (covers unchecked leagues too).
-    for (const opt of resultsFilterOptions.value) {
-      if (!trackedIdSet.value.has(opt.league_id)) continue
-      map.set(opt.league_id, opt.fixtures_count)
+    if (dayCountsFromServer.value) {
+      for (const opt of resultsFilterOptions.value) {
+        if (!trackedIdSet.value.has(opt.league_id)) continue
+        map.set(opt.league_id, opt.fixtures_count)
+      }
+      if (map.size) return map
     }
-    if (map.size) return map
     const list = scheduleMode.value ? scheduleFixtures.value : resultsFixtures.value
     for (const fx of list) {
       if (!trackedIdSet.value.has(fx.league_id)) continue
@@ -257,10 +273,12 @@ export function useResultsLeagues() {
 
   const totalCount = computed(() => {
     let n = 0
-    for (const opt of resultsFilterOptions.value) {
-      if (trackedIdSet.value.has(opt.league_id)) n += opt.fixtures_count
+    if (dayCountsFromServer.value) {
+      for (const opt of resultsFilterOptions.value) {
+        if (trackedIdSet.value.has(opt.league_id)) n += opt.fixtures_count
+      }
+      if (n) return n
     }
-    if (n) return n
     const list = scheduleMode.value ? scheduleFixtures.value : resultsFixtures.value
     for (const fx of list) {
       if (trackedIdSet.value.has(fx.league_id)) n += 1

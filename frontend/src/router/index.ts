@@ -7,6 +7,7 @@ import Results from '@/views/Results/index.vue'
 
 // Off the first-paint path — split so a cold reload boots the lists sooner.
 const Detail = () => import('@/views/Detail/index.vue')
+const Favorites = () => import('@/views/Favorites/index.vue')
 const Mine = () => import('@/views/Mine/index.vue')
 
 const router = createRouter({
@@ -34,13 +35,14 @@ const router = createRouter({
       ],
     },
     {
+      path: '/favorites',
+      name: 'favorites',
+      component: Favorites,
+    },
+    {
       path: '/mine',
       name: 'mine',
       component: Mine,
-    },
-    {
-      path: '/favorites',
-      redirect: { name: 'home' },
     },
     {
       path: '/fixture/:fixtureId',

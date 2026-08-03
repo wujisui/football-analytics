@@ -108,9 +108,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* No justify-content: center — it pushes the overflowing start out of reach
+   (scrollLeft can't go below 0). The track's auto margins center it when it fits. */
 .date-strip-wrap {
   display: flex;
-  justify-content: center;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;

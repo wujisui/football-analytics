@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { StarOutline } from '@vicons/ionicons5'
 import { onActivated, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -12,14 +11,11 @@ import {
   useFixturesShell,
 } from '@/layouts/composables/useFixturesShell'
 import { useIsPhone } from '@/composables/useMediaQuery'
-import { useFavoritesDrawer } from '@/views/Favorites/composables/useFavoritesDrawer'
 
 defineOptions({ name: 'FixturesShellLayout' })
 
 const route = useRoute()
 const isPhone = useIsPhone()
-const { show: favoritesDrawerShow, toggle: toggleFavoritesDrawer } =
-  useFavoritesDrawer()
 
 const {
   selectedDay,
@@ -106,20 +102,6 @@ onActivated(() => {
               @click="leagueDrawerShow = true"
             >
               联赛
-            </n-button>
-            <n-button
-              v-if="isPhone"
-              size="small"
-              secondary
-              class="favorites-trigger"
-              :type="favoritesDrawerShow ? 'warning' : 'default'"
-              aria-label="收藏"
-              @click="toggleFavoritesDrawer"
-            >
-              <template #icon>
-                <n-icon :component="StarOutline" />
-              </template>
-              收藏
             </n-button>
             <n-breadcrumb v-if="!isPhone" class="fa-toolbar-crumb">
               <n-breadcrumb-item @click="selectLeague(null)">

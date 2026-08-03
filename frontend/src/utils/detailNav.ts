@@ -71,7 +71,7 @@ export function detailBackRoute(
     return fixturesRouteWithLeague('predictions')
   }
   if (from === 'favorites') {
-    return homeRouteWithLeague()
+    return { name: 'favorites' }
   }
   // Omit leagueId → restore session filter; pass id for「联赛」crumb.
   if (opts && 'leagueId' in opts) {
