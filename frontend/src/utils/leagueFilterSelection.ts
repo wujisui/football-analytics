@@ -19,8 +19,8 @@ export function resolveTrackedSelection(
  * Sync / odds batch allow-list for a calendar day.
  *
  * Product rule: fixtures sync always ingests the full day. This helper only
- * scopes **odds** follow-up to default-checked primary leagues, plus any
- * secondary leagues the user explicitly checked.
+ * scopes **odds** follow-up to default-checked primary leagues (leagues.json),
+ * plus any non-catalog leagues the user explicitly checked.
  */
 export function resolveSyncLeagueIds(
   options: LeagueFilterOption[],

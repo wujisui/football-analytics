@@ -17,13 +17,28 @@ export const RESULTS_HIT_OPTIONS: { key: ResultsHitKey; label: string }[] = [
 
 export const RESULTS_ALL_HIT_KEYS = RESULTS_HIT_OPTIONS.map((o) => o.key)
 
+/** Phone panes on 赛程 (results day): list (+ day-stats modal) | history+chart. */
+export type ResultsPhoneTab = 'list' | 'history'
+
+export const RESULTS_PHONE_TABS: ResultsPhoneTab[] = ['list', 'history']
+
 const STORAGE_KEY = 'fa-results-page-state'
 const VALID_HIT_KEYS = new Set<string>(RESULTS_ALL_HIT_KEYS)
+const VALID_PHONE_TABS = new Set<string>(RESULTS_PHONE_TABS)
 
 export interface ResultsPageState {
   date: string
   filterHitKeys: ResultsHitKey[]
-  teamSearch: string
+  phoneTab: ResultsPhoneTab
+}
+
+function normalizePhoneTab(raw: unknown): ResultsPhoneTab {
+  const value = String(raw ?? '')
+  if (VALID_PHONE_TABS.has(value)) return value as ResultsPhoneTab
+  // Migrate old 4-tab ids
+  if (value === 'day') return 'list'
+  if (value === 'chart') return 'history'
+  return 'list'
 }
 
 export function readResultsPageState(): ResultsPageState | null {
@@ -40,7 +55,7 @@ export function readResultsPageState(): ResultsPageState | null {
     return {
       date: parsed.date,
       filterHitKeys,
-      teamSearch: typeof parsed.teamSearch === 'string' ? parsed.teamSearch : '',
+      phoneTab: normalizePhoneTab(parsed.phoneTab),
     }
   } catch {
     return null

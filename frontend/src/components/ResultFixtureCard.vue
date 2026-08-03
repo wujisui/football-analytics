@@ -185,8 +185,10 @@ function openStats() {
       :snapshot="predictionSnapshot"
       :show-matchup-title="false"
       flush
+      :odds-clickable="oddsClickable"
       :from="from"
       :date="date"
+      @open-odds="emit('openOdds')"
     />
     <ResultPredictionSummary
       v-else-if="settledFixture"

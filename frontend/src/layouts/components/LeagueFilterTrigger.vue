@@ -64,7 +64,9 @@ function confirm() {
       v-model:show="show"
       preset="card"
       title="联赛筛选"
-      :style="{ width: 'min(420px, 92vw)' }"
+      class="league-filter-modal"
+      :style="{ width: 'min(560px, 94vw)', maxHeight: 'calc(100dvh - 48px)' }"
+      content-style="display: flex; flex-direction: column; min-height: 0; padding: 16px;"
       :segmented="{ content: true, footer: false }"
     >
       <LeagueFilterPanel
@@ -109,3 +111,17 @@ function confirm() {
     />
   </n-popover>
 </template>
+
+<style scoped>
+.league-filter-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.league-filter-modal :deep(.n-card__content) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+</style>

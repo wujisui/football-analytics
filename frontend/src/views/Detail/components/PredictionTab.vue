@@ -28,8 +28,6 @@ const showCurrent = computed(() => hasOddsMarkets(oddsCurrent.value))
 const showOpening = computed(() => hasOddsMarkets(oddsOpening.value))
 const showAnyBoard = computed(() => showCurrent.value || showOpening.value)
 
-const homeName = computed(() => props.fixture.home_team_name || '—')
-const awayName = computed(() => props.fixture.away_team_name || '—')
 const isFinished = computed(
   () => (props.fixture.status ?? '').toLowerCase() === 'finished',
 )
@@ -72,8 +70,6 @@ async function submitOpinion() {
         </template>
         <PreMatchOddsTable
           :odds="oddsCurrent"
-          :home-name="homeName"
-          :away-name="awayName"
         />
       </n-card>
 
@@ -90,8 +86,6 @@ async function submitOpinion() {
         </template>
         <PreMatchOddsTable
           :odds="oddsOpening"
-          :home-name="homeName"
-          :away-name="awayName"
         />
       </n-card>
     </template>

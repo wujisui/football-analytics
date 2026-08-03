@@ -47,7 +47,7 @@ export function fixtureDetailRoute(
 
 export function detailRootLabel(from: DetailFrom): string {
   if (from === 'results') return '赛程'
-  if (from === 'predictions') return '预测'
+  if (from === 'predictions') return '计算器'
   if (from === 'favorites') return '收藏'
   return '即时'
 }

@@ -32,7 +32,7 @@ const extraOptions = computed(() =>
 
 const actionSize = computed(() => (props.compactActions ? 'tiny' : 'small'))
 const listMaxHeight = computed(() =>
-  props.stacked ? 'min(420px, 62vh)' : 'min(360px, 55vh)',
+  props.stacked ? undefined : 'min(360px, 55vh)',
 )
 
 function labelOf(opt: LeagueFilterOption): string {
@@ -146,22 +146,32 @@ function invertSelection() {
 
 .league-filter-panel.drawer-mode {
   width: 100%;
+  height: min(520px, calc(100dvh - 180px));
+  max-height: 100%;
+  overflow: hidden;
 }
 
 .filter-body {
+  display: flex;
+  flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .sections-row {
+  flex: 1;
   display: flex;
   align-items: stretch;
   gap: 16px;
+  width: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .sections-row.stacked {
-  flex-direction: column;
-  gap: 14px;
+  /* Mobile modal: two fixed columns with independently scrolling lists. */
+  flex-direction: row;
+  gap: 10px;
 }
 
 .section {
@@ -170,6 +180,7 @@ function invertSelection() {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .section-title {
@@ -186,14 +197,55 @@ function invertSelection() {
 .section-scroll {
   flex: 1;
   min-height: 0;
+  height: 100%;
 }
 
 .section-scroll :deep(.n-scrollbar-container) {
+  height: 100%;
   max-height: 100%;
+}
+
+.section-scroll :deep(.n-scrollbar-content) {
+  padding-right: 4px;
+}
+
+.section-scroll :deep(.n-checkbox) {
+  width: 100%;
+  align-items: flex-start;
+}
+
+.section-scroll :deep(.n-checkbox__label) {
+  min-width: 0;
+  padding-right: 2px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .actions {
   margin-top: 2px;
   flex-shrink: 0;
+}
+
+@media (max-width: 767px) {
+  .league-filter-panel {
+    gap: 12px;
+  }
+
+  .section-title {
+    margin-bottom: 8px;
+    padding: 0 2px 6px;
+    border-bottom: 1px solid var(--fa-border);
+    font-size: 12px;
+  }
+
+  .actions {
+    width: 100%;
+    flex-wrap: nowrap !important;
+  }
+
+  .actions :deep(.n-space) {
+    flex-wrap: nowrap !important;
+  }
 }
 </style>

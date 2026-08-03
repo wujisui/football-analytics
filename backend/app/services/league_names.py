@@ -457,20 +457,12 @@ def _lookup_name_country(name: str, country: str) -> str | None:
 
 
 def _catalog_name(settings: Settings, league_id: int, fallback: str = "") -> str:
-    for label, lid in settings.REFERENCE_LEAGUE_IDS.items():
-        if lid == league_id:
-            return label
-    configured = settings.league_display_name(league_id, fallback)
-    if configured and configured != fallback:
-        return configured
-    return fallback
+    return settings.league_display_names.get(league_id) or fallback
 
 
 def _id_countries(settings: Settings, league_id: int) -> list[str]:
     if league_id in settings.LEAGUE_COUNTRIES:
         return [settings.LEAGUE_COUNTRIES[league_id]]
-    if league_id in settings.REFERENCE_LEAGUE_COUNTRIES:
-        return [settings.REFERENCE_LEAGUE_COUNTRIES[league_id]]
     return []
 
 

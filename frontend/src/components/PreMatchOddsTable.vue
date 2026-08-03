@@ -21,8 +21,6 @@ type OddsRow = {
 const props = withDefaults(
   defineProps<{
     odds: OddsLike
-    homeName: string
-    awayName: string
     linkMiddleToDetail?: boolean
     fixtureId?: number
     from?: DetailFrom
@@ -160,9 +158,9 @@ function renderAhPopover() {
   return h('div', { class: 'ah-popover-panel' }, [
     h('div', { class: 'ah-popover-row ah-popover-head' }, [
       h('span', { class: 'ah-popover-label' }, '让球'),
-      h('span', { class: 'ah-popover-col' }, props.homeName),
+      h('span', { class: 'ah-popover-col' }, '主队'),
       h('span', { class: 'ah-popover-col mid' }, '盘口'),
-      h('span', { class: 'ah-popover-col' }, props.awayName),
+      h('span', { class: 'ah-popover-col' }, '客队'),
     ]),
     ...ahLines.value.map((line, idx) =>
       h('div', { class: 'ah-popover-row', key: `ah-pop-${line.line}-${idx}` }, [

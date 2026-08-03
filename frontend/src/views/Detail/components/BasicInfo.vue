@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import FavoriteButton from '@/components/FavoriteButton.vue'
+import { useIsPhone } from '@/composables/useMediaQuery'
 import type { FixtureResponse } from '@/api/types'
 import {
   formatDateTime,
@@ -25,6 +26,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
+const isPhone = useIsPhone()
 
 const from = computed(() => parseDetailFrom(route.query.from))
 const fromDate = computed(() =>
@@ -73,7 +75,7 @@ function goLeague() {
 
 <template>
   <div class="basic-info">
-    <n-breadcrumb>
+    <n-breadcrumb v-if="!isPhone">
       <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
       <n-breadcrumb-item @click="goLeague">{{ leagueLabelText }}</n-breadcrumb-item>
       <n-breadcrumb-item>

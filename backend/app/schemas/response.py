@@ -444,7 +444,7 @@ class ResultsResponse(BaseModel):
 
 
 class SyncFixturesResponse(BaseModel):
-    status: str = Field(..., description="ok")
+    status: str = Field(..., description="ok=已落库；running=已有同步在跑，本次忽略")
     fixtures_saved: int = Field(default=0, description="写入/更新的场次数")
     days: int = Field(default=1, description="同步窗口天数")
     date: str | None = Field(default=None, description="单日同步时的日期")
@@ -482,7 +482,7 @@ class LeagueFilterOptionResponse(BaseModel):
     fixtures_count: int = Field(0, description="当日场次（发现或本地）")
     tier: Literal["configured", "extra"] = Field(
         ...,
-        description="configured=默认顶级/洲际目录；extra=可选次级/其他目录",
+        description="configured=leagues.json 默认勾选；extra=当日有赛但未列入目录（勾选后才补盘）",
     )
     default_checked: bool = Field(
         ...,

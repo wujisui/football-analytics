@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue'
-import { ChevronDownOutline, ChevronUpOutline } from '@vicons/ionicons5'
-import { useMessage } from 'naive-ui'
-import { useRoute, useRouter } from 'vue-router'
+import {computed, defineAsyncComponent, onActivated, onMounted, ref, watch} from 'vue'
+import {useMessage} from 'naive-ui'
+import {useRoute, useRouter} from 'vue-router'
 
 import {
   fetchResults,
@@ -11,18 +10,23 @@ import {
   type ResultFixture,
   type ResultsAccuracy,
 } from '@/api/fixtures'
-import AccuracyHistoryChart from '@/views/Results/components/AccuracyHistoryChart.vue'
-import AccuracyStatistic from '@/views/Results/components/AccuracyStatistic.vue'
+import AccuracyMetricsGrid from '@/views/Results/components/AccuracyMetricsGrid.vue'
+import ChartWindowControls, {
+  DEFAULT_CHART_WINDOW_DAYS,
+} from '@/views/Results/components/ChartWindowControls.vue'
 import FixtureList from '@/components/FixtureList.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
 import ResultsListToolbar from '@/views/Results/components/ResultsListToolbar.vue'
-import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
-import { useIsPhone } from '@/composables/useMediaQuery'
-import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
+import {hasSessionShellDay, useFixturesShell} from '@/layouts/composables/useFixturesShell'
+import {useHorizontalSwipe} from '@/composables/useHorizontalSwipe'
+import {useIsPhone} from '@/composables/useMediaQuery'
+import {useScrollRestore} from '@/composables/useScrollRestore'
+import {useFavoriteFixtures} from '@/composables/useFavoriteFixtures'
 import {
   cacheResultsHistory,
   invalidateCachedResultsDay,
+  loadResultsFilterOptions,
   publishResultsFixtures,
   publishScheduleFixtures,
   restoreCachedResultsDay,
@@ -33,19 +37,25 @@ import {
   beginScheduleFilterOverride,
   endScheduleFilterOverride,
 } from '@/composables/useTrackedLeagues'
-import { fixtureDetailRoute } from '@/utils/detailNav'
-import { todayDate, yesterdayDate } from '@/utils/homeDateStrip'
-import { ACCURACY_COLORS } from '@/utils/accuracyColors'
-import { sortFixturesFavoritesFirst } from '@/utils/fixtureSort'
-import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
+import {fixtureDetailRoute} from '@/utils/detailNav'
+import {todayDate, yesterdayDate} from '@/utils/homeDateStrip'
+import {sortFixturesFavoritesFirst} from '@/utils/fixtureSort'
+import {filterByTeamQuery, teamSearchEmptyHint} from '@/utils/teamSearch'
 import {
   readResultsPageState,
   writeResultsPageState,
   RESULTS_ALL_HIT_KEYS,
+  RESULTS_PHONE_TABS,
   type ResultsHitKey,
+  type ResultsPhoneTab,
 } from '@/utils/resultsPageState'
 
-defineOptions({ name: 'Results' })
+defineOptions({name: 'Results'})
+
+/** echarts is heavy; keep it out of the first-paint bundle. */
+const AccuracyHistoryChart = defineAsyncComponent(
+    () => import('@/views/Results/components/AccuracyHistoryChart.vue'),
+)
 
 const HIT_FIELD: Record<ResultsHitKey, keyof ResultFixture> = {
   result: 'result_hit',
@@ -57,36 +67,34 @@ const HIT_FIELD: Record<ResultsHitKey, keyof ResultFixture> = {
 }
 
 const isPhone = useIsPhone()
-/** Phone: accuracy cards collapsed by default so the fixture list has room. */
-const dayAccuracyExpanded = ref(false)
-const historyAccuracyExpanded = ref(false)
-const historyChartExpanded = ref(false)
 
-function togglePhonePanel(panel: 'day' | 'history' | 'chart') {
-  if (!isPhone.value) return
-  const next =
-    panel === 'day'
-      ? !dayAccuracyExpanded.value
-      : panel === 'history'
-        ? !historyAccuracyExpanded.value
-        : !historyChartExpanded.value
-  dayAccuracyExpanded.value = panel === 'day' && next
-  historyAccuracyExpanded.value = panel === 'history' && next
-  historyChartExpanded.value = panel === 'chart' && next
+/** Phone results-day panes; default list so fixtures stay primary. */
+const phoneResultsTab = ref<ResultsPhoneTab>('list')
+const showDayStatsModal = ref(false)
+
+function onPhoneResultsTabChange(name: string) {
+  if ((RESULTS_PHONE_TABS as string[]).includes(name)) {
+    phoneResultsTab.value = name as ResultsPhoneTab
+  }
 }
+
+function shiftPhoneResultsTab(delta: number) {
+  const i = RESULTS_PHONE_TABS.indexOf(phoneResultsTab.value)
+  if (i < 0) return
+  const next = RESULTS_PHONE_TABS[i + delta]
+  if (next) phoneResultsTab.value = next
+}
+
+const phoneSwipeHandlers = useHorizontalSwipe({
+  enabled: isPhone,
+  onSwipeLeft: () => shiftPhoneResultsTab(1),
+  onSwipeRight: () => shiftPhoneResultsTab(-1),
+})
 
 const message = useMessage()
 const route = useRoute()
 const router = useRouter()
-const { favoriteIds } = useFavoriteFixtures()
-
-watch(isPhone, (phone) => {
-  if (phone) {
-    dayAccuracyExpanded.value = false
-    historyAccuracyExpanded.value = false
-    historyChartExpanded.value = false
-  }
-})
+const {favoriteIds} = useFavoriteFixtures()
 const {
   resultsTrackedIds,
   resultsFixtures,
@@ -100,14 +108,18 @@ const {
   teamSearch,
   contentLoading: shellContentLoading,
   isScheduleFutureDay,
-  manualSyncRevision,
-  manualSyncedDay,
+  officialSyncRevision,
+  officialSyncedDay,
   loadFilterOptions,
   syncFutureScheduleSelection,
+  resultsDayFixtureCount,
 } = useFixturesShell()
 
 const desktopListShellRef = ref<HTMLElement | null>(null)
 const phoneListShellRef = ref<HTMLElement | null>(null)
+
+const desktopListScroll = useScrollRestore('results-list-desktop', desktopListShellRef)
+const phoneListScroll = useScrollRestore('results-list-phone', phoneListShellRef)
 
 const fixtures = resultsFixtures
 const history = resultsHistory
@@ -118,11 +130,11 @@ const hint = ref('')
 
 const filterHitKeys = ref<ResultsHitKey[]>([...RESULTS_ALL_HIT_KEYS])
 const contentLoading = computed(
-  () => loading.value || shellContentLoading.value,
+    () => loading.value || shellContentLoading.value,
 )
 
 const isResultsDay = computed(
-  () => !isScheduleFutureDay.value,
+    () => !isScheduleFutureDay.value,
 )
 
 const trackedIdSet = computed(() => new Set(resultsTrackedIds.value))
@@ -133,8 +145,8 @@ const scheduleDisplayedFixtures = computed(() => {
     list = list.filter((f) => f.league_id === selectedLeagueId.value)
   }
   return sortFixturesFavoritesFirst(
-    filterByTeamQuery(list, teamSearch.value),
-    favoriteIds.value,
+      filterByTeamQuery(list, teamSearch.value),
+      favoriteIds.value,
   )
 })
 
@@ -151,21 +163,21 @@ const filteredFixtures = computed(() => {
   if (filterHitKeys.value.length && filterHitKeys.value.length < RESULTS_ALL_HIT_KEYS.length) {
     const keys = filterHitKeys.value
     list = list.filter((fx) =>
-      keys.some((k) => fx[HIT_FIELD[k]] === true),
+        keys.some((k) => fx[HIT_FIELD[k]] === true),
     )
   }
   return list
 })
 
 const listedFixtures = computed(() =>
-  sortFixturesFavoritesFirst(
-    filterByTeamQuery(filteredFixtures.value, teamSearch.value),
-    favoriteIds.value,
-  ),
+    sortFixturesFavoritesFirst(
+        filterByTeamQuery(filteredFixtures.value, teamSearch.value),
+        favoriteIds.value,
+    ),
 )
 
 const filterActive = computed(
-  () => filterHitKeys.value.length !== RESULTS_ALL_HIT_KEYS.length,
+    () => filterHitKeys.value.length !== RESULTS_ALL_HIT_KEYS.length,
 )
 
 const activeHitFilterKey = computed(() => {
@@ -188,6 +200,10 @@ function filterListByHitKey(key: ResultsHitKey) {
     return
   }
   filterHitKeys.value = [key]
+  if (isPhone.value) {
+    phoneResultsTab.value = 'list'
+    showDayStatsModal.value = false
+  }
 }
 
 /** Mirrors backend ``summarize_accuracy``; only counts rows with ``has_prediction``. */
@@ -196,9 +212,9 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
     has_prediction: !!fx.has_prediction,
     // Unsettled rows (feed still live) carry provisional scores — never graded.
     evaluable:
-      (fx.status || '').toLowerCase() === 'finished' &&
-      fx.home_goals != null &&
-      fx.away_goals != null,
+        (fx.status || '').toLowerCase() === 'finished' &&
+        fx.home_goals != null &&
+        fx.away_goals != null,
     result_hit: fx.result_hit ?? null,
     single_result_hit: fx.single_result_hit ?? null,
     score_hit: fx.score_hit ?? null,
@@ -207,13 +223,13 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
     handicap_hit: fx.handicap_hit ?? null,
   }))
   const rate = (
-    key:
-      | 'result_hit'
-      | 'single_result_hit'
-      | 'score_hit'
-      | 'ou_hit'
-      | 'btts_hit'
-      | 'handicap_hit',
+      key:
+          | 'result_hit'
+          | 'single_result_hit'
+          | 'score_hit'
+          | 'ou_hit'
+          | 'btts_hit'
+          | 'handicap_hit',
   ) => {
     const evalRows = rows.filter((r) => r.has_prediction && r[key] !== null && r[key] !== undefined)
     const hits = evalRows.filter((r) => r[key] === true).length
@@ -238,7 +254,7 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
 
 /** Day panel follows the league filter/selection, but never the hit filter. */
 const displayAccuracy = computed(() =>
-  summarizeFiltered(leagueScopedFixtures.value),
+    summarizeFiltered(leagueScopedFixtures.value),
 )
 
 const emptyText = computed(() => {
@@ -248,19 +264,15 @@ const emptyText = computed(() => {
   if (fixtures.value.length && !listedFixtures.value.length) {
     return '当前筛选下无场次，可调整预测维度'
   }
-  return `${selectedDay.value} 暂无已结束赛果，可点击「同步」手动更新`
+  return `${selectedDay.value} 暂无已结束赛果，可刷新页面重试`
 })
 
 const scheduleEmptyText = computed(() => {
   if (!selectedDay.value) return '请选择日期'
   const teamHint = teamSearchEmptyHint(teamSearch.value)
   if (teamHint && scheduleFixtures.value.length) return teamHint
-  return `${selectedDay.value} 暂无未开赛赛程，可点击「同步」手动更新`
+  return `${selectedDay.value} 暂无未开赛赛程，可刷新页面重试`
 })
-
-const historySampleCount = computed(
-  () => history.value?.overall?.fixtures_with_prediction ?? 0,
-)
 
 const dayAccuracyHeaderExtra = computed(() => {
   const count = displayAccuracy.value?.fixtures_with_prediction ?? 0
@@ -269,25 +281,24 @@ const dayAccuracyHeaderExtra = computed(() => {
   return `${count} 场 · ${day}`
 })
 
-/** History accordion: total predicted count + range start only. */
-const historyRangeLabel = computed(() => {
-  if (!history.value) return '全部入库'
-  if (!historySampleCount.value) return '暂无已预测完场'
-  const start = history.value.start_date
-  return start
-    ? `${historySampleCount.value} 场 · ${start}`
-    : `${historySampleCount.value} 场`
+const historyStartDate = computed(() => history.value?.start_date || '—')
+
+/** Align with 当日统计 header-extra: count · start date. */
+const historyHeaderExtra = computed(() => {
+  if (!history.value) return '—'
+  const count = history.value.overall?.fixtures_with_prediction ?? 0
+  if (!count) return '暂无已预测完场'
+  const start = historyStartDate.value
+  return start !== '—' ? `${count} 场 · ${start}` : `${count} 场`
 })
 
 const chartSeries = computed(() => history.value?.series ?? [])
 
-const chartHeaderExtra = computed(() =>
-  historySampleCount.value ? `${historySampleCount.value} 场` : '暂无样本',
+const hasChartData = computed(
+    () => chartSeries.value.some((p) => p.fixtures_with_prediction > 0),
 )
 
-const hasChartData = computed(
-  () => chartSeries.value.some((p) => p.fixtures_with_prediction > 0),
-)
+const chartWindowDays = ref(DEFAULT_CHART_WINDOW_DAYS)
 
 /** Chart point click: jump list + 当日统计 to that sample day (full history picker). */
 function selectChartDay(day: string) {
@@ -296,20 +307,16 @@ function selectChartDay(day: string) {
   if (day === selectedDay.value) return
   filterHitKeys.value = [...RESULTS_ALL_HIT_KEYS]
   selectedDay.value = day
+  if (isPhone.value) phoneResultsTab.value = 'list'
 }
 
 function goDetail(fixtureId: number) {
-  writeResultsPageState({
-    date: selectedDay.value,
-    filterHitKeys: filterHitKeys.value,
-    teamSearch: teamSearch.value,
-  })
   void router.push(
-    fixtureDetailRoute(fixtureId, {
-      from: 'results',
-      tab: 'prediction',
-      date: selectedDay.value,
-    }),
+      fixtureDetailRoute(fixtureId, {
+        from: 'results',
+        tab: 'prediction',
+        date: selectedDay.value,
+      }),
   )
 }
 
@@ -319,8 +326,16 @@ function applySavedFiltersIfAny() {
   if (saved.filterHitKeys.length) {
     filterHitKeys.value = [...saved.filterHitKeys]
   }
-  teamSearch.value = saved.teamSearch
+  phoneResultsTab.value = saved.phoneTab
 }
+
+watch([selectedDay, filterHitKeys, phoneResultsTab], () => {
+  writeResultsPageState({
+    date: selectedDay.value,
+    filterHitKeys: filterHitKeys.value,
+    phoneTab: phoneResultsTab.value,
+  })
+})
 
 async function loadDayResults() {
   if (!selectedDay.value) {
@@ -332,7 +347,17 @@ async function loadDayResults() {
   setResultsLoading(true)
   error.value = ''
   try {
-    const data = await fetchResults(selectedDay.value)
+    await loadResultsFilterOptions({
+      date: selectedDay.value,
+      schedule: false,
+    })
+    const leagueIds = [...resultsTrackedIds.value]
+    if (!leagueIds.length) {
+      publishResultsFixtures([], selectedDay.value)
+      hint.value = ''
+      return
+    }
+    const data = await fetchResults(selectedDay.value, {leagueIds})
     publishResultsFixtures(data.fixtures, selectedDay.value)
     hint.value = data.total ? `共 ${data.total} 场` : ''
   } catch (err) {
@@ -351,7 +376,7 @@ async function loadHistory(force = false) {
   try {
     const cutoff = todayDate()
     cacheResultsHistory(
-      await fetchResultsHistory({ days: 0, endDate: cutoff }),
+        await fetchResultsHistory({days: 0, endDate: cutoff}),
     )
   } catch {
     if (!history.value) cacheResultsHistory(null)
@@ -370,11 +395,25 @@ async function loadScheduleDay() {
   error.value = ''
   // Future-day catalog overrides shared prematch filter; freeze 即时 first.
   beginScheduleFilterOverride()
-  void loadFilterOptions({ date: selectedDay.value }).catch(() => undefined)
   try {
-    const data = await fetchTodayFixtures({ date: selectedDay.value, days: 1 })
-    publishScheduleFixtures(data.fixtures, selectedDay.value)
+    await loadFilterOptions({date: selectedDay.value, scope: 'prematch'})
+    await loadResultsFilterOptions({
+      date: selectedDay.value,
+      schedule: true,
+    })
     syncFutureScheduleSelection()
+    const leagueIds = [...resultsTrackedIds.value]
+    if (!leagueIds.length) {
+      publishScheduleFixtures([], selectedDay.value)
+      hint.value = ''
+      return
+    }
+    const data = await fetchTodayFixtures({
+      date: selectedDay.value,
+      days: 1,
+      leagueIds,
+    })
+    publishScheduleFixtures(data.fixtures, selectedDay.value)
     hint.value = data.total ? `共 ${data.total} 场` : ''
   } catch (err) {
     error.value = err instanceof Error ? err.message : '获取失败'
@@ -395,8 +434,8 @@ async function loadSelectedDay(force = false) {
   }
 
   if (
-    !force &&
-    restoreCachedResultsDay(selectedDay.value, isScheduleFutureDay.value)
+      !force &&
+      restoreCachedResultsDay(selectedDay.value, isScheduleFutureDay.value)
   ) {
     syncFutureScheduleSelection()
     error.value = ''
@@ -418,13 +457,15 @@ watch(isScheduleFutureDay, (future, wasFuture) => {
 watch(selectedDay, () => {
   if (route.name !== 'results') return
   filterHitKeys.value = [...RESULTS_ALL_HIT_KEYS]
+  desktopListScroll.reset()
+  phoneListScroll.reset()
   void loadSelectedDay()
 })
 
-watch(manualSyncRevision, () => {
+watch(officialSyncRevision, () => {
   if (
-    route.name !== 'results'
-    || manualSyncedDay.value !== selectedDay.value
+      route.name !== 'results'
+      || officialSyncedDay.value !== selectedDay.value
   ) {
     return
   }
@@ -453,7 +494,7 @@ onMounted(() => {
       selectedDay.value = qDate
       dayChanged = true
     }
-  } else if (selectedDay.value !== yesterdayDate()) {
+  } else if (!hasSessionShellDay && selectedDay.value !== yesterdayDate()) {
     selectedDay.value = yesterdayDate()
     dayChanged = true
   }
@@ -467,267 +508,164 @@ onMounted(() => {
 
 <template>
   <n-layout
-    class="results-layout"
-    :has-sider="!isPhone && isResultsDay"
-    content-style="display: flex; flex-direction: column; height: 100%; min-height: 0;"
+      class="results-layout"
+      :has-sider="!isPhone && isResultsDay"
+      content-style="display: flex; flex-direction: column; height: 100%; min-height: 0;"
   >
-    <n-layout
-      class="results-main"
-      content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; background: var(--fa-bg); box-sizing: border-box; padding: var(--fa-content-block-start) var(--fa-content-inline) var(--fa-content-block-end);"
+    <!-- Phone: results day as swipeable tabs -->
+    <div
+        v-if="isPhone && isResultsDay"
+        class="phone-results-tabs-wrap"
+        @touchstart.passive="phoneSwipeHandlers.onTouchStart"
+        @touchmove.passive="phoneSwipeHandlers.onTouchMove"
+        @touchend="phoneSwipeHandlers.onTouchEnd"
+        @touchcancel="phoneSwipeHandlers.onTouchCancel"
     >
-      <n-grid v-if="isResultsDay" :cols="isPhone ? 1 : 20" :x-gap="10" :y-gap="10" style="flex-shrink: 0;">
-        <n-gi :span="isPhone ? 1 : 9">
-          <n-card
-            size="small"
-            class="accuracy-stat-card"
-            :class="{ collapsed: isPhone && !dayAccuracyExpanded }"
-            :segmented="isPhone && !dayAccuracyExpanded ? false : { content: true }"
-            style="background: var(--fa-bg-elevated); height: 100%;"
-            :content-style="
-              isPhone && !dayAccuracyExpanded ? 'display: none; padding: 0;' : undefined
-            "
-          >
-            <template #header>
-              <n-button
-                text
-                class="accuracy-card-toggle"
-                :disabled="!isPhone"
-                :aria-expanded="!isPhone || dayAccuracyExpanded"
-                @click="togglePhonePanel('day')"
-              >
-                当日统计
-                <n-icon
-                  v-if="isPhone"
-                  :component="dayAccuracyExpanded ? ChevronUpOutline : ChevronDownOutline"
-                  :size="16"
-                />
-              </n-button>
-            </template>
-            <template #header-extra>
-              <n-text depth="3" style="font-size: 12px;">{{ dayAccuracyHeaderExtra }}</n-text>
-            </template>
-            <n-spin v-if="!isPhone || dayAccuracyExpanded" :show="contentLoading">
-              <n-grid :cols="2" :x-gap="8" :y-gap="8" class="accuracy-metrics-grid">
-                <n-gi>
-                  <AccuracyStatistic
-                    label="推荐结果"
-                    :stat="displayAccuracy?.result"
-                    :color="ACCURACY_COLORS.result"
-                    hit-filterable
-                    :hit-active="activeHitFilterKey === 'result'"
-                    @filter-hits="filterListByHitKey('result')"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="胜平负单选"
-                    :stat="displayAccuracy?.single_result"
-                    :color="ACCURACY_COLORS.singleResult"
-                    hit-filterable
-                    :hit-active="activeHitFilterKey === 'single_result'"
-                    @filter-hits="filterListByHitKey('single_result')"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="比分"
-                    :stat="displayAccuracy?.score"
-                    :color="ACCURACY_COLORS.score"
-                    hit-filterable
-                    :hit-active="activeHitFilterKey === 'score'"
-                    @filter-hits="filterListByHitKey('score')"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="大小球"
-                    :stat="displayAccuracy?.ou"
-                    :color="ACCURACY_COLORS.ou"
-                    hit-filterable
-                    :hit-active="activeHitFilterKey === 'ou'"
-                    @filter-hits="filterListByHitKey('ou')"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="双方进球"
-                    :stat="displayAccuracy?.btts"
-                    :color="ACCURACY_COLORS.btts"
-                    hit-filterable
-                    :hit-active="activeHitFilterKey === 'btts'"
-                    @filter-hits="filterListByHitKey('btts')"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="让球胜平负"
-                    :stat="displayAccuracy?.handicap"
-                    :color="ACCURACY_COLORS.handicap"
-                    hit-filterable
-                    :hit-active="activeHitFilterKey === 'handicap'"
-                    @filter-hits="filterListByHitKey('handicap')"
-                  />
-                </n-gi>
-              </n-grid>
-            </n-spin>
-          </n-card>
-        </n-gi>
-        <n-gi :span="isPhone ? 1 : 11">
-          <n-card
-            size="small"
-            class="accuracy-stat-card"
-            :class="{ collapsed: isPhone && !historyAccuracyExpanded }"
-            :segmented="isPhone && !historyAccuracyExpanded ? false : { content: true }"
-            style="background: var(--fa-bg-elevated); height: 100%;"
-            :content-style="
-              isPhone && !historyAccuracyExpanded ? 'display: none; padding: 0;' : undefined
-            "
-          >
-            <template #header>
-              <n-button
-                text
-                class="accuracy-card-toggle"
-                :disabled="!isPhone"
-                :aria-expanded="!isPhone || historyAccuracyExpanded"
-                @click="togglePhonePanel('history')"
-              >
-                历史统计
-                <n-icon
-                  v-if="isPhone"
-                  :component="historyAccuracyExpanded ? ChevronUpOutline : ChevronDownOutline"
-                  :size="16"
-                />
-              </n-button>
-            </template>
-            <template #header-extra>
-              <n-tooltip placement="bottom">
-                <template #trigger>
-                  <n-text depth="3" style="font-size: 12px;">
-                    {{ historyRangeLabel }}
-                  </n-text>
-                </template>
-                本地库全部已预测完场，起始 {{ history?.start_date || '—' }}，截止
-                {{ todayDate() }}
-              </n-tooltip>
-            </template>
-            <n-spin v-if="!isPhone || historyAccuracyExpanded" :show="historyLoading">
-              <n-grid :cols="2" :x-gap="8" :y-gap="8" class="accuracy-metrics-grid">
-                <n-gi>
-                  <AccuracyStatistic
-                    label="推荐结果"
-                    :stat="history?.overall.result"
-                    :color="ACCURACY_COLORS.result"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="胜平负单选"
-                    :stat="history?.overall.single_result"
-                    :color="ACCURACY_COLORS.singleResult"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="比分"
-                    :stat="history?.overall.score"
-                    :color="ACCURACY_COLORS.score"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="大小球"
-                    :stat="history?.overall.ou"
-                    :color="ACCURACY_COLORS.ou"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="双方进球"
-                    :stat="history?.overall.btts"
-                    :color="ACCURACY_COLORS.btts"
-                  />
-                </n-gi>
-                <n-gi>
-                  <AccuracyStatistic
-                    label="让球胜平负"
-                    :stat="history?.overall.handicap"
-                    :color="ACCURACY_COLORS.handicap"
-                  />
-                </n-gi>
-              </n-grid>
-            </n-spin>
-          </n-card>
-        </n-gi>
-      </n-grid>
-
-      <n-card
-        v-if="isResultsDay"
-        size="small"
-        class="chart-card"
-        :class="{
-          'phone-collapsed': isPhone && !historyChartExpanded,
-          'phone-expanded': isPhone && historyChartExpanded,
-        }"
-        :segmented="isPhone && !historyChartExpanded ? false : { content: true }"
-        style="background: var(--fa-bg-elevated);"
-        :content-style="
-          isPhone && !historyChartExpanded
-            ? 'display: none; padding: 0;'
-            : 'flex: 1; min-height: 0; height: 100%; padding: 8px 12px 12px; display: flex; flex-direction: column;'
-        "
+      <n-tabs
+          :value="phoneResultsTab"
+          type="line"
+          size="small"
+          animated
+          class="phone-results-tabs"
+          @update:value="onPhoneResultsTabChange"
       >
-        <template #header>
-          <n-button
-            text
-            class="accuracy-card-toggle"
-            :disabled="!isPhone"
-            :aria-expanded="!isPhone || historyChartExpanded"
-            @click="togglePhonePanel('chart')"
-          >
-            准确率走势
-            <n-icon
-              v-if="isPhone"
-              :component="historyChartExpanded ? ChevronUpOutline : ChevronDownOutline"
-              :size="16"
-            />
-          </n-button>
-        </template>
-        <template #header-extra>
-          <n-tooltip placement="bottom">
-            <template #trigger>
-              <n-text depth="3" class="chart-sample-count">
-                {{ chartHeaderExtra }}
-              </n-text>
-            </template>
-            点击走势点查看当天联赛与场次；点数多时可拖动 / 滚轮左右滑动
-          </n-tooltip>
-        </template>
-        <n-spin
-          v-if="!isPhone || historyChartExpanded"
-          :show="historyLoading"
-          class="chart-spin"
-          style="flex: 1; min-height: 0; height: 100%;"
-        >
-          <n-empty
-            v-if="!historyLoading && !hasChartData"
-            description="暂无历史预测样本"
-            style="padding: 16px 0;"
-          />
-          <div v-else-if="history" class="chart-fill">
-            <AccuracyHistoryChart
-              :series="chartSeries"
-              :selected-day="isResultsDay ? selectedDay : null"
-              @select-day="selectChartDay"
-            />
+        <n-tab-pane name="list" display-directive="show:lazy">
+          <template #tab>
+            <n-badge :value="resultsDayFixtureCount" :max="999" :offset="[10, 8]">
+              赛程列表
+            </n-badge>
+          </template>
+          <div class="phone-tab-pane phone-list-pane">
+            <div class="phone-list-toolbar">
+              <ResultsListToolbar
+                  v-model:team-search="teamSearch"
+                  :selected-hit-keys="filterHitKeys"
+                  :filter-active="filterActive"
+                  show-day-stats
+                  @confirm-filter="confirmHitFilter"
+                  @open-day-stats="showDayStatsModal = true"
+              />
+            </div>
+            <n-alert
+                v-if="error"
+                type="error"
+                title="获取失败"
+                class="phone-list-alert"
+            >
+              <n-space align="center" :size="12">
+                <span>{{ error }}</span>
+                <n-button size="small" type="primary" @click="loadDayResults()">重试</n-button>
+              </n-space>
+            </n-alert>
+            <div ref="phoneListShellRef" class="list-shell phone">
+              <n-scrollbar style="max-height: 100%; height: 100%;" trigger="hover">
+                <div class="results-list-inner phone">
+                  <n-empty
+                      v-if="!loading && !listedFixtures.length"
+                      :description="emptyText"
+                      style="padding: 24px 12px;"
+                  />
+                  <div v-else class="results-card-stack">
+                    <ResultFixtureCard
+                        v-for="fx in listedFixtures"
+                        :key="fx.fixture_id"
+                        :fixture="fx"
+                        :show-date="false"
+                        @open-detail="goDetail"
+                    />
+                  </div>
+                </div>
+              </n-scrollbar>
+              <div
+                  v-if="contentLoading"
+                  class="list-loading-mask"
+                  aria-busy="true"
+                  aria-live="polite"
+              >
+                <n-spin :show="true"/>
+              </div>
+              <ListBackTop :shell="phoneListShellRef" :right="12" :bottom="12"/>
+            </div>
           </div>
-        </n-spin>
-      </n-card>
+        </n-tab-pane>
 
+        <n-tab-pane name="history" tab="历史统计" display-directive="show:lazy">
+          <div class="phone-tab-pane">
+            <n-scrollbar style="height: 100%;" trigger="hover">
+              <div class="phone-stat-pane">
+                <n-spin :show="historyLoading">
+                  <AccuracyMetricsGrid :metrics="history?.overall" />
+                </n-spin>
+                <n-divider/>
+                <div class="phone-history-chart-block" data-no-tab-swipe>
+                  <div class="phone-chart-toolbar">
+                    <n-text depth="3" class="chart-title-line">
+                      走势图 · 起始 {{ historyStartDate }}
+                    </n-text>
+                    <ChartWindowControls
+                      v-model="chartWindowDays"
+                      select-width="78px"
+                    />
+                  </div>
+                  <n-spin :show="historyLoading" class="phone-history-chart-spin">
+                    <n-empty
+                        v-if="!historyLoading && !hasChartData"
+                        description="暂无历史预测样本"
+                        style="padding: 16px 0;"
+                    />
+                    <div v-else-if="history" class="phone-history-chart-fill">
+                      <AccuracyHistoryChart
+                          :series="chartSeries"
+                          :selected-day="selectedDay"
+                          :window-days="chartWindowDays"
+                          @select-day="selectChartDay"
+                      />
+                    </div>
+                  </n-spin>
+                </div>
+              </div>
+            </n-scrollbar>
+          </div>
+        </n-tab-pane>
+      </n-tabs>
+
+      <n-modal
+          v-model:show="showDayStatsModal"
+          preset="card"
+          title="当日统计"
+          to="body"
+          :bordered="false"
+          :style="{
+          width: 'min(420px, calc(100vw - 24px))',
+          maxHeight: 'calc(100vh - 32px)',
+          margin: 'auto',
+        }"
+      >
+        <template #header-extra>
+          <n-text depth="3" style="font-size: 12px;">{{ dayAccuracyHeaderExtra }}</n-text>
+        </template>
+        <n-spin :show="contentLoading">
+          <AccuracyMetricsGrid
+            :metrics="displayAccuracy"
+            hit-filterable
+            :active-hit-key="activeHitFilterKey"
+            @filter-hits="filterListByHitKey"
+          />
+        </n-spin>
+      </n-modal>
+    </div>
+
+    <!-- Phone / desktop: future schedule list -->
+    <n-layout
+        v-else-if="isScheduleFutureDay"
+        class="results-main"
+        content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; background: var(--fa-bg); box-sizing: border-box; padding: var(--fa-content-block-start) var(--fa-content-inline) var(--fa-content-block-end);"
+    >
       <n-alert
-        v-if="error && isScheduleFutureDay"
-        type="error"
-        title="获取失败"
-        style="flex-shrink: 0;"
+          v-if="error"
+          type="error"
+          title="获取失败"
+          style="flex-shrink: 0;"
       >
         <n-space align="center" :size="12">
           <span>{{ error }}</span>
@@ -736,139 +674,176 @@ onMounted(() => {
       </n-alert>
 
       <div
-        v-if="isScheduleFutureDay"
-        ref="desktopListShellRef"
-        class="list-shell"
-        :class="{ phone: isPhone }"
+          ref="desktopListShellRef"
+          class="list-shell"
+          :class="{ phone: isPhone }"
       >
         <n-scrollbar style="height: 100%;" trigger="hover">
           <div :class="isPhone ? 'schedule-list-inner phone' : 'schedule-list-inner'">
             <FixtureList
-              :fixtures="scheduleDisplayedFixtures"
-              :empty-description="scheduleEmptyText"
-              :group-by-day="false"
-              from="results"
-              :date="selectedDay"
+                :fixtures="scheduleDisplayedFixtures"
+                :empty-description="scheduleEmptyText"
+                :group-by-day="false"
+                from="results"
+                :date="selectedDay"
             />
           </div>
         </n-scrollbar>
         <div
-          v-if="contentLoading"
-          class="list-loading-mask"
-          aria-busy="true"
-          aria-live="polite"
+            v-if="contentLoading"
+            class="list-loading-mask"
+            aria-busy="true"
+            aria-live="polite"
         >
-          <n-spin :show="true" />
+          <n-spin :show="true"/>
         </div>
-        <ListBackTop :shell="desktopListShellRef" :bottom="16" />
+        <ListBackTop :shell="desktopListShellRef" :bottom="16"/>
       </div>
+    </n-layout>
 
-      <n-card
-        v-if="isPhone && isResultsDay"
-        size="small"
-        :segmented="{ content: true }"
-        class="phone-results-card"
-        style="min-height: 0; display: flex; flex-direction: column; background: var(--fa-bg-elevated);"
-        content-style="flex: 1; min-height: 0; padding: 0;"
+    <!-- Desktop: results day -->
+    <template v-else>
+      <n-layout
+          class="results-main"
+          content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; background: var(--fa-bg); box-sizing: border-box; padding: var(--fa-content-block-start) var(--fa-content-inline) var(--fa-content-block-end);"
       >
-        <template #header>
+        <n-grid :cols="20" :x-gap="10" :y-gap="10" style="flex-shrink: 0;">
+          <n-gi :span="9">
+            <n-card
+                size="small"
+                class="accuracy-stat-card"
+                :segmented="{ content: true }"
+                style="background: var(--fa-bg-elevated); height: 100%;"
+            >
+              <template #header>
+                <span class="accuracy-card-title">当日统计</span>
+              </template>
+              <template #header-extra>
+                <n-text depth="3" style="font-size: 12px;">{{ dayAccuracyHeaderExtra }}</n-text>
+              </template>
+              <n-spin :show="contentLoading">
+                <AccuracyMetricsGrid
+                  :metrics="displayAccuracy"
+                  hit-filterable
+                  :active-hit-key="activeHitFilterKey"
+                  @filter-hits="filterListByHitKey"
+                />
+              </n-spin>
+            </n-card>
+          </n-gi>
+          <n-gi :span="11">
+            <n-card
+                size="small"
+                class="accuracy-stat-card"
+                :segmented="{ content: true }"
+                style="background: var(--fa-bg-elevated); height: 100%;"
+            >
+              <template #header>
+                <span class="accuracy-card-title">历史统计</span>
+              </template>
+              <template #header-extra>
+                <n-text depth="3" style="font-size: 12px;">{{ historyHeaderExtra }}</n-text>
+              </template>
+              <n-spin :show="historyLoading">
+                <AccuracyMetricsGrid :metrics="history?.overall" />
+              </n-spin>
+            </n-card>
+          </n-gi>
+        </n-grid>
+
+        <n-card
+            size="small"
+            class="chart-card"
+            :segmented="{ content: true }"
+            style="background: var(--fa-bg-elevated);"
+            content-style="flex: 1; min-height: 0; height: 100%; padding: 8px 12px 12px; display: flex; flex-direction: column;"
+        >
+          <template #header>
+            <span class="accuracy-card-title">准确率走势</span>
+          </template>
+          <template #header-extra>
+            <ChartWindowControls v-model="chartWindowDays" />
+          </template>
+          <n-spin
+              :show="historyLoading"
+              class="chart-spin"
+              style="flex: 1; min-height: 0; height: 100%;"
+          >
+            <n-empty
+                v-if="!historyLoading && !hasChartData"
+                description="暂无历史预测样本"
+                style="padding: 16px 0;"
+            />
+            <div v-else-if="history" class="chart-fill">
+              <AccuracyHistoryChart
+                  :series="chartSeries"
+                  :selected-day="selectedDay"
+                  :window-days="chartWindowDays"
+                  @select-day="selectChartDay"
+              />
+            </div>
+          </n-spin>
+        </n-card>
+      </n-layout>
+
+      <n-layout-sider
+          placement="right"
+          bordered
+          :width="320"
+          :native-scrollbar="true"
+          content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
+      >
+        <div class="results-sider-head">
           <ResultsListToolbar
-            v-model:team-search="teamSearch"
-            :selected-hit-keys="filterHitKeys"
-            :filter-active="filterActive"
-            @confirm-filter="confirmHitFilter"
+              v-model:team-search="teamSearch"
+              :selected-hit-keys="filterHitKeys"
+              :filter-active="filterActive"
+              @confirm-filter="confirmHitFilter"
           />
-        </template>
-        <div ref="phoneListShellRef" class="list-shell phone">
-          <n-scrollbar style="max-height: 100%; height: 100%;" trigger="hover">
-            <div class="results-list-inner phone">
+        </div>
+        <n-alert
+            v-if="error"
+            type="error"
+            title="获取失败"
+            class="results-sider-alert"
+            style="flex-shrink: 0;"
+        >
+          <n-space align="center" :size="12">
+            <span>{{ error }}</span>
+            <n-button size="small" type="primary" @click="loadDayResults()">重试</n-button>
+          </n-space>
+        </n-alert>
+        <div ref="desktopListShellRef" class="list-shell">
+          <n-scrollbar style="height: 100%;" trigger="hover">
+            <div class="results-list-inner">
               <n-empty
-                v-if="!loading && !listedFixtures.length"
-                :description="emptyText"
-                style="padding: 24px 12px;"
+                  v-if="!loading && !listedFixtures.length"
+                  :description="emptyText"
+                  style="padding: 40px 12px;"
               />
               <div v-else class="results-card-stack">
                 <ResultFixtureCard
-                  v-for="fx in listedFixtures"
-                  :key="fx.fixture_id"
-                  :fixture="fx"
-                  :show-date="false"
-                  @open-detail="goDetail"
+                    v-for="fx in listedFixtures"
+                    :key="fx.fixture_id"
+                    :fixture="fx"
+                    :show-date="false"
+                    @open-detail="goDetail"
                 />
               </div>
             </div>
           </n-scrollbar>
           <div
-            v-if="contentLoading"
-            class="list-loading-mask"
-            aria-busy="true"
-            aria-live="polite"
+              v-if="contentLoading"
+              class="list-loading-mask"
+              aria-busy="true"
+              aria-live="polite"
           >
-            <n-spin :show="true" />
+            <n-spin :show="true"/>
           </div>
-          <ListBackTop :shell="phoneListShellRef" :right="12" :bottom="12" />
+          <ListBackTop :shell="desktopListShellRef" :bottom="16"/>
         </div>
-      </n-card>
-    </n-layout>
-
-    <n-layout-sider
-      v-if="!isPhone && isResultsDay"
-      placement="right"
-      bordered
-      :width="320"
-      :native-scrollbar="true"
-      content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
-    >
-      <div class="results-sider-head">
-        <ResultsListToolbar
-          v-model:team-search="teamSearch"
-          :selected-hit-keys="filterHitKeys"
-          :filter-active="filterActive"
-          @confirm-filter="confirmHitFilter"
-        />
-      </div>
-      <n-alert
-        v-if="error"
-        type="error"
-        title="获取失败"
-        class="results-sider-alert"
-        style="flex-shrink: 0;"
-      >
-        <n-space align="center" :size="12">
-          <span>{{ error }}</span>
-          <n-button size="small" type="primary" @click="loadDayResults()">重试</n-button>
-        </n-space>
-      </n-alert>
-      <div ref="desktopListShellRef" class="list-shell">
-        <n-scrollbar style="height: 100%;" trigger="hover">
-          <div class="results-list-inner">
-            <n-empty
-              v-if="!loading && !listedFixtures.length"
-              :description="emptyText"
-              style="padding: 40px 12px;"
-            />
-            <div v-else class="results-card-stack">
-              <ResultFixtureCard
-                v-for="fx in listedFixtures"
-                :key="fx.fixture_id"
-                :fixture="fx"
-                :show-date="false"
-                @open-detail="goDetail"
-              />
-            </div>
-          </div>
-        </n-scrollbar>
-        <div
-          v-if="contentLoading"
-          class="list-loading-mask"
-          aria-busy="true"
-          aria-live="polite"
-        >
-          <n-spin :show="true" />
-        </div>
-        <ListBackTop :shell="desktopListShellRef" :bottom="16" />
-      </div>
-    </n-layout-sider>
+      </n-layout-sider>
+    </template>
   </n-layout>
 </template>
 
@@ -894,6 +869,140 @@ onMounted(() => {
   min-height: 0;
 }
 
+.phone-results-tabs-wrap {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--fa-bg);
+  padding: 0 var(--fa-content-inline) 4px;
+  box-sizing: border-box;
+}
+
+.phone-results-tabs {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.phone-results-tabs :deep(.n-tabs-nav) {
+  flex-shrink: 0;
+}
+
+.phone-results-tabs :deep(.n-tabs-nav-scroll-content) {
+  padding-top: 8px;
+}
+
+.phone-results-tabs :deep(.n-tabs-tab) {
+  padding: 10px 10px 7px;
+  font-size: 13px;
+}
+
+.phone-results-tabs :deep(.n-tabs-content),
+.phone-results-tabs :deep(.n-tab-pane),
+.phone-results-tabs :deep(.n-tabs-pane-wrapper),
+.phone-results-tabs :deep(.n-tabs-pane-wrapper > div) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.phone-tab-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: 8px;
+}
+
+.phone-stat-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 0 2px 12px;
+}
+
+.phone-tab-pane :deep(.n-scrollbar-content) {
+  height: 100%;
+  min-height: 100%;
+}
+
+.phone-history-chart-block {
+  display: flex;
+  flex: 1;
+  min-height: 300px;
+  flex-direction: column;
+}
+
+.phone-chart-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.chart-title-line {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-history-chart-spin {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  height: 100%;
+  min-height: 260px;
+}
+
+.phone-history-chart-spin :deep(.n-spin-content) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.phone-history-chart-fill {
+  flex: 1;
+  width: 100%;
+  min-height: 240px;
+}
+
+.phone-list-toolbar {
+  flex-shrink: 0;
+  padding: 0 2px 8px;
+}
+
+.phone-list-alert {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
+.phone-list-pane {
+  min-height: 0;
+}
+
 .schedule-list-inner {
   padding-top: 4px;
 }
@@ -912,8 +1021,8 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
-.results-list-inner.phone{
-  padding: 10px 12px 12px;
+.results-list-inner.phone {
+  padding: 0;
 }
 
 .results-card-stack {
@@ -926,7 +1035,6 @@ onMounted(() => {
   margin: 0 var(--fa-content-inline) 8px;
 }
 
-/* Shared viewport for schedule / results lists. */
 .list-shell {
   position: relative;
   flex: 1;
@@ -963,38 +1071,8 @@ onMounted(() => {
   min-height: 0;
 }
 
-.chart-card.phone-collapsed {
-  flex: 0 0 auto;
-  min-height: auto;
-}
-
-.chart-card.phone-expanded {
-  flex: 0 0 42%;
-  min-height: 220px;
-}
-
-.accuracy-card-toggle {
+.accuracy-card-title {
   font-weight: 600;
-  padding: 0;
-}
-
-.accuracy-card-toggle:disabled {
-  opacity: 1;
-  cursor: default;
-  color: inherit;
-}
-
-.accuracy-stat-card.collapsed :deep(.n-card-header),
-.chart-card.phone-collapsed :deep(.n-card-header) {
-  padding-bottom: 10px;
-}
-
-.accuracy-metrics-grid :deep(.n-grid-item) {
-  min-width: 0;
-}
-
-.phone-results-card {
-  flex: 1 1 auto;
 }
 
 .chart-card :deep(.n-card-content) {
@@ -1010,11 +1088,6 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-.chart-sample-count {
-  font-size: 12px;
-  white-space: nowrap;
 }
 
 .chart-fill {

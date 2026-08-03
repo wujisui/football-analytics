@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref } from 'vue'
 
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
@@ -7,7 +7,7 @@ import type { FixtureResponse } from '@/api/types'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import type { DetailFrom } from '@/utils/detailNav'
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     fixture: FixtureResponse
     from?: DetailFrom
@@ -20,17 +20,17 @@ const props = withDefaults(
 )
 
 const isPhone = useIsPhone()
-
-const homeName = computed(() => props.fixture.home_team_name || '—')
-const awayName = computed(() => props.fixture.away_team_name || '—')
+const showOddsModal = ref(false)
 </script>
 
 <template>
   <ResultFixtureCard
     v-if="isPhone"
     :fixture="fixture"
+    odds-clickable
     :from="from"
     :date="date"
+    @open-odds="showOddsModal = true"
   />
 
   <n-card
@@ -42,8 +42,6 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
     <div class="summary-grid">
       <PreMatchOddsTable
         :odds="fixture.odds_snippet"
-        :home-name="homeName"
-        :away-name="awayName"
         link-middle-to-detail
         :fixture-id="fixture.fixture_id"
         :from="from"
@@ -56,6 +54,24 @@ const awayName = computed(() => props.fixture.away_team_name || '—')
       />
     </div>
   </n-card>
+
+  <n-modal
+    v-if="isPhone"
+    v-model:show="showOddsModal"
+    preset="card"
+    title="赛前盘口"
+    to="body"
+    :style="{ width: 'min(360px, calc(100vw - 24px))' }"
+    :segmented="{ content: true, footer: false }"
+  >
+    <PreMatchOddsTable
+      :odds="fixture.odds_snippet"
+      link-middle-to-detail
+      :fixture-id="fixture.fixture_id"
+      :from="from"
+      :date="date"
+    />
+  </n-modal>
 </template>
 
 <style scoped>

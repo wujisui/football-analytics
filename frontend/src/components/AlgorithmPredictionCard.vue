@@ -25,6 +25,8 @@ const props = withDefaults(
     showMatchupTitle?: boolean
     /** Parent card owns padding/background; render only the prediction content. */
     flush?: boolean
+    /** Click win/draw/away bars to open pre-match odds (e.g. phone home list). */
+    oddsClickable?: boolean
     from?: DetailFrom
     date?: string | null
   }>(),
@@ -33,10 +35,15 @@ const props = withDefaults(
     compact: false,
     showMatchupTitle: true,
     flush: false,
+    oddsClickable: false,
     from: 'home',
     date: null,
   },
 )
+
+const emit = defineEmits<{
+  openOdds: []
+}>()
 
 const router = useRouter()
 
@@ -110,6 +117,11 @@ function goBriefing() {
     }),
   )
 }
+
+function onOddsClick() {
+  if (!props.oddsClickable) return
+  emit('openOdds')
+}
 </script>
 
 <template>
@@ -156,7 +168,16 @@ function goBriefing() {
         {{ prediction.handicap_lean || HANDICAP_MISSING_LABEL }}
       </n-tag>
     </div>
-    <div v-if="predictionReady" class="prob-row">
+    <div
+      v-if="predictionReady"
+      class="prob-row"
+      :class="{ 'odds-clickable': oddsClickable }"
+      :role="oddsClickable ? 'button' : undefined"
+      :tabindex="oddsClickable ? 0 : undefined"
+      @click.stop="onOddsClick"
+      @keydown.enter.prevent="onOddsClick"
+      @keydown.space.prevent="onOddsClick"
+    >
       <div v-for="p in probs" :key="p.key" class="prob-item">
         <span class="prob-head">
           <span>{{ p.label }}</span>
@@ -171,7 +192,18 @@ function goBriefing() {
         />
       </div>
     </div>
-    <p v-else class="predict-empty">暂无有效胜平负概率（缺近况或盘口）</p>
+    <p
+      v-else
+      class="predict-empty"
+      :class="{ 'odds-clickable': oddsClickable }"
+      :role="oddsClickable ? 'button' : undefined"
+      :tabindex="oddsClickable ? 0 : undefined"
+      @click.stop="onOddsClick"
+      @keydown.enter.prevent="onOddsClick"
+      @keydown.space.prevent="onOddsClick"
+    >
+      暂无有效胜平负概率（缺近况或盘口）
+    </p>
     <div v-if="predictionReady" class="lean-row">
       <n-tag size="small" :bordered="false">{{ prediction.goal_lean }}</n-tag>
       <n-tag size="small" :bordered="false">{{ prediction.both_score_lean }}</n-tag>
@@ -278,6 +310,19 @@ function goBriefing() {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.odds-clickable {
+  padding: 4px;
+  margin: -4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.odds-clickable:hover,
+.odds-clickable:focus-visible {
+  outline: none;
+  background: var(--fa-bg-elevated);
 }
 
 .prob-item {

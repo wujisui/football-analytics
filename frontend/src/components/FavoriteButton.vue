@@ -39,21 +39,16 @@ function onClick(event: MouseEvent) {
 </script>
 
 <template>
-  <n-tooltip placement="top">
-    <template #trigger>
-      <n-button
-        quaternary
-        circle
-        :size="size"
-        :type="active ? 'warning' : 'default'"
-        :aria-label="active ? '取消收藏' : '收藏'"
-        @click="onClick"
-      >
-        <template #icon>
-          <n-icon :component="active ? Star : StarOutline" />
-        </template>
-      </n-button>
+  <n-button
+    quaternary
+    circle
+    :size="size"
+    :type="active ? 'warning' : 'default'"
+    :aria-label="active ? '取消收藏' : '收藏'"
+    @click="onClick"
+  >
+    <template #icon>
+      <n-icon :component="active ? Star : StarOutline" />
     </template>
-    {{ active ? '取消收藏' : '收藏' }}
-  </n-tooltip>
+  </n-button>
 </template>

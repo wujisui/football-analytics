@@ -32,15 +32,18 @@ export async function fetchLeagueCatalog(): Promise<LeagueCatalogResponse> {
   return data
 }
 
-/** Locally stored, odds-backed filter options for the selected day. */
+/** Locally stored filter options for the selected day (counts only). */
 export async function fetchLeagueFilterOptions(params?: {
   date?: string
+  /** prematch = unfinished; results = finished-day checklist */
+  scope?: 'prematch' | 'results'
 }): Promise<LeagueFilterOptionsResponse> {
   const { data } = await apiClient.get<LeagueFilterOptionsResponse>(
     '/leagues/filter-options',
     {
       params: {
         date: params?.date,
+        scope: params?.scope,
       },
     },
   )

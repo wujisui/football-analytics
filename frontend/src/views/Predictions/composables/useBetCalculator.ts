@@ -19,6 +19,16 @@ const selections = ref<CalcSelection[]>([])
 const multiplier = ref(1)
 const fold = ref<FoldMode>('2x1')
 
+export type GroupedFixtureSelections = {
+  fixtureId: number
+  leagueId: number
+  picks: CalcSelection[]
+  homeName: string
+  awayName: string
+  kickoff: string
+  leagueName: string
+}
+
 export function useBetCalculator() {
   const matchCount = computed(() => selectedFixtureIds(selections.value).length)
 
@@ -120,7 +130,7 @@ export function useBetCalculator() {
   }
 
   /** Group selections by fixture for the bet details panel. */
-  const groupedSelections = computed(() => {
+  const groupedSelections = computed((): GroupedFixtureSelections[] => {
     const map = new Map<number, CalcSelection[]>()
     for (const sel of selections.value) {
       const list = map.get(sel.fixtureId) ?? []

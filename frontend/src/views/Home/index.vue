@@ -5,10 +5,13 @@ import FixtureList from '@/components/FixtureList.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
+import { useScrollRestore } from '@/composables/useScrollRestore'
 
 defineOptions({ name: 'Home' })
 
 const listShellRef = ref<HTMLElement | null>(null)
+
+useScrollRestore('home-list', listShellRef)
 
 const {
   contentLoading,
@@ -16,6 +19,7 @@ const {
   homeEmptyText,
   reloadPrematchDay,
   homeDay,
+  shellTrackedIds,
 } = useFixturesShell()
 
 const { error, syncHomeListAfterDetail } = useHomeFixtures()
@@ -23,7 +27,7 @@ const { error, syncHomeListAfterDetail } = useHomeFixtures()
 const fixtures = computed(() => prematchDisplayedFixtures.value)
 
 onActivated(() => {
-  syncHomeListAfterDetail(homeDay.value)
+  syncHomeListAfterDetail(homeDay.value, shellTrackedIds.value)
 })
 </script>
 
@@ -47,7 +51,7 @@ onActivated(() => {
             mode="full"
             :fixtures="fixtures"
             :empty-description="homeEmptyText"
-            :group-by-day="false"
+            :group-by-day="true"
           />
         </div>
       </n-spin>

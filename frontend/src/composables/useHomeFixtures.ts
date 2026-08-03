@@ -24,22 +24,32 @@ let loadSeq = 0
 let detailListDirty = false
 const pendingDetailPatches = new Map<number, FixtureResponse>()
 
-function cacheKey(date: string, days: number): string {
-  return `${date}|${days}`
+function leagueKey(ids?: number[]): string {
+  if (!ids?.length) return '-'
+  return [...new Set(ids.map(Number).filter((n) => Number.isFinite(n)))]
+    .sort((a, b) => a - b)
+    .join(',')
 }
 
-function cacheFresh(date: string, days: number): boolean {
+function cacheKey(date: string, days: number, leagueIds?: number[]): string {
+  return `${date}|${days}|${leagueKey(leagueIds)}`
+}
+
+function cacheFresh(date: string, days: number, leagueIds?: number[]): boolean {
   return (
-    loadedKey === cacheKey(date, days) &&
+    loadedKey === cacheKey(date, days, leagueIds) &&
     loadedAt.value > 0 &&
     Date.now() - loadedAt.value < CACHE_TTL_MS
   )
 }
 
-/** True when shared list cache matches 即时 UTC today + span. */
-export function isPrematchListCacheFresh(now = new Date()): boolean {
+/** True when shared list cache matches 即时 UTC today + span + league set. */
+export function isPrematchListCacheFresh(
+  now = new Date(),
+  leagueIds?: number[],
+): boolean {
   const { date, days } = prematchFetchParams(now)
-  return cacheFresh(date, days)
+  return cacheFresh(date, days, leagueIds)
 }
 
 function applyPendingPatches(): void {
@@ -77,31 +87,45 @@ export function patchFixtureFromDetail(detail: FixtureResponse): void {
 }
 
 /** Apply queued patches; reload local list only when a patch could not merge yet. */
-export function syncHomeListAfterDetail(_date: string): void {
+export function syncHomeListAfterDetail(
+  _date: string,
+  leagueIds?: number[],
+): void {
   applyPendingPatches()
   if (!detailListDirty) return
   detailListDirty = false
   if (pendingDetailPatches.size > 0) {
     const { date: fetchDate, days } = prematchFetchParams()
-    void loadHomeFixtures({ force: true, date: fetchDate, days })
+    void loadHomeFixtures({ force: true, date: fetchDate, days, leagueIds })
   }
 }
 
 /**
  * Load fixtures for the prematch window from local API only.
- * Client filters by tracked league ids — do not narrow with league_ids here.
+ * Narrow with ``leagueIds`` on the server — do not pull the full global day.
  * Do not call with 赛程 selectedDay; that must stay in scheduleFixtures.
  */
 async function loadHomeFixtures(options?: {
   force?: boolean
   date?: string
   days?: number
+  leagueIds?: number[]
 }): Promise<void> {
   const date = options?.date ?? todayDate()
   const days = options?.days ?? DEFAULT_DAYS
-  const key = cacheKey(date, days)
+  const leagueIds = options?.leagueIds
+  const key = cacheKey(date, days, leagueIds)
 
-  if (!options?.force && cacheFresh(date, days)) {
+  if (!leagueIds?.length) {
+    allFixtures.value = []
+    loadedAt.value = Date.now()
+    loadedKey = key
+    loading.value = false
+    error.value = ''
+    return
+  }
+
+  if (!options?.force && cacheFresh(date, days, leagueIds)) {
     loading.value = false
     applyPendingPatches()
     return
@@ -113,7 +137,7 @@ async function loadHomeFixtures(options?: {
     } catch {
       /* previous request failed; continue with this key */
     }
-    if (!options?.force && cacheFresh(date, days)) {
+    if (!options?.force && cacheFresh(date, days, leagueIds)) {
       applyPendingPatches()
       return
     }
@@ -125,7 +149,7 @@ async function loadHomeFixtures(options?: {
   inflightKey = key
   inflight = (async () => {
     try {
-      const fixturesData = await fetchTodayFixtures({ date, days })
+      const fixturesData = await fetchTodayFixtures({ date, days, leagueIds })
       if (seq !== loadSeq) return
       allFixtures.value = fixturesData.fixtures
       loadedAt.value = Date.now()

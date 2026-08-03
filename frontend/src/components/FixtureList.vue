@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, useSlots, watch } from 'vue'
 
 import type { FixtureResponse } from '@/api/types'
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import FixtureCard from '@/components/FixtureCard.vue'
 import type { DetailFrom } from '@/utils/detailNav'
-import { formatDate, toLocalDayKey } from '@/utils/format'
+import { groupFixturesByScheduleDay } from '@/utils/fixtureDayGroups'
 
 const props = withDefaults(
   defineProps<{
@@ -13,41 +13,69 @@ const props = withDefaults(
     emptyDescription?: string
     /** full = odds+prediction card; prediction = algorithm card only */
     mode?: 'full' | 'prediction'
-    /** Date section bands (07/17 周五); off for single-day home list. */
+    /** Date sections as flat accordion (Naive Collapse). */
     groupByDay?: boolean
     from?: DetailFrom
     date?: string | null
+    /** Controlled expand (accordion name = day key). Omit for internal default. */
+    expandedNames?: string | null
   }>(),
   { mode: 'full', groupByDay: true, from: 'home', date: null },
 )
 
-type DayGroup = {
-  key: string
-  label: string
-  fixtures: FixtureResponse[]
+const emit = defineEmits<{
+  'update:expandedNames': [value: string | null]
+}>()
+
+const slots = useSlots()
+const hasCardSlot = computed(() => !!slots.card)
+const controlled = computed(() => props.expandedNames !== undefined)
+const internalExpanded = ref<string | null>(null)
+
+const dayGroups = computed(() =>
+  props.groupByDay ? groupFixturesByScheduleDay(props.fixtures) : [],
+)
+
+function firstDayKey(): string | null {
+  return dayGroups.value[0]?.key ?? null
 }
 
-function daySectionLabel(sampleIso: string): string {
-  const pretty = formatDate(sampleIso)
-  return pretty || sampleIso.slice(0, 10)
-}
+watch(
+  dayGroups,
+  (groups) => {
+    const next = firstDayKey()
+    if (controlled.value) {
+      const cur = props.expandedNames ?? null
+      if (cur && groups.some((g) => g.key === cur)) return
+      if (cur !== next) emit('update:expandedNames', next)
+      return
+    }
+    if (internalExpanded.value && groups.some((g) => g.key === internalExpanded.value)) {
+      return
+    }
+    internalExpanded.value = next
+  },
+  { immediate: true },
+)
 
-const dayGroups = computed((): DayGroup[] => {
-  if (!props.groupByDay) return []
-  const map = new Map<string, FixtureResponse[]>()
-  for (const f of props.fixtures) {
-    const key = toLocalDayKey(f.fixture_date)
-    const bucket = map.get(key)
-    if (bucket) bucket.push(f)
-    else map.set(key, [f])
+function normalizeExpanded(
+  value: string | number | Array<string | number> | null | undefined,
+): string | null {
+  if (value == null) return null
+  if (Array.isArray(value)) {
+    const first = value[0]
+    return first == null ? null : String(first)
   }
-  return [...map.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, fixtures]) => ({
-      key,
-      label: daySectionLabel(fixtures[0].fixture_date),
-      fixtures,
-    }))
+  return String(value)
+}
+
+const collapseExpanded = computed({
+  get: () => (controlled.value ? props.expandedNames ?? null : internalExpanded.value),
+  set: (value: string | number | Array<string | number> | null) => {
+    const next = normalizeExpanded(value)
+    if (controlled.value) emit('update:expandedNames', next)
+    else internalExpanded.value = next
+  },
 })
 </script>
 
@@ -58,23 +86,33 @@ const dayGroups = computed((): DayGroup[] => {
       :description="emptyDescription || '近期暂无该联赛赛事'"
       class="empty"
     />
-    <template v-else-if="groupByDay">
-      <section
+    <n-collapse
+      v-else-if="groupByDay"
+      class="fa-day-collapse"
+      accordion
+      display-directive="show"
+      arrow-placement="right"
+      :expanded-names="collapseExpanded"
+      @update:expanded-names="collapseExpanded = $event"
+    >
+      <n-collapse-item
         v-for="group in dayGroups"
         :key="group.key"
-        class="day-section"
+        :name="group.key"
       >
-        <n-flex class="section-band" justify="space-between" align="center" :size="12">
-          <n-flex align="center" :size="8">
-            <span class="title-bar" aria-hidden="true" />
-            <n-text strong style="font-size: 15px">{{ group.label }}</n-text>
-          </n-flex>
-          <n-text depth="3" style="font-size: 13px; white-space: nowrap">
-            {{ group.fixtures.length }} 场
-          </n-text>
-        </n-flex>
-        <n-space vertical :size="14" class="day-cards">
-          <template v-if="mode === 'prediction'">
+        <template #header>
+          <div class="fa-day-collapse-title">
+            <span class="fa-day-collapse-title__label">{{ group.label }}</span>
+            <span class="fa-day-collapse-title__count">{{ group.fixtures.length }} 场</span>
+          </div>
+        </template>
+        <n-space vertical :size="10" class="day-cards">
+          <template v-if="hasCardSlot">
+            <template v-for="fixture in group.fixtures" :key="fixture.fixture_id">
+              <slot name="card" :fixture="fixture" />
+            </template>
+          </template>
+          <template v-else-if="mode === 'prediction'">
             <AlgorithmPredictionCard
               v-for="fixture in group.fixtures"
               :key="fixture.fixture_id"
@@ -93,10 +131,15 @@ const dayGroups = computed((): DayGroup[] => {
             />
           </template>
         </n-space>
-      </section>
-    </template>
-    <n-space v-else vertical :size="14" class="day-cards">
-      <template v-if="mode === 'prediction'">
+      </n-collapse-item>
+    </n-collapse>
+    <n-space v-else vertical :size="10" class="day-cards">
+      <template v-if="hasCardSlot">
+        <template v-for="fixture in fixtures" :key="fixture.fixture_id">
+          <slot name="card" :fixture="fixture" />
+        </template>
+      </template>
+      <template v-else-if="mode === 'prediction'">
         <AlgorithmPredictionCard
           v-for="fixture in fixtures"
           :key="fixture.fixture_id"
@@ -122,27 +165,7 @@ const dayGroups = computed((): DayGroup[] => {
 .fixture-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.day-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.section-band {
-  padding: 10px 12px;
-  background: var(--fa-bg-soft);
-  border-radius: 6px;
-}
-
-.title-bar {
-  width: 3px;
-  height: 14px;
-  border-radius: 1px;
-  background: #c23b3b;
-  flex-shrink: 0;
+  gap: 8px;
 }
 
 .day-cards {

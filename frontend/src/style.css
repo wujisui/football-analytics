@@ -209,3 +209,59 @@ button {
 .fa-page-list-state {
   margin-bottom: 12px;
 }
+
+/* Flat day accordion shared by FixtureList / Favorites — title bar only. */
+.fa-day-collapse {
+  background: transparent;
+}
+
+.fa-day-collapse .n-collapse-item {
+  margin: 0 0 10px;
+  border-radius: 0;
+  background: transparent;
+}
+
+.fa-day-collapse .n-collapse-item > .n-collapse-item__header {
+  min-height: 40px;
+  padding: 8px 12px !important;
+  align-items: center;
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  background: var(--fa-bg-soft) !important;
+}
+
+.fa-day-collapse .n-collapse-item__header-main {
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+
+.fa-day-collapse .n-collapse-item__content-inner {
+  padding: 10px 0 2px;
+}
+
+.fa-day-collapse-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.fa-day-collapse-title__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fa-text-strong);
+  font-weight: 600;
+}
+
+.fa-day-collapse-title__count {
+  flex-shrink: 0;
+  color: var(--fa-text-muted);
+  font-size: 12px;
+}

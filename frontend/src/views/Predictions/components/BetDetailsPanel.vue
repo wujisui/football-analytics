@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { TrashOutline } from '@vicons/ionicons5'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
+import BetSelectionList from '@/views/Predictions/components/BetSelectionList.vue'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import {
   foldModeLabel,
@@ -9,7 +10,6 @@ import {
   STAKE_PER_BET,
   type CalcSelection,
 } from '@/utils/betCalculator'
-import { leagueTagColor } from '@/utils/format'
 
 const props = withDefaults(
   defineProps<{
@@ -30,7 +30,13 @@ const {
   removeFixture,
 } = useBetCalculator()
 
+const showDetails = ref(false)
 const showFormula = ref(false)
+
+function openDetails() {
+  if (!groupedSelections.value.length) return
+  showDetails.value = true
+}
 
 function openFormula() {
   if (result.value.combos.length) showFormula.value = true
@@ -44,83 +50,22 @@ function oddsFormula(picks: CalcSelection[]): string {
   return picks.map((pick) => pick.odd).join(' × ')
 }
 
-defineExpose({ openFormula })
+watch(matchCount, (count) => {
+  if (!count) showDetails.value = false
+})
+
+defineExpose({ openFormula, openDetails })
 </script>
 
 <template>
   <div class="bet-details-panel" :class="{ 'footer-only': props.footerOnly }">
     <div v-if="!props.footerOnly" class="scroll-fill">
       <n-scrollbar style="height: 100%;" trigger="hover">
-        <n-flex vertical :size="10" style="padding: 10px;">
-          <n-empty
-            v-if="!groupedSelections.length"
-            description="在「计算器」点选玩法后显示已选场次"
-            size="small"
-          />
-
-          <n-card
-            v-for="group in groupedSelections"
-            v-else
-            :key="group.fixtureId"
-            size="small"
-            :bordered="false"
-            header-style="font-size: inherit; font-weight: 400;"
-            style="background: var(--fa-bg-soft);"
-          >
-            <template #header>
-              <n-flex :wrap="false" align="center" :size="8" style="min-width: 0;">
-                <n-ellipsis style="flex: 0 1 auto; min-width: 0;">
-                  <n-text :style="{ color: leagueTagColor(group.leagueId) }">
-                    {{ group.leagueName }}
-                  </n-text>
-                </n-ellipsis>
-                <n-text depth="3" style="flex-shrink: 0; font-size: 12px;">
-                  {{ group.kickoff }}
-                </n-text>
-              </n-flex>
-            </template>
-            <template #header-extra>
-              <n-button
-                size="tiny"
-                type="error"
-                quaternary
-                circle
-                aria-label="移除场次"
-                @click="removeFixture(group.fixtureId)"
-              >
-                <template #icon>
-                  <n-icon :component="TrashOutline" />
-                </template>
-              </n-button>
-            </template>
-
-            <n-flex vertical :size="8">
-              <n-flex
-                :wrap="false"
-                justify="center"
-                align="center"
-                :size="6"
-                class="matchup"
-              >
-                <n-ellipsis>{{ group.homeName }}</n-ellipsis>
-                <n-text depth="3" class="versus">VS</n-text>
-                <n-ellipsis>{{ group.awayName }}</n-ellipsis>
-              </n-flex>
-              <n-flex
-                v-for="pick in group.picks"
-                :key="`${pick.market}-${pick.outcome}`"
-                :wrap="false"
-                align="center"
-                :size="8"
-              >
-                <n-tag size="small" :bordered="false">{{ pick.playLabel }}</n-tag>
-                <n-tag size="small" :bordered="false" type="warning">
-                  {{ pick.pickLabel }}
-                </n-tag>
-              </n-flex>
-            </n-flex>
-          </n-card>
-        </n-flex>
+        <BetSelectionList
+          :groups="groupedSelections"
+          empty-description="在「计算器」点选玩法后显示已选场次"
+          @remove="removeFixture"
+        />
       </n-scrollbar>
     </div>
 
@@ -150,11 +95,15 @@ defineExpose({ openFormula })
           <n-button
             block
             size="small"
-            quaternary
+            type="error"
+            tertiary
             :disabled="!matchCount"
+            aria-label="清空已选"
             @click="clearAll"
           >
-            清空
+            <template #icon>
+              <n-icon :component="TrashOutline" />
+            </template>
           </n-button>
         </n-gi>
       </n-grid>
@@ -171,11 +120,11 @@ defineExpose({ openFormula })
         <n-button
           v-if="props.footerOnly"
           size="tiny"
-          secondary
-          :disabled="!result.combos.length"
-          @click="openFormula"
+          type="primary"
+          :disabled="!groupedSelections.length"
+          @click="openDetails"
         >
-          奖金算式
+          投注详情
         </n-button>
       </n-flex>
 
@@ -185,10 +134,34 @@ defineExpose({ openFormula })
     </n-flex>
 
     <n-modal
+      v-model:show="showDetails"
+      preset="card"
+      title="投注详情"
+      :bordered="false"
+      to="body"
+      :style="{
+        width: '92%',
+        maxWidth: '480px',
+        maxHeight: 'calc(100vh - 32px)',
+        margin: 'auto',
+      }"
+    >
+      <div class="details-modal-body">
+        <n-scrollbar style="height: 100%;" trigger="hover">
+          <BetSelectionList
+            :groups="groupedSelections"
+            @remove="removeFixture"
+          />
+        </n-scrollbar>
+      </div>
+    </n-modal>
+
+    <n-modal
       v-model:show="showFormula"
       preset="card"
       :title="`奖金算式 · ${foldModeLabel(fold)}`"
       :bordered="false"
+      to="body"
       :style="{
         width: '20%',
         minWidth: '360px',
@@ -252,7 +225,6 @@ defineExpose({ openFormula })
 </template>
 
 <style scoped>
-/* 仅保留 Naive 无法用 props 表达的壳层布局：填满高度、滚动区、底栏固定 */
 .bet-details-panel {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
@@ -273,37 +245,22 @@ defineExpose({ openFormula })
   overflow: hidden;
 }
 
-/* header 内 n-ellipsis 需要父级可收缩，Naive 默认未给 __main 设 min-width */
-.bet-details-panel :deep(.n-card-header__main) {
-  min-width: 0;
-}
-
-.matchup {
-  width: 100%;
-  min-width: 0;
-}
-
-.matchup :deep(.n-ellipsis) {
-  flex: 0 1 auto;
-  min-width: 0;
-  font-weight: 600;
-}
-
-.versus {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
 .details-footer {
   flex-shrink: 0;
   padding: 10px;
   border-top: 1px solid var(--fa-border);
-  background: var(--fa-bg-elevated);
+  background-color: var(--fa-bg-elevated);
 }
 
 .footer-only .details-footer {
   border-top: none;
   padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+}
+
+.details-modal-body {
+  height: min(70vh, 640px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .formula-modal-body {

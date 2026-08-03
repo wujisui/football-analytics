@@ -1,17 +1,27 @@
 import { computed, ref } from 'vue'
 
 import type { ResultFixture, ResultsHistoryResponse } from '@/api/fixtures'
-import { fetchLeagueCatalog, type LeagueFilterOption } from '@/api/leagues'
+import {
+  fetchLeagueCatalog,
+  fetchLeagueFilterOptions,
+  type LeagueFilterOption,
+} from '@/api/leagues'
 import type { FixtureResponse, LeagueSummaryResponse } from '@/api/types'
+import { resolveTrackedSelection } from '@/utils/leagueFilterSelection'
 import { leagueLabel } from '@/utils/leagueNames'
 import { mergeDetailIntoListFixture } from '@/utils/oddsDisplay'
+
+const RESULTS_TRACKED_KEY = 'fa-results-tracked-league-ids-by-date-v1'
 
 const resultsFixtures = ref<ResultFixture[]>([])
 const scheduleFixtures = ref<FixtureResponse[]>([])
 const scheduleMode = ref(false)
 const resultsTrackedIds = ref<number[]>([])
+const resultsFilterOptions = ref<LeagueFilterOption[]>([])
 const resultsLoading = ref(false)
 const resultsLoadedDay = ref('')
+/** Date of the last filter-options payload — used to keep user checks within a day. */
+let resultsFilterOptionsDay = ''
 const resultsHistory = ref<ResultsHistoryResponse | null>(null)
 const resultsByDay = new Map<string, ResultFixture[]>()
 const scheduleByDay = new Map<string, FixtureResponse[]>()
@@ -23,6 +33,37 @@ const scheduleByDay = new Map<string, FixtureResponse[]>()
  */
 const configuredLeagueIds = ref<Set<number>>(new Set())
 let configuredIdsInflight: Promise<void> | null = null
+
+function readStoredResultsTracked(date: string): number[] | null {
+  if (!date) return null
+  try {
+    const raw = localStorage.getItem(RESULTS_TRACKED_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const ids = (parsed as Record<string, unknown>)[date]
+    if (!Array.isArray(ids)) return null
+    return ids.map(Number).filter((n) => Number.isFinite(n))
+  } catch {
+    return null
+  }
+}
+
+function persistResultsTracked(ids: number[], date: string) {
+  if (!date) return
+  try {
+    const raw = localStorage.getItem(RESULTS_TRACKED_KEY)
+    const parsed = raw ? JSON.parse(raw) : {}
+    const byDate =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {}
+    byDate[date] = ids
+    localStorage.setItem(RESULTS_TRACKED_KEY, JSON.stringify(byDate))
+  } catch {
+    /* ignore */
+  }
+}
 
 function setResultsConfiguredLeagueIds(ids: Iterable<number>) {
   configuredLeagueIds.value = new Set(
@@ -48,114 +89,59 @@ export async function ensureResultsConfiguredLeagueIds(): Promise<void> {
 }
 
 function setResultsTrackedIds(ids: number[]) {
-  resultsTrackedIds.value = [...new Set(ids.map(Number).filter((n) => Number.isFinite(n)))]
+  const unique = [...new Set(ids.map(Number).filter((n) => Number.isFinite(n)))]
+  resultsTrackedIds.value = unique
+  const day = resultsFilterOptionsDay || resultsLoadedDay.value
+  if (day) persistResultsTracked(unique, day)
 }
 
-type LeagueCountSeed = {
-  league_id: number
-  league_name: string
-  country?: string | null
-}
-
-function buildFilterOptionsFromFixtures(
-  fixtures: LeagueCountSeed[],
-  defaultCheckAll = true,
-): LeagueFilterOption[] {
-  const map = new Map<number, { name: string; country: string | null; count: number }>()
-  for (const fx of fixtures) {
-    const cur = map.get(fx.league_id)
-    if (cur) cur.count += 1
-    else {
-      map.set(fx.league_id, {
-        name: fx.league_name,
-        country: fx.country ?? null,
-        count: 1,
-      })
-    }
+/**
+ * Lightweight league checklist for a results/schedule day (counts only).
+ * Sets tracked ids from stored preference ∩ options (defaults = primary).
+ */
+export async function loadResultsFilterOptions(options: {
+  date: string
+  schedule: boolean
+}): Promise<LeagueFilterOption[]> {
+  const data = await fetchLeagueFilterOptions({
+    date: options.date,
+    scope: options.schedule ? 'prematch' : 'results',
+  })
+  const list = [...data.configured, ...data.extra]
+  resultsFilterOptions.value = list
+  const allow = new Set(list.map((o) => o.league_id))
+  const sameDay = resultsFilterOptionsDay === options.date
+  const kept = sameDay
+    ? resultsTrackedIds.value.filter((id) => allow.has(id))
+    : []
+  resultsFilterOptionsDay = options.date
+  if (kept.length) {
+    setResultsTrackedIds(kept)
+  } else {
+    setResultsTrackedIds(
+      resolveTrackedSelection(list, readStoredResultsTracked(options.date) ?? []),
+    )
   }
-  return [...map.entries()]
-    .map(([league_id, { name, country, count }]) => {
-      const configured = configuredLeagueIds.value.has(league_id)
-      return {
-        league_id,
-        league_name: name,
-        country,
-        fixtures_count: count,
-        tier: (configured ? 'configured' : 'extra') as LeagueFilterOption['tier'],
-        // Results: all leagues checked; future schedule: primary catalog only.
-        default_checked: defaultCheckAll ? true : configured,
-      }
-    })
-    .sort((a, b) => {
-      if (a.tier !== b.tier) return a.tier === 'configured' ? -1 : 1
-      return leagueLabel(a.league_name).localeCompare(leagueLabel(b.league_name), 'zh')
-    })
-}
-
-/** Results: all leagues that day; schedule: primary (configured) defaults. */
-function syncResultsTrackedWithDay() {
-  const options = scheduleMode.value
-    ? buildFilterOptionsFromFixtures(
-        scheduleFixtures.value.map((fx) => ({
-          league_id: fx.league_id,
-          league_name: fx.league_name,
-        })),
-        false,
-      )
-    : buildFilterOptionsFromFixtures(
-        resultsFixtures.value.map((fx) => ({
-          league_id: fx.league_id,
-          league_name: fx.league_name,
-          country: fx.league_country,
-        })),
-      )
-  setResultsTrackedIds(
-    options.filter((o) => o.default_checked).map((o) => o.league_id),
-  )
+  return list
 }
 
 /** Push finished fixtures for the selected day into the schedule shell. */
 export function publishResultsFixtures(fixtures: ResultFixture[], day: string) {
-  const dayChanged = day !== resultsLoadedDay.value
-  const prevLeagueIds = new Set(resultsFixtures.value.map((fx) => fx.league_id))
   scheduleMode.value = false
   scheduleFixtures.value = []
   resultsFixtures.value = fixtures
   resultsLoadedDay.value = day
   if (day) resultsByDay.set(day, [...fixtures])
-  if (dayChanged) {
-    syncResultsTrackedWithDay()
-    return
-  }
-  // Same-day capture may introduce leagues; keep user unchecks, auto-include newcomers.
-  const added = [...new Set(fixtures.map((fx) => fx.league_id))].filter(
-    (id) => !prevLeagueIds.has(id),
-  )
-  if (added.length) {
-    setResultsTrackedIds([...resultsTrackedIds.value, ...added])
-  }
 }
 
 /** Push upcoming fixtures for a future calendar day. */
 export function publishScheduleFixtures(fixtures: FixtureResponse[], day: string) {
-  const dayChanged = day !== resultsLoadedDay.value
   const pending = fixtures.filter((f) => f.status.toLowerCase() === 'pending')
-  const prevLeagueIds = new Set(scheduleFixtures.value.map((fx) => fx.league_id))
   scheduleMode.value = true
   scheduleFixtures.value = pending
   resultsFixtures.value = []
   resultsLoadedDay.value = day
   if (day) scheduleByDay.set(day, [...pending])
-  if (dayChanged) {
-    syncResultsTrackedWithDay()
-    return
-  }
-  const added = [...new Set(pending.map((fx) => fx.league_id))].filter(
-    (id) => !prevLeagueIds.has(id) && configuredLeagueIds.value.has(id),
-  )
-  if (added.length) {
-    setResultsTrackedIds([...resultsTrackedIds.value, ...added])
-  }
 }
 
 export function setResultsLoading(loading: boolean) {
@@ -216,26 +202,14 @@ export function patchScheduleFixtureFromDetail(detail: FixtureResponse): void {
 export function useResultsLeagues() {
   const trackedIdSet = computed(() => new Set(resultsTrackedIds.value))
 
-  const resultsFilterOptions = computed((): LeagueFilterOption[] =>
-    scheduleMode.value
-      ? buildFilterOptionsFromFixtures(
-          scheduleFixtures.value.map((fx) => ({
-            league_id: fx.league_id,
-            league_name: fx.league_name,
-          })),
-          false,
-        )
-      : buildFilterOptionsFromFixtures(
-          resultsFixtures.value.map((fx) => ({
-            league_id: fx.league_id,
-            league_name: fx.league_name,
-            country: fx.league_country,
-          })),
-        ),
-  )
-
   const countByLeague = computed(() => {
     const map = new Map<number, number>()
+    // Prefer server count from filter-options (covers unchecked leagues too).
+    for (const opt of resultsFilterOptions.value) {
+      if (!trackedIdSet.value.has(opt.league_id)) continue
+      map.set(opt.league_id, opt.fixtures_count)
+    }
+    if (map.size) return map
     const list = scheduleMode.value ? scheduleFixtures.value : resultsFixtures.value
     for (const fx of list) {
       if (!trackedIdSet.value.has(fx.league_id)) continue
@@ -245,6 +219,22 @@ export function useResultsLeagues() {
   })
 
   const menuLeagues = computed((): LeagueSummaryResponse[] => {
+    const fromOptions = resultsFilterOptions.value.filter((o) =>
+      trackedIdSet.value.has(o.league_id),
+    )
+    if (fromOptions.length) {
+      return fromOptions
+        .map((o) => ({
+          league_id: o.league_id,
+          league_name: o.league_name,
+          country: o.country,
+          today_fixtures_count: 0,
+          upcoming_fixtures_count: o.fixtures_count,
+        }))
+        .sort((a, b) =>
+          leagueLabel(a.league_name).localeCompare(leagueLabel(b.league_name), 'zh'),
+        )
+    }
     const list = scheduleMode.value ? scheduleFixtures.value : resultsFixtures.value
     const map = new Map<number, LeagueSummaryResponse>()
     for (const fx of list) {
@@ -266,8 +256,12 @@ export function useResultsLeagues() {
   })
 
   const totalCount = computed(() => {
-    const list = scheduleMode.value ? scheduleFixtures.value : resultsFixtures.value
     let n = 0
+    for (const opt of resultsFilterOptions.value) {
+      if (trackedIdSet.value.has(opt.league_id)) n += opt.fixtures_count
+    }
+    if (n) return n
+    const list = scheduleMode.value ? scheduleFixtures.value : resultsFixtures.value
     for (const fx of list) {
       if (trackedIdSet.value.has(fx.league_id)) n += 1
     }

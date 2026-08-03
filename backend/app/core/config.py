@@ -14,7 +14,6 @@ ApiProvider = Literal["api_football186", "api_football", "live_football_data"]
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 LEAGUES_CATALOG_PATH = BACKEND_ROOT / "config" / "leagues.json"
-LEAGUES_REFERENCE_PATH = BACKEND_ROOT / "config" / "leagues.example.json"
 
 logger = logging.getLogger(__name__)
 
@@ -146,10 +145,6 @@ class Settings(BaseSettings):
     }
     # Optional per-league season override (catalog ``season`` field / env).
     LEAGUE_SEASONS: dict[int, str] = {}
-    # Reference catalog (leagues.example.json): filter extras / expanded sync allow-list.
-    REFERENCE_LEAGUE_IDS: dict[str, int] = {}
-    REFERENCE_LEAGUE_COUNTRIES: dict[int, str] = {}
-    REFERENCE_LEAGUE_SEASONS: dict[int, str] = {}
     # Inclusive forward window including today. Must cover the date-strip future
     # span (HOME_DATE_RADIUS=7 → today..today+7 = 8 days).
     FIXTURES_LOOKAHEAD_DAYS: int = 8
@@ -198,43 +193,7 @@ class Settings(BaseSettings):
                     "League catalog %s produced no leagues; keeping defaults", source
                 )
 
-        self._load_reference_catalog()
         return self
-
-    def _load_reference_catalog(self) -> None:
-        """Load leagues.example.json as expanded allow-list for filter extras."""
-        if not LEAGUES_REFERENCE_PATH.is_file():
-            return
-        try:
-            parsed = json.loads(LEAGUES_REFERENCE_PATH.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.warning(
-                "Failed to load reference catalog %s: %s", LEAGUES_REFERENCE_PATH, exc
-            )
-            return
-        if not isinstance(parsed, list):
-            return
-        ids, countries, seasons = _parse_league_catalog(parsed)
-        if not ids:
-            return
-        self.REFERENCE_LEAGUE_IDS = ids
-        self.REFERENCE_LEAGUE_COUNTRIES = countries
-        self.REFERENCE_LEAGUE_SEASONS = seasons
-        logger.info(
-            "Loaded %s reference leagues from %s",
-            len(ids),
-            LEAGUES_REFERENCE_PATH,
-        )
-
-    def fetchable_league_ids(self) -> set[int]:
-        """Configured + reference — IDs allowed for sync / local fixture reads."""
-        return set(self.LEAGUE_IDS.values()) | set(self.REFERENCE_LEAGUE_IDS.values())
-
-    def reference_display_name(self, league_id: int, fallback: str = "") -> str:
-        for name, lid in self.REFERENCE_LEAGUE_IDS.items():
-            if lid == league_id:
-                return name
-        return self.league_display_name(league_id, fallback)
 
     @property
     def api_host(self) -> str:
@@ -256,8 +215,6 @@ class Settings(BaseSettings):
         """Season hint from catalog; None → caller may use DB / calendar year."""
         if league_id in self.LEAGUE_SEASONS:
             return self.LEAGUE_SEASONS[league_id]
-        if league_id in self.REFERENCE_LEAGUE_SEASONS:
-            return self.REFERENCE_LEAGUE_SEASONS[league_id]
         return fallback
 
     @property

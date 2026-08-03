@@ -1,10 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import Detail from '@/views/Detail/index.vue'
 import FixturesShellLayout from '@/layouts/FixturesShellLayout.vue'
 import Home from '@/views/Home/index.vue'
 import Predictions from '@/views/Predictions/index.vue'
 import Results from '@/views/Results/index.vue'
+
+// Off the first-paint path — split so a cold reload boots the lists sooner.
+const Detail = () => import('@/views/Detail/index.vue')
+const Mine = () => import('@/views/Mine/index.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -29,6 +32,11 @@ const router = createRouter({
           component: Results,
         },
       ],
+    },
+    {
+      path: '/mine',
+      name: 'mine',
+      component: Mine,
     },
     {
       path: '/favorites',

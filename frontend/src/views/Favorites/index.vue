@@ -4,10 +4,15 @@ import { useRouter } from 'vue-router'
 
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import FavoriteFixtureCard from '@/views/Favorites/components/FavoriteFixtureCard.vue'
-import { favoriteFixtureDays, useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
+import {
+  favoriteFixtureDays,
+  useFavoriteFixtures,
+  type FavoriteFixtureRecord,
+} from '@/composables/useFavoriteFixtures'
 import { useFavoritesDrawer } from '@/views/Favorites/composables/useFavoritesDrawer'
 import { useIsPhone } from '@/composables/useMediaQuery'
-import { parseApiDate, toScheduleDayKey } from '@/utils/format'
+import { formatScheduleDay, parseApiDate, toScheduleDayKey } from '@/utils/format'
+import { groupFixturesByScheduleDay } from '@/utils/fixtureDayGroups'
 import { fixtureDetailRoute } from '@/utils/detailNav'
 import { todayDate } from '@/utils/homeDateStrip'
 
@@ -32,6 +37,12 @@ function writeSavedFilterDate(date: string | null) {
   } catch {
     /* ignore */
   }
+}
+
+type FavoriteBucket = {
+  key: string
+  title: string
+  items: FavoriteFixtureRecord[]
 }
 
 const router = useRouter()
@@ -90,6 +101,21 @@ const filteredFavorites = computed(() => {
   )
 })
 
+/** Newest schedule day first; title is the calendar date only. */
+const favoriteBuckets = computed((): FavoriteBucket[] =>
+  groupFixturesByScheduleDay(filteredFavorites.value)
+    .reverse()
+    .map((group) => ({
+      key: group.key,
+      title: formatScheduleDay(group.key),
+      items: group.fixtures,
+    })),
+)
+
+const defaultExpandedBuckets = computed(() =>
+  favoriteBuckets.value.map((b) => b.key),
+)
+
 function goDetail(fixtureId: number) {
   close()
   void router.push(fixtureDetailRoute(fixtureId, { from: 'favorites' }))
@@ -136,7 +162,7 @@ function goDetail(fixtureId: number) {
       <n-spin :show="refreshing" class="drawer-body">
         <n-scrollbar class="drawer-scroll" trigger="hover">
           <n-empty
-            v-if="!filteredFavorites.length"
+            v-if="!favoriteBuckets.length"
             :description="
               filterDate
                 ? `${filterDate} 无收藏场次`
@@ -144,14 +170,38 @@ function goDetail(fixtureId: number) {
             "
             class="drawer-empty"
           />
-          <div v-else class="favorites-card-stack">
-            <FavoriteFixtureCard
-              v-for="item in filteredFavorites"
-              :key="item.fixture_id"
-              :item="item"
-              @open-detail="goDetail"
-            />
-          </div>
+          <n-collapse
+            v-else
+            :key="`${filterDate ?? 'all'}-${favoriteBuckets.map((b) => b.key).join('-')}`"
+            class="fa-day-collapse"
+            accordion
+            display-directive="show"
+            :default-expanded-names="defaultExpandedBuckets[0] ?? null"
+            arrow-placement="right"
+          >
+            <n-collapse-item
+              v-for="bucket in favoriteBuckets"
+              :key="bucket.key"
+              :name="bucket.key"
+            >
+              <template #header>
+                <div class="fa-day-collapse-title">
+                  <n-text strong class="fa-day-collapse-title__label">{{ bucket.title }}</n-text>
+                  <n-text depth="3" class="fa-day-collapse-title__count">
+                    {{ bucket.items.length }} 场
+                  </n-text>
+                </div>
+              </template>
+              <div class="favorites-card-stack">
+                <FavoriteFixtureCard
+                  v-for="item in bucket.items"
+                  :key="item.fixture_id"
+                  :item="item"
+                  @open-detail="goDetail"
+                />
+              </div>
+            </n-collapse-item>
+          </n-collapse>
         </n-scrollbar>
       </n-spin>
     </n-drawer-content>

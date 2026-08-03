@@ -89,14 +89,6 @@ export function predictionsDayCountLabel(count: number): string {
   return `未完赛 ${count} 场`
 }
 
-export function resultsDayCountLabel(count: number): string {
-  return `完场 ${count} 场`
-}
-
-export function scheduleDayCountLabel(count: number): string {
-  return `未开赛 ${count} 场`
-}
-
 export function isScheduleFutureDay(day: string, today: string = todayDate()): boolean {
   return day > today
 }

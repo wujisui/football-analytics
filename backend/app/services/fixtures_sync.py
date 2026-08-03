@@ -14,7 +14,6 @@ from app.services.fetcher import FootballFetcher
 logger = logging.getLogger(__name__)
 
 _sync_lock = asyncio.Lock()
-_odds_followup_lock = asyncio.Lock()
 
 
 @dataclass(frozen=True)
@@ -87,32 +86,29 @@ async def _sync_odds_and_results_followup(
     odds_budget: int = 40,
     set_opening: bool = False,
 ) -> None:
-    if _odds_followup_lock.locked():
-        logger.info("Odds/results follow-up already running; skip duplicate")
-        return
-    async with _odds_followup_lock:
-        try:
-            async with FootballFetcher() as fetcher:
-                if include_odds:
-                    try:
-                        await fetcher.sync_odds_for_dates(
-                            day_list,
-                            refresh_existing=odds_refresh_existing,
-                            league_ids=odds_league_ids,
-                            budget=odds_budget,
-                            set_opening=set_opening,
-                        )
-                    except Exception as exc:
-                        logger.warning("include_odds batch failed: %s", exc)
-                if include_results:
-                    try:
-                        # Prefer the sync window so date-strip days beyond default
-                        # lookback still get FT backfill when the user opens 赛果.
-                        await fetcher.capture_finished_results(on_days=list(day_list))
-                    except Exception as exc:
-                        logger.warning("include_results capture failed: %s", exc)
-        except Exception as exc:
-            logger.warning("sync follow-up failed: %s", exc, exc_info=True)
+    """Runs inside ``_sync_lock``; callers already guarantee no concurrent run."""
+    try:
+        async with FootballFetcher() as fetcher:
+            if include_odds:
+                try:
+                    await fetcher.sync_odds_for_dates(
+                        day_list,
+                        refresh_existing=odds_refresh_existing,
+                        league_ids=odds_league_ids,
+                        budget=odds_budget,
+                        set_opening=set_opening,
+                    )
+                except Exception as exc:
+                    logger.warning("include_odds batch failed: %s", exc)
+            if include_results:
+                try:
+                    # Prefer the sync window so date-strip days beyond default
+                    # lookback still get FT backfill when the user opens 赛果.
+                    await fetcher.capture_finished_results(on_days=list(day_list))
+                except Exception as exc:
+                    logger.warning("include_results capture failed: %s", exc)
+    except Exception as exc:
+        logger.warning("sync follow-up failed: %s", exc, exc_info=True)
 
 
 def _result_message(params: FixturesSyncParams) -> str:
@@ -130,17 +126,23 @@ def _result_message(params: FixturesSyncParams) -> str:
     return msg
 
 
-async def execute_fixtures_sync(
-    params: FixturesSyncParams,
-    *,
-    wait_followup: bool = True,
-) -> SyncFixturesResponse:
-    """Run sync work (fixtures window + optional odds/results follow-up).
+async def execute_fixtures_sync(params: FixturesSyncParams) -> SyncFixturesResponse:
+    """Pull fixtures window + odds/results, returning only once everything is stored.
 
-    ``wait_followup=False`` (HTTP toolbar sync): return after fixtures so the UI
-    is not blocked for 1+ minutes of per-fixture odds pacing; odds/results continue
-    in the background under ``_odds_followup_lock``.
+    A caller that arrives while another sync is running is answered with
+    ``status="running"`` instead of queueing: page refreshes trigger this, and
+    stacking them would multiply official API calls for identical data.
     """
+    if _sync_lock.locked():
+        logger.info("Fixtures sync already running; ignoring duplicate request")
+        return SyncFixturesResponse(
+            status="running",
+            fixtures_saved=0,
+            days=params.window,
+            date=params.start.isoformat(),
+            message="官方同步进行中，本次请求已忽略",
+        )
+
     async with _sync_lock:
         saved = 0
         if not params.odds_only:
@@ -152,8 +154,7 @@ async def execute_fixtures_sync(
                     league_ids=params.fixture_league_ids,
                 )
 
-        need_followup = params.include_odds or params.include_results
-        if need_followup and wait_followup:
+        if params.include_odds or params.include_results:
             await _sync_odds_and_results_followup(
                 params.day_list,
                 params.odds_league_ids,
@@ -164,50 +165,12 @@ async def execute_fixtures_sync(
                 set_opening=params.set_opening,
             )
 
-        if need_followup and not wait_followup:
-            day_list = list(params.day_list)
-            odds_league_ids = list(params.odds_league_ids)
-            include_odds = params.include_odds
-            include_results = params.include_results
-            odds_refresh_existing = params.odds_refresh_existing
-            odds_budget = params.odds_budget
-            set_opening = params.set_opening
-
-            async def _bg_followup() -> None:
-                try:
-                    await _sync_odds_and_results_followup(
-                        day_list,
-                        odds_league_ids,
-                        include_odds=include_odds,
-                        include_results=include_results,
-                        odds_refresh_existing=odds_refresh_existing,
-                        odds_budget=odds_budget,
-                        set_opening=set_opening,
-                    )
-                except Exception as exc:
-                    logger.warning("background sync follow-up failed: %s", exc, exc_info=True)
-
-            task = asyncio.create_task(_bg_followup())
-            task.add_done_callback(
-                lambda t: (
-                    logger.warning(
-                        "background sync follow-up crashed: %s",
-                        t.exception(),
-                    )
-                    if not t.cancelled() and t.exception()
-                    else None
-                )
-            )
-            message = "赛程已刷新，盘口与赛果正在后台同步"
-        else:
-            message = _result_message(params)
-
         return SyncFixturesResponse(
             status="ok",
             fixtures_saved=saved,
             days=params.window,
             date=params.start.isoformat(),
-            message=message,
+            message=_result_message(params),
         )
 
 

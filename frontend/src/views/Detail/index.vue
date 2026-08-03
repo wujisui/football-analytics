@@ -11,6 +11,7 @@ import {
   detailRootLabel,
   parseDetailFrom,
   parseDetailTab,
+  type DetailTab,
 } from '@/utils/detailNav'
 
 const props = defineProps<{
@@ -38,6 +39,16 @@ const fromDate = computed(() =>
   typeof route.query.date === 'string' ? route.query.date : null,
 )
 const initialTab = computed(() => parseDetailTab(route.query.tab))
+
+/** Mirror the open tab into the URL so a reload lands on the same pane. */
+function onTabChange(tab: DetailTab) {
+  if (route.query.tab === tab) return
+  void router.replace({
+    name: 'fixture-detail',
+    params: { fixtureId: props.fixtureId },
+    query: { ...route.query, tab },
+  })
+}
 
 function goBack() {
   if (from.value === 'favorites' && window.history.length > 1) {
@@ -75,7 +86,7 @@ watch(
       <div class="detail-body">
         <BasicInfo v-if="data" :fixture="data" />
         <div v-else class="basic-info-skel">
-          <n-breadcrumb>
+          <n-breadcrumb v-if="!isPhone">
             <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
             <n-breadcrumb-item>
               <n-skeleton text :width="72" :sharp="false" />
@@ -84,7 +95,7 @@ watch(
               <n-skeleton text :width="160" :sharp="false" />
             </n-breadcrumb-item>
           </n-breadcrumb>
-          <n-skeleton text :width="240" style="margin-top: 12px" :sharp="false" />
+          <n-skeleton text :width="240" :style="isPhone ? undefined : 'margin-top: 12px'" :sharp="false" />
           <n-skeleton text :width="180" style="margin-top: 8px" :sharp="false" />
         </div>
 
@@ -96,6 +107,7 @@ watch(
           :error="error"
           :initial-tab="initialTab"
           @retry="reload"
+          @tab-change="onTabChange"
         />
       </div>
     </n-layout-content>

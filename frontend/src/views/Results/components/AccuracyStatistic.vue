@@ -30,10 +30,6 @@ const percent = computed(() =>
   hasValue.value ? `${(props.stat!.rate! * 100).toFixed(0)}%` : '—',
 )
 
-const tooltipText = computed(() =>
-  props.hitActive ? '取消命中筛选' : '只看该维度命中场次',
-)
-
 function onHitsClick(event: MouseEvent) {
   if (!props.hitFilterable || !hasValue.value) return
   event.preventDefault()
@@ -47,22 +43,18 @@ function onHitsClick(event: MouseEvent) {
     <template v-if="hasValue">
       <span :style="{ color }">{{ percent }}</span>
       <span>（</span>
-      <n-tooltip v-if="hitFilterable" placement="top">
-        <template #trigger>
-          <n-button
-            text
-            size="tiny"
-            class="hits-btn"
-            :class="{ active: hitActive }"
-            :style="{ color }"
-            :aria-label="tooltipText"
-            @click="onHitsClick"
-          >
-            {{ stat!.hits }}
-          </n-button>
-        </template>
-        {{ tooltipText }}
-      </n-tooltip>
+      <n-button
+        v-if="hitFilterable"
+        text
+        size="tiny"
+        class="hits-btn"
+        :class="{ active: hitActive }"
+        :style="{ color }"
+        :aria-label="hitActive ? '取消命中筛选' : '只看该维度命中场次'"
+        @click="onHitsClick"
+      >
+        {{ stat!.hits }}
+      </n-button>
       <span v-else :style="{ color }">{{ stat!.hits }}</span>
       <span>/{{ stat!.total }}）</span>
     </template>

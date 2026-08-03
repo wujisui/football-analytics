@@ -6,6 +6,7 @@ import H2HTab from '@/views/Detail/components/H2HTab.vue'
 import LineupTab from '@/views/Detail/components/LineupTab.vue'
 import PredictionTab from '@/views/Detail/components/PredictionTab.vue'
 import StatsTab from '@/views/Detail/components/StatsTab.vue'
+import { useHorizontalSwipe } from '@/composables/useHorizontalSwipe'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import type { FixtureResponse, PrematchPackage } from '@/api/types'
 import type { DetailTab } from '@/utils/detailNav'
@@ -22,8 +23,9 @@ const props = defineProps<{
   initialTab?: TabKey | null
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   retry: []
+  'tab-change': [tab: TabKey]
 }>()
 
 const isPhone = useIsPhone()
@@ -45,6 +47,8 @@ const tabs: { name: TabKey; label: string; short: string }[] = [
   { name: 'prediction', label: '我的预测', short: '预测' },
 ]
 
+const tabKeys = tabs.map((t) => t.name)
+
 const tabItems = computed(() =>
   tabs.map((t) => ({
     ...t,
@@ -63,7 +67,21 @@ function onTabChange(name: string) {
   if (!visited.value.has(key)) {
     visited.value = new Set([...visited.value, key])
   }
+  emit('tab-change', key)
 }
+
+function shiftTab(delta: number) {
+  const i = tabKeys.indexOf(activeTab.value)
+  if (i < 0) return
+  const next = tabKeys[i + delta]
+  if (next) onTabChange(next)
+}
+
+const swipeHandlers = useHorizontalSwipe({
+  enabled: isPhone,
+  onSwipeLeft: () => shiftTab(1),
+  onSwipeRight: () => shiftTab(-1),
+})
 
 watch(
   () => props.fixture?.fixture_id,
@@ -71,6 +89,7 @@ watch(
     const tab = defaultTab()
     activeTab.value = tab
     visited.value = new Set([tab])
+    emit('tab-change', tab)
   },
 )
 
@@ -84,11 +103,17 @@ watch(
 </script>
 
 <template>
-  <div class="tabs-container">
+  <div
+    class="tabs-container"
+    @touchstart.passive="swipeHandlers.onTouchStart"
+    @touchmove.passive="swipeHandlers.onTouchMove"
+    @touchend="swipeHandlers.onTouchEnd"
+    @touchcancel="swipeHandlers.onTouchCancel"
+  >
     <n-tabs
       :value="activeTab"
       type="line"
-      :animated="false"
+      :animated="isPhone"
       :size="tabsSize"
       @update:value="onTabChange"
     >

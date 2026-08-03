@@ -6,6 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.v1.http_cache import set_no_store_headers
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.fixture import Fixture
@@ -55,18 +56,6 @@ router = APIRouter(prefix="/fixtures", tags=["fixtures"])
 logger = logging.getLogger(__name__)
 
 
-def _set_response_headers(response: Response, data_source: str, max_age: int = 120) -> None:
-    response.headers["Cache-Control"] = f"public, max-age={max_age}"
-    response.headers["X-Data-Source"] = data_source
-
-
-def _set_no_cache_headers(response: Response, data_source: str) -> None:
-    """Mutable list/detail payloads must not be cached by the browser."""
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["X-Data-Source"] = data_source
-
-
 def _league_name(fixture: Fixture) -> str:
     settings = get_settings()
     fallback = fixture.league.name if fixture.league else ""
@@ -82,8 +71,6 @@ def _league_country(fixture: Fixture) -> str | None:
     settings = get_settings()
     if fixture.league_id in settings.LEAGUE_COUNTRIES:
         return settings.LEAGUE_COUNTRIES[fixture.league_id]
-    if fixture.league_id in settings.REFERENCE_LEAGUE_COUNTRIES:
-        return settings.REFERENCE_LEAGUE_COUNTRIES[fixture.league_id]
     if fixture.league and fixture.league.country and fixture.league.country != "Unknown":
         return fixture.league.country
     return None
@@ -340,7 +327,7 @@ async def get_today_fixtures(
             )
         )
 
-    _set_no_cache_headers(response, "database")
+    set_no_store_headers(response)
     return TodayFixturesResponse(
         date=base_date.isoformat(),
         days=window_days,
@@ -363,7 +350,11 @@ async def get_fixture_results(
         le=366,
         description="从 date 起共 N 个比赛日（含起始日）；默认 1=单日",
     ),
-    league_id: int | None = Query(default=None, description="按联赛 ID 过滤"),
+    league_id: int | None = Query(default=None, description="按单个联赛 ID 过滤"),
+    league_ids: list[int] | None = Query(
+        default=None,
+        description="按多个联赛 ID 过滤；与 league_id 同时传时取交集",
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> ResultsResponse:
     """按日期（或连续多日）查看本地已落库赛果，并对照赛前预测计算命中（只读本地）。"""
@@ -378,6 +369,13 @@ async def get_fixture_results(
         end_date = base_date
 
     start_dt, end_dt = utc_span_range(base_date, end_date)
+
+    if league_ids is not None:
+        allowed = {int(x) for x in league_ids}
+        if not allowed:
+            raise HTTPException(status_code=400, detail="league_ids 不能为空")
+    else:
+        allowed = None
 
     stmt = (
         select(Fixture)
@@ -397,9 +395,13 @@ async def get_fixture_results(
         )
         .order_by(Fixture.date)
     )
-    # Optional league filter only when client passes league_id.
+    if allowed is not None:
+        stmt = stmt.where(Fixture.league_id.in_(list(allowed)))
     if league_id is not None:
-        stmt = stmt.where(Fixture.league_id == league_id)
+        if allowed is not None and league_id not in allowed:
+            stmt = stmt.where(Fixture.league_id.in_([-1]))
+        else:
+            stmt = stmt.where(Fixture.league_id == league_id)
 
     result = await db.execute(stmt)
     fixtures = list(result.scalars().all())
@@ -449,7 +451,7 @@ async def get_fixture_results(
             )
         )
 
-    _set_response_headers(response, "database", max_age=60)
+    set_no_store_headers(response)
     return ResultsResponse(
         date=base_date.isoformat(),
         total=len(items),
@@ -492,7 +494,7 @@ async def get_results_accuracy_history(
     payload = await build_history_accuracy(
         db, days=days, league_ids=league_ids, end_day=end_day
     )
-    _set_response_headers(response, "database", max_age=120)
+    set_no_store_headers(response)
     return ResultsHistoryResponse.model_validate(payload)
 
 
@@ -542,10 +544,10 @@ async def sync_fixtures(
         description="跳过赛程拉取，仅跑盘口/赛果 follow-up（本地已有赛程时省配额）",
     ),
 ) -> SyncFixturesResponse:
-    """从官方拉取赛程/盘口并写入本地库。
+    """从官方拉取赛程/盘口/赛果并写入本地库，全部落库后才返回。
 
-    赛程强制刷新在本请求内完成；盘口与赛果 follow-up 默认后台执行，
-    避免工具栏「同步」被逐场赔率节流拖到 1 分钟以上。
+    前端在刷新页面时触发；已有同步在跑时返回 ``status="running"``，
+    不重复打官方接口。
     """
     try:
         params = build_sync_params(
@@ -562,7 +564,7 @@ async def sync_fixtures(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        return await execute_fixtures_sync(params, wait_followup=False)
+        return await execute_fixtures_sync(params)
     except ApiKeyNotConfiguredError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -648,7 +650,7 @@ async def get_fixture_analysis(
             detail=f"分析暂时失败，请重试：{exc}",
         ) from exc
 
-    _set_no_cache_headers(response, analysis.data_source)
+    set_no_store_headers(response, analysis.data_source)
     package = analysis.package if isinstance(analysis.package, dict) else {}
     standings = package.get("standings") or {}
     odds = package.get("odds") or {}

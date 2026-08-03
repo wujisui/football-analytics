@@ -1,9 +1,10 @@
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.http_cache import set_no_store_headers
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.fixture import Fixture
@@ -45,9 +46,13 @@ async def get_league_filter_options(
         alias="date",
         description="日历日 YYYY-MM-DD，默认今天（筛选先按「今天」匹配）",
     ),
+    scope: str = Query(
+        default="prematch",
+        description="prematch=未完赛；results=完场日（含取消/延期/卡死 live）",
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> LeagueFilterOptionsResponse:
-    """Home filter options from local unfinished fixtures (odds may open later)."""
+    """Day league checklist — counts only, no fixture payloads."""
     settings = get_settings()
     if date_str:
         try:
@@ -57,16 +62,30 @@ async def get_league_filter_options(
     else:
         day = date.today()
 
+    scope_key = (scope or "prematch").strip().lower()
+    if scope_key not in {"prematch", "results"}:
+        raise HTTPException(status_code=400, detail="scope must be prematch or results")
+
     configured_ids = set(settings.LEAGUE_IDS.values())
 
     # Keep schedule-visible even before bookmakers open 1X2 — pruning only
     # applies after a fixture is finished and still has no odds/recommendation.
+    if scope_key == "results":
+        from app.services.results_capture import stuck_live_clause
+
+        status_clause = or_(
+            Fixture.status.in_(["finished", "cancelled", "postponed"]),
+            stuck_live_clause(),
+        )
+    else:
+        status_clause = Fixture.status.in_(["pending", "live", "postponed"])
+
     local_counts: dict[int, int] = {}
     local_stmt = (
         select(Fixture.league_id, func.count())
         .where(
             func.date(Fixture.date) == day,
-            Fixture.status.in_(["pending", "live", "postponed"]),
+            status_clause,
         )
         .group_by(Fixture.league_id)
     )
@@ -78,16 +97,27 @@ async def get_league_filter_options(
     # not whether a zero-match option is displayed.
     playing_ids = set(local_counts)
 
+    league_rows: dict[int, League] = {}
+    if playing_ids:
+        rows = (
+            await db.execute(select(League).where(League.id.in_(list(playing_ids))))
+        ).scalars().all()
+        league_rows = {int(row.id): row for row in rows}
+
     def _country(league_id: int) -> str | None:
         if league_id in settings.LEAGUE_COUNTRIES:
             return settings.LEAGUE_COUNTRIES[league_id]
-        return settings.REFERENCE_LEAGUE_COUNTRIES.get(league_id)
+        row = league_rows.get(league_id)
+        if row and row.country and row.country != "Unknown":
+            return row.country
+        return None
 
     def _name(league_id: int) -> str:
+        row = league_rows.get(league_id)
         raw = (
             settings.league_display_name(league_id)
             if league_id in configured_ids
-            else settings.reference_display_name(league_id, "")
+            else (row.name if row else "")
         )
         return league_name_zh(
             raw,
@@ -106,6 +136,7 @@ async def get_league_filter_options(
             country=_country(league_id),
             fixtures_count=local_counts.get(league_id, 0),
             tier=tier,
+            # Lists default to primary (configured) leagues only.
             default_checked=tier == "configured",
         )
         (configured if tier == "configured" else extra).append(option)
@@ -215,8 +246,7 @@ async def list_leagues(
             )
         )
 
-    response.headers["Cache-Control"] = "public, max-age=120"
-    response.headers["X-Data-Source"] = "database"
+    set_no_store_headers(response)
     return LeaguesListResponse(
         date=base_date.isoformat(),
         days=window_days,

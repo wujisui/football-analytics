@@ -141,6 +141,12 @@ export function formatDate(dateStr: string): string {
   })
 }
 
+/** Schedule-day key (`YYYY-MM-DD`) rendered without timezone date shifting. */
+export function formatScheduleDay(dayKey: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return dayKey
+  return formatDate(`${dayKey}T12:00:00`)
+}
+
 /** Local time: 22:00 */
 export function formatTime(dateStr: string): string {
   return formatLocaleTime(dateStr, {

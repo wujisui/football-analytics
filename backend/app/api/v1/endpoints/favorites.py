@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.http_cache import set_no_store_headers
 from app.core.database import get_db
 from app.schemas.response import (
     FavoriteFixtureCreateRequest,
@@ -12,19 +13,13 @@ from app.services import favorites as favorites_service
 router = APIRouter(prefix="/favorites", tags=["favorites"])
 
 
-def _set_no_cache_headers(response: Response) -> None:
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["X-Data-Source"] = "database"
-
-
 @router.get("", response_model=FavoriteFixturesResponse)
 async def list_favorites(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> FavoriteFixturesResponse:
     """List all favorites hydrated from local fixtures + pre_match_data."""
-    _set_no_cache_headers(response)
+    set_no_store_headers(response)
     items = await favorites_service.list_favorite_responses(db)
     return FavoriteFixturesResponse(total=len(items), favorites=items)
 
@@ -36,7 +31,7 @@ async def create_favorite(
     db: AsyncSession = Depends(get_db),
 ) -> FavoriteFixtureResponse:
     """Add or bump a favorite (idempotent)."""
-    _set_no_cache_headers(response)
+    set_no_store_headers(response)
     try:
         return await favorites_service.add_favorite(db, body.fixture_id)
     except LookupError as exc:
@@ -50,6 +45,6 @@ async def delete_favorite(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Remove a favorite. Idempotent when already absent."""
-    _set_no_cache_headers(response)
+    set_no_store_headers(response)
     await favorites_service.remove_favorite(db, fixture_id)
     return Response(status_code=204)

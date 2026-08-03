@@ -21,9 +21,6 @@ const emit = defineEmits<{
 const isPhone = useIsPhone()
 const showOddsModal = ref(false)
 
-const homeName = computed(() => props.item.home_team_name || '—')
-const awayName = computed(() => props.item.away_team_name || '—')
-
 const hasPredict = computed(() => favoriteHasPredictSnapshot(props.item))
 const predictionSnapshot = computed(() => snapshotFromFavorite(props.item))
 
@@ -33,10 +30,6 @@ const isFinished = computed(() => {
   if (status === 'finished') return true
   return props.item.home_goals != null && props.item.away_goals != null
 })
-
-const oddsModalTitle = computed(
-  () => `${homeName.value} vs ${awayName.value} · 赛前盘口`,
-)
 
 function openDetail() {
   emit('openDetail', props.item.fixture_id)
@@ -65,8 +58,6 @@ function openOddsModal() {
     <div class="summary-grid">
       <PreMatchOddsTable
         :odds="item.odds_snippet"
-        :home-name="homeName"
-        :away-name="awayName"
         link-middle-to-detail
         :fixture-id="item.fixture_id"
         from="favorites"
@@ -83,8 +74,10 @@ function openOddsModal() {
     v-else-if="isPhone"
     :fixture="item"
     prematch
+    odds-clickable
     :prediction-snapshot="hasPredict ? predictionSnapshot : undefined"
     from="favorites"
+    @open-odds="openOddsModal"
   />
 
   <n-card
@@ -96,8 +89,6 @@ function openOddsModal() {
     <div class="summary-grid">
       <PreMatchOddsTable
         :odds="item.odds_snippet"
-        :home-name="homeName"
-        :away-name="awayName"
         link-middle-to-detail
         :fixture-id="item.fixture_id"
         from="favorites"
@@ -115,14 +106,12 @@ function openOddsModal() {
     v-if="isPhone"
     v-model:show="showOddsModal"
     preset="card"
-    :title="oddsModalTitle"
+    title="赛前盘口"
     :style="{ width: 'min(360px, calc(100vw - 24px))' }"
     :segmented="{ content: true, footer: false }"
   >
     <PreMatchOddsTable
       :odds="item.odds_snippet"
-      :home-name="homeName"
-      :away-name="awayName"
       link-middle-to-detail
       :fixture-id="item.fixture_id"
       from="favorites"

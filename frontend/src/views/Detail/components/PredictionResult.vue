@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
-import ProbabilityChart from '@/views/Detail/components/ProbabilityChart.vue'
 import type { FixtureResponse } from '@/api/types'
 import { predictionDiffKeys, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import { toPercent } from '@/utils/format'
@@ -10,6 +9,11 @@ import {
   HANDICAP_MISSING_LABEL,
   isHandicapPending,
 } from '@/utils/handicapDisplay'
+
+/** echarts is heavy; load the pie only when a prediction renders. */
+const ProbabilityChart = defineAsyncComponent(
+  () => import('@/views/Detail/components/ProbabilityChart.vue'),
+)
 
 const props = defineProps<{
   fixture?: FixtureResponse

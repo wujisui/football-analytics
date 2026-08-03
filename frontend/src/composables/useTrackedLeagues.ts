@@ -13,6 +13,8 @@ const filterOptions = ref<LeagueFilterOptionsResponse | null>(null)
 const trackedIds = ref<number[]>([])
 const filterOptionsError = ref('')
 let activeFilterDate = ''
+/** Last loaded scope — avoid mixing prematch/results checklist caches. */
+let activeFilterScope: 'prematch' | 'results' = 'prematch'
 
 let inflightFilterOptions: Promise<LeagueFilterOptionsResponse> | null = null
 let inflightFilterOptionsKey = ''
@@ -23,6 +25,7 @@ let frozenPrematch: {
   filterOptions: LeagueFilterOptionsResponse | null
   trackedIds: number[]
   activeFilterDate: string
+  activeFilterScope: 'prematch' | 'results'
 } | null = null
 
 function readStoredIds(date: string): number[] | null {
@@ -70,7 +73,10 @@ function allFilterOptions(): LeagueFilterOption[] {
 
 function syncTrackedWithFilterOptions() {
   const options = allFilterOptions()
-  if (!options.length) return
+  if (!options.length) {
+    trackedIds.value = []
+    return
+  }
   setTrackedIds(
     resolveTrackedSelection(options, readStoredIds(activeFilterDate) ?? []),
   )
@@ -86,6 +92,7 @@ export function beginScheduleFilterOverride(): void {
     filterOptions: filterOptions.value,
     trackedIds: [...trackedIds.value],
     activeFilterDate,
+    activeFilterScope,
   }
 }
 
@@ -95,6 +102,7 @@ export function endScheduleFilterOverride(): void {
   filterOptions.value = frozenPrematch.filterOptions
   trackedIds.value = frozenPrematch.trackedIds
   activeFilterDate = frozenPrematch.activeFilterDate
+  activeFilterScope = frozenPrematch.activeFilterScope
   frozenPrematch = null
 }
 
@@ -104,8 +112,10 @@ export function getActiveFilterDate(): string {
 
 async function loadFilterOptions(options?: {
   date?: string
+  scope?: 'prematch' | 'results'
 }): Promise<LeagueFilterOptionsResponse> {
-  const key = options?.date ?? ''
+  const scope = options?.scope ?? 'prematch'
+  const key = `${options?.date ?? ''}|${scope}`
   if (inflightFilterOptions && inflightFilterOptionsKey === key) {
     return inflightFilterOptions
   }
@@ -117,10 +127,12 @@ async function loadFilterOptions(options?: {
     try {
       const data = await fetchLeagueFilterOptions({
         date: options?.date,
+        scope,
       })
       if (seq !== filterLoadSeq) return data
       filterOptions.value = data
       activeFilterDate = data.date
+      activeFilterScope = scope
       syncTrackedWithFilterOptions()
       return data
     } catch (err) {

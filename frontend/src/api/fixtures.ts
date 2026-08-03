@@ -40,7 +40,11 @@ export type SyncFixturesOptions = {
   oddsOnly?: boolean
 }
 
-/** Force re-fetch from official API into local DB; waits until complete. */
+/**
+ * Force re-fetch from official API into local DB. Resolves only once fixtures,
+ * odds and results are stored, so callers can trust the next local read.
+ * ``status: "running"`` means another sync owns the official calls.
+ */
 export async function syncFixtures(
   options?: SyncFixturesOptions,
 ): Promise<SyncFixturesResult> {
@@ -55,8 +59,8 @@ export async function syncFixtures(
       league_ids: options?.leagueIds,
       odds_only: options?.oddsOnly ?? false,
     },
-    // Sync may pull fixtures + odds + results in one request.
-    timeout: 180_000,
+    // Waits out per-fixture odds pacing for a whole day of leagues.
+    timeout: 300_000,
   })
   return data
 }
@@ -143,13 +147,14 @@ export interface ResultsResponse {
 /** Finished/cancelled fixtures for a calendar day or contiguous span (local DB only). */
 export async function fetchResults(
   date: string,
-  options?: { leagueId?: number; days?: number },
+  options?: { leagueId?: number; leagueIds?: number[]; days?: number },
 ): Promise<ResultsResponse> {
   const { data } = await apiClient.get<ResultsResponse>('/fixtures/results', {
     params: {
       date,
       days: options?.days ?? 1,
       league_id: options?.leagueId,
+      league_ids: options?.leagueIds,
     },
   })
   return data

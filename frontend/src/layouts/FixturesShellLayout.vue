@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { StarOutline } from '@vicons/ionicons5'
 import { onActivated, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -11,11 +12,14 @@ import {
   useFixturesShell,
 } from '@/layouts/composables/useFixturesShell'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { useFavoritesDrawer } from '@/views/Favorites/composables/useFavoritesDrawer'
 
 defineOptions({ name: 'FixturesShellLayout' })
 
 const route = useRoute()
 const isPhone = useIsPhone()
+const { show: favoritesDrawerShow, toggle: toggleFavoritesDrawer } =
+  useFavoritesDrawer()
 
 const {
   selectedDay,
@@ -33,8 +37,6 @@ const {
   breadcrumbRoot,
   breadcrumbFilter,
   dayCountLabel,
-  syncCurrentDay,
-  syncLoading,
   confirmFilter,
   selectLeague,
   isResultsPage,
@@ -99,13 +101,27 @@ onActivated(() => {
             <n-button
               v-if="isPhone"
               size="small"
-              secondary
+              type="primary"
               class="league-trigger"
               @click="leagueDrawerShow = true"
             >
               联赛
             </n-button>
-            <n-breadcrumb class="fa-toolbar-crumb">
+            <n-button
+              v-if="isPhone"
+              size="small"
+              secondary
+              class="favorites-trigger"
+              :type="favoritesDrawerShow ? 'warning' : 'default'"
+              aria-label="收藏"
+              @click="toggleFavoritesDrawer"
+            >
+              <template #icon>
+                <n-icon :component="StarOutline" />
+              </template>
+              收藏
+            </n-button>
+            <n-breadcrumb v-if="!isPhone" class="fa-toolbar-crumb">
               <n-breadcrumb-item @click="selectLeague(null)">
                 {{ breadcrumbRoot }}
               </n-breadcrumb-item>
@@ -118,17 +134,11 @@ onActivated(() => {
             v-model="selectedDay"
           />
 
-          <div class="shell-list-meta">
-            <span class="day-stat">{{ dayCountLabel }}</span>
-            <n-button
-              size="small"
-              secondary
-              :loading="syncLoading"
-              :disabled="syncLoading"
-              @click="syncCurrentDay"
-            >
-              同步
-            </n-button>
+          <div
+            v-if="!isResultsPage || isScheduleFutureDay"
+            class="shell-list-meta"
+          >
+            <span v-if="!isResultsPage" class="day-stat">{{ dayCountLabel }}</span>
             <PageToolbarSearch
               v-if="!(isResultsPage && !isScheduleFutureDay)"
               v-model="teamSearch"
@@ -138,9 +148,10 @@ onActivated(() => {
 
         <div class="shell-content">
           <router-view v-slot="{ Component }">
-            <keep-alive :include="['Home', 'Predictions', 'Results']">
+            <keep-alive v-if="!isPhone" :include="['Home', 'Predictions', 'Results']">
               <component :is="Component" />
             </keep-alive>
+            <component v-else :is="Component" />
           </router-view>
         </div>
       </n-layout>

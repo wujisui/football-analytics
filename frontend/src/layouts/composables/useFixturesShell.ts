@@ -33,8 +33,6 @@ import {
   isScheduleFutureDay,
   predictionsDayCountLabel,
   prematchFetchParams,
-  resultsDayCountLabel,
-  scheduleDayCountLabel,
   scheduleTodayDate,
   todayDate,
   yesterdayDate,
@@ -45,17 +43,58 @@ import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
 
 const FIXTURES_ROUTE_NAMES = new Set<string>(['home', 'predictions', 'results'])
 
-const selectedDay = ref(yesterdayDate())
+/**
+ * Mobile browsers discard background tabs and reload on return; keep the
+ * shell context for the browser session so that lands on the same view.
+ */
+const SHELL_STATE_KEY = 'fa-shell-state'
+
+interface ShellSessionState {
+  day: string
+  teamSearch: string
+}
+
+function readShellSessionState(): Partial<ShellSessionState> {
+  try {
+    const raw = sessionStorage.getItem(SHELL_STATE_KEY)
+    return raw ? (JSON.parse(raw) as Partial<ShellSessionState>) : {}
+  } catch {
+    return {}
+  }
+}
+
+const restoredShellState = readShellSessionState()
+/** Day was chosen earlier this session — pages must not reset to their default. */
+export const hasSessionShellDay = typeof restoredShellState.day === 'string'
+
+const selectedDay = ref(restoredShellState.day || yesterdayDate())
 const prematchSelectedLeagueId = ref<number | null>(null)
 const resultsSelectedLeagueId = ref<number | null>(null)
-const teamSearch = ref('')
+const teamSearch = ref(restoredShellState.teamSearch || '')
+
+watch([selectedDay, teamSearch], () => {
+  try {
+    sessionStorage.setItem(
+      SHELL_STATE_KEY,
+      JSON.stringify({ day: selectedDay.value, teamSearch: teamSearch.value }),
+    )
+  } catch {
+    /* private mode / quota — session restore just degrades */
+  }
+})
+
 const siderCollapsed = ref(false)
 const leagueDrawerShow = ref(false)
-const syncLoading = ref(false)
-const manualSyncRevision = ref(0)
-const manualSyncedDay = ref('')
+
+/** Official pull is page-load driven; these track the one run allowed at a time. */
+export const officialSyncing = ref(false)
+const officialSyncRevision = ref(0)
+const officialSyncedDay = ref('')
 
 let shellWatchersBound = false
+let pageLoadSyncStarted = false
+/** Leagues whose odds this page load already asked the official API for. */
+const syncedOddsLeagueIds = new Set<number>()
 
 export function useFixturesShell() {
   const route = useRoute()
@@ -202,9 +241,7 @@ export function useFixturesShell() {
   })
 
   const breadcrumbRoot = computed(() => {
-    if (pageName.value === 'predictions') {
-      return isPhone.value ? '计算器' : '预测'
-    }
+    if (pageName.value === 'predictions') return '计算器'
     if (pageName.value === 'results') return '赛程'
     return '即时'
   })
@@ -231,16 +268,15 @@ export function useFixturesShell() {
     ),
   )
 
+  /** Selected-day fixture count from filter-options / loaded list (league-aware). */
+  const resultsDayFixtureCount = computed(() => {
+    if (!isResultsPage.value) return 0
+    if (selectedLeagueId.value == null) return shellTotalCount.value
+    return shellCountByLeague.value.get(selectedLeagueId.value) || 0
+  })
+
   const dayCountLabel = computed(() => {
-    if (isResultsPage.value) {
-      const count =
-        selectedLeagueId.value == null
-          ? shellTotalCount.value
-          : shellCountByLeague.value.get(selectedLeagueId.value) || 0
-      return isScheduleFutureDayRef.value
-        ? scheduleDayCountLabel(count)
-        : resultsDayCountLabel(count)
-    }
+    if (isResultsPage.value) return ''
     const list = leagueFiltered(prematchVisibleFixtures.value)
     const count = filterByTeamQuery(sortFixtures(list), teamSearch.value).length
     return predictionsDayCountLabel(count)
@@ -250,7 +286,7 @@ export function useFixturesShell() {
     if (error.value) return ''
     const day = scheduleTodayDate()
     if (!prematchFilterOptions.value.length && !prematchVisibleFixtures.value.length) {
-      return '暂无本地赛程，可点击「同步」手动更新'
+      return officialSyncing.value ? '正在从官方获取赛程…' : '暂无赛程，可刷新页面重试'
     }
     if (!prematchTrackedIds.value.length) {
       return '请先在「筛选」中勾选要关注的联赛'
@@ -344,73 +380,106 @@ export function useFixturesShell() {
   async function loadDayLocal(force = false) {
     const { date, days } = prematchFetchParams()
     try {
-      await loadHomeFixtures({ force, date, days })
+      await loadHomeFixtures({
+        force,
+        date,
+        days,
+        leagueIds: [...prematchTrackedIds.value],
+      })
       syncLeagueFromRoute()
     } catch {
       // error already set in composable
     }
   }
 
-  async function syncCurrentDay() {
-    if (syncLoading.value) return
-    const day = syncCalendarDay()
-    const syncingResultsPage = isResultsPage.value
-    const futureResultsDay =
-      syncingResultsPage && isScheduleFutureDayRef.value
-
-    syncLoading.value = true
+  /**
+   * Pull from the official API into the local DB, then refresh what is on screen.
+   * Lists stay on stored rows meanwhile — nothing is re-rendered until data lands,
+   * so a finished indicator always means the newest board.
+   */
+  async function runOfficialSync(options: {
+    day: string
+    days: number
+    includeResults: boolean
+    includeOdds: boolean
+    leagueIds?: number[]
+    oddsOnly?: boolean
+  }) {
+    if (officialSyncing.value) return
+    officialSyncing.value = true
     try {
       const res = await syncFixtures({
-        date: day,
-        days: syncCalendarDays(),
-        includeResults: !futureResultsDay,
-        includeOdds: !syncingResultsPage || futureResultsDay,
-        // 工具栏同步：只补缺失盘口，避免对已有盘口逐场重拉把请求拖到 1 分钟+。
-        // 临场刷新仍由 final_odds_update / 详情补拉负责。
+        date: options.day,
+        days: options.days,
+        includeResults: options.includeResults,
+        includeOdds: options.includeOdds,
+        // Existing boards are refreshed near kickoff by the scheduler / detail
+        // fetch; a page load only fills the gaps.
         oddsRefreshExisting: false,
-        // Fixtures are always full-day; leagueIds only scopes odds follow-up.
-        leagueIds: leagueIdsForSync(),
+        leagueIds: options.leagueIds,
+        oddsOnly: options.oddsOnly,
       })
-      if (res.status !== 'ok') {
-        throw new Error(res.message || '同步失败')
-      }
+      // "running": another sync owns the official calls; it will publish the data.
+      if (res.status !== 'ok') return
 
-      manualSyncedDay.value = day
-      manualSyncRevision.value += 1
-      if (!syncingResultsPage) {
-        await reloadPrematchDay(true)
-      }
-      message.success(res.message || `${day} 同步成功`)
-      // 盘口/赛果在后台继续；稍后静默再刷一次本地列表
-      if ((res.message || '').includes('后台')) {
-        window.setTimeout(() => {
-          manualSyncRevision.value += 1
-          if (!syncingResultsPage) {
-            void reloadPrematchDay(true)
-          }
-        }, 12_000)
-      }
+      for (const id of options.leagueIds ?? []) syncedOddsLeagueIds.add(id)
+      officialSyncedDay.value = options.day
+      officialSyncRevision.value += 1
+      if (!isResultsPage.value) await reloadPrematchDay(true)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : '同步失败')
+      message.error(err instanceof Error ? err.message : '官方同步失败')
     } finally {
-      syncLoading.value = false
+      officialSyncing.value = false
     }
   }
 
+  /** One official pull per page load, scoped to the view the user landed on. */
+  function startPageLoadSync() {
+    if (pageLoadSyncStarted) return
+    pageLoadSyncStarted = true
+    const futureResultsDay = isResultsPage.value && isScheduleFutureDayRef.value
+    void runOfficialSync({
+      day: syncCalendarDay(),
+      days: syncCalendarDays(),
+      includeResults: !futureResultsDay,
+      includeOdds: !isResultsPage.value || futureResultsDay,
+      leagueIds: leagueIdsForSync(),
+    })
+  }
+
+  /** Newly checked leagues were outside the page-load scope — fetch their odds. */
+  function syncNewlyTrackedLeagues(trackedIds: number[]) {
+    const missing = resolveSyncLeagueIds(
+      prematchFilterOptions.value,
+      trackedIds,
+    ).filter((id) => !syncedOddsLeagueIds.has(id))
+    if (!missing.length) return
+    void runOfficialSync({
+      day: prematchFetchParams().date,
+      days: prematchFetchParams().days,
+      includeResults: false,
+      includeOdds: true,
+      leagueIds: missing,
+      // Fixtures for the window are already stored by the page-load sync.
+      oddsOnly: true,
+    })
+  }
+
   async function reloadPrematchDay(force = false) {
-    await loadDayLocal(force)
     try {
-      await loadFilterOptions({ date: homeDay.value })
+      await loadFilterOptions({ date: homeDay.value, scope: 'prematch' })
     } catch {
       if (filterOptionsError.value) message.warning(filterOptionsError.value)
     }
+    await loadDayLocal(force)
   }
 
   /** Leave 赛程: restore frozen 即时 filter, then refresh list/filter if stale. */
   function restorePrematchAfterResults() {
     endScheduleFilterOverride()
     const force =
-      getActiveFilterDate() !== homeDay.value || !isPrematchListCacheFresh()
+      getActiveFilterDate() !== homeDay.value ||
+      !isPrematchListCacheFresh(undefined, prematchTrackedIds.value)
     void reloadPrematchDay(force)
   }
 
@@ -430,6 +499,9 @@ export function useFixturesShell() {
       ) {
         selectLeague(null)
       }
+      syncNewlyTrackedLeagues(allowed)
+      officialSyncedDay.value = selectedDay.value
+      officialSyncRevision.value += 1
       return
     }
     if (isResultsPage.value) {
@@ -444,6 +516,8 @@ export function useFixturesShell() {
       ) {
         selectLeague(null)
       }
+      officialSyncedDay.value = selectedDay.value
+      officialSyncRevision.value += 1
       return
     }
 
@@ -460,7 +534,8 @@ export function useFixturesShell() {
     ) {
       selectLeague(null)
     }
-    await loadDayLocal(false)
+    await loadDayLocal(true)
+    syncNewlyTrackedLeagues(allowed)
   }
 
   function selectLeague(leagueId: number | null) {
@@ -487,6 +562,7 @@ export function useFixturesShell() {
     )
 
     void ensureResultsConfiguredLeagueIds()
+    startPageLoadSync()
 
     watch(prematchTrackedIds, () => {
       syncFutureScheduleSelection()
@@ -581,13 +657,12 @@ export function useFixturesShell() {
     breadcrumbRoot,
     breadcrumbFilter,
     dayCountLabel,
+    resultsDayFixtureCount,
     prematchDisplayedFixtures,
     homeEmptyText,
     predictionsEmptyText,
-    syncCurrentDay,
-    syncLoading,
-    manualSyncRevision,
-    manualSyncedDay,
+    officialSyncRevision,
+    officialSyncedDay,
     reloadPrematchDay,
     loadFilterOptions,
     syncFutureScheduleSelection,

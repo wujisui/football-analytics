@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { LineChart } from 'echarts/charts'
 import {
-  DataZoomComponent,
   GridComponent,
   LegendComponent,
   MarkLineComponent,
@@ -14,6 +13,7 @@ import VChart from 'vue-echarts'
 
 import type { AccuracyDayPoint, AccuracyStat } from '@/api/fixtures'
 import { ACCURACY_COLORS } from '@/utils/accuracyColors'
+import { addCalendarDays, todayDate } from '@/utils/homeDateStrip'
 
 use([
   CanvasRenderer,
@@ -21,14 +21,8 @@ use([
   GridComponent,
   TooltipComponent,
   LegendComponent,
-  DataZoomComponent,
   MarkLineComponent,
 ])
-
-/** Enable pan/slider when more than this many sample days. */
-const SCROLL_DAY_THRESHOLD = 14
-/** Initial visible window size (days) when scrolling is on. */
-const INITIAL_VIEW_DAYS = 21
 
 type PlayKey = 'result' | 'handicap' | 'score' | 'ou' | 'btts'
 
@@ -41,15 +35,32 @@ const PLAY_LINES: ReadonlyArray<{ name: string; color: string; key: PlayKey }> =
   { name: '双方进球', color: ACCURACY_COLORS.btts, key: 'btts' },
 ]
 
-const props = defineProps<{
-  series: AccuracyDayPoint[]
-  /** Currently focused results day (YYYY-MM-DD); shown as a guide line. */
-  selectedDay?: string | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    series: AccuracyDayPoint[]
+    /** Currently focused results day (YYYY-MM-DD); shown as a guide line. */
+    selectedDay?: string | null
+    /** Visible window ending at today (calendar days). */
+    windowDays?: number
+  }>(),
+  {
+    selectedDay: null,
+    windowDays: 30,
+  },
+)
 
 const emit = defineEmits<{
   selectDay: [day: string]
 }>()
+
+/** ``windowDays <= 0`` → full series（全部）; otherwise last N days ending today. */
+const viewSeries = computed(() => {
+  if (props.windowDays <= 0) return props.series
+  const end = todayDate()
+  const days = Math.max(1, props.windowDays)
+  const start = addCalendarDays(end, -(days - 1))
+  return props.series.filter((p) => p.date >= start && p.date <= end)
+})
 
 function toPct(rate: number | null | undefined): number | null {
   if (rate == null) return null
@@ -74,9 +85,8 @@ function formatAxisTooltip(
 ): string {
   if (!params.length) return ''
   const idx = params[0].dataIndex ?? 0
-  const point = props.series[idx]
+  const point = viewSeries.value[idx]
   const dateLabel = point?.date ?? String(params[0].axisValue ?? '')
-  // Chart scope = every fixture with a frozen prediction, all leagues.
   const header = `${dateLabel} 已预测 ${point?.fixtures_with_prediction ?? 0} 场`
   const lines = params.map((item) => {
     const play = PLAY_LINES[item.seriesIndex ?? -1]
@@ -94,19 +104,15 @@ function onChartClick(params: {
   if (params.componentType === 'markLine') return
   const idx = params.dataIndex
   if (idx == null || idx < 0) return
-  const day = props.series[idx]?.date
+  const day = viewSeries.value[idx]?.date
   if (day) emit('selectDay', day)
 }
 
 const option = computed(() => {
-  const n = props.series.length
-  const scrollable = n > SCROLL_DAY_THRESHOLD
-  const dates = props.series.map((p) => p.date.slice(5)) // MM-DD
-  const viewStart = scrollable
-    ? Math.max(0, 100 - (INITIAL_VIEW_DAYS / n) * 100)
-    : 0
+  const points = viewSeries.value
+  const dates = points.map((p) => p.date.slice(5)) // MM-DD
   const selectedIndex = props.selectedDay
-    ? props.series.findIndex((p) => p.date === props.selectedDay)
+    ? points.findIndex((p) => p.date === props.selectedDay)
     : -1
 
   const selectedMarkLine =
@@ -135,7 +141,7 @@ const option = computed(() => {
     symbolSize: 6,
     connectNulls: false,
     cursor: 'pointer',
-    data: props.series.map((p) => toPct(p[play.key]?.rate)),
+    data: points.map((p) => toPct(p[play.key]?.rate)),
     ...(index === 0 && selectedMarkLine ? { markLine: selectedMarkLine } : {}),
   }))
 
@@ -147,42 +153,20 @@ const option = computed(() => {
     legend: {
       top: 4,
       left: 'center',
+      itemWidth: 16,
+      itemHeight: 8,
+      itemGap: 12,
+      textStyle: { fontSize: 11 },
       data: PLAY_LINES.map((play) => play.name),
     },
     grid: {
       left: 8,
       right: 12,
-      top: 40,
-      bottom: scrollable ? 28 : 4,
+      // Compact legend fits one row on phones; keep a small clear gap below it.
+      top: 38,
+      bottom: 4,
       containLabel: true,
     },
-    dataZoom: scrollable
-      ? [
-          {
-            type: 'inside',
-            xAxisIndex: 0,
-            filterMode: 'none',
-            start: viewStart,
-            end: 100,
-            zoomOnMouseWheel: false,
-            moveOnMouseMove: true,
-            moveOnMouseWheel: true,
-          },
-          {
-            type: 'slider',
-            xAxisIndex: 0,
-            height: 18,
-            bottom: 2,
-            start: viewStart,
-            end: 100,
-            brushSelect: false,
-            borderColor: 'transparent',
-            fillerColor: 'rgba(24, 160, 88, 0.18)',
-            handleSize: '80%',
-            showDetail: false,
-          },
-        ]
-      : [],
     xAxis: {
       type: 'category',
       boundaryGap: false,
