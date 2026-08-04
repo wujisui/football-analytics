@@ -147,7 +147,7 @@ const hasAny = computed(
   width: 3px;
   height: 14px;
   border-radius: 1px;
-  background: #c23b3b;
+  background: var(--fa-wdl-win);
   flex-shrink: 0;
 }
 
@@ -168,19 +168,19 @@ const hasAny = computed(
   font-size: 12px;
   font-weight: 700;
   color: #fff;
-  background: #999;
+  background: var(--fa-wdl-draw);
   flex-shrink: 0;
 }
 
 .badge.w {
-  background: #c23b3b;
+  background: var(--fa-wdl-win);
 }
 
 .badge.d {
-  background: #909399;
+  background: var(--fa-wdl-draw);
 }
 
 .badge.l {
-  background: #3b6fc2;
+  background: var(--fa-wdl-loss);
 }
 </style>

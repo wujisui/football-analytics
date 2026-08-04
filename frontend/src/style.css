@@ -15,6 +15,10 @@ html[data-theme='light'] {
   --fa-highlight-bg: #fff7e6;
   --fa-highlight-border: #f0c78a;
   --fa-highlight-text: #c2410c;
+  /* 胜平负业务色（与 theme/wdlColors.ts、统计 tab 徽章一致） */
+  --fa-wdl-win: #c23b3b;
+  --fa-wdl-draw: #909399;
+  --fa-wdl-loss: #3b6fc2;
 }
 
 html[data-theme='dark'] {
@@ -106,11 +110,6 @@ button {
   box-sizing: border-box;
 }
 
-/* Side borders only on page body — header uses the same max width without borders. */
-.fa-page-frame > .fa-page-shell {
-  border-inline: 1px solid var(--fa-border);
-}
-
 .app-header-inner {
   border-inline: none;
 }
@@ -125,6 +124,14 @@ button {
   background: var(--fa-bg-elevated);
   position: relative;
   z-index: 2;
+}
+
+/* Phone: drop chrome borders — full-bleed content, no framed “window”. */
+@media (max-width: 767px) {
+  .fa-page-toolbar.n-layout-header,
+  .n-layout-header.fa-page-toolbar {
+    border-bottom: none !important;
+  }
 }
 
 @media (min-width: 768px) {
@@ -227,4 +234,46 @@ button {
   flex-shrink: 0;
   color: var(--fa-text-muted);
   font-size: 12px;
+}
+
+/* ---- Native scrollbars (single source; prefer n-scrollbar for major panes) ---- */
+:root {
+  --fa-scrollbar-size: 6px;
+  --fa-scrollbar-thumb: rgba(128, 128, 128, 0.4);
+  --fa-scrollbar-thumb-hover: rgba(128, 128, 128, 0.65);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--fa-scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: var(--fa-scrollbar-size);
+  height: var(--fa-scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--fa-scrollbar-thumb);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--fa-scrollbar-thumb-hover);
+}
+
+/** Intentionally hide native bar (wheel / touch still work). */
+.fa-scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.fa-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }

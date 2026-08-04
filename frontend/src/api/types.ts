@@ -193,12 +193,6 @@ export interface AnalysisResponse {
   package?: PrematchPackage | null
 }
 
-export interface OpinionFactor {
-  id: string
-  label: string
-  group: string
-}
-
 export interface PredictionSnapshot {
   home_win_prob: number
   draw_prob: number

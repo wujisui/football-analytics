@@ -1,57 +1,34 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
-import OpinionInput from '@/views/Detail/components/OpinionInput.vue'
 import PredictionResult from '@/views/Detail/components/PredictionResult.vue'
-import { adjustFixturePrediction } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
-import { snapshotFromAnalysis, snapshotFromApi, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import { formatDateTime } from '@/utils/format'
-import { hasOddsMarkets } from '@/utils/oddsDisplay'
+import { hasOddsMarkets, isDistinctCurrentOdds } from '@/utils/oddsDisplay'
 
 const props = defineProps<{
   fixture: FixtureResponse
 }>()
 
-const selectedFactors = ref<string[]>([])
-const submittedFactors = ref<string[]>([])
-const submitting = ref(false)
-const adjustError = ref('')
-const adjusted = ref<PredictionSnapshot | null>(null)
-
-const original = computed(() => snapshotFromAnalysis(props.fixture.analysis))
 const oddsCurrent = computed(() => props.fixture.analysis.package?.odds ?? null)
 const oddsOpening = computed(() => props.fixture.analysis.package?.odds_opening ?? null)
 
-const showCurrent = computed(() => hasOddsMarkets(oddsCurrent.value))
-const showOpening = computed(() => hasOddsMarkets(oddsOpening.value))
+const hasCurrent = computed(() => hasOddsMarkets(oddsCurrent.value))
+const hasOpening = computed(() => hasOddsMarkets(oddsOpening.value))
+
+/** First freeze copies current → opening at the same instant; hide duplicate 即时盘. */
+const showCurrent = computed(
+  () =>
+    hasCurrent.value
+    && (!hasOpening.value || isDistinctCurrentOdds(oddsCurrent.value, oddsOpening.value)),
+)
+const showOpening = computed(() => hasOpening.value)
 const showAnyBoard = computed(() => showCurrent.value || showOpening.value)
 
 const isFinished = computed(
   () => (props.fixture.status ?? '').toLowerCase() === 'finished',
 )
-
-async function submitOpinion() {
-  if (!selectedFactors.value.length) return
-  submitting.value = true
-  adjustError.value = ''
-  try {
-    adjusted.value = snapshotFromApi(
-      await adjustFixturePrediction(
-        props.fixture.fixture_id,
-        selectedFactors.value,
-      ),
-    )
-    submittedFactors.value = [...selectedFactors.value]
-  } catch (e) {
-    adjustError.value = e instanceof Error ? e.message : '融合预测失败'
-    adjusted.value = null
-    submittedFactors.value = []
-  } finally {
-    submitting.value = false
-  }
-}
 </script>
 
 <template>
@@ -68,9 +45,7 @@ async function submitOpinion() {
             {{ formatDateTime(oddsCurrent.captured_at) }}
           </n-text>
         </template>
-        <PreMatchOddsTable
-          :odds="oddsCurrent"
-        />
+        <PreMatchOddsTable :odds="oddsCurrent" />
       </n-card>
 
       <n-card
@@ -84,27 +59,15 @@ async function submitOpinion() {
             {{ formatDateTime(oddsOpening.captured_at) }}
           </n-text>
         </template>
-        <PreMatchOddsTable
-          :odds="oddsOpening"
-        />
+        <PreMatchOddsTable :odds="oddsOpening" />
       </n-card>
     </template>
 
-    <OpinionInput
-      v-model="selectedFactors"
-      :submitting="submitting"
-      @submit="submitOpinion"
-    />
-    <n-alert v-if="adjustError" type="error" :title="adjustError" />
     <PredictionResult
       :fixture="fixture"
       :is-finished="isFinished"
-      :original="original"
-      :adjusted="adjusted"
       :data-source="fixture.analysis.data_source"
       :analyzed-at="formatDateTime(fixture.analysis.analyzed_at)"
-      :comparing="submitting"
-      :has-opinion="submittedFactors.length > 0"
       :handicap-market-note="fixture.analysis.handicap_market_note || ''"
     />
   </div>

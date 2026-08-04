@@ -11,6 +11,7 @@ import {
   HANDICAP_MISSING_LABEL,
   isHandicapPending,
 } from '@/utils/handicapDisplay'
+import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
 
 const props = withDefaults(
   defineProps<{
@@ -83,6 +84,17 @@ const handicapPending = computed(() =>
   isHandicapPending(prediction.value.handicap_lean),
 )
 
+const recommendationTagColor = computed(() =>
+  recommendationPending.value
+    ? undefined
+    : wdlTagColor(leanWdlTone(prediction.value.recommendation)),
+)
+const handicapTagColor = computed(() =>
+  handicapPending.value
+    ? undefined
+    : wdlTagColor(leanWdlTone(prediction.value.handicap_lean)),
+)
+
 const homeName = computed(() => props.fixture?.home_team_name || '—')
 const awayName = computed(() => props.fixture?.away_team_name || '—')
 const matchupTitle = computed(() => `${homeName.value} vs ${awayName.value}`)
@@ -152,17 +164,19 @@ function onOddsClick() {
         推荐
       </n-button>
       <n-tag
-        :type="recommendationPending ? 'default' : 'primary'"
         size="small"
         class="rec-chip"
+        :type="recommendationTagColor ? undefined : 'default'"
+        :color="recommendationTagColor"
         @click.stop="goBriefing"
       >
         {{ prediction.recommendation }}
       </n-tag>
       <n-tag
-        :type="handicapPending ? 'default' : 'warning'"
         size="small"
         class="rec-tag rec-chip"
+        :type="handicapTagColor ? undefined : 'default'"
+        :color="handicapTagColor"
         @click.stop="goBriefing"
       >
         {{ prediction.handicap_lean || HANDICAP_MISSING_LABEL }}
@@ -211,7 +225,12 @@ function onOddsClick() {
       </n-tag>
     </div>
     <div v-else-if="!handicapPending" class="lean-row">
-      <n-tag size="small" :bordered="false" type="warning">
+      <n-tag
+        size="small"
+        :bordered="false"
+        :type="handicapTagColor ? undefined : 'default'"
+        :color="handicapTagColor"
+      >
         {{ prediction.handicap_lean }}
       </n-tag>
     </div>

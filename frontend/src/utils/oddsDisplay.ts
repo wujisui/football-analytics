@@ -23,6 +23,45 @@ export function hasOddsMarkets(odds: OddsLike): boolean {
   )
 }
 
+/** Stable fingerprint of display markets (ignore role / captured_at). */
+export function oddsMarketsFingerprint(odds: OddsLike): string {
+  if (!hasOddsMarkets(odds)) return ''
+  const mw = odds?.match_winner
+  const ou = odds?.goals_ou
+  const btts = odds && 'both_teams_score' in odds ? odds.both_teams_score : null
+  return JSON.stringify({
+    mw: mw ? [mw.home, mw.draw, mw.away] : null,
+    ou: ou
+      ? [ou.line, ou.home, ou.away, (ou.lines ?? []).map((l) => [l.line, l.home, l.away])]
+      : null,
+    ah: ahLinesOf(odds?.asian_handicap).map((l) => [l.line, l.home, l.away]),
+    btts: btts ? [btts.home, btts.away] : null,
+  })
+}
+
+/**
+ * True when 即时盘 is meaningfully later/different than 初盘.
+ * Same first-capture board should not render as two identical cards.
+ */
+export function isDistinctCurrentOdds(
+  current: OddsLike,
+  opening: OddsLike,
+): boolean {
+  if (!hasOddsMarkets(current)) return false
+  if (!hasOddsMarkets(opening)) return true
+  if (oddsMarketsFingerprint(current) !== oddsMarketsFingerprint(opening)) {
+    return true
+  }
+  const cAt = current && 'captured_at' in current ? current.captured_at : null
+  const oAt = opening && 'captured_at' in opening ? opening.captured_at : null
+  if (cAt && oAt) {
+    const cMs = Date.parse(cAt)
+    const oMs = Date.parse(oAt)
+    if (Number.isFinite(cMs) && Number.isFinite(oMs) && cMs > oMs) return true
+  }
+  return false
+}
+
 /** Build list-card snippet from detail odds package. */
 export function oddsPackageToSnippet(
   odds: OddsPackage | null | undefined,

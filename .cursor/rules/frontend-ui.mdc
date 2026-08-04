@@ -60,12 +60,13 @@ src/views/Results/
 
 ### 滚动条（必读）
 
-Naive Layout **默认 `nativeScrollbar: true`**（浏览器原生条）。要统一成 Naive 滚动条：
+Naive Layout **默认 `nativeScrollbar: true`**（浏览器原生条）。主内容区优先 Naive 滚动条；原生 `overflow` 区域用全局细条样式，禁止各组件各自写 `::-webkit-scrollbar`。
 
 1. 外层 `n-layout` 用 `content-style="display:flex;flex-direction:column;height:100%;"` 把高度锁死（否则子内容撑开，外层仍会冒原生条）
 2. 顶栏 `flex-shrink: 0`；可滚区域用 `n-layout-content`：`style="flex:1;min-height:0"` + **`:native-scrollbar="false"`**（可加 `:scrollbar-props="{ trigger: 'hover' }"`）
-3. 不要手写 `::-webkit-scrollbar`；不要指望只写 `native-scrollbar=false` 却不约束高度
-
+3. **原生 overflow 条**：统一在 `src/style.css`（`--fa-scrollbar-*`）；需要隐藏时用 `.fa-scrollbar-hidden`，不要再在业务组件里复制一套
+4. **嵌套滚动**（卡片内小区域 + 外层虚拟列表）：给内层加 `v-nested-scroll`（`directives/nestedScroll.ts`），避免滚轮被外层列表抢走
+5. 不要指望只写 `native-scrollbar=false` 却不约束高度
 ### 少写 CSS（优先依赖组件默认样式）
 
 使用 Naive UI 的首要目的就是**用组件默认样式，少写甚至不写自定义 CSS**，从而减小体积、统一观感、便于维护。

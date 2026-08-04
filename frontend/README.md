@@ -1,6 +1,6 @@
 # Football Analytics Frontend
 
-Vue 3 前端，对接后端 `/api/v1`，展示联赛赛程与赛前分析（含主观意见本地融合对比）。
+Vue 3 前端，对接后端 `/api/v1`，展示联赛赛程与赛前分析。
 
 页面交互与对接约定见 [FRONTEND_UI_SPEC.md](./FRONTEND_UI_SPEC.md)。  
 Naive UI 组件优先与全屏布局见仓库 `.cursor/rules/frontend-ui.mdc`。
@@ -59,7 +59,7 @@ frontend/
 │   ├── views/
 │   │   ├── Home.vue
 │   │   └── Detail.vue
-│   ├── utils/               # 格式化、主观意见本地融合
+│   ├── utils/               # 格式化、盘口解释文案等
 │   ├── router/
 │   ├── App.vue
 │   └── main.ts
@@ -81,7 +81,7 @@ frontend/
 
 - 列表只展示 `status === pending`；默认「全部」，点击联赛再本地过滤
 - 详情 Tabs 与交互见 [FRONTEND_UI_SPEC.md](./FRONTEND_UI_SPEC.md)；数据仍来自 `/analysis`（尚无独立 form/h2h 等接口）
-- 「融合主观意见」为前端本地启发式（后端暂无 `/predict`）
+- 「我的预测」左侧算法结论，右侧盘口解释文案（无主观因素融合）
 - `league_id` 与 `fixture_id` 不要混用
 
 ## 常见问题

@@ -125,12 +125,13 @@ const {
 const desktopListShellRef = ref<HTMLElement | null>(null)
 const phoneListShellRef = ref<HTMLElement | null>(null)
 
-/** Same inset as former `.results-list-inner` — virtual list dropped that wrapper. */
-const resultsListItemsStyle = {
-  paddingLeft: '12px',
-  paddingRight: '12px',
+/** Desktop sider list inset (toolbar already uses --fa-content-inline).
+ *  Phone wrap already pads horizontally — don't double it on list items. */
+const resultsListItemsStyle = computed(() => ({
+  paddingLeft: isPhone.value ? '0' : '12px',
+  paddingRight: isPhone.value ? '0' : '12px',
   boxSizing: 'border-box',
-}
+}))
 
 const desktopListScroll = useScrollRestore('results-list-desktop', desktopListShellRef)
 const phoneListScroll = useScrollRestore('results-list-phone', phoneListShellRef)

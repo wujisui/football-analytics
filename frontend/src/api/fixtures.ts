@@ -1,8 +1,6 @@
 import { analysisClient, apiClient } from './client'
 import type {
   FixtureResponse,
-  OpinionFactor,
-  PredictionSnapshot,
   TodayFixturesResponse,
 } from './types'
 
@@ -198,22 +196,4 @@ export async function fetchFixtureAnalysis(fixtureId: number): Promise<FixtureRe
     )
     return data
   }
-}
-
-export async function fetchOpinionFactors(): Promise<OpinionFactor[]> {
-  const { data } = await apiClient.get<{ factors: OpinionFactor[] }>(
-    '/fixtures/opinion-factors',
-  )
-  return data.factors
-}
-
-export async function adjustFixturePrediction(
-  fixtureId: number,
-  factors: string[],
-): Promise<PredictionSnapshot> {
-  const { data } = await apiClient.post<PredictionSnapshot>(
-    `/fixtures/${fixtureId}/adjust`,
-    { factors },
-  )
-  return data
 }

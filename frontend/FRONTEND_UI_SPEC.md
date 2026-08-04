@@ -11,7 +11,7 @@
 ## 1. 产品与技术背景
 
 - **定位**：轻量级**赛前**分析工具，只关注未开赛（`pending`）比赛；不是实时比分站。
-- **特色**：人机协同——后端算法给出基础胜平负分析；用户可输入主观意见，前端做融合对比展示。
+- **特色**：赛前盘口与本地算法给出胜平负等倾向；详情「我的预测」用盘口解释文案对照算法结论。
 - **前端栈**：Vue 3 + TypeScript + Vite + Vue Router + Axios + Naive UI + ECharts。
 - **后端**：本项目 FastAPI，开发时代理 `/api` → `http://127.0.0.1:8000`；基址 `VITE_API_BASE_URL` 或默认 `/api/v1`。
 - **禁止**：前端存放或直连 API-Sports / RapidAPI Key。
@@ -124,8 +124,7 @@ n-layout-content（全屏滚动）
       ├── 伤病与阵容 LineupTab
       ├── 赛前简报 BriefingTab（官方 /predictions）
       └── 我的预测 PredictionTab
-            ├── OpinionInput
-            └── PredictionResult
+            └── PredictionResult（左算法预测 / 右盘口解释）
 ```
 
 面包屑：`赛前赛事` / `{联赛}` / `{主队 VS 客队}`（前两级可点击）。
@@ -140,7 +139,7 @@ n-layout-content（全屏滚动）
 2. 进入详情页请求一次：`GET /api/v1/fixtures/{fixture_id}/analysis`（此处才可能打官方 API）
 3. 响应中的 `analysis` + `analysis.package`（赔率 / 近况 / 交锋 / 阵容 / 伤病 / 官方简报等）供各 Tab 共用
 4. Tabs：**首次切换到某 Tab 再挂载内容**（懒渲染）；已访问过的 Tab 保留，不重复请求
-5. 「我的预测」中融合结果为**前端本地启发式**（`utils/opinionAdjust.ts`），差异高亮；待后端提供预测接口后再改为服务端融合
+5. 「我的预测」左侧为算法结论，右侧为根据即时/初盘与倾向生成的解释文案（无主观因素融合）
 6. 「赛前简报」来自官方 `GET /predictions`，落库 `package.briefing`，与「我的预测」本地模型无关
 
 ### 4.3 各 Tab 展示要求
@@ -151,13 +150,12 @@ n-layout-content（全屏滚动）
 | 赛季数据  | 在独立 stats 接口就绪前，可用近况估算胜率、场均进/失球；可附带 1X2 赔率参考；需标明数据来源局限                                                                |
 | 伤病与阵容 | 双方伤病列表；首发 / 替补 / 阵型（无数据时空态）                                                                                           |
 | 赛前简报 | 官方 advice / 胜平负占比 / 大小球 / 对比表；无 coverage 时空态                                                                 |
-| 我的预测  | 算法原始胜平负 + 推荐；主观意见输入；提交后展示融合对比（差异高亮）                                                                                   |
+| 我的预测  | 算法原始胜平负 + 推荐；盘口：仅初盘未变时只显示「初盘」，有更新后才并排「即时盘」；右侧盘口解释 |
 
 ### 4.4 状态处理
 
 - 详情首屏：整体 Loading；失败可重试
 - 各 Tab：共享同一份 analysis 缓存；切换时若已加载则直接展示
-- 提交主观意见时：仅预测区域 Loading，不影响其他 Tab
 
 ---
 
@@ -204,7 +202,7 @@ n-layout-content（全屏滚动）
 | `GET .../h2h`                             | 历史交锋         |
 | `GET .../stats`                           | 赛季主客场统计      |
 | `GET .../lineup`                          | 伤病与阵容        |
-| `GET .../prediction` + `POST .../predict` | 服务端预测与主观意见融合 |
+| `GET .../prediction` + `POST .../predict` | 服务端预测接口（可选增强） |
 
 接入后可改为「按 Tab 请求 + 分 Tab 缓存」，并去掉前端本地融合。
 
@@ -229,14 +227,14 @@ frontend/src/
 │       ├── StatsTab.vue
 │       ├── LineupTab.vue
 │       ├── PredictionTab.vue
-│       ├── OpinionInput.vue
 │       └── PredictionResult.vue
 ├── composables/
 │   └── useFixtureAnalysis.ts
 ├── utils/
 │   ├── format.ts
 │   ├── leagueNames.ts
-│   └── opinionAdjust.ts
+│   ├── opinionAdjust.ts
+│   └── predictionExplanation.ts
 ├── views/
 │   ├── Home.vue
 │   └── Detail.vue

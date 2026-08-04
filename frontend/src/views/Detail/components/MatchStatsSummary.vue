@@ -115,17 +115,17 @@ const stats = computed(() => {
 }
 
 .tone-win {
-  color: #c23b3b;
+  color: var(--fa-wdl-win);
   font-weight: 700;
 }
 
 .tone-draw {
-  color: var(--fa-text-muted);
+  color: var(--fa-wdl-draw);
   font-weight: 700;
 }
 
 .tone-loss {
-  color: #3b6fc2;
+  color: var(--fa-wdl-loss);
   font-weight: 700;
 }
 </style>

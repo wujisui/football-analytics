@@ -1274,8 +1274,11 @@ class FootballFetcher:
                 current = loads_json(getattr(stored, "odds_json", None), {}) or {}
                 opening = loads_json(getattr(stored, "odds_opening_json", None), {}) or {}
                 if current.get("available") and not opening.get("available"):
-                    captured_at = datetime.now(timezone.utc).isoformat().replace(
-                        "+00:00", "Z"
+                    # Keep the board's original capture time as 初盘 clock.
+                    captured_at = current.get("captured_at") or (
+                        datetime.now(timezone.utc)
+                        .isoformat()
+                        .replace("+00:00", "Z")
                     )
                     stored.odds_opening_json = dumps_json(
                         {**current, "role": "opening", "captured_at": captured_at}

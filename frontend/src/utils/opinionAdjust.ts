@@ -13,48 +13,7 @@ export interface PredictionSnapshot {
   probabilitiesAvailable: boolean
 }
 
-export function predictionDiffKeys(
-  original: PredictionSnapshot,
-  adjusted: PredictionSnapshot,
-): Set<string> {
-  const keys = new Set<string>()
-  if (original.recommendation !== adjusted.recommendation) keys.add('recommendation')
-  if (Math.abs(original.home_win_prob - adjusted.home_win_prob) >= 0.01) keys.add('home')
-  if (Math.abs(original.draw_prob - adjusted.draw_prob) >= 0.01) keys.add('draw')
-  if (Math.abs(original.away_win_prob - adjusted.away_win_prob) >= 0.01) keys.add('away')
-  if (original.goal_lean !== adjusted.goal_lean) keys.add('goal_lean')
-  if (original.both_score_lean !== adjusted.both_score_lean) keys.add('both_score')
-  if (original.score_hint !== adjusted.score_hint) keys.add('score')
-  if (original.handicap_lean !== adjusted.handicap_lean) keys.add('handicap')
-  return keys
-}
-
-/** Map adjust API payload → snapshot for compare UI. */
-export function snapshotFromApi(data: {
-  home_win_prob: number
-  draw_prob: number
-  away_win_prob: number
-  recommendation: string
-  goal_lean: string
-  both_score_lean: string
-  score_hint: string
-  handicap_lean: string
-}): PredictionSnapshot {
-  return snapshotFromAnalysis({
-    probabilities: {
-      home_win_prob: data.home_win_prob,
-      draw_prob: data.draw_prob,
-      away_win_prob: data.away_win_prob,
-    },
-    recommendation: data.recommendation,
-    goal_lean: data.goal_lean,
-    both_score_lean: data.both_score_lean,
-    score_hint: data.score_hint,
-    handicap_lean: data.handicap_lean,
-  })
-}
-
-/** Map analysis payload → snapshot for compare UI. */
+/** Map analysis payload → snapshot for prediction UI. */
 export function snapshotFromAnalysis(analysis: {
   probabilities: ProbabilitiesResponse
   recommendation: string

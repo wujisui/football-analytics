@@ -312,8 +312,8 @@ const bottomItems: {
   min-height: 52px;
   padding: 4px max(8px, env(safe-area-inset-right, 0px))
     max(4px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
-  border-top: 1px solid var(--fa-border);
   background: var(--fa-bg-elevated);
+  box-shadow: 0 -1px 6px rgba(0, 0, 0, 0.12);
   box-sizing: border-box;
   user-select: none;
   -webkit-user-select: none;

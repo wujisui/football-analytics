@@ -82,7 +82,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="date-strip-wrap">
+  <div class="date-strip-wrap fa-scrollbar-hidden">
     <div class="date-strip" role="tablist" aria-label="赛程日期">
       <n-button
         v-for="tab in tabs"
@@ -115,11 +115,6 @@ onMounted(() => {
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.date-strip-wrap::-webkit-scrollbar {
-  display: none;
 }
 
 .date-strip {
