@@ -72,14 +72,14 @@ function selected(cell: CalcCell): boolean {
       <n-grid
         v-for="row in rows"
         :key="row.market"
-        :cols="4"
+        :cols="5"
         :x-gap="6"
         class="market-row"
       >
         <n-gi>
           <n-text depth="2" class="play-label">{{ row.playLabel }}</n-text>
         </n-gi>
-        <n-gi :span="3">
+        <n-gi :span="4">
           <n-grid :cols="row.cells.length" :x-gap="6">
             <n-gi
               v-for="cell in row.cells"
@@ -182,8 +182,10 @@ function selected(cell: CalcCell): boolean {
   display: flex;
   align-items: center;
   font-size: 12px;
+  line-height: 1.2;
   height: 100%;
-  padding-left: 4px;
+  padding-left: 2px;
+  word-break: keep-all;
 }
 
 .odd-button {

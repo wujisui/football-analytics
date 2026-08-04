@@ -6,13 +6,7 @@ import BasicInfo from '@/views/Detail/components/BasicInfo.vue'
 import TabsContainer from '@/views/Detail/components/TabsContainer.vue'
 import { useFixtureAnalysis } from '@/views/Detail/composables/useFixtureAnalysis'
 import { useIsPhone } from '@/composables/useMediaQuery'
-import {
-  detailBackRoute,
-  detailRootLabel,
-  parseDetailFrom,
-  parseDetailTab,
-  type DetailTab,
-} from '@/utils/detailNav'
+import { parseDetailTab, type DetailTab } from '@/utils/detailNav'
 
 const props = defineProps<{
   fixtureId: string
@@ -33,11 +27,6 @@ const { data, loading, error, ensureLoaded, reload, reset } =
   useFixtureAnalysis(fixtureIdNumber)
 const contentLoading = computed(() => loading.value || !data.value)
 
-const from = computed(() => parseDetailFrom(route.query.from))
-const rootLabel = computed(() => detailRootLabel(from.value))
-const fromDate = computed(() =>
-  typeof route.query.date === 'string' ? route.query.date : null,
-)
 const initialTab = computed(() => parseDetailTab(route.query.tab))
 
 /** Mirror the open tab into the URL so a reload lands on the same pane. */
@@ -48,18 +37,6 @@ function onTabChange(tab: DetailTab) {
     params: { fixtureId: props.fixtureId },
     query: { ...route.query, tab },
   })
-}
-
-function goBack() {
-  if (from.value === 'favorites' && window.history.length > 1) {
-    void router.back()
-    return
-  }
-  void router.push(
-    detailBackRoute(from.value, {
-      date: fromDate.value,
-    }),
-  )
 }
 
 onMounted(() => {
@@ -86,17 +63,10 @@ watch(
       <div class="detail-body">
         <BasicInfo v-if="data" :fixture="data" />
         <div v-else class="basic-info-skel">
-          <n-breadcrumb v-if="!isPhone">
-            <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
-            <n-breadcrumb-item>
-              <n-skeleton text :width="72" :sharp="false" />
-            </n-breadcrumb-item>
-            <n-breadcrumb-item>
-              <n-skeleton text :width="160" :sharp="false" />
-            </n-breadcrumb-item>
-          </n-breadcrumb>
-          <n-skeleton text :width="240" :style="isPhone ? undefined : 'margin-top: 12px'" :sharp="false" />
-          <n-skeleton text :width="180" style="margin-top: 8px" :sharp="false" />
+          <div class="skel-row">
+            <n-skeleton circle :width="28" :height="28" :sharp="false" />
+            <n-skeleton text :width="isPhone ? '70%' : 280" :sharp="false" />
+          </div>
         </div>
 
         <TabsContainer
@@ -146,6 +116,26 @@ watch(
 .basic-info-skel {
   display: flex;
   flex-direction: column;
+  background: var(--fa-bg-elevated);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.skel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.skel-row :deep(.n-skeleton) {
+  flex-shrink: 0;
+}
+
+.skel-row :deep(.n-skeleton:nth-child(2)) {
+  flex: 1;
+  min-width: 0;
 }
 
 .tabs-fill {

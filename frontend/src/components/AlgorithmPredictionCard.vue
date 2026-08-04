@@ -188,7 +188,6 @@ function onOddsClick() {
           :percentage="Math.round(p.value * 100)"
           :show-indicator="false"
           :height="standalone ? 6 : 8"
-          processing
         />
       </div>
     </div>

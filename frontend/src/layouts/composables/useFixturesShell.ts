@@ -93,8 +93,32 @@ const officialSyncedDay = ref('')
 
 let shellWatchersBound = false
 let pageLoadSyncStarted = false
+let officialSyncInflight: Promise<void> | null = null
 /** Leagues whose odds this page load already asked the official API for. */
 const syncedOddsLeagueIds = new Set<number>()
+
+/**
+ * One auto official sync per browser session. Survives tab discard / cold reload;
+ * cleared when the browser session ends (user kills the browser). Further updates
+ * are pull-to-refresh only.
+ */
+const SESSION_SYNCED_KEY = 'fa-official-session-synced'
+
+function hasSessionOfficialSync(): boolean {
+  try {
+    return sessionStorage.getItem(SESSION_SYNCED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markSessionOfficialSync() {
+  try {
+    sessionStorage.setItem(SESSION_SYNCED_KEY, '1')
+  } catch {
+    /* private mode / quota */
+  }
+}
 
 export function useFixturesShell() {
   const route = useRoute()
@@ -276,7 +300,10 @@ export function useFixturesShell() {
   })
 
   const dayCountLabel = computed(() => {
-    if (isResultsPage.value) return ''
+    if (isResultsPage.value && !isScheduleFutureDayRef.value) return ''
+    if (isScheduleFutureDayRef.value) {
+      return predictionsDayCountLabel(resultsDayFixtureCount.value)
+    }
     const list = leagueFiltered(prematchVisibleFixtures.value)
     const count = filterByTeamQuery(sortFixtures(list), teamSearch.value).length
     return predictionsDayCountLabel(count)
@@ -310,13 +337,13 @@ export function useFixturesShell() {
     const day = scheduleTodayDate()
     if (!prematchTrackedIds.value.length) return '请先在「筛选」中勾选联赛'
     if (!prematchDisplayedFixtures.value.length && !teamSearch.value.trim()) {
-      return `${day} 暂无未完赛预测`
+      return `${day} 暂无未开赛预测`
     }
     const teamHint = teamSearchEmptyHint(teamSearch.value)
     if (teamHint && sortFixtures(leagueFiltered(prematchVisibleFixtures.value)).length) {
       return teamHint
     }
-    return `${day} 暂无未完赛预测`
+    return `${day} 暂无未开赛预测`
   })
 
   function syncLeagueFromRoute() {
@@ -405,46 +432,70 @@ export function useFixturesShell() {
     leagueIds?: number[]
     oddsOnly?: boolean
   }) {
-    if (officialSyncing.value) return
+    if (officialSyncInflight) return officialSyncInflight
     officialSyncing.value = true
-    try {
-      const res = await syncFixtures({
-        date: options.day,
-        days: options.days,
-        includeResults: options.includeResults,
-        includeOdds: options.includeOdds,
-        // Existing boards are refreshed near kickoff by the scheduler / detail
-        // fetch; a page load only fills the gaps.
-        oddsRefreshExisting: false,
-        leagueIds: options.leagueIds,
-        oddsOnly: options.oddsOnly,
-      })
-      // "running": another sync owns the official calls; it will publish the data.
-      if (res.status !== 'ok') return
+    officialSyncInflight = (async () => {
+      try {
+        const res = await syncFixtures({
+          date: options.day,
+          days: options.days,
+          includeResults: options.includeResults,
+          includeOdds: options.includeOdds,
+          // Existing boards are refreshed near kickoff by the scheduler / detail
+          // fetch; a page load only fills the gaps.
+          oddsRefreshExisting: false,
+          leagueIds: options.leagueIds,
+          oddsOnly: options.oddsOnly,
+        })
+        // "running": another sync owns the official calls; it will publish the data.
+        if (res.status !== 'ok') return
 
-      for (const id of options.leagueIds ?? []) syncedOddsLeagueIds.add(id)
-      officialSyncedDay.value = options.day
-      officialSyncRevision.value += 1
-      if (!isResultsPage.value) await reloadPrematchDay(true)
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : '官方同步失败')
-    } finally {
-      officialSyncing.value = false
-    }
+        for (const id of options.leagueIds ?? []) syncedOddsLeagueIds.add(id)
+        officialSyncedDay.value = options.day
+        officialSyncRevision.value += 1
+        if (!options.oddsOnly) markSessionOfficialSync()
+        if (!isResultsPage.value) await reloadPrematchDay(true)
+      } catch (err) {
+        message.error(err instanceof Error ? err.message : '官方同步失败')
+      } finally {
+        officialSyncing.value = false
+        officialSyncInflight = null
+      }
+    })()
+    return officialSyncInflight
   }
 
-  /** One official pull per page load, scoped to the view the user landed on. */
-  function startPageLoadSync() {
-    if (pageLoadSyncStarted) return
-    pageLoadSyncStarted = true
+  function currentOfficialSyncOptions() {
     const futureResultsDay = isResultsPage.value && isScheduleFutureDayRef.value
-    void runOfficialSync({
+    return {
       day: syncCalendarDay(),
       days: syncCalendarDays(),
       includeResults: !futureResultsDay,
       includeOdds: !isResultsPage.value || futureResultsDay,
       leagueIds: leagueIdsForSync(),
-    })
+    }
+  }
+
+  /**
+   * Auto official pull once per browser session. Skips after the session has
+   * already synced (tab discard / cold reload). Manual updates use refreshOfficial.
+   */
+  function startPageLoadSync() {
+    if (pageLoadSyncStarted) return
+    pageLoadSyncStarted = true
+    const options = currentOfficialSyncOptions()
+    if (hasSessionOfficialSync()) {
+      // Treat tracked leagues as already covered so filter confirm does not
+      // re-issue a full odds pull for every id after a discarded-tab reload.
+      for (const id of options.leagueIds ?? []) syncedOddsLeagueIds.add(id)
+      return
+    }
+    void runOfficialSync(options)
+  }
+
+  /** Pull-to-refresh / manual: always hit official for the current view scope. */
+  async function refreshOfficial() {
+    await runOfficialSync(currentOfficialSyncOptions())
   }
 
   /** Newly checked leagues were outside the page-load scope — fetch their odds. */
@@ -653,7 +704,6 @@ export function useFixturesShell() {
     shellMenuLeagues,
     shellCountByLeague,
     shellTotalCount,
-    selectedLeague,
     breadcrumbRoot,
     breadcrumbFilter,
     dayCountLabel,
@@ -664,6 +714,7 @@ export function useFixturesShell() {
     officialSyncRevision,
     officialSyncedDay,
     reloadPrematchDay,
+    refreshOfficial,
     loadFilterOptions,
     syncFutureScheduleSelection,
     confirmFilter,

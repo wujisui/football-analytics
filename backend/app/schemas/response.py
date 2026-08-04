@@ -53,6 +53,7 @@ class OddsPackageResponse(BaseModel):
     match_winner: MatchWinnerOddsResponse | None = None
     asian_handicap: LineOddsResponse | None = None
     goals_ou: LineOddsResponse | None = None
+    both_teams_score: LineOddsResponse | None = None
     bookmakers: list[dict[str, Any]] = Field(default_factory=list)
     role: str | None = Field(default=None, description="opening|current")
     captured_at: str | None = None
@@ -267,6 +268,7 @@ class FixtureOddsSnippetResponse(BaseModel):
     match_winner: MatchWinnerOddsResponse | None = None
     asian_handicap: LineOddsResponse | None = None
     goals_ou: LineOddsResponse | None = None
+    both_teams_score: LineOddsResponse | None = None
 
 
 class FixtureResponse(BaseModel):

@@ -19,10 +19,9 @@ defineOptions({ name: 'Favorites' })
 const FILTER_DATE_KEY = 'fa-favorites-filter-date'
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-function readSavedFilterDate(): string | null {
+function readSavedFilterDate(): string {
   try {
     const raw = localStorage.getItem(FILTER_DATE_KEY)
-    if (raw === '') return null
     if (raw && DATE_RE.test(raw)) return raw
   } catch {
     /* ignore */
@@ -30,10 +29,9 @@ function readSavedFilterDate(): string | null {
   return todayDate()
 }
 
-function writeSavedFilterDate(date: string | null) {
+function writeSavedFilterDate(date: string) {
   try {
-    if (date == null) localStorage.setItem(FILTER_DATE_KEY, '')
-    else localStorage.setItem(FILTER_DATE_KEY, date)
+    localStorage.setItem(FILTER_DATE_KEY, date)
   } catch {
     /* ignore */
   }
@@ -50,10 +48,13 @@ const { favorites, reloadFavorites } = useFavoriteFixtures()
 
 const filterDate = ref<string | null>(readSavedFilterDate())
 const refreshing = ref(false)
-const today = computed(() => todayDate())
-const isTodaySelected = computed(() => filterDate.value === today.value)
 
 watch(filterDate, (date) => {
+  // Clearable X replaces「今天」: empty → jump back to today.
+  if (date == null) {
+    filterDate.value = todayDate()
+    return
+  }
   writeSavedFilterDate(date)
 })
 
@@ -67,25 +68,13 @@ async function refreshList() {
   }
 }
 
-function goToday() {
-  filterDate.value = today.value
-}
-
 const favoriteDays = computed(() => favoriteFixtureDays(favorites.value))
 
-const todayFavoriteCount = computed(() => {
-  const day = today.value
-  return favorites.value.filter(
-    (item) => toScheduleDayKey(item.fixture_date) === day,
-  ).length
-})
-
 const filteredFavorites = computed(() => {
+  const day = filterDate.value
   let list = [...favorites.value]
-  if (filterDate.value) {
-    list = list.filter(
-      (item) => toScheduleDayKey(item.fixture_date) === filterDate.value,
-    )
+  if (day) {
+    list = list.filter((item) => toScheduleDayKey(item.fixture_date) === day)
   }
   return list.sort(
     (a, b) =>
@@ -105,8 +94,8 @@ const favoriteBuckets = computed((): FavoriteBucket[] =>
     })),
 )
 
-const defaultExpandedBuckets = computed(() =>
-  favoriteBuckets.value.map((b) => b.key),
+const defaultExpandedName = computed(
+  () => favoriteBuckets.value[0]?.key ?? null,
 )
 
 function goDetail(fixtureId: number) {
@@ -121,29 +110,13 @@ onMounted(() => {
 <template>
   <div class="fa-page-frame">
     <div class="fa-page-shell favorites-shell">
-      <div class="favorites-header fa-page-content-padding">
-        <div class="favorites-head">
-          <span class="favorites-title">收藏</span>
-          <n-text depth="3" class="favorites-count">
-            共 {{ favorites.length }} 场
-          </n-text>
-          <n-text depth="3" class="favorites-count favorites-count-sep">
-            今日 {{ todayFavoriteCount }} 场
-          </n-text>
-        </div>
+      <div class="favorites-header fa-page-toolbar">
         <div class="favorites-toolbar">
+          <span class="favorites-title">收藏</span>
           <FavoriteDatesPicker
             v-model="filterDate"
             :favorite-days="favoriteDays"
           />
-          <n-button
-            size="small"
-            type="primary"
-            :disabled="isTodaySelected"
-            @click="goToday"
-          >
-            今天
-          </n-button>
         </div>
       </div>
 
@@ -165,7 +138,7 @@ onMounted(() => {
               class="fa-day-collapse"
               accordion
               display-directive="if"
-              :default-expanded-names="defaultExpandedBuckets[0] ?? null"
+              :default-expanded-names="defaultExpandedName"
               arrow-placement="right"
             >
               <n-collapse-item
@@ -206,40 +179,22 @@ onMounted(() => {
 }
 
 .favorites-header {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-block: 12px 8px;
   border-bottom: 1px solid var(--fa-border);
-  background: var(--fa-bg-elevated);
-}
-
-.favorites-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.favorites-title {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.favorites-count {
-  font-size: 12px;
-}
-
-.favorites-count-sep::before {
-  content: '·';
-  margin: 0 6px 0 2px;
-  opacity: 0.55;
 }
 
 .favorites-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  min-width: 0;
+}
+
+.favorites-title {
+  flex-shrink: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .favorites-body {

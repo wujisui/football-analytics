@@ -3,10 +3,11 @@ import { ArrowDownOutline } from '@vicons/ionicons5'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { findScrollContainer } from '@/utils/scrollContainer'
 
 const props = withDefaults(
   defineProps<{
-    /** Scroll shell wrapping `n-scrollbar` — must be `position: relative`. */
+    /** Scroll shell wrapping virtual-list / n-scrollbar — `position: relative`. */
     shell: HTMLElement | null
     visibilityHeight?: number
     right?: number
@@ -34,11 +35,7 @@ let resizeObserver: ResizeObserver | null = null
 let visibilityRaf = 0
 
 function scrollListenTo(shell: HTMLElement | null): HTMLElement | null {
-  if (!shell) return null
-  return (
-    (shell.querySelector('.n-scrollbar-container') as HTMLElement | null) ??
-    shell
-  )
+  return findScrollContainer(shell) ?? shell
 }
 
 function backTopListenTo(): HTMLElement {

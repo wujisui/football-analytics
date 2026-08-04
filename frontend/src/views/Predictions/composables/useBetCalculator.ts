@@ -9,15 +9,115 @@ import {
   MAX_SPF_PICKS,
   selectedFixtureIds,
   type CalcCell,
+  type CalcMarket,
+  type CalcOutcome,
   type CalcSelection,
   type FoldMode,
 } from '@/utils/betCalculator'
 import { formatDate, formatTime } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
-const selections = ref<CalcSelection[]>([])
-const multiplier = ref(1)
-const fold = ref<FoldMode>('2x1')
+/** Survive tab discard / cold reload within the same browser session. */
+const STORAGE_KEY = 'fa-bet-calculator'
+
+type StoredBetState = {
+  selections: CalcSelection[]
+  multiplier: number
+  fold: FoldMode
+}
+
+const MARKETS = new Set<CalcMarket>(['spf', 'ah', 'ou', 'btts'])
+const OUTCOMES = new Set<CalcOutcome>([
+  'home',
+  'draw',
+  'away',
+  'over',
+  'under',
+  'yes',
+  'no',
+])
+
+function isCalcSelection(raw: unknown): raw is CalcSelection {
+  if (!raw || typeof raw !== 'object') return false
+  const s = raw as Record<string, unknown>
+  return (
+    typeof s.fixtureId === 'number' &&
+    typeof s.leagueId === 'number' &&
+    typeof s.homeName === 'string' &&
+    typeof s.awayName === 'string' &&
+    typeof s.kickoff === 'string' &&
+    typeof s.leagueName === 'string' &&
+    MARKETS.has(s.market as CalcMarket) &&
+    OUTCOMES.has(s.outcome as CalcOutcome) &&
+    typeof s.playLabel === 'string' &&
+    typeof s.pickLabel === 'string' &&
+    typeof s.odd === 'number' &&
+    Number.isFinite(s.odd)
+  )
+}
+
+function readStored(): StoredBetState | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw) as Partial<StoredBetState>
+    if (!Array.isArray(data.selections)) return null
+    const selections = data.selections.filter(isCalcSelection)
+    const multiplier =
+      typeof data.multiplier === 'number' &&
+      Number.isFinite(data.multiplier) &&
+      data.multiplier >= 1
+        ? Math.floor(data.multiplier)
+        : 1
+    const matchCount = selectedFixtureIds(selections).length
+    const modes = availableFoldModes(matchCount)
+    const fold =
+      typeof data.fold === 'string' && modes.includes(data.fold as FoldMode)
+        ? (data.fold as FoldMode)
+        : modes[modes.length - 1] ?? '2x1'
+    return { selections, multiplier, fold }
+  } catch {
+    return null
+  }
+}
+
+function writeStored(state: StoredBetState) {
+  try {
+    if (!state.selections.length && state.multiplier === 1) {
+      sessionStorage.removeItem(STORAGE_KEY)
+      return
+    }
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+const stored = readStored()
+const selections = ref<CalcSelection[]>(stored?.selections ?? [])
+const multiplier = ref(stored?.multiplier ?? 1)
+const fold = ref<FoldMode>(stored?.fold ?? '2x1')
+
+const matchCount = computed(() => selectedFixtureIds(selections.value).length)
+
+// 选中场次变化后默认取最大过关方式（N 场 → N串1），用户仍可手动降档
+watch(matchCount, (n) => {
+  const modes = availableFoldModes(n)
+  if (!modes.length) return
+  fold.value = modes[modes.length - 1]
+})
+
+watch(
+  [selections, multiplier, fold],
+  () => {
+    writeStored({
+      selections: selections.value,
+      multiplier: multiplier.value,
+      fold: fold.value,
+    })
+  },
+  { deep: true },
+)
 
 export type GroupedFixtureSelections = {
   fixtureId: number
@@ -30,21 +130,12 @@ export type GroupedFixtureSelections = {
 }
 
 export function useBetCalculator() {
-  const matchCount = computed(() => selectedFixtureIds(selections.value).length)
-
   const foldOptions = computed(() =>
     availableFoldModes(matchCount.value).map((mode) => ({
       label: foldModeLabel(mode),
       value: mode,
     })),
   )
-
-  // 选中场次变化后默认取最大过关方式（N 场 → N串1），用户仍可手动降档
-  watch(matchCount, (n) => {
-    const modes = availableFoldModes(n)
-    if (!modes.length) return
-    fold.value = modes[modes.length - 1]
-  })
 
   const result = computed(() =>
     calculateParlay(selections.value, fold.value, multiplier.value),
@@ -86,7 +177,7 @@ export function useBetCalculator() {
     let next = selections.value.filter((s) => {
       if (s.fixtureId !== fixtureId) return true
       if (s.market !== cell.market) return false
-      // 让球 / 大小：同玩法只留新点的一项
+      // 让球 / 大小 / 双进：同玩法只留新点的一项
       if (cell.market !== 'spf') return false
       return true
     })

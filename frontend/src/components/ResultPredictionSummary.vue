@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import ResultHitTags from '@/components/ResultHitTags.vue'
 import { toPercent } from '@/utils/format'
 import type { HitTagFixture } from '@/utils/resultsDisplay'
+import type { ResultsHitKey } from '@/utils/resultsPageState'
 
 /** Prediction fields shown on the results list card. */
 export type ResultPredictionFields = HitTagFixture & {
@@ -21,13 +22,18 @@ const props = withDefaults(defineProps<{
   fixture: ResultPredictionFields
   oddsClickable?: boolean
   showProbabilities?: boolean
+  hitFilterable?: boolean
+  activeHitKey?: ResultsHitKey | null
 }>(), {
   oddsClickable: false,
   showProbabilities: false,
+  hitFilterable: false,
+  activeHitKey: null,
 })
 
 const emit = defineEmits<{
   openOdds: []
+  filterHit: [key: ResultsHitKey]
 }>()
 
 const probabilities = computed(() => {
@@ -76,7 +82,12 @@ const probabilities = computed(() => {
         />
       </div>
     </div>
-    <ResultHitTags :fixture="fixture" />
+    <ResultHitTags
+      :fixture="fixture"
+      :filterable="hitFilterable"
+      :active-hit-key="activeHitKey"
+      @filter-hit="emit('filterHit', $event)"
+    />
   </div>
   <n-text v-else depth="3" class="no-pred">无赛前预测</n-text>
 </template>

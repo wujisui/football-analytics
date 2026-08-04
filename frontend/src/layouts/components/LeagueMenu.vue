@@ -2,7 +2,6 @@
 import { ChevronForwardOutline, SearchOutline } from '@vicons/ionicons5'
 import { computed, ref } from 'vue'
 
-import { useIsPhone } from '@/composables/useMediaQuery'
 import { fuzzyIncludes } from '@/utils/fuzzySearch'
 import type { LeagueSummaryResponse } from '@/api/types'
 import { leagueTagColor } from '@/utils/format'
@@ -21,7 +20,6 @@ const emit = defineEmits<{
   select: [leagueId: number | null]
 }>()
 
-const isPhone = useIsPhone()
 const searchQuery = ref('')
 
 function abbrOf(name: string): string {
@@ -152,17 +150,9 @@ function countOf(leagueId: number): number {
               </n-tooltip>
             </template>
             <template v-if="!collapsed">
-              <n-tooltip
-                :trigger="isPhone ? 'click' : 'hover'"
-                placement="right"
-              >
-                <template #trigger>
-                  <span class="lm-name">
-                    {{ leagueLabel(league.league_name) }}
-                  </span>
-                </template>
+              <span class="lm-name">
                 {{ leagueLabel(league.league_name) }}
-              </n-tooltip>
+              </span>
             </template>
             <template v-if="!collapsed" #suffix>
               <span class="lm-suffix">

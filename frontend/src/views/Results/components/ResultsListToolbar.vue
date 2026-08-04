@@ -2,12 +2,13 @@
 import { StatsChartOutline } from '@vicons/ionicons5'
 
 import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
-import ResultsFilterTrigger from '@/views/Results/components/ResultsFilterTrigger.vue'
-import type { ResultsHitKey } from '@/utils/resultsPageState'
+import LeagueFilterTrigger from '@/layouts/components/LeagueFilterTrigger.vue'
+import type { LeagueFilterOption } from '@/api/leagues'
 
 withDefaults(
   defineProps<{
-    selectedHitKeys: ResultsHitKey[]
+    filterOptions: LeagueFilterOption[]
+    trackedIds: number[]
     filterActive: boolean
     /** Phone: open 当日统计 modal from the list toolbar. */
     showDayStats?: boolean
@@ -18,7 +19,7 @@ withDefaults(
 const teamSearch = defineModel<string>('teamSearch', { required: true })
 
 const emit = defineEmits<{
-  confirmFilter: [hitKeys: ResultsHitKey[]]
+  confirmFilter: [ids: number[]]
   openDayStats: []
 }>()
 </script>
@@ -42,8 +43,10 @@ const emit = defineEmits<{
       </template>
       当日统计
     </n-button>
-    <ResultsFilterTrigger
-      :selected-hit-keys="selectedHitKeys"
+    <LeagueFilterTrigger
+      drawer-mode
+      :options="filterOptions"
+      :tracked-ids="trackedIds"
       :filter-active="filterActive"
       @confirm="emit('confirmFilter', $event)"
     />

@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -48,7 +48,7 @@ from app.services.results_accuracy import (
     evaluate_fixture_prediction,
     load_stored_by_fixture_ids,
 )
-from app.services.results_capture import stuck_live_clause
+from app.services.results_capture import results_list_clause
 from app.services.league_names import league_name_zh
 from app.services.team_names import team_name_zh
 
@@ -218,6 +218,7 @@ def _list_extras_from_stored(stored: PreMatchData | None) -> tuple[
             match_winner=odds.get("match_winner"),
             asian_handicap=odds.get("asian_handicap"),
             goals_ou=odds.get("goals_ou"),
+            both_teams_score=odds.get("both_teams_score"),
         )
     return home_rank, away_rank, snippet
 
@@ -382,11 +383,7 @@ async def get_fixture_results(
         .where(
             Fixture.date >= start_dt,
             Fixture.date < end_dt,
-            or_(
-                Fixture.status.in_(["finished", "cancelled", "postponed"]),
-                # Keep matches the feed left unsettled — hidden rows look like data loss.
-                stuck_live_clause(),
-            ),
+            results_list_clause(),
         )
         .options(
             selectinload(Fixture.home_team),
@@ -661,6 +658,7 @@ async def get_fixture_analysis(
             match_winner=odds.get("match_winner"),
             asian_handicap=odds.get("asian_handicap"),
             goals_ou=odds.get("goals_ou"),
+            both_teams_score=odds.get("both_teams_score"),
         )
     return FixtureResponse(
         fixture_id=fixture.id,

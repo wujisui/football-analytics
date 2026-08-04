@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { onActivated, onMounted } from 'vue'
+import { FilterOutline } from '@vicons/ionicons5'
+import { computed, onActivated, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
 import HomeDateStrip from '@/layouts/components/HomeDateStrip.vue'
 import LeagueFilterTrigger from '@/layouts/components/LeagueFilterTrigger.vue'
 import LeagueMenu from '@/layouts/components/LeagueMenu.vue'
+import ShellBreadcrumb from '@/layouts/components/ShellBreadcrumb.vue'
 import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 import {
   bootstrapFixturesShell,
@@ -39,6 +41,11 @@ const {
   isScheduleFutureDay,
 } = useFixturesShell()
 
+/** Results past/today: date strip only. Future schedule day: same league chrome as 即时. */
+const showShellLeagueNav = computed(
+  () => !isResultsPage.value || isScheduleFutureDay.value,
+)
+
 onMounted(() => {
   bootstrapFixturesShell({ reloadPrematch: route.name !== 'results' })
 })
@@ -51,12 +58,12 @@ onActivated(() => {
 <template>
   <div class="fa-page-frame">
     <n-layout
-      :has-sider="!isPhone"
+      :has-sider="!isPhone && showShellLeagueNav"
       class="shell-layout fa-page-shell"
       content-style="height: 100%;"
     >
       <n-layout-sider
-        v-if="!isPhone"
+        v-if="!isPhone && showShellLeagueNav"
         v-model:collapsed="siderCollapsed"
         bordered
         collapse-mode="width"
@@ -93,38 +100,70 @@ onActivated(() => {
         content-style="display: flex; flex-direction: column; height: 100%; overflow: hidden;"
       >
         <n-layout-header bordered class="fa-page-toolbar" style="flex-shrink: 0;">
-          <div class="fa-toolbar-top">
-            <n-button
-              v-if="isPhone"
-              size="small"
-              type="primary"
-              class="league-trigger"
-              @click="leagueDrawerShow = true"
-            >
-              联赛
-            </n-button>
-            <n-breadcrumb v-if="!isPhone" class="fa-toolbar-crumb">
-              <n-breadcrumb-item @click="selectLeague(null)">
-                {{ breadcrumbRoot }}
-              </n-breadcrumb-item>
-              <n-breadcrumb-item>{{ breadcrumbFilter }}</n-breadcrumb-item>
-            </n-breadcrumb>
-          </div>
-
+          <!-- 赛果日：仅日期条 -->
           <HomeDateStrip
-            v-if="isResultsPage"
+            v-if="isResultsPage && !isScheduleFutureDay"
             v-model="selectedDay"
           />
 
+          <!-- 未来赛程 · PC：面包屑与日期同一行 -->
           <div
-            v-if="!isResultsPage || isScheduleFutureDay"
+            v-else-if="isResultsPage && isScheduleFutureDay && !isPhone"
+            class="results-future-header"
+          >
+            <ShellBreadcrumb
+              :root-label="breadcrumbRoot"
+              :filter-label="breadcrumbFilter"
+              @select-root="selectLeague(null)"
+            />
+            <HomeDateStrip v-model="selectedDay" class="results-future-dates" />
+          </div>
+
+          <!-- 未来赛程 · 手机：日期条在上，联赛行在下 -->
+          <HomeDateStrip
+            v-else-if="isResultsPage && isScheduleFutureDay && isPhone"
+            v-model="selectedDay"
+          />
+
+          <!-- 即时 / 计算器 / 赛程·未来(手机联赛行) -->
+          <div
+            v-if="!isResultsPage || (isScheduleFutureDay && isPhone)"
+            class="fa-toolbar-top"
+          >
+            <n-button
+              v-if="isPhone"
+              size="small"
+              secondary
+              type="tertiary"
+              class="league-trigger"
+              @click="leagueDrawerShow = true"
+            >
+              <template #icon>
+                <n-icon :component="FilterOutline" />
+              </template>
+              联赛
+            </n-button>
+            <ShellBreadcrumb
+              v-if="!isPhone"
+              :root-label="breadcrumbRoot"
+              :filter-label="breadcrumbFilter"
+              @select-root="selectLeague(null)"
+            />
+
+            <template v-if="isPhone">
+              <span class="day-stat">{{ dayCountLabel }}</span>
+              <div class="toolbar-search-end">
+                <PageToolbarSearch v-model="teamSearch" />
+              </div>
+            </template>
+          </div>
+
+          <div
+            v-if="!isPhone && showShellLeagueNav"
             class="shell-list-meta"
           >
-            <span v-if="!isResultsPage" class="day-stat">{{ dayCountLabel }}</span>
-            <PageToolbarSearch
-              v-if="!(isResultsPage && !isScheduleFutureDay)"
-              v-model="teamSearch"
-            />
+            <span class="day-stat">{{ dayCountLabel }}</span>
+            <PageToolbarSearch v-model="teamSearch" />
           </div>
         </n-layout-header>
 
@@ -140,7 +179,7 @@ onActivated(() => {
     </n-layout>
 
     <n-drawer
-      v-if="isPhone"
+      v-if="isPhone && showShellLeagueNav"
       v-model:show="leagueDrawerShow"
       placement="left"
       width="88%"
@@ -195,12 +234,24 @@ onActivated(() => {
   flex-shrink: 0;
 }
 
-:deep(.league-drawer .n-drawer-body-content-wrapper) {
-  height: 100%;
+.day-stat {
+  font-size: 13px;
+  color: var(--fa-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-:deep(.league-drawer .league-menu) {
-  height: 100%;
+.toolbar-search-end {
+  margin-left: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: min(200px, 42vw);
+}
+
+.toolbar-search-end :deep(.fa-toolbar-search) {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
 }
 
 .shell-list-meta {
@@ -211,10 +262,34 @@ onActivated(() => {
   padding: 0 0 4px;
 }
 
-.day-stat {
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-  white-space: nowrap;
+.results-future-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.results-future-header .fa-toolbar-crumb {
+  flex: 0 1 auto;
+  max-width: 40%;
+}
+
+.results-future-dates {
+  flex: 1;
+  min-width: 0;
+}
+
+.results-future-dates :deep(.date-strip) {
+  margin: 0 auto;
+  padding-bottom: 4px;
+}
+
+:deep(.league-drawer .n-drawer-body-content-wrapper) {
+  height: 100%;
+}
+
+:deep(.league-drawer .league-menu) {
+  height: 100%;
 }
 
 .shell-content {

@@ -1,7 +1,7 @@
 import type { FixtureResponse, LineOdds } from '@/api/types'
 import { ahLinesOf, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 
-export type CalcMarket = 'spf' | 'ah' | 'ou'
+export type CalcMarket = 'spf' | 'ah' | 'ou' | 'btts'
 
 export type CalcOutcome =
   | 'home'
@@ -9,6 +9,8 @@ export type CalcOutcome =
   | 'away'
   | 'over'
   | 'under'
+  | 'yes'
+  | 'no'
 
 export interface CalcSelection {
   fixtureId: number
@@ -68,6 +70,10 @@ export function outcomeTitle(
     if (outcome === 'over') return '大'
     if (outcome === 'under') return '小'
   }
+  if (market === 'btts') {
+    if (outcome === 'yes') return '是'
+    if (outcome === 'no') return '否'
+  }
   return String(outcome)
 }
 
@@ -123,13 +129,16 @@ export function buildMarketRows(fixture: FixtureResponse): CalcMarketRow[] {
   const ou = odds?.goals_ou
   const ouLine = ou?.line != null ? String(ou.line) : undefined
   const ouPlay = ouLine ? `大小 ${ouLine}` : '大小球'
+  const btts = odds?.both_teams_score
   rows.push({
     market: 'ou',
-    playLabel: ouPlay,
+    playLabel: '大小/双进',
     line: ouLine,
     cells: [
       cell('ou', 'over', ouPlay, parseOddNumber(ou?.home), ouLine),
       cell('ou', 'under', ouPlay, parseOddNumber(ou?.away), ouLine),
+      cell('btts', 'yes', '双进', parseOddNumber(btts?.home)),
+      cell('btts', 'no', '双进', parseOddNumber(btts?.away)),
     ],
   })
 

@@ -22,7 +22,7 @@ export function filterByTeamQuery<T extends TeamNamedFixture>(
   query: string,
 ): T[] {
   const q = query.trim()
-  if (!q) return [...list]
+  if (!q) return list as T[]
   return list.filter((item) => fixtureMatchesTeamQuery(item, q))
 }
 

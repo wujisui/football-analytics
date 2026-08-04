@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {computed, defineAsyncComponent, onActivated, onMounted, ref, watch} from 'vue'
-import {useMessage} from 'naive-ui'
 import {useRoute, useRouter} from 'vue-router'
 
 import {
@@ -16,9 +15,14 @@ import ChartWindowControls, {
 } from '@/views/Results/components/ChartWindowControls.vue'
 import FixtureList from '@/components/FixtureList.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
-import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
+import PullToRefresh from '@/components/PullToRefresh.vue'
 import ResultsListToolbar from '@/views/Results/components/ResultsListToolbar.vue'
-import {hasSessionShellDay, useFixturesShell} from '@/layouts/composables/useFixturesShell'
+import ResultsFixtureVirtualList from '@/views/Results/components/ResultsFixtureVirtualList.vue'
+import {
+  hasSessionShellDay,
+  officialSyncing,
+  useFixturesShell,
+} from '@/layouts/composables/useFixturesShell'
 import {useHorizontalSwipe} from '@/composables/useHorizontalSwipe'
 import {useIsPhone} from '@/composables/useMediaQuery'
 import {useScrollRestore} from '@/composables/useScrollRestore'
@@ -44,7 +48,6 @@ import {filterByTeamQuery, teamSearchEmptyHint} from '@/utils/teamSearch'
 import {
   readResultsPageState,
   writeResultsPageState,
-  RESULTS_ALL_HIT_KEYS,
   RESULTS_PHONE_TABS,
   type ResultsHitKey,
   type ResultsPhoneTab,
@@ -91,7 +94,6 @@ const phoneSwipeHandlers = useHorizontalSwipe({
   onSwipeRight: () => shiftPhoneResultsTab(-1),
 })
 
-const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 const {favoriteIds} = useFavoriteFixtures()
@@ -113,10 +115,22 @@ const {
   loadFilterOptions,
   syncFutureScheduleSelection,
   resultsDayFixtureCount,
+  refreshOfficial,
+  shellFilterOptions,
+  shellTrackedIds,
+  shellFilterActive,
+  confirmFilter,
 } = useFixturesShell()
 
 const desktopListShellRef = ref<HTMLElement | null>(null)
 const phoneListShellRef = ref<HTMLElement | null>(null)
+
+/** Same inset as former `.results-list-inner` — virtual list dropped that wrapper. */
+const resultsListItemsStyle = {
+  paddingLeft: '12px',
+  paddingRight: '12px',
+  boxSizing: 'border-box',
+}
 
 const desktopListScroll = useScrollRestore('results-list-desktop', desktopListShellRef)
 const phoneListScroll = useScrollRestore('results-list-phone', phoneListShellRef)
@@ -126,9 +140,9 @@ const history = resultsHistory
 const loading = ref(false)
 const historyLoading = ref(false)
 const error = ref('')
-const hint = ref('')
+/** Click a hit tag on a card → keep fixtures that hit that market; click again to clear. */
+const filterHitKey = ref<ResultsHitKey | null>(null)
 
-const filterHitKeys = ref<ResultsHitKey[]>([...RESULTS_ALL_HIT_KEYS])
 const contentLoading = computed(
     () => loading.value || shellContentLoading.value,
 )
@@ -158,52 +172,28 @@ const leagueScopedFixtures = computed(() => {
   return list
 })
 
-const filteredFixtures = computed(() => {
+const listedFixtures = computed(() => {
   let list = leagueScopedFixtures.value
-  if (filterHitKeys.value.length && filterHitKeys.value.length < RESULTS_ALL_HIT_KEYS.length) {
-    const keys = filterHitKeys.value
-    list = list.filter((fx) =>
-        keys.some((k) => fx[HIT_FIELD[k]] === true),
-    )
+  const hitKey = filterHitKey.value
+  if (hitKey) {
+    const field = HIT_FIELD[hitKey]
+    list = list.filter((fx) => fx[field] === true)
   }
-  return list
+  return sortFixturesFavoritesFirst(
+      filterByTeamQuery(list, teamSearch.value),
+      favoriteIds.value,
+  )
 })
 
-const listedFixtures = computed(() =>
-    sortFixturesFavoritesFirst(
-        filterByTeamQuery(filteredFixtures.value, teamSearch.value),
-        favoriteIds.value,
-    ),
+const listedVirtualRows = computed(() =>
+  listedFixtures.value.map((fixture) => ({
+    key: fixture.fixture_id,
+    fixture,
+  })) as Record<string, unknown>[],
 )
 
-const filterActive = computed(
-    () => filterHitKeys.value.length !== RESULTS_ALL_HIT_KEYS.length,
-)
-
-const activeHitFilterKey = computed(() => {
-  if (filterHitKeys.value.length !== 1) return null
-  return filterHitKeys.value[0]
-})
-
-function confirmHitFilter(hitKeys: ResultsHitKey[]) {
-  if (!hitKeys.length) {
-    message.warning('请至少勾选一个预测维度')
-    return
-  }
-  filterHitKeys.value = hitKeys
-}
-
-/** Day panel hit count: exclusive filter for one dimension; click again to clear. */
-function filterListByHitKey(key: ResultsHitKey) {
-  if (activeHitFilterKey.value === key) {
-    filterHitKeys.value = [...RESULTS_ALL_HIT_KEYS]
-    return
-  }
-  filterHitKeys.value = [key]
-  if (isPhone.value) {
-    phoneResultsTab.value = 'list'
-    showDayStatsModal.value = false
-  }
+function onFilterHit(key: ResultsHitKey) {
+  filterHitKey.value = filterHitKey.value === key ? null : key
 }
 
 /** Mirrors backend ``summarize_accuracy``; only counts rows with ``has_prediction``. */
@@ -252,7 +242,7 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
   }
 }
 
-/** Day panel follows the league filter/selection, but never the hit filter. */
+/** Day panel follows the league filter/selection. */
 const displayAccuracy = computed(() =>
     summarizeFiltered(leagueScopedFixtures.value),
 )
@@ -260,11 +250,13 @@ const displayAccuracy = computed(() =>
 const emptyText = computed(() => {
   if (!selectedDay.value) return '请选择日期'
   const teamHint = teamSearchEmptyHint(teamSearch.value)
-  if (teamHint && filteredFixtures.value.length) return teamHint
+  if (teamHint && leagueScopedFixtures.value.length) return teamHint
   if (fixtures.value.length && !listedFixtures.value.length) {
-    return '当前筛选下无场次，可调整预测维度'
+    return filterHitKey.value
+      ? '当前命中筛选下无场次，可再点同一标签取消'
+      : '当前筛选下无场次，可调整联赛筛选'
   }
-  return `${selectedDay.value} 暂无已结束赛果，可刷新页面重试`
+  return `${selectedDay.value} 暂无赛果场次，可刷新页面重试`
 })
 
 const scheduleEmptyText = computed(() => {
@@ -305,7 +297,7 @@ function selectChartDay(day: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return
   if (day > todayDate()) return
   if (day === selectedDay.value) return
-  filterHitKeys.value = [...RESULTS_ALL_HIT_KEYS]
+  filterHitKey.value = null
   selectedDay.value = day
   if (isPhone.value) phoneResultsTab.value = 'list'
 }
@@ -323,16 +315,12 @@ function goDetail(fixtureId: number) {
 function applySavedFiltersIfAny() {
   const saved = readResultsPageState()
   if (!saved || saved.date !== selectedDay.value) return
-  if (saved.filterHitKeys.length) {
-    filterHitKeys.value = [...saved.filterHitKeys]
-  }
   phoneResultsTab.value = saved.phoneTab
 }
 
-watch([selectedDay, filterHitKeys, phoneResultsTab], () => {
+watch([selectedDay, phoneResultsTab], () => {
   writeResultsPageState({
     date: selectedDay.value,
-    filterHitKeys: filterHitKeys.value,
     phoneTab: phoneResultsTab.value,
   })
 })
@@ -354,12 +342,10 @@ async function loadDayResults() {
     const leagueIds = [...resultsTrackedIds.value]
     if (!leagueIds.length) {
       publishResultsFixtures([], selectedDay.value)
-      hint.value = ''
       return
     }
     const data = await fetchResults(selectedDay.value, {leagueIds})
     publishResultsFixtures(data.fixtures, selectedDay.value)
-    hint.value = data.total ? `共 ${data.total} 场` : ''
   } catch (err) {
     error.value = err instanceof Error ? err.message : '获取失败'
     publishResultsFixtures([], selectedDay.value)
@@ -405,7 +391,6 @@ async function loadScheduleDay() {
     const leagueIds = [...resultsTrackedIds.value]
     if (!leagueIds.length) {
       publishScheduleFixtures([], selectedDay.value)
-      hint.value = ''
       return
     }
     const data = await fetchTodayFixtures({
@@ -414,7 +399,6 @@ async function loadScheduleDay() {
       leagueIds,
     })
     publishScheduleFixtures(data.fixtures, selectedDay.value)
-    hint.value = data.total ? `共 ${data.total} 场` : ''
   } catch (err) {
     error.value = err instanceof Error ? err.message : '获取失败'
     publishScheduleFixtures([], selectedDay.value)
@@ -456,7 +440,7 @@ watch(isScheduleFutureDay, (future, wasFuture) => {
 
 watch(selectedDay, () => {
   if (route.name !== 'results') return
-  filterHitKeys.value = [...RESULTS_ALL_HIT_KEYS]
+  filterHitKey.value = null
   desktopListScroll.reset()
   phoneListScroll.reset()
   void loadSelectedDay()
@@ -529,20 +513,21 @@ onMounted(() => {
           class="phone-results-tabs"
           @update:value="onPhoneResultsTabChange"
       >
-        <n-tab-pane name="list" display-directive="show:lazy">
+        <n-tab-pane name="list" display-directive="if">
           <template #tab>
             <n-badge :value="resultsDayFixtureCount" :max="999" :offset="[10, 8]">
-              赛程列表
+              赛果
             </n-badge>
           </template>
           <div class="phone-tab-pane phone-list-pane">
             <div class="phone-list-toolbar">
               <ResultsListToolbar
                   v-model:team-search="teamSearch"
-                  :selected-hit-keys="filterHitKeys"
-                  :filter-active="filterActive"
+                  :filter-options="shellFilterOptions"
+                  :tracked-ids="shellTrackedIds"
+                  :filter-active="shellFilterActive"
                   show-day-stats
-                  @confirm-filter="confirmHitFilter"
+                  @confirm-filter="confirmFilter"
                   @open-day-stats="showDayStatsModal = true"
               />
             </div>
@@ -558,32 +543,23 @@ onMounted(() => {
               </n-space>
             </n-alert>
             <div ref="phoneListShellRef" class="list-shell phone">
-              <n-scrollbar style="max-height: 100%; height: 100%;" trigger="hover">
-                <div class="results-list-inner phone">
-                  <n-empty
-                      v-if="!loading && !listedFixtures.length"
-                      :description="emptyText"
-                      style="padding: 24px 12px;"
-                  />
-                  <div v-else class="results-card-stack">
-                    <ResultFixtureCard
-                        v-for="fx in listedFixtures"
-                        :key="fx.fixture_id"
-                        :fixture="fx"
-                        :show-date="false"
-                        @open-detail="goDetail"
-                    />
-                  </div>
-                </div>
-              </n-scrollbar>
-              <div
-                  v-if="contentLoading"
-                  class="list-loading-mask"
-                  aria-busy="true"
-                  aria-live="polite"
-              >
-                <n-spin :show="true"/>
-              </div>
+              <PullToRefresh
+                  :shell="phoneListShellRef"
+                  :refreshing="officialSyncing"
+                  @refresh="refreshOfficial"
+              />
+              <ResultsFixtureVirtualList
+                  :empty="!loading && !listedFixtures.length"
+                  :empty-description="emptyText"
+                  :items="listedVirtualRows"
+                  :content-loading="contentLoading"
+                  :filter-hit-key="filterHitKey"
+                  :padding-top="8"
+                  :padding-bottom="16"
+                  :items-style="resultsListItemsStyle"
+                  @open-detail="goDetail"
+                  @filter-hit="onFilterHit"
+              />
               <ListBackTop :shell="phoneListShellRef" :right="12" :bottom="12"/>
             </div>
           </div>
@@ -646,64 +622,90 @@ onMounted(() => {
           <n-text depth="3" style="font-size: 12px;">{{ dayAccuracyHeaderExtra }}</n-text>
         </template>
         <n-spin :show="contentLoading">
-          <AccuracyMetricsGrid
-            :metrics="displayAccuracy"
-            hit-filterable
-            :active-hit-key="activeHitFilterKey"
-            @filter-hits="filterListByHitKey"
-          />
+          <AccuracyMetricsGrid :metrics="displayAccuracy" />
         </n-spin>
       </n-modal>
     </div>
 
-    <!-- Phone / desktop: future schedule list -->
-    <n-layout
+    <!-- Phone / desktop: future schedule — same list chrome as 即时 -->
+    <div
         v-else-if="isScheduleFutureDay"
-        class="results-main"
-        content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; background: var(--fa-bg); box-sizing: border-box; padding: var(--fa-content-block-start) var(--fa-content-inline) var(--fa-content-block-end);"
+        ref="desktopListShellRef"
+        class="fa-page-list-shell"
     >
       <n-alert
           v-if="error"
           type="error"
           title="获取失败"
-          style="flex-shrink: 0;"
+          class="schedule-alert"
       >
         <n-space align="center" :size="12">
           <span>{{ error }}</span>
           <n-button size="small" type="primary" @click="loadScheduleDay()">重试</n-button>
         </n-space>
       </n-alert>
+      <n-spin v-else :show="contentLoading" class="schedule-spin">
+        <FixtureList
+            mode="full"
+            :fixtures="scheduleDisplayedFixtures"
+            :empty-description="scheduleEmptyText"
+            :group-by-day="false"
+            from="results"
+            :date="selectedDay"
+            :padding-top="12"
+            :padding-bottom="20"
+        />
+      </n-spin>
+      <ListBackTop :shell="desktopListShellRef" />
+    </div>
 
-      <div
-          ref="desktopListShellRef"
-          class="list-shell"
-          :class="{ phone: isPhone }"
-      >
-        <n-scrollbar style="height: 100%;" trigger="hover">
-          <div :class="isPhone ? 'schedule-list-inner phone' : 'schedule-list-inner'">
-            <FixtureList
-                :fixtures="scheduleDisplayedFixtures"
-                :empty-description="scheduleEmptyText"
-                :group-by-day="false"
-                from="results"
-                :date="selectedDay"
-            />
-          </div>
-        </n-scrollbar>
-        <div
-            v-if="contentLoading"
-            class="list-loading-mask"
-            aria-busy="true"
-            aria-live="polite"
-        >
-          <n-spin :show="true"/>
-        </div>
-        <ListBackTop :shell="desktopListShellRef" :bottom="16"/>
-      </div>
-    </n-layout>
-
-    <!-- Desktop: results day -->
+    <!-- Desktop: results day — list on the left, stats/chart on the right -->
     <template v-else>
+      <n-layout-sider
+          placement="left"
+          bordered
+          :width="320"
+          :native-scrollbar="true"
+          content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
+      >
+        <div class="results-sider-head">
+          <ResultsListToolbar
+              v-model:team-search="teamSearch"
+              :filter-options="shellFilterOptions"
+              :tracked-ids="shellTrackedIds"
+              :filter-active="shellFilterActive"
+              @confirm-filter="confirmFilter"
+          />
+        </div>
+        <n-alert
+            v-if="error"
+            type="error"
+            title="获取失败"
+            class="results-sider-alert"
+            style="flex-shrink: 0;"
+        >
+          <n-space align="center" :size="12">
+            <span>{{ error }}</span>
+            <n-button size="small" type="primary" @click="loadDayResults()">重试</n-button>
+          </n-space>
+        </n-alert>
+        <div ref="desktopListShellRef" class="list-shell">
+          <ResultsFixtureVirtualList
+              :empty="!loading && !listedFixtures.length"
+              :empty-description="emptyText"
+              :items="listedVirtualRows"
+              :content-loading="contentLoading"
+              :filter-hit-key="filterHitKey"
+              :padding-top="4"
+              :padding-bottom="12"
+              :items-style="resultsListItemsStyle"
+              @open-detail="goDetail"
+              @filter-hit="onFilterHit"
+          />
+          <ListBackTop :shell="desktopListShellRef" :bottom="16"/>
+        </div>
+      </n-layout-sider>
+
       <n-layout
           class="results-main"
           content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; background: var(--fa-bg); box-sizing: border-box; padding: var(--fa-content-block-start) var(--fa-content-inline) var(--fa-content-block-end);"
@@ -723,12 +725,7 @@ onMounted(() => {
                 <n-text depth="3" style="font-size: 12px;">{{ dayAccuracyHeaderExtra }}</n-text>
               </template>
               <n-spin :show="contentLoading">
-                <AccuracyMetricsGrid
-                  :metrics="displayAccuracy"
-                  hit-filterable
-                  :active-hit-key="activeHitFilterKey"
-                  @filter-hits="filterListByHitKey"
-                />
+                <AccuracyMetricsGrid :metrics="displayAccuracy" />
               </n-spin>
             </n-card>
           </n-gi>
@@ -786,64 +783,6 @@ onMounted(() => {
           </n-spin>
         </n-card>
       </n-layout>
-
-      <n-layout-sider
-          placement="right"
-          bordered
-          :width="320"
-          :native-scrollbar="true"
-          content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
-      >
-        <div class="results-sider-head">
-          <ResultsListToolbar
-              v-model:team-search="teamSearch"
-              :selected-hit-keys="filterHitKeys"
-              :filter-active="filterActive"
-              @confirm-filter="confirmHitFilter"
-          />
-        </div>
-        <n-alert
-            v-if="error"
-            type="error"
-            title="获取失败"
-            class="results-sider-alert"
-            style="flex-shrink: 0;"
-        >
-          <n-space align="center" :size="12">
-            <span>{{ error }}</span>
-            <n-button size="small" type="primary" @click="loadDayResults()">重试</n-button>
-          </n-space>
-        </n-alert>
-        <div ref="desktopListShellRef" class="list-shell">
-          <n-scrollbar style="height: 100%;" trigger="hover">
-            <div class="results-list-inner">
-              <n-empty
-                  v-if="!loading && !listedFixtures.length"
-                  :description="emptyText"
-                  style="padding: 40px 12px;"
-              />
-              <div v-else class="results-card-stack">
-                <ResultFixtureCard
-                    v-for="fx in listedFixtures"
-                    :key="fx.fixture_id"
-                    :fixture="fx"
-                    :show-date="false"
-                    @open-detail="goDetail"
-                />
-              </div>
-            </div>
-          </n-scrollbar>
-          <div
-              v-if="contentLoading"
-              class="list-loading-mask"
-              aria-busy="true"
-              aria-live="polite"
-          >
-            <n-spin :show="true"/>
-          </div>
-          <ListBackTop :shell="desktopListShellRef" :bottom="16"/>
-        </div>
-      </n-layout-sider>
     </template>
   </n-layout>
 </template>
@@ -995,6 +934,27 @@ onMounted(() => {
   padding: 0 2px 8px;
 }
 
+.schedule-alert {
+  flex-shrink: 0;
+  margin: 12px var(--fa-content-inline) 0;
+}
+
+.schedule-spin {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.schedule-spin :deep(.n-spin-content) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 .phone-list-alert {
   flex-shrink: 0;
   margin-bottom: 8px;
@@ -1004,32 +964,9 @@ onMounted(() => {
   min-height: 0;
 }
 
-.schedule-list-inner {
-  padding-top: 4px;
-}
-
-.schedule-list-inner.phone {
-  padding: 8px 0 20px;
-}
-
 .results-sider-head {
   flex-shrink: 0;
   padding: 10px var(--fa-content-inline) 6px;
-}
-
-.results-list-inner {
-  padding: 4px 12px 12px;
-  box-sizing: border-box;
-}
-
-.results-list-inner.phone {
-  padding: 0;
-}
-
-.results-card-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
 .results-sider-alert {
@@ -1049,20 +986,12 @@ onMounted(() => {
   height: 100%;
 }
 
-.list-shell > :deep(.n-scrollbar) {
+.list-shell > :deep(.n-scrollbar),
+.list-shell > :deep(.n-virtual-list),
+.list-shell > :deep(.virtual-card-list) {
   flex: 1;
   min-height: 0;
   height: 100%;
-}
-
-.list-loading-mask {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--fa-bg) 62%, transparent);
 }
 
 .chart-card {

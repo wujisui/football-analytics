@@ -1,3 +1,4 @@
+/** Labels for accuracy metric cards (not a list filter). */
 export type ResultsHitKey =
   | 'result'
   | 'single_result'
@@ -15,20 +16,16 @@ export const RESULTS_HIT_OPTIONS: { key: ResultsHitKey; label: string }[] = [
   { key: 'handicap', label: '让球胜平负' },
 ]
 
-export const RESULTS_ALL_HIT_KEYS = RESULTS_HIT_OPTIONS.map((o) => o.key)
-
 /** Phone panes on 赛程 (results day): list (+ day-stats modal) | history+chart. */
 export type ResultsPhoneTab = 'list' | 'history'
 
 export const RESULTS_PHONE_TABS: ResultsPhoneTab[] = ['list', 'history']
 
 const STORAGE_KEY = 'fa-results-page-state'
-const VALID_HIT_KEYS = new Set<string>(RESULTS_ALL_HIT_KEYS)
 const VALID_PHONE_TABS = new Set<string>(RESULTS_PHONE_TABS)
 
 export interface ResultsPageState {
   date: string
-  filterHitKeys: ResultsHitKey[]
   phoneTab: ResultsPhoneTab
 }
 
@@ -47,14 +44,8 @@ export function readResultsPageState(): ResultsPageState | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<ResultsPageState>
     if (!parsed?.date || typeof parsed.date !== 'string') return null
-    const filterHitKeys = Array.isArray(parsed.filterHitKeys)
-      ? parsed.filterHitKeys.filter(
-          (key): key is ResultsHitKey => VALID_HIT_KEYS.has(key),
-        )
-      : []
     return {
       date: parsed.date,
-      filterHitKeys,
       phoneTab: normalizePhoneTab(parsed.phoneTab),
     }
   } catch {

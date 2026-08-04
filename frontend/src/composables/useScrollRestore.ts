@@ -7,6 +7,8 @@ import {
   type Ref,
 } from 'vue'
 
+import { findScrollContainer } from '@/utils/scrollContainer'
+
 const STORAGE_KEY = 'fa-scroll-offsets'
 /** Content arrives after the list request settles; retry until it fits. */
 const RESTORE_ATTEMPTS = 40
@@ -62,10 +64,7 @@ export function useScrollRestore(
   let abortInput: (() => void) | null = null
 
   function container(): HTMLElement | null {
-    return (
-      (shell.value?.querySelector('.n-scrollbar-container') as HTMLElement | null) ??
-      null
-    )
+    return findScrollContainer(shell.value)
   }
 
   function bind() {

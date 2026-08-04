@@ -28,7 +28,7 @@ const scheduleByDay = new Map<string, FixtureResponse[]>()
 
 /**
  * Primary (热门) league ids from /leagues/catalog — not day filter-options.
- * filter-options only lists unfinished fixtures that day, so past 完场 days
+ * filter-options for results covers finished + live that day, so past 完场 days
  * would incorrectly clear this set if we derived it from there.
  */
 const configuredLeagueIds = ref<Set<number>>(new Set())

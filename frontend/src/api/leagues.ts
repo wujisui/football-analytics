@@ -35,7 +35,7 @@ export async function fetchLeagueCatalog(): Promise<LeagueCatalogResponse> {
 /** Locally stored filter options for the selected day (counts only). */
 export async function fetchLeagueFilterOptions(params?: {
   date?: string
-  /** prematch = unfinished; results = finished-day checklist */
+  /** prematch = pending (未开赛); results = finished/live day checklist */
   scope?: 'prematch' | 'results'
 }): Promise<LeagueFilterOptionsResponse> {
   const { data } = await apiClient.get<LeagueFilterOptionsResponse>(

@@ -34,6 +34,7 @@ export interface OddsPackage {
   match_winner?: MatchWinnerOdds | null
   asian_handicap?: LineOdds | null
   goals_ou?: LineOdds | null
+  both_teams_score?: LineOdds | null
   bookmakers?: Array<Record<string, unknown>>
   /** opening = 初盘；current = 即时盘 */
   role?: string | null
@@ -215,6 +216,7 @@ export interface FixtureOddsSnippet {
   match_winner?: MatchWinnerOdds | null
   asian_handicap?: LineOdds | null
   goals_ou?: LineOdds | null
+  both_teams_score?: LineOdds | null
 }
 
 export interface FixtureResponse {

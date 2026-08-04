@@ -31,6 +31,11 @@ def stuck_live_clause(now: datetime | None = None) -> ColumnElement[bool]:
     return and_(Fixture.status == "live", Fixture.date <= cutoff)
 
 
+def results_list_clause() -> ColumnElement[bool]:
+    """赛果日列表：完场 / 取消 / 延期 / 进行中（开赛后不再出现在即时与计算器）。"""
+    return Fixture.status.in_(["finished", "cancelled", "postponed", "live"])
+
+
 def settled_by_full_time(
     *,
     status: str,

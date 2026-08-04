@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { ScrollbarInst } from 'naive-ui'
 import { onActivated, ref } from 'vue'
 
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
@@ -7,11 +6,16 @@ import FixtureList from '@/components/FixtureList.vue'
 import BetDetailsPanel from '@/views/Predictions/components/BetDetailsPanel.vue'
 import CalcFixtureCard from '@/views/Predictions/components/CalcFixtureCard.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
+import PullToRefresh from '@/components/PullToRefresh.vue'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
-import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
+import {
+  officialSyncing,
+  useFixturesShell,
+} from '@/layouts/composables/useFixturesShell'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useScrollRestore } from '@/composables/useScrollRestore'
+import { findScrollContainer } from '@/utils/scrollContainer'
 
 defineOptions({ name: 'Predictions' })
 
@@ -24,8 +28,6 @@ const expandedDay = ref<string | null>(null)
 
 useScrollRestore('predictions-list', listShellRef)
 useScrollRestore('predictions-phone-list', phoneCalcShellRef)
-const oddsScrollbarRef = ref<ScrollbarInst | null>(null)
-const calcScrollbarRef = ref<ScrollbarInst | null>(null)
 const betDetailsRef = ref<InstanceType<typeof BetDetailsPanel> | null>(null)
 let scrollSyncOrigin: 'odds' | 'calc' | null = null
 
@@ -34,6 +36,7 @@ const {
   prematchDisplayedFixtures,
   predictionsEmptyText,
   reloadPrematchDay,
+  refreshOfficial,
   homeDay,
   shellTrackedIds,
 } = useFixturesShell()
@@ -44,14 +47,21 @@ const { matchCount } = useBetCalculator()
 const colContentStyle =
   'position: relative; min-height: 0; overflow: hidden; padding: 0;'
 
+/** Inside desktop column cards — keep inset independent of page content padding. */
+const desktopListItemsStyle = {
+  paddingLeft: '10px',
+  paddingRight: '10px',
+  boxSizing: 'border-box',
+}
+
 function syncComparisonScroll(source: 'odds' | 'calc', event: Event) {
   if (scrollSyncOrigin && scrollSyncOrigin !== source) return
   const container = event.target as HTMLElement | null
   if (!container) return
   scrollSyncOrigin = source
-  const peer =
-    source === 'odds' ? calcScrollbarRef.value : oddsScrollbarRef.value
-  peer?.scrollTo({ top: container.scrollTop })
+  const peerShell = source === 'odds' ? calcShellRef.value : listShellRef.value
+  const peer = findScrollContainer(peerShell)
+  if (peer && peer !== container) peer.scrollTop = container.scrollTop
   requestAnimationFrame(() => {
     scrollSyncOrigin = null
   })
@@ -77,20 +87,24 @@ onActivated(() => {
       <!-- 手机：计算器列表 + 选中后底部摘要 -->
       <div v-if="isPhone" class="phone-calc">
         <div ref="phoneCalcShellRef" class="scroll-shell">
-          <n-scrollbar style="height: 100%;" trigger="hover">
-            <div class="col-body">
-              <FixtureList
-                :fixtures="prematchDisplayedFixtures"
-                :empty-description="predictionsEmptyText"
-              >
-                <template #card="{ fixture }">
-                  <div class="compare-slot">
-                    <CalcFixtureCard :fixture="fixture" />
-                  </div>
-                </template>
-              </FixtureList>
-            </div>
-          </n-scrollbar>
+          <PullToRefresh
+            :shell="phoneCalcShellRef"
+            :refreshing="officialSyncing"
+            @refresh="refreshOfficial"
+          />
+          <FixtureList
+            :fixtures="prematchDisplayedFixtures"
+            :empty-description="predictionsEmptyText"
+            :item-size="200"
+            :padding-top="12"
+            :padding-bottom="matchCount ? 16 : 20"
+          >
+            <template #card="{ fixture }">
+              <div class="compare-slot">
+                <CalcFixtureCard :fixture="fixture" />
+              </div>
+            </template>
+          </FixtureList>
           <ListBackTop
             :shell="phoneCalcShellRef"
             :bottom="matchCount ? 120 : 12"
@@ -117,31 +131,27 @@ onActivated(() => {
               <n-text depth="3">{{ prematchDisplayedFixtures.length }} 场</n-text>
             </template>
             <div ref="listShellRef" class="scroll-shell">
-              <n-scrollbar
-                ref="oddsScrollbarRef"
-                style="height: 100%;"
-                trigger="hover"
+              <FixtureList
+                :fixtures="prematchDisplayedFixtures"
+                :empty-description="predictionsEmptyText"
+                v-model:expanded-names="expandedDay"
+                :item-size="160"
+                :padding-top="10"
+                :padding-bottom="12"
+                :items-style="desktopListItemsStyle"
                 @scroll="syncComparisonScroll('odds', $event)"
               >
-                <div class="col-body">
-                  <FixtureList
-                    :fixtures="prematchDisplayedFixtures"
-                    :empty-description="predictionsEmptyText"
-                    v-model:expanded-names="expandedDay"
-                  >
-                    <template #card="{ fixture }">
-                      <div class="compare-slot">
-                        <AlgorithmPredictionCard
-                          :fixture="fixture"
-                          standalone
-                          compact
-                          from="predictions"
-                        />
-                      </div>
-                    </template>
-                  </FixtureList>
-                </div>
-              </n-scrollbar>
+                <template #card="{ fixture }">
+                  <div class="compare-slot">
+                    <AlgorithmPredictionCard
+                      :fixture="fixture"
+                      standalone
+                      compact
+                      from="predictions"
+                    />
+                  </div>
+                </template>
+              </FixtureList>
               <ListBackTop :shell="listShellRef" :bottom="12" :right="12" />
             </div>
           </n-card>
@@ -160,26 +170,22 @@ onActivated(() => {
               <n-text depth="3">已选 {{ matchCount }} / 10</n-text>
             </template>
             <div ref="calcShellRef" class="scroll-shell">
-              <n-scrollbar
-                ref="calcScrollbarRef"
-                style="height: 100%;"
-                trigger="hover"
+              <FixtureList
+                :fixtures="prematchDisplayedFixtures"
+                :empty-description="predictionsEmptyText"
+                v-model:expanded-names="expandedDay"
+                :item-size="200"
+                :padding-top="10"
+                :padding-bottom="12"
+                :items-style="desktopListItemsStyle"
                 @scroll="syncComparisonScroll('calc', $event)"
               >
-                <div class="col-body">
-                  <FixtureList
-                    :fixtures="prematchDisplayedFixtures"
-                    :empty-description="predictionsEmptyText"
-                    v-model:expanded-names="expandedDay"
-                  >
-                    <template #card="{ fixture }">
-                      <div class="compare-slot">
-                        <CalcFixtureCard :fixture="fixture" />
-                      </div>
-                    </template>
-                  </FixtureList>
-                </div>
-              </n-scrollbar>
+                <template #card="{ fixture }">
+                  <div class="compare-slot">
+                    <CalcFixtureCard :fixture="fixture" />
+                  </div>
+                </template>
+              </FixtureList>
               <ListBackTop :shell="calcShellRef" :bottom="12" :right="12" />
             </div>
           </n-card>
@@ -303,10 +309,6 @@ onActivated(() => {
   position: absolute;
   inset: 0;
   overflow: hidden;
-}
-
-.col-body {
-  padding: 10px;
 }
 
 /* 固定槽位高度，保证左右对照卡片一致（class 写在本页 DOM 上，避免落不到子组件根） */

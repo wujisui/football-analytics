@@ -33,6 +33,7 @@ export function oddsPackageToSnippet(
     match_winner: odds.match_winner,
     asian_handicap: odds.asian_handicap,
     goals_ou: odds.goals_ou,
+    both_teams_score: odds.both_teams_score,
   }
 }
 

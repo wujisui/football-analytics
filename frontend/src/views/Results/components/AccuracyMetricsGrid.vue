@@ -9,20 +9,8 @@ import {
 
 type AccuracyMetrics = Partial<Record<ResultsHitKey, AccuracyStat>>
 
-withDefaults(
-  defineProps<{
-    metrics?: AccuracyMetrics | null
-    hitFilterable?: boolean
-    activeHitKey?: ResultsHitKey | null
-  }>(),
-  {
-    hitFilterable: false,
-    activeHitKey: null,
-  },
-)
-
-const emit = defineEmits<{
-  filterHits: [key: ResultsHitKey]
+defineProps<{
+  metrics?: AccuracyMetrics | null
 }>()
 
 const COLOR_BY_KEY: Record<ResultsHitKey, string> = {
@@ -42,9 +30,6 @@ const COLOR_BY_KEY: Record<ResultsHitKey, string> = {
         :label="opt.label"
         :stat="metrics?.[opt.key]"
         :color="COLOR_BY_KEY[opt.key]"
-        :hit-filterable="hitFilterable"
-        :hit-active="activeHitKey === opt.key"
-        @filter-hits="emit('filterHits', opt.key)"
       />
     </n-gi>
   </n-grid>

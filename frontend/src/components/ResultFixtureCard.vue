@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import type { FavoriteFixtureRecord } from '@/api/favorites'
 import type { ResultFixture } from '@/api/fixtures'
@@ -18,13 +18,14 @@ import {
   statusTagType,
 } from '@/utils/format'
 import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
-import { useIsPhone } from '@/composables/useMediaQuery'
 import { leagueLabel } from '@/utils/leagueNames'
 import {
   resultExtraScoreLine,
   resultScoreText,
 } from '@/utils/resultsDisplay'
 import type { PredictionSnapshot } from '@/utils/opinionAdjust'
+import type { ResultsHitKey } from '@/utils/resultsPageState'
+import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 
 const props = withDefaults(defineProps<{
   fixture: FixtureResponse | ResultFixture | FavoriteFixtureRecord
@@ -35,6 +36,8 @@ const props = withDefaults(defineProps<{
   showDate?: boolean
   from?: DetailFrom
   date?: string | null
+  hitFilterable?: boolean
+  activeHitKey?: ResultsHitKey | null
 }>(), {
   prematch: false,
   oddsClickable: false,
@@ -42,15 +45,19 @@ const props = withDefaults(defineProps<{
   showDate: true,
   from: 'results',
   date: null,
+  hitFilterable: false,
+  activeHitKey: null,
 })
 
 const emit = defineEmits<{
   openDetail: [fixtureId: number]
   openOdds: []
+  filterHit: [key: ResultsHitKey]
 }>()
 
 const router = useRouter()
-const isPhone = useIsPhone()
+const route = useRoute()
+const { selectedLeagueId, selectLeague } = useFixturesShell()
 const isPrematch = computed(() => props.prematch || 'analysis' in props.fixture)
 const prematchFixture = computed(() =>
   'analysis' in props.fixture ? (props.fixture as FixtureResponse) : undefined,
@@ -102,6 +109,23 @@ function openStats() {
     }),
   )
 }
+
+const FIXTURES_ROUTES = new Set(['home', 'predictions', 'results'])
+
+/** Filter the shell list to this league (toggle off if already selected). */
+function onLeagueClick(e: Event) {
+  e.stopPropagation()
+  const id = Number(props.fixture.league_id)
+  if (!Number.isFinite(id)) return
+  const next = selectedLeagueId.value === id ? null : id
+  selectLeague(next)
+  if (FIXTURES_ROUTES.has(String(route.name))) return
+  const target = props.from === 'results' ? 'results' : 'home'
+  void router.push({
+    name: target,
+    query: next == null ? {} : { league: String(next) },
+  })
+}
 </script>
 
 <template>
@@ -111,25 +135,33 @@ function openStats() {
     class="result-fixture-card"
     :class="{ dense: denseBody, prematch: isPrematch }"
   >
+    <FavoriteButton
+      class="card-fav"
+      :fixture-id="fixture.fixture_id"
+      :fixture="prematchFixture"
+      :result-fixture="resultFixturePayload"
+      size="tiny"
+    />
     <header class="card-head">
-      <span class="league-tag-tip">
-        <n-tooltip :trigger="isPhone ? 'click' : 'hover'" placement="top">
-          <template #trigger>
-            <n-tag
-              class="league-tag"
-              size="small"
-              :bordered="false"
-              :color="{
-                color: `${leagueTagColor(fixture.league_id)}18`,
-                textColor: leagueTagColor(fixture.league_id),
-              }"
-            >
-              {{ leagueName }}
-            </n-tag>
-          </template>
-          {{ leagueName }}
-        </n-tooltip>
-      </span>
+      <n-tag
+        class="league-tag"
+        :class="{ active: selectedLeagueId === fixture.league_id }"
+        size="small"
+        :bordered="false"
+        role="button"
+        tabindex="0"
+        :aria-label="`筛选联赛 ${leagueName}`"
+        :aria-pressed="selectedLeagueId === fixture.league_id"
+        :color="{
+          color: `${leagueTagColor(fixture.league_id)}18`,
+          textColor: leagueTagColor(fixture.league_id),
+        }"
+        @click="onLeagueClick"
+        @keydown.enter.prevent="onLeagueClick"
+        @keydown.space.prevent="onLeagueClick"
+      >
+        {{ leagueName }}
+      </n-tag>
       <span class="kickoff">
         {{ kickoffText }}
       </span>
@@ -148,12 +180,6 @@ function openStats() {
       >
         {{ statusLabel(fixture.status || '', statusShort, fixture.fixture_date) }}
       </n-tag>
-      <FavoriteButton
-        :fixture-id="fixture.fixture_id"
-        :fixture="prematchFixture"
-        :result-fixture="resultFixturePayload"
-        size="tiny"
-      />
     </header>
 
     <n-button
@@ -195,14 +221,23 @@ function openStats() {
       :fixture="settledFixture"
       :odds-clickable="oddsClickable"
       :show-probabilities="showProbabilities"
+      :hit-filterable="hitFilterable"
+      :active-hit-key="activeHitKey"
       @open-odds="emit('openOdds')"
+      @filter-hit="emit('filterHit', $event)"
     />
   </n-card>
 </template>
 
 <style scoped>
 .result-fixture-card {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--fa-bg-soft);
+  overflow: hidden;
 }
 
 .result-fixture-card :deep(.n-card-content) {
@@ -212,6 +247,9 @@ function openStats() {
   gap: 8px;
   padding: 8px 10px;
   box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .result-fixture-card.dense {
@@ -226,26 +264,35 @@ function openStats() {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
+.card-fav {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+}
+
 .card-head {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
-}
-
-.league-tag-tip {
-  flex: 0 1 42%;
+  /* Keep status clear of the absolute favorite control. */
+  padding-right: 26px;
   min-width: 0;
-  max-width: 42%;
-}
-
-.league-tag-tip :deep(.n-tooltip) {
-  display: block;
   max-width: 100%;
+  box-sizing: border-box;
 }
 
 .league-tag {
-  max-width: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.league-tag.active {
+  box-shadow: inset 0 0 0 1px currentColor;
 }
 
 :deep(.league-tag .n-tag__content) {
@@ -257,10 +304,17 @@ function openStats() {
 }
 
 .kickoff {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--fa-text-secondary);
+}
+
+.card-head > :deep(.n-tag) {
+  flex-shrink: 0;
 }
 
 .matchup {
@@ -268,12 +322,17 @@ function openStats() {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   font-weight: 600;
 }
 
 .matchup-link {
   display: flex;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   height: auto;
   padding: 0;
   white-space: normal;
@@ -293,7 +352,7 @@ function openStats() {
 }
 
 .team {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
   font-size: 13px;
   overflow: hidden;

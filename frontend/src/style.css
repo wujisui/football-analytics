@@ -86,15 +86,6 @@ button {
   font-family: inherit;
 }
 
-/* Safe area for notched phones when deployed / PWA-like */
-.app-safe-top {
-  padding-top: env(safe-area-inset-top, 0px);
-}
-
-.app-safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
 /* Centered content band — same max width as detail page */
 .fa-page-frame {
   position: absolute;
@@ -127,20 +118,18 @@ button {
 /* Shared in-page toolbar (Home / Results / etc.) */
 .fa-page-toolbar {
   flex-shrink: 0;
-  height: auto;
-  padding: 10px 12px 8px;
+  height: auto !important;
+  min-height: 0;
+  line-height: normal;
+  padding: 12px;
   background: var(--fa-bg-elevated);
   position: relative;
   z-index: 2;
 }
 
-.fa-page-toolbar .fa-page-toolbar-header {
-  margin-top: 4px;
-}
-
 @media (min-width: 768px) {
   .fa-page-toolbar {
-    padding: 12px 20px 8px;
+    padding: 12px 20px 10px;
   }
 
   :root {
@@ -163,29 +152,10 @@ button {
   overflow: hidden;
 }
 
-.fa-toolbar-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.fa-toolbar-date {
-  width: 148px;
-  min-width: 132px;
-}
-
 .fa-toolbar-search {
   width: 200px;
   min-width: 160px;
   max-width: min(240px, 36vw);
-}
-
-.fa-page-toolbar-header :deep(.n-page-header-wrapper) {
-  align-items: center;
 }
 
 /* Main list / card band — align with .fa-page-toolbar horizontal padding */
@@ -201,20 +171,6 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-.fa-page-list-scroll {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-}
-
-.fa-page-list-body {
-  min-height: 200px;
-}
-
-.fa-page-list-state {
-  margin-bottom: 12px;
 }
 
 /* Flat day accordion shared by FixtureList / Favorites — title bar only. */

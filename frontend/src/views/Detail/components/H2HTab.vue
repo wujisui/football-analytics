@@ -57,7 +57,7 @@ const hasAny = computed(
 
   <n-space v-else vertical :size="12">
     <n-space vertical :size="12">
-      <n-flex justify="space-between" align="center" :size="12">
+      <n-flex class="section-band" justify="space-between" align="center" :size="12">
         <n-flex align="center" :size="8">
           <span class="title-bar" aria-hidden="true" />
           <n-text strong style="font-size: 15px">历史交锋</n-text>

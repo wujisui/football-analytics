@@ -3,23 +3,10 @@ import { computed } from 'vue'
 
 import type { AccuracyStat } from '@/api/fixtures'
 
-const props = withDefaults(
-  defineProps<{
-    label: string
-    stat?: AccuracyStat
-    color: string
-    /** Bind click on the hit count (left of `/`). */
-    hitFilterable?: boolean
-    hitActive?: boolean
-  }>(),
-  {
-    hitFilterable: false,
-    hitActive: false,
-  },
-)
-
-const emit = defineEmits<{
-  filterHits: []
+const props = defineProps<{
+  label: string
+  stat?: AccuracyStat
+  color: string
 }>()
 
 const hasValue = computed(
@@ -29,13 +16,6 @@ const hasValue = computed(
 const percent = computed(() =>
   hasValue.value ? `${(props.stat!.rate! * 100).toFixed(0)}%` : '—',
 )
-
-function onHitsClick(event: MouseEvent) {
-  if (!props.hitFilterable || !hasValue.value) return
-  event.preventDefault()
-  event.stopPropagation()
-  emit('filterHits')
-}
 </script>
 
 <template>
@@ -43,19 +23,7 @@ function onHitsClick(event: MouseEvent) {
     <template v-if="hasValue">
       <span :style="{ color }">{{ percent }}</span>
       <span>（</span>
-      <n-button
-        v-if="hitFilterable"
-        text
-        size="tiny"
-        class="hits-btn"
-        :class="{ active: hitActive }"
-        :style="{ color }"
-        :aria-label="hitActive ? '取消命中筛选' : '只看该维度命中场次'"
-        @click="onHitsClick"
-      >
-        {{ stat!.hits }}
-      </n-button>
-      <span v-else :style="{ color }">{{ stat!.hits }}</span>
+      <span :style="{ color }">{{ stat!.hits }}</span>
       <span>/{{ stat!.total }}）</span>
     </template>
     <span v-else>{{ percent }}</span>
@@ -74,19 +42,5 @@ function onHitsClick(event: MouseEvent) {
   font-size: 20px;
   line-height: 1.15;
   white-space: nowrap;
-}
-
-.hits-btn {
-  vertical-align: baseline;
-  height: auto;
-  padding: 0;
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.hits-btn.active {
-  font-weight: 700;
 }
 </style>

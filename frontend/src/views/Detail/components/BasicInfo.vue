@@ -1,17 +1,10 @@
 <script setup lang="ts">
+import { ArrowBackOutline } from '@vicons/ionicons5'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import FavoriteButton from '@/components/FavoriteButton.vue'
-import { useIsPhone } from '@/composables/useMediaQuery'
 import type { FixtureResponse } from '@/api/types'
-import {
-  formatDateTime,
-  leagueTagColor,
-  rankBracket,
-  statusLabel,
-  statusTagType,
-} from '@/utils/format'
+import { rankBracket } from '@/utils/format'
 import {
   detailBackRoute,
   detailRootLabel,
@@ -26,14 +19,12 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
-const isPhone = useIsPhone()
 
 const from = computed(() => parseDetailFrom(route.query.from))
 const fromDate = computed(() =>
   typeof route.query.date === 'string' ? route.query.date : null,
 )
 const rootLabel = computed(() => detailRootLabel(from.value))
-
 const leagueLabelText = computed(() => leagueLabel(props.fixture.league_name))
 
 const scoreText = computed(() => {
@@ -56,6 +47,10 @@ const awayLabel = computed(() => {
 })
 
 function goBack() {
+  if (from.value === 'favorites' && window.history.length > 1) {
+    void router.back()
+    return
+  }
   void router.push(
     detailBackRoute(from.value, {
       date: fromDate.value,
@@ -75,63 +70,42 @@ function goLeague() {
 
 <template>
   <div class="basic-info">
-    <n-breadcrumb v-if="!isPhone">
-      <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
-      <n-breadcrumb-item @click="goLeague">{{ leagueLabelText }}</n-breadcrumb-item>
-      <n-breadcrumb-item>
-        <n-tooltip v-if="scoreText" placement="bottom">
-          <template #trigger>
-            <span class="match-title crumb-match">
-              <span>{{ homeLabel }}</span>
-              <span class="score-value">{{ scoreText }}</span>
-              <span>{{ awayLabel }}</span>
-            </span>
-          </template>
-          本地比分（非实时）
-        </n-tooltip>
-        <span v-else class="match-title crumb-match">
-          <span>{{ homeLabel }}</span>
-          <span>VS</span>
-          <span>{{ awayLabel }}</span>
-        </span>
-      </n-breadcrumb-item>
-    </n-breadcrumb>
+    <div class="header-row">
+      <n-button
+        class="back-btn"
+        quaternary
+        circle
+        size="small"
+        aria-label="返回"
+        @click="goBack"
+      >
+        <template #icon>
+          <n-icon :component="ArrowBackOutline" />
+        </template>
+      </n-button>
 
-    <n-page-header @back="goBack">
-      <template #title>
-        <span class="match-title page-match-title">
-          <span>{{ homeLabel }}</span>
-          <span v-if="scoreText" class="score-value">{{ scoreText }}</span>
-          <span v-else>VS</span>
-          <span>{{ awayLabel }}</span>
-        </span>
-      </template>
-      <template #subtitle>
-        <div class="subtitle-row">
-          <n-tag
-            size="small"
-            :bordered="false"
-            :color="{
-              color: `${leagueTagColor(fixture.league_id)}18`,
-              textColor: leagueTagColor(fixture.league_id),
-            }"
-          >
-            {{ leagueLabelText }}
-          </n-tag>
-          <n-tag
-            size="small"
-            :type="statusTagType(fixture.status, null, fixture.fixture_date)"
-            :bordered="false"
-          >
-            {{ statusLabel(fixture.status, null, fixture.fixture_date) }}
-          </n-tag>
-          <span class="kickoff">{{ formatDateTime(fixture.fixture_date) }}</span>
-        </div>
-      </template>
-      <template #extra>
-        <FavoriteButton :fixture-id="fixture.fixture_id" :fixture="fixture" />
-      </template>
-    </n-page-header>
+      <n-breadcrumb class="header-crumb">
+        <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
+        <n-breadcrumb-item @click="goLeague">{{ leagueLabelText }}</n-breadcrumb-item>
+        <n-breadcrumb-item>
+          <n-tooltip v-if="scoreText" placement="bottom">
+            <template #trigger>
+              <span class="match-title crumb-match">
+                <span>{{ homeLabel }}</span>
+                <span class="score-value">{{ scoreText }}</span>
+                <span>{{ awayLabel }}</span>
+              </span>
+            </template>
+            本地比分（非实时）
+          </n-tooltip>
+          <span v-else class="match-title crumb-match">
+            <span>{{ homeLabel }}</span>
+            <span>VS</span>
+            <span>{{ awayLabel }}</span>
+          </span>
+        </n-breadcrumb-item>
+      </n-breadcrumb>
+    </div>
   </div>
 </template>
 
@@ -140,23 +114,24 @@ function goLeague() {
   background: var(--fa-bg-elevated);
   border: 1px solid var(--fa-border);
   border-radius: 8px;
-  padding: 14px 20px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  padding: 10px 12px;
 }
 
-.subtitle-row {
+.header-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 4px;
+  gap: 4px;
+  min-width: 0;
 }
 
-.kickoff {
-  font-size: 13px;
-  color: var(--fa-text-secondary);
+.back-btn {
+  flex-shrink: 0;
+}
+
+.header-crumb {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .crumb-match {
@@ -168,10 +143,6 @@ function goLeague() {
   align-items: baseline;
   gap: 0.45em;
   min-width: 0;
-}
-
-.page-match-title {
-  font-weight: 600;
 }
 
 .score-value {

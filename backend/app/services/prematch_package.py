@@ -310,11 +310,12 @@ def _parse_line_market(
 
 
 def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Extract 1X2 + Asian handicap + Goals O/U from first useful bookmaker."""
+    """Extract 1X2 + Asian handicap + Goals O/U + BTTS from first useful bookmaker."""
     bookmakers_out: list[dict[str, Any]] = []
     match_winner: dict[str, Any] | None = None
     asian_handicap: dict[str, Any] | None = None
     goals_ou: dict[str, Any] | None = None
+    both_teams_score: dict[str, Any] | None = None
 
     for item in extract_items(payload):
         bookmakers = item.get("bookmakers") or []
@@ -386,21 +387,105 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                         home_labels={"over", "o"},
                         away_labels={"under", "u"},
                     )
-            if match_winner and asian_handicap and goals_ou:
+
+                if both_teams_score is None and (
+                    "both teams score" in bet_name
+                    or "both teams to score" in bet_name
+                    or bet_name in {"btts", "gg/ng", "goal goal"}
+                ):
+                    yes_odd = None
+                    no_odd = None
+                    for v in parsed_values:
+                        label = str(v.get("label", "")).lower()
+                        odd = v.get("odd")
+                        if label in {"yes", "gg", "y"}:
+                            yes_odd = odd
+                        elif label in {"no", "ng", "n"}:
+                            no_odd = odd
+                    both_teams_score = {
+                        "bookmaker": book_name,
+                        "bet": bet_label,
+                        # home = 是, away = 否（与 LineOdds 两路约定一致）
+                        "home": yes_odd,
+                        "away": no_odd,
+                        "values": parsed_values,
+                    }
+            if (
+                match_winner
+                and asian_handicap
+                and goals_ou
+                and both_teams_score
+            ):
                 break
-        if match_winner and asian_handicap and goals_ou:
+        if (
+            match_winner
+            and asian_handicap
+            and goals_ou
+            and both_teams_score
+        ):
             break
 
     return {
         "match_winner": match_winner,
         "asian_handicap": asian_handicap,
         "goals_ou": goals_ou,
-        "bookmakers": bookmakers_out[:8],
+        "both_teams_score": both_teams_score,
+        "bookmakers": _prefer_core_bookmaker_bets(bookmakers_out, limit=12),
         "available": any(
-            x is not None for x in (match_winner, asian_handicap, goals_ou)
+            x is not None
+            for x in (
+                match_winner,
+                asian_handicap,
+                goals_ou,
+                both_teams_score,
+            )
         )
         or bool(bookmakers_out),
     }
+
+
+def _prefer_core_bookmaker_bets(
+    entries: list[dict[str, Any]],
+    *,
+    limit: int = 12,
+) -> list[dict[str, Any]]:
+    """Keep 1X2 / AH / O-U / BTTS when truncating stored bookmaker rows."""
+    if len(entries) <= limit:
+        return entries
+    priority = (
+        "match winner",
+        "asian handicap",
+        "goals over/under",
+        "both teams score",
+        "both teams to score",
+    )
+    picked: list[dict[str, Any]] = []
+    used: set[int] = set()
+
+    def _is_main_line(bet_name: str, key: str) -> bool:
+        if key not in bet_name:
+            return False
+        # Prefer full-time main markets over half / exotic variants.
+        if "half" in bet_name or "ht/ft" in bet_name:
+            return False
+        return True
+
+    for key in priority:
+        for idx, entry in enumerate(entries):
+            if idx in used:
+                continue
+            name = str(entry.get("bet") or "").lower()
+            if _is_main_line(name, key):
+                picked.append(entry)
+                used.add(idx)
+                break
+    for idx, entry in enumerate(entries):
+        if len(picked) >= limit:
+            break
+        if idx not in used:
+            picked.append(entry)
+            used.add(idx)
+    return picked[:limit]
 
 
 def parse_standings_for_teams(
@@ -659,12 +744,15 @@ def rehydrate_odds_markets(odds: dict[str, Any] | None) -> dict[str, Any]:
         merged["asian_handicap"] = parsed["asian_handicap"]
     if parsed.get("goals_ou"):
         merged["goals_ou"] = parsed["goals_ou"]
+    if parsed.get("both_teams_score"):
+        merged["both_teams_score"] = parsed["both_teams_score"]
     if merged.get("match_winner") is None and parsed.get("match_winner"):
         merged["match_winner"] = parsed["match_winner"]
     merged["available"] = bool(
         merged.get("match_winner")
         or merged.get("asian_handicap")
         or merged.get("goals_ou")
+        or merged.get("both_teams_score")
         or merged.get("bookmakers")
     )
     if odds.get("role") is not None:

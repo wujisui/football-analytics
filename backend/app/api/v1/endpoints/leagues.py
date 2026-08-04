@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.http_cache import set_no_store_headers
@@ -48,7 +48,7 @@ async def get_league_filter_options(
     ),
     scope: str = Query(
         default="prematch",
-        description="prematch=未完赛；results=完场日（含取消/延期/卡死 live）",
+        description="prematch=未开赛；results=完场日（含进行中/取消/延期）",
     ),
     db: AsyncSession = Depends(get_db),
 ) -> LeagueFilterOptionsResponse:
@@ -71,14 +71,12 @@ async def get_league_filter_options(
     # Keep schedule-visible even before bookmakers open 1X2 — pruning only
     # applies after a fixture is finished and still has no odds/recommendation.
     if scope_key == "results":
-        from app.services.results_capture import stuck_live_clause
+        from app.services.results_capture import results_list_clause
 
-        status_clause = or_(
-            Fixture.status.in_(["finished", "cancelled", "postponed"]),
-            stuck_live_clause(),
-        )
+        status_clause = results_list_clause()
     else:
-        status_clause = Fixture.status.in_(["pending", "live", "postponed"])
+        # Live fixtures belong on 赛果 (no longer bettable).
+        status_clause = Fixture.status.in_(["pending", "postponed"])
 
     local_counts: dict[int, int] = {}
     local_stmt = (
@@ -170,7 +168,7 @@ async def list_leagues(
 ) -> LeaguesListResponse:
     """联赛列表（本地库统计）。
 
-    默认只返回窗口内仍有未完赛（pending/live/postponed）的联赛。
+    默认只返回窗口内仍有未开赛（pending/postponed）的联赛。
     完整可配置目录请用 ``GET /leagues/catalog``。
     """
     settings = get_settings()
@@ -220,7 +218,7 @@ async def list_leagues(
                 Fixture.league_id == league_id,
                 Fixture.date >= start_dt,
                 Fixture.date <= end_dt,
-                Fixture.status.in_(["pending", "live", "postponed"]),
+                Fixture.status.in_(["pending", "postponed"]),
             )
         )
         active_count = (await db.execute(active_stmt)).scalar_one()

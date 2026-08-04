@@ -29,7 +29,6 @@ import { useTheme } from '@/composables/useTheme'
 import LoginModal from '@/views/Mine/components/LoginModal.vue'
 import { parseDetailFrom } from '@/utils/detailNav'
 import { fixturesRouteWithLeague } from '@/utils/fixturesLeagueFilter'
-import { officialSyncing } from '@/layouts/composables/useFixturesShell'
 
 type NavKey = 'home' | 'favorites' | 'predictions' | 'results' | 'mine'
 
@@ -133,11 +132,11 @@ const bottomItems: {
     <n-message-provider>
       <n-layout
         class="app-shell"
-        :class="{ 'has-bottom-nav': showBottomNav }"
         position="absolute"
         content-style="display: flex; flex-direction: column; height: 100%;"
       >
-        <n-layout-header bordered class="app-header">
+        <!-- Phone uses bottom nav; hide top brand/header to free content height. -->
+        <n-layout-header v-if="!isPhone" bordered class="app-header">
           <div class="app-header-inner">
             <div
               class="brand"
@@ -150,13 +149,8 @@ const bottomItems: {
               <span class="brand-subtitle">赛前分析 · 人机协同</span>
             </div>
 
-            <div v-if="officialSyncing" class="header-sync-status" role="status">
-              <span class="header-sync-dot" aria-hidden="true" />
-              <span>正在从官方同步…</span>
-            </div>
-
             <div class="header-actions">
-              <n-button-group v-if="!isPhone" size="small">
+              <n-button-group size="small">
                 <n-button :type="navType('home')" @click="goNav('home')">即时</n-button>
                 <n-button
                   :type="navType('predictions')"
@@ -265,31 +259,6 @@ const bottomItems: {
   box-sizing: border-box;
 }
 
-.header-sync-status {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 40%;
-  color: var(--fa-text-muted);
-  font-size: 12px;
-  white-space: nowrap;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-/* Static marker — avoid n-spin's continuous CSS animation during long syncs. */
-.header-sync-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--fa-highlight-text, #c2410c);
-}
-
 .brand {
   display: flex;
   flex-direction: column;
@@ -346,6 +315,9 @@ const bottomItems: {
   border-top: 1px solid var(--fa-border);
   background: var(--fa-bg-elevated);
   box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .bottom-nav-item {
@@ -363,6 +335,9 @@ const bottomItems: {
   line-height: 1.2;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .bottom-nav-item.active {
@@ -370,33 +345,10 @@ const bottomItems: {
   font-weight: 600;
 }
 
+/* Phone: no top header — keep content clear of notch / status bar. */
 @media (max-width: 767px) {
-  .app-header {
-    height: 48px;
-    padding-left: max(12px, env(safe-area-inset-left, 0px));
-    padding-right: max(12px, env(safe-area-inset-right, 0px));
-  }
-
-  .brand {
-    max-width: calc(100% - 96px);
-  }
-
-  .brand-title {
-    font-size: 15px;
-  }
-
-  .brand-subtitle {
-    display: none;
-  }
-
-  .header-sync-status {
-    max-width: calc(100% - 190px);
-    overflow: hidden;
-  }
-
-  .header-sync-status span {
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .app-body {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 }
 </style>
