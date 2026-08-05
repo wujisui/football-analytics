@@ -117,7 +117,6 @@ watch(
   display: flex;
   flex-direction: column;
   background: var(--fa-bg-elevated);
-  border: 1px solid var(--fa-border);
   border-radius: 8px;
   padding: 10px 12px;
 }

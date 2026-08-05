@@ -136,7 +136,7 @@ const bottomItems: {
         content-style="display: flex; flex-direction: column; height: 100%;"
       >
         <!-- Phone uses bottom nav; hide top brand/header to free content height. -->
-        <n-layout-header v-if="!isPhone" bordered class="app-header">
+        <n-layout-header v-if="!isPhone" class="app-header">
           <div class="app-header-inner">
             <div
               class="brand"
@@ -238,6 +238,8 @@ const bottomItems: {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  z-index: 3;
   height: 56px;
   box-sizing: border-box;
   padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) 0
@@ -245,6 +247,7 @@ const bottomItems: {
   flex-shrink: 0;
   overflow: hidden;
   background: var(--fa-bg-elevated);
+  box-shadow: var(--fa-header-shadow);
 }
 
 .app-header-inner {

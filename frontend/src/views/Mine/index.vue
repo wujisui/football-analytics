@@ -66,7 +66,7 @@ onMounted(() => {
       <n-scrollbar trigger="hover">
         <div class="fa-page-content-padding mine-body">
           <n-space vertical :size="12">
-            <n-card size="small" :bordered="true">
+            <n-card size="small" :bordered="false">
               <n-thing :title="profileTitle" :description="profileDescription">
                 <template #avatar>
                   <n-avatar :size="44" round>
@@ -82,7 +82,7 @@ onMounted(() => {
               </n-thing>
             </n-card>
 
-            <n-card size="small" title="本地数据" :bordered="true" segmented>
+            <n-card size="small" title="本地数据" :bordered="false" segmented>
               <n-list>
                 <n-list-item>
                   <n-thing
@@ -102,7 +102,7 @@ onMounted(() => {
               </n-list>
             </n-card>
 
-            <n-card size="small" title="账号与偏好" :bordered="true" segmented>
+            <n-card size="small" title="账号与偏好" :bordered="false" segmented>
               <n-list>
                 <n-list-item v-if="!isLoggedIn">
                   <template #prefix>
@@ -153,7 +153,7 @@ onMounted(() => {
               </n-list>
             </n-card>
 
-            <n-card size="small" title="关于" :bordered="true" segmented>
+            <n-card size="small" title="关于" :bordered="false" segmented>
               <template #header-extra>
                 <n-icon :component="InformationCircleOutline" :size="16" />
               </template>

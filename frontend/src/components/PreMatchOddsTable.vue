@@ -298,7 +298,6 @@ function renderMidCell(row: OddsRow) {
   min-width: 280px;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid var(--fa-border);
   background: var(--fa-bg-elevated);
   box-shadow: 0 8px 24px var(--fa-hover-shadow);
   display: flex;

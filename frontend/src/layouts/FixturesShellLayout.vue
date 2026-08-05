@@ -65,7 +65,7 @@ onActivated(() => {
       <n-layout-sider
         v-if="!isPhone && showShellLeagueNav"
         v-model:collapsed="siderCollapsed"
-        bordered
+        class="league-sider"
         collapse-mode="width"
         :collapsed-width="64"
         :width="232"
@@ -99,11 +99,7 @@ onActivated(() => {
         style="height: 100%; flex: 1; min-height: 0; min-width: 0;"
         content-style="display: flex; flex-direction: column; height: 100%; overflow: hidden;"
       >
-        <n-layout-header
-          :bordered="!isPhone"
-          class="fa-page-toolbar"
-          style="flex-shrink: 0;"
-        >
+        <n-layout-header class="fa-page-toolbar" style="flex-shrink: 0;">
           <!-- 赛果日：仅日期条 -->
           <HomeDateStrip
             v-if="isResultsPage && !isScheduleFutureDay"
@@ -232,6 +228,16 @@ onActivated(() => {
   background: var(--fa-bg);
   min-width: 0;
   overflow: hidden;
+}
+
+.league-sider {
+  position: relative;
+  z-index: 3;
+  box-shadow: var(--fa-sider-shadow);
+}
+
+.shell-main > :deep(.fa-page-toolbar) {
+  box-shadow: var(--fa-header-shadow);
 }
 
 .league-trigger {

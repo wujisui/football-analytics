@@ -121,6 +121,7 @@ onActivated(() => {
         <n-gi :span="8" class="pred-grid-item">
           <n-card
             size="small"
+            :bordered="false"
             class="pred-col"
             :content-style="colContentStyle"
           >
@@ -160,6 +161,7 @@ onActivated(() => {
         <n-gi :span="9" class="pred-grid-item">
           <n-card
             size="small"
+            :bordered="false"
             class="pred-col"
             :content-style="colContentStyle"
           >
@@ -194,6 +196,7 @@ onActivated(() => {
         <n-gi :span="7" class="pred-grid-item">
           <n-card
             size="small"
+            :bordered="false"
             class="pred-col"
             :content-style="colContentStyle"
           >

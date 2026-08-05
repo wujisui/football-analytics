@@ -664,7 +664,6 @@ onMounted(() => {
     <template v-else>
       <n-layout-sider
           placement="left"
-          bordered
           :width="320"
           :native-scrollbar="true"
           content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
@@ -715,6 +714,7 @@ onMounted(() => {
           <n-gi :span="9">
             <n-card
                 size="small"
+                :bordered="false"
                 class="accuracy-stat-card"
                 :segmented="{ content: true }"
                 style="background: var(--fa-bg-elevated); height: 100%;"
@@ -733,6 +733,7 @@ onMounted(() => {
           <n-gi :span="11">
             <n-card
                 size="small"
+                :bordered="false"
                 class="accuracy-stat-card"
                 :segmented="{ content: true }"
                 style="background: var(--fa-bg-elevated); height: 100%;"
@@ -752,6 +753,7 @@ onMounted(() => {
 
         <n-card
             size="small"
+            :bordered="false"
             class="chart-card"
             :segmented="{ content: true }"
             style="background: var(--fa-bg-elevated);"

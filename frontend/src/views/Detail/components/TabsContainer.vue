@@ -187,7 +187,6 @@ watch(
 <style scoped>
 .tabs-container {
   background: var(--fa-bg-elevated);
-  border: 1px solid var(--fa-border);
   border-radius: 8px;
   padding: 8px 16px 12px;
   flex: 1;

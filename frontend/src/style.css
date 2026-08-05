@@ -15,6 +15,8 @@ html[data-theme='light'] {
   --fa-highlight-bg: #fff7e6;
   --fa-highlight-border: #f0c78a;
   --fa-highlight-text: #c2410c;
+  --fa-header-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  --fa-sider-shadow: 1px 0 6px rgba(0, 0, 0, 0.1);
   /* 胜平负业务色（与 theme/wdlColors.ts、统计 tab 徽章一致） */
   --fa-wdl-win: #c23b3b;
   --fa-wdl-draw: #909399;
@@ -37,6 +39,12 @@ html[data-theme='dark'] {
   --fa-highlight-bg: rgba(240, 160, 32, 0.12);
   --fa-highlight-border: #8a6a2b;
   --fa-highlight-text: #f0c78a;
+  --fa-header-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 10px rgba(0, 0, 0, 0.42);
+  --fa-sider-shadow:
+    1px 0 0 rgba(255, 255, 255, 0.07),
+    4px 0 10px rgba(0, 0, 0, 0.38);
 }
 
 :root {
@@ -110,10 +118,6 @@ button {
   box-sizing: border-box;
 }
 
-.app-header-inner {
-  border-inline: none;
-}
-
 /* Shared in-page toolbar (Home / Results / etc.) */
 .fa-page-toolbar {
   flex-shrink: 0;
@@ -124,14 +128,6 @@ button {
   background: var(--fa-bg-elevated);
   position: relative;
   z-index: 2;
-}
-
-/* Phone: drop chrome borders — full-bleed content, no framed “window”. */
-@media (max-width: 767px) {
-  .fa-page-toolbar.n-layout-header,
-  .n-layout-header.fa-page-toolbar {
-    border-bottom: none !important;
-  }
 }
 
 @media (min-width: 768px) {
@@ -195,7 +191,6 @@ button {
   min-height: 40px;
   padding: 8px 12px !important;
   align-items: center;
-  border: 1px solid var(--fa-border);
   border-radius: 8px;
   background: var(--fa-bg-soft) !important;
 }

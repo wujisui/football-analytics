@@ -233,7 +233,6 @@ const defaultItemsStyle = computed(() => {
   margin: 0 0 8px;
   padding: 8px 12px;
   box-sizing: border-box;
-  border: 1px solid var(--fa-border);
   border-radius: 8px;
   background: var(--fa-bg-soft);
   cursor: pointer;

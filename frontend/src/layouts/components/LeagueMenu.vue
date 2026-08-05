@@ -139,7 +139,6 @@ function countOf(leagueId: number): number {
                     :style="{
                       background: `${leagueTagColor(league.league_id)}18`,
                       color: leagueTagColor(league.league_id),
-                      borderColor: `${leagueTagColor(league.league_id)}40`,
                     }"
                     aria-hidden="true"
                   >
@@ -285,7 +284,6 @@ function countOf(leagueId: number): number {
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  border: 1px solid var(--fa-border);
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
@@ -298,7 +296,6 @@ function countOf(leagueId: number): number {
 
 .lm-item.active .lm-chip-all {
   color: inherit;
-  border-color: color-mix(in srgb, var(--n-primary-color, #18a058) 35%, transparent);
   background: color-mix(in srgb, var(--n-primary-color, #18a058) 10%, transparent);
 }
 

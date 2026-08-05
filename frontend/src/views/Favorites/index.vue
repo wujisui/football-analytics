@@ -178,16 +178,6 @@ onMounted(() => {
   background: var(--fa-bg);
 }
 
-.favorites-header {
-  border-bottom: 1px solid var(--fa-border);
-}
-
-@media (max-width: 767px) {
-  .favorites-header {
-    border-bottom: none;
-  }
-}
-
 .favorites-toolbar {
   display: flex;
   align-items: center;
