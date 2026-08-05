@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import { ChevronBackOutline, ChevronForwardOutline } from '@vicons/ionicons5'
+import { ChevronForwardOutline } from '@vicons/ionicons5'
 
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
+import PlanDetail from '@/views/Plans/PlanDetail.vue'
 import { useBetPlans } from '@/composables/useBetPlans'
 import { formatScheduleDay } from '@/utils/format'
 import { todayDate } from '@/utils/homeDateStrip'
@@ -33,20 +33,32 @@ function writeSavedFilterDate(date: string) {
   }
 }
 
-const router = useRouter()
 const message = useMessage()
-const { planDays, plansForDay, reload, renamePlan, removePlan } = useBetPlans()
+const { planDays, plansForDay, reload, renamePlan, removePlan, getPlan } =
+  useBetPlans()
 
 const filterDate = ref<string>(readSavedFilterDate())
 const editingPlan = ref<SavedBetPlan | null>(null)
 const renameDraft = ref('')
 const showRename = ref(false)
+const detailPlanId = ref<string | null>(null)
+const showDetail = ref(false)
+
 watch(filterDate, writeSavedFilterDate)
 
 const dayPlans = computed(() => plansForDay(filterDate.value))
+const detailTitle = computed(
+  () => (detailPlanId.value && getPlan(detailPlanId.value)?.name) || '方案详情',
+)
 
 function openPlan(id: string) {
-  void router.push({ name: 'bet-plan-detail', params: { planId: id } })
+  detailPlanId.value = id
+  showDetail.value = true
+}
+
+function closeDetail() {
+  showDetail.value = false
+  detailPlanId.value = null
 }
 
 function openRename(plan: SavedBetPlan) {
@@ -74,11 +86,8 @@ async function confirmDelete(plan: SavedBetPlan) {
     message.error('删除失败，请稍后重试')
     return
   }
+  if (detailPlanId.value === plan.id) closeDetail()
   message.success('已删除')
-}
-
-function goBack() {
-  void router.push({ name: 'mine' })
 }
 
 onMounted(() => {
@@ -87,65 +96,58 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="fa-page-frame">
-    <div class="fa-page-shell plans-shell">
-      <div class="plans-header fa-page-toolbar">
-        <div class="plans-toolbar">
-          <n-flex align="center" :size="8" style="min-width: 0;">
-            <n-button size="small" quaternary aria-label="返回" @click="goBack">
-              <template #icon>
-                <n-icon :component="ChevronBackOutline" />
-              </template>
-            </n-button>
-            <span class="plans-title">我的方案</span>
-          </n-flex>
-          <FavoriteDatesPicker
-            v-model="filterDate"
-            :marked-days="planDays"
-            legend="当天有方案（赛程日）"
-          />
-        </div>
+  <div class="plans-panel">
+    <div class="plans-header fa-page-toolbar">
+      <div class="plans-toolbar">
+        <span class="plans-title">我的方案</span>
+        <FavoriteDatesPicker
+          v-model="filterDate"
+          :marked-days="planDays"
+          legend="当天有方案（赛程日）"
+        />
       </div>
-
-      <n-scrollbar class="plans-scroll" trigger="hover">
-        <div class="fa-page-content-padding plans-scroll-pad">
-          <n-empty
-            v-if="!dayPlans.length"
-            :description="`${formatScheduleDay(filterDate)} 无保存方案`"
-            class="plans-empty"
-          />
-          <n-list v-else hoverable clickable>
-            <n-list-item
-              v-for="plan in dayPlans"
-              :key="plan.id"
-              @click="openPlan(plan.id)"
-            >
-              <n-thing :title="plan.name">
-                <template #header-extra>
-                  <n-flex :size="10" align="center">
-                    <n-flex :size="8" align="center" @click.stop>
-                      <n-button size="tiny" tertiary @click="openRename(plan)">编辑</n-button>
-                      <n-popconfirm @positive-click="confirmDelete(plan)">
-                        <template #trigger>
-                          <n-button size="tiny" type="error" tertiary>删除</n-button>
-                        </template>
-                        确定删除「{{ plan.name }}」？
-                      </n-popconfirm>
-                    </n-flex>
-                    <n-icon
-                      :component="ChevronForwardOutline"
-                      :size="16"
-                      depth="3"
-                      aria-hidden="true"
-                    />
-                  </n-flex>
-                </template>
-              </n-thing>
-            </n-list-item>
-          </n-list>
-        </div>
-      </n-scrollbar>
     </div>
+
+    <n-scrollbar class="plans-scroll" trigger="hover">
+      <div class="fa-page-content-padding plans-scroll-pad">
+        <n-empty
+          v-if="!dayPlans.length"
+          :description="`${formatScheduleDay(filterDate)} 无保存方案`"
+          class="plans-empty"
+        />
+        <n-list v-else hoverable clickable>
+          <n-list-item
+            v-for="plan in dayPlans"
+            :key="plan.id"
+            @click="openPlan(plan.id)"
+          >
+            <n-thing :title="plan.name">
+              <template #header-extra>
+                <n-flex :size="10" align="center">
+                  <n-flex :size="8" align="center" @click.stop>
+                    <n-button size="tiny" tertiary @click="openRename(plan)">
+                      编辑
+                    </n-button>
+                    <n-popconfirm @positive-click="confirmDelete(plan)">
+                      <template #trigger>
+                        <n-button size="tiny" type="error" tertiary>删除</n-button>
+                      </template>
+                      确定删除「{{ plan.name }}」？
+                    </n-popconfirm>
+                  </n-flex>
+                  <n-icon
+                    :component="ChevronForwardOutline"
+                    :size="16"
+                    depth="3"
+                    aria-hidden="true"
+                  />
+                </n-flex>
+              </template>
+            </n-thing>
+          </n-list-item>
+        </n-list>
+      </div>
+    </n-scrollbar>
 
     <n-modal
       v-model:show="showRename"
@@ -162,11 +164,26 @@ onMounted(() => {
         placeholder="方案名称"
       />
     </n-modal>
+
+    <n-modal
+      v-model:show="showDetail"
+      preset="card"
+      :title="detailTitle"
+      :bordered="false"
+      :style="{ width: 'min(720px, calc(100vw - 32px))' }"
+      :segmented="{ content: true }"
+      display-directive="if"
+      @after-leave="detailPlanId = null"
+    >
+      <n-scrollbar style="max-height: min(70vh, 640px)">
+        <PlanDetail :plan-id="detailPlanId" />
+      </n-scrollbar>
+    </n-modal>
   </div>
 </template>
 
 <style scoped>
-.plans-shell {
+.plans-panel {
   height: 100%;
   min-height: 0;
   display: flex;
@@ -178,8 +195,6 @@ onMounted(() => {
 .plans-header {
   flex-shrink: 0;
   width: 100%;
-  max-width: var(--fa-mine-page-max-width);
-  margin: 0 auto;
   box-sizing: border-box;
 }
 
@@ -209,8 +224,6 @@ onMounted(() => {
 }
 
 .plans-scroll-pad {
-  max-width: var(--fa-mine-page-max-width);
-  margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
   padding-top: 12px;

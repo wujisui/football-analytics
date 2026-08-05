@@ -4,7 +4,6 @@ import {
   FlashOutline,
   MoonOutline,
   PersonOutline,
-  StarOutline,
   StatsChartOutline,
   SunnyOutline,
 } from '@vicons/ionicons5'
@@ -30,7 +29,7 @@ import LoginModal from '@/views/Mine/components/LoginModal.vue'
 import { parseDetailFrom } from '@/utils/detailNav'
 import { fixturesRouteWithLeague } from '@/utils/fixturesLeagueFilter'
 
-type NavKey = 'home' | 'favorites' | 'predictions' | 'results' | 'mine'
+type NavKey = 'home' | 'predictions' | 'results' | 'mine'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,7 +37,7 @@ const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
 const { isLoggedIn, openLogin } = useAuthSession()
 
-const PHONE_STANDALONE_ROUTES = new Set(['fixture-detail', 'bet-plans', 'bet-plan-detail'])
+const PHONE_STANDALONE_ROUTES = new Set(['fixture-detail'])
 const showBottomNav = computed(
   () => isPhone.value && !PHONE_STANDALONE_ROUTES.has(String(route.name)),
 )
@@ -47,16 +46,19 @@ const showBottomNav = computed(
 const showDesktopMine = computed(() => !isPhone.value && isLoggedIn.value)
 const showDesktopLogin = computed(() => !isPhone.value && !isLoggedIn.value)
 
+function isMineRoute(name: unknown) {
+  return String(name ?? '').startsWith('mine')
+}
+
 const activeNav = computed<NavKey>(() => {
-  if (route.name === 'mine') return 'mine'
-  if (route.name === 'favorites') return 'favorites'
+  if (isMineRoute(route.name)) return 'mine'
   if (route.name === 'results') return 'results'
   if (route.name === 'predictions') return 'predictions'
   if (route.name === 'fixture-detail') {
     const from = parseDetailFrom(route.query.from)
     if (from === 'results') return 'results'
     if (from === 'predictions') return 'predictions'
-    if (from === 'favorites') return 'favorites'
+    if (from === 'favorites') return 'mine'
   }
   return 'home'
 })
@@ -65,12 +67,8 @@ function navType(key: NavKey) {
   return activeNav.value === key ? 'primary' : 'default'
 }
 
-function goNav(name: 'home' | 'favorites' | 'predictions' | 'results') {
+function goNav(name: 'home' | 'predictions' | 'results') {
   if (route.name === name) return
-  if (name === 'favorites') {
-    void router.push({ name: 'favorites' })
-    return
-  }
   void router.push(fixturesRouteWithLeague(name))
 }
 
@@ -79,15 +77,15 @@ function goMine() {
     openLogin()
     return
   }
-  if (route.name === 'mine') return
-  void router.push({ name: 'mine' })
+  if (isMineRoute(route.name)) return
+  void router.push({ name: 'mine-account' })
 }
 
-/** Desktop deep-link /mine while logged out → home + login form. */
+/** Desktop deep-link to a Mine section while logged out → home + login form. */
 watch(
   [() => route.name, isPhone, isLoggedIn],
   ([name, phone, loggedIn]) => {
-    if (name !== 'mine' || phone || loggedIn) return
+    if (!isMineRoute(name) || phone || loggedIn) return
     openLogin()
     void router.replace({ name: 'home' })
   },
@@ -106,12 +104,6 @@ const bottomItems: {
     label: '计算器',
     icon: StatsChartOutline,
     onClick: () => goNav('predictions'),
-  },
-  {
-    key: 'favorites',
-    label: '收藏',
-    icon: StarOutline,
-    onClick: () => goNav('favorites'),
   },
   {
     key: 'results',
@@ -158,12 +150,6 @@ const bottomItems: {
                   @click="goNav('predictions')"
                 >
                   计算器
-                </n-button>
-                <n-button
-                  :type="navType('favorites')"
-                  @click="goNav('favorites')"
-                >
-                  收藏
                 </n-button>
                 <n-button :type="navType('results')" @click="goNav('results')">赛程</n-button>
                 <n-button
@@ -310,7 +296,7 @@ const bottomItems: {
 .bottom-nav {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   align-items: stretch;
   gap: 0;
   min-height: 52px;

@@ -99,71 +99,78 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="fa-page-frame">
-    <div class="fa-page-shell favorites-shell">
-      <div class="favorites-header fa-page-toolbar">
-        <div class="favorites-toolbar">
-          <span class="favorites-title">收藏</span>
-          <FavoriteDatesPicker
-            v-model="filterDate"
-            :marked-days="favoriteDays"
-            legend="当天有收藏（赛程日）"
-          />
-        </div>
+  <div class="favorites-panel">
+    <div class="favorites-header fa-page-toolbar">
+      <div class="favorites-toolbar">
+        <span class="favorites-title">收藏</span>
+        <FavoriteDatesPicker
+          v-model="filterDate"
+          :marked-days="favoriteDays"
+          legend="当天有收藏（赛程日）"
+        />
       </div>
-
-      <n-spin :show="refreshing" class="favorites-body">
-        <n-scrollbar class="favorites-scroll" trigger="hover">
-          <div class="fa-page-content-padding favorites-scroll-pad">
-            <n-empty
-              v-if="!favoriteBuckets.length"
-              :description="`${filterDate} 无收藏场次`"
-              class="favorites-empty"
-            />
-            <n-collapse
-              v-else
-              :key="`${filterDate}-${favoriteBuckets.map((b) => b.key).join('-')}`"
-              class="fa-day-collapse"
-              accordion
-              display-directive="if"
-              :default-expanded-names="defaultExpandedName"
-              arrow-placement="right"
-            >
-              <n-collapse-item
-                v-for="bucket in favoriteBuckets"
-                :key="bucket.key"
-                :name="bucket.key"
-              >
-                <template #header>
-                  <div class="fa-day-collapse-title">
-                    <n-text strong class="fa-day-collapse-title__label">{{ bucket.title }}</n-text>
-                    <n-text depth="3" class="fa-day-collapse-title__count">
-                      {{ bucket.items.length }} 场
-                    </n-text>
-                  </div>
-                </template>
-                <div class="favorites-card-stack">
-                  <FavoriteFixtureCard
-                    v-for="item in bucket.items"
-                    :key="item.fixture_id"
-                    :item="item"
-                    @open-detail="goDetail"
-                  />
-                </div>
-              </n-collapse-item>
-            </n-collapse>
-          </div>
-        </n-scrollbar>
-      </n-spin>
     </div>
+
+    <n-spin :show="refreshing" class="favorites-body">
+      <n-scrollbar class="favorites-scroll" trigger="hover">
+        <div class="fa-page-content-padding favorites-scroll-pad">
+          <n-empty
+            v-if="!favoriteBuckets.length"
+            :description="`${filterDate} 无收藏场次`"
+            class="favorites-empty"
+          />
+          <n-collapse
+            v-else
+            :key="`${filterDate}-${favoriteBuckets.map((b) => b.key).join('-')}`"
+            class="fa-day-collapse"
+            accordion
+            display-directive="if"
+            :default-expanded-names="defaultExpandedName"
+            arrow-placement="right"
+          >
+            <n-collapse-item
+              v-for="bucket in favoriteBuckets"
+              :key="bucket.key"
+              :name="bucket.key"
+            >
+              <template #header>
+                <div class="fa-day-collapse-title">
+                  <n-text strong class="fa-day-collapse-title__label">{{ bucket.title }}</n-text>
+                  <n-text depth="3" class="fa-day-collapse-title__count">
+                    {{ bucket.items.length }} 场
+                  </n-text>
+                </div>
+              </template>
+              <div class="favorites-card-stack">
+                <FavoriteFixtureCard
+                  v-for="item in bucket.items"
+                  :key="item.fixture_id"
+                  :item="item"
+                  @open-detail="goDetail"
+                />
+              </div>
+            </n-collapse-item>
+          </n-collapse>
+        </div>
+      </n-scrollbar>
+    </n-spin>
   </div>
 </template>
 
 <style scoped>
-.favorites-shell {
+.favorites-panel {
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--fa-bg);
+}
+
+.favorites-header {
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .favorites-toolbar {

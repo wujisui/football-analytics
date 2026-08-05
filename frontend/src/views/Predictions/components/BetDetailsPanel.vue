@@ -78,7 +78,7 @@ async function confirmSave(): Promise<boolean> {
 /** Save first — jumping away without persisting silently dropped the plan. */
 async function saveAndGoPlans() {
   if (!(await confirmSave())) return
-  void router.push({ name: 'bet-plans' })
+  void router.push({ name: 'mine-plans' })
 }
 
 function legLabel(pick: CalcSelection): string {

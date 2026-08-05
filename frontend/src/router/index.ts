@@ -7,10 +7,7 @@ import Results from '@/views/Results/index.vue'
 
 // Off the first-paint path — split so a cold reload boots the lists sooner.
 const Detail = () => import('@/views/Detail/index.vue')
-const Favorites = () => import('@/views/Favorites/index.vue')
 const Mine = () => import('@/views/Mine/index.vue')
-const BetPlans = () => import('@/views/Plans/index.vue')
-const BetPlanDetail = () => import('@/views/Plans/PlanDetail.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -38,23 +35,49 @@ const router = createRouter({
     },
     {
       path: '/favorites',
-      name: 'favorites',
-      component: Favorites,
+      redirect: { name: 'mine-favorites' },
     },
     {
       path: '/plans',
-      name: 'bet-plans',
-      component: BetPlans,
+      redirect: { name: 'mine-plans' },
     },
     {
       path: '/plans/:planId',
-      name: 'bet-plan-detail',
-      component: BetPlanDetail,
-      props: true,
+      redirect: { name: 'mine-plans' },
     },
     {
       path: '/mine',
       name: 'mine',
+      redirect: { name: 'mine-account' },
+    },
+    {
+      path: '/mine/account',
+      name: 'mine-account',
+      component: Mine,
+    },
+    {
+      path: '/mine/favorites',
+      name: 'mine-favorites',
+      component: Mine,
+    },
+    {
+      path: '/mine/plans',
+      name: 'mine-plans',
+      component: Mine,
+    },
+    {
+      path: '/mine/theme',
+      name: 'mine-theme',
+      component: Mine,
+    },
+    {
+      path: '/mine/session',
+      name: 'mine-session',
+      component: Mine,
+    },
+    {
+      path: '/mine/about',
+      name: 'mine-about',
       component: Mine,
     },
     {

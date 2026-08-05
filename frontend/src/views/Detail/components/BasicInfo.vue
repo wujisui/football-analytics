@@ -51,10 +51,6 @@ const awayLabel = computed(() => {
 })
 
 function goBack() {
-  if (from.value === 'favorites' && window.history.length > 1) {
-    void router.back()
-    return
-  }
   void router.push(
     detailBackRoute(from.value, {
       date: fromDate.value,
