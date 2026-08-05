@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { DataTableColumns } from 'naive-ui'
+import { computed, h } from 'vue'
+import { NButton, NTooltip, type DataTableColumns } from 'naive-ui'
 
 import type { PrematchPackage } from '@/api/types'
 
@@ -109,7 +109,41 @@ const goalsTip = computed(() => {
 })
 
 const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
-  { title: '维度', key: 'label', width: 100 },
+  {
+    title: '维度',
+    key: 'label',
+    width: 100,
+    render(row) {
+      if (row.key !== 'poisson_distribution') return row.label
+      return h(
+        'span',
+        { class: 'comparison-label-with-help' },
+        [
+          row.label,
+          h(
+            NTooltip,
+            { trigger: 'hover', placement: 'bottom' },
+            {
+              trigger: () =>
+                h(
+                  NButton,
+                  {
+                    quaternary: true,
+                    circle: true,
+                    tertiary: true,
+                    size: 'tiny',
+                    'aria-label': '泊松分布说明',
+                  },
+                  { default: () => '?' },
+                ),
+              default: () =>
+                '依据两队历史进球与失球数据，用泊松模型估算本场进球分布。这里显示双方的相对强弱占比，不等同于上方胜平负概率。',
+            },
+          ),
+        ],
+      )
+    },
+  },
   { title: homeName.value, key: 'home' },
   { title: awayName.value, key: 'away' },
 ])
@@ -137,6 +171,7 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
       </n-card>
 
       <n-descriptions
+        class="briefing-fields"
         label-placement="left"
         :column="1"
         size="small"
@@ -202,9 +237,15 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
         :cols="3"
         :x-gap="12"
       >
-        <n-gi><n-statistic label="主胜" :value="percent.home || '—'" /></n-gi>
-        <n-gi><n-statistic label="平局" :value="percent.draw || '—'" /></n-gi>
-        <n-gi><n-statistic label="客胜" :value="percent.away || '—'" /></n-gi>
+        <n-gi>
+          <n-statistic class="wdl-stat wdl-home" label="主胜" :value="percent.home || '—'" />
+        </n-gi>
+        <n-gi>
+          <n-statistic class="wdl-stat wdl-draw" label="平局" :value="percent.draw || '—'" />
+        </n-gi>
+        <n-gi>
+          <n-statistic class="wdl-stat wdl-away" label="客胜" :value="percent.away || '—'" />
+        </n-gi>
       </n-grid>
 
       <n-data-table
@@ -219,3 +260,32 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
     </template>
   </n-flex>
 </template>
+
+<style scoped>
+.briefing-fields :deep(.n-descriptions-table-content__label) {
+  color: var(--fa-text-secondary);
+}
+
+.briefing-fields :deep(.n-descriptions-table-content__content) {
+  color: var(--fa-text-strong);
+  font-weight: 600;
+}
+
+.wdl-home :deep(.n-statistic-value__content) {
+  color: var(--fa-wdl-win);
+}
+
+.wdl-draw :deep(.n-statistic-value__content) {
+  color: var(--fa-wdl-draw);
+}
+
+.wdl-away :deep(.n-statistic-value__content) {
+  color: var(--fa-wdl-loss);
+}
+
+:deep(.comparison-label-with-help) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+</style>
