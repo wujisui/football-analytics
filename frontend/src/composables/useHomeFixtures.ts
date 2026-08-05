@@ -20,7 +20,7 @@ let inflight: Promise<void> | null = null
 let inflightKey = ''
 let loadSeq = 0
 
-/** Detail wrote odds/analysis to DB — refresh list when returning to Home. */
+/** Detail wrote odds/analysis to DB — refresh list when returning to calculator. */
 let detailListDirty = false
 const pendingDetailPatches = new Map<number, FixtureResponse>()
 
@@ -43,7 +43,7 @@ function cacheFresh(date: string, days: number, leagueIds?: number[]): boolean {
   )
 }
 
-/** True when shared list cache matches 即时 UTC today + span + league set. */
+/** True when shared list cache matches calculator UTC today + span + league set. */
 export function isPrematchListCacheFresh(
   now = new Date(),
   leagueIds?: number[],

@@ -45,7 +45,7 @@ const emit = defineEmits<{
       </template>
       当日统计
     </n-button>
-    <!-- Desktop: same popover as 即时 sider; phone keeps modal for tap targets. -->
+    <!-- Desktop: same popover as calculator sider; phone keeps modal for tap targets. -->
     <LeagueFilterTrigger
       :drawer-mode="isPhone"
       :options="filterOptions"

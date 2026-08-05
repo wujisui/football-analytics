@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import FixturesShellLayout from '@/layouts/FixturesShellLayout.vue'
-import Home from '@/views/Home/index.vue'
 import Predictions from '@/views/Predictions/index.vue'
 import Results from '@/views/Results/index.vue'
 
@@ -18,8 +17,7 @@ const router = createRouter({
       children: [
         {
           path: '',
-          name: 'home',
-          component: Home,
+          redirect: { name: 'predictions' },
         },
         {
           path: 'predictions',
@@ -89,7 +87,7 @@ const router = createRouter({
     {
       path: '/leagues/:leagueId',
       redirect: (to) => ({
-        name: 'home',
+        name: 'predictions',
         query: { league: String(to.params.leagueId) },
       }),
     },

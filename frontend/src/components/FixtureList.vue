@@ -3,7 +3,6 @@ import { ChevronDownOutline } from '@vicons/ionicons5'
 import { computed, ref, useSlots, watch } from 'vue'
 
 import type { FixtureResponse } from '@/api/types'
-import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import FixtureCard from '@/components/FixtureCard.vue'
 import VirtualCardList from '@/components/VirtualCardList.vue'
 import type { DetailFrom } from '@/utils/detailNav'
@@ -13,8 +12,6 @@ const props = withDefaults(
   defineProps<{
     fixtures: FixtureResponse[]
     emptyDescription?: string
-    /** full = odds+prediction card; prediction = algorithm card only */
-    mode?: 'full' | 'prediction'
     /** Date sections as collapsible headers inside the virtual list. */
     groupByDay?: boolean
     from?: DetailFrom
@@ -28,9 +25,8 @@ const props = withDefaults(
     itemsStyle?: string | Record<string, string>
   }>(),
   {
-    mode: 'full',
     groupByDay: true,
-    from: 'home',
+    from: 'predictions',
     date: null,
     itemSize: 168,
     paddingTop: 0,
@@ -212,12 +208,6 @@ const defaultItemsStyle = computed(() => {
             v-if="hasCardSlot"
             name="card"
             :fixture="(asVirtualRow(item) as FixtureRow).fixture"
-          />
-          <AlgorithmPredictionCard
-            v-else-if="mode === 'prediction'"
-            :fixture="(asVirtualRow(item) as FixtureRow).fixture"
-            standalone
-            from="predictions"
           />
           <FixtureCard
             v-else

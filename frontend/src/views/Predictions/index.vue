@@ -19,6 +19,8 @@ import { findScrollContainer } from '@/utils/scrollContainer'
 
 defineOptions({ name: 'Predictions' })
 
+const DESKTOP_COMPARE_ITEM_SIZE = 166
+
 const isPhone = useIsPhone()
 const listShellRef = ref<HTMLElement | null>(null)
 const calcShellRef = ref<HTMLElement | null>(null)
@@ -116,7 +118,7 @@ onActivated(() => {
         </div>
       </div>
 
-      <!-- 桌面：三列对照 -->
+      <!-- 桌面：三列对照；回顶/到底放在计算器列右下角 -->
       <n-grid v-else :cols="24" :x-gap="12" class="pred-grid">
         <n-gi :span="8" class="pred-grid-item">
           <n-card
@@ -132,11 +134,16 @@ onActivated(() => {
               <n-text depth="3">{{ prematchDisplayedFixtures.length }} 场</n-text>
             </template>
             <div ref="listShellRef" class="scroll-shell">
+              <PullToRefresh
+                :shell="listShellRef"
+                :refreshing="officialSyncing"
+                @refresh="refreshOfficial"
+              />
               <FixtureList
                 :fixtures="prematchDisplayedFixtures"
                 :empty-description="predictionsEmptyText"
                 v-model:expanded-names="expandedDays"
-                :item-size="160"
+                :item-size="DESKTOP_COMPARE_ITEM_SIZE"
                 :padding-top="10"
                 :padding-bottom="12"
                 :items-style="desktopListItemsStyle"
@@ -147,13 +154,11 @@ onActivated(() => {
                     <AlgorithmPredictionCard
                       :fixture="fixture"
                       standalone
-                      compact
                       from="predictions"
                     />
                   </div>
                 </template>
               </FixtureList>
-              <ListBackTop :shell="listShellRef" :bottom="12" :right="12" />
             </div>
           </n-card>
         </n-gi>
@@ -176,7 +181,7 @@ onActivated(() => {
                 :fixtures="prematchDisplayedFixtures"
                 :empty-description="predictionsEmptyText"
                 v-model:expanded-names="expandedDays"
-                :item-size="200"
+                :item-size="DESKTOP_COMPARE_ITEM_SIZE"
                 :padding-top="10"
                 :padding-bottom="12"
                 :items-style="desktopListItemsStyle"
@@ -188,7 +193,12 @@ onActivated(() => {
                   </div>
                 </template>
               </FixtureList>
-              <ListBackTop :shell="calcShellRef" :bottom="12" :right="12" />
+              <ListBackTop
+                :shell="calcShellRef"
+                :sync-shell="listShellRef"
+                :bottom="12"
+                :right="12"
+              />
             </div>
           </n-card>
         </n-gi>

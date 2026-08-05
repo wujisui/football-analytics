@@ -4,7 +4,7 @@ const PREMATCH_KEY = 'fa-prematch-selected-league'
 const RESULTS_KEY = 'fa-results-selected-league'
 const LEGACY_KEY = 'fa-home-selected-league'
 
-export type FixturesRouteName = 'home' | 'predictions' | 'results'
+export type FixturesRouteName = 'predictions' | 'results'
 export type FixturesShellContext = 'prematch' | 'results'
 
 export function fixturesShellContext(
@@ -47,12 +47,8 @@ export function writeFixturesLeagueFilter(
   }
 }
 
-export const readHomeLeagueFilter = () => readFixturesLeagueFilter('prematch')
-export const writeHomeLeagueFilter = (id: number | null) =>
-  writeFixturesLeagueFilter(id, 'prematch')
-
 export function fixturesRouteWithLeague(
-  name: FixturesRouteName = 'home',
+  name: FixturesRouteName = 'predictions',
   leagueId?: number | null,
   extraQuery?: Record<string, string>,
 ) {
@@ -63,8 +59,8 @@ export function fixturesRouteWithLeague(
   return { name, query }
 }
 
-export function homeRouteWithLeague(
+export function predictionsRouteWithLeague(
   leagueId: number | null = readFixturesLeagueFilter('prematch'),
 ) {
-  return fixturesRouteWithLeague('home', leagueId)
+  return fixturesRouteWithLeague('predictions', leagueId)
 }

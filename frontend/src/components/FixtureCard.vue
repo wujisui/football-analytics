@@ -14,7 +14,7 @@ withDefaults(
     date?: string | null
   }>(),
   {
-    from: 'home',
+    from: 'predictions',
     date: null,
   },
 )

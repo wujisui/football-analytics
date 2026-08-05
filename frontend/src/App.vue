@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   CalendarOutline,
-  FlashOutline,
   MoonOutline,
   PersonOutline,
   StatsChartOutline,
@@ -29,7 +28,7 @@ import LoginModal from '@/views/Mine/components/LoginModal.vue'
 import { parseDetailFrom } from '@/utils/detailNav'
 import { fixturesRouteWithLeague } from '@/utils/fixturesLeagueFilter'
 
-type NavKey = 'home' | 'predictions' | 'results' | 'mine'
+type NavKey = 'predictions' | 'results' | 'mine'
 
 const route = useRoute()
 const router = useRouter()
@@ -60,14 +59,14 @@ const activeNav = computed<NavKey>(() => {
     if (from === 'predictions') return 'predictions'
     if (from === 'favorites') return 'mine'
   }
-  return 'home'
+  return 'predictions'
 })
 
 function navType(key: NavKey) {
   return activeNav.value === key ? 'primary' : 'default'
 }
 
-function goNav(name: 'home' | 'predictions' | 'results') {
+function goNav(name: 'predictions' | 'results') {
   if (route.name === name) return
   void router.push(fixturesRouteWithLeague(name))
 }
@@ -81,13 +80,13 @@ function goMine() {
   void router.push({ name: 'mine-account' })
 }
 
-/** Desktop deep-link to a Mine section while logged out → home + login form. */
+/** Desktop deep-link to a Mine section while logged out → calculator + login form. */
 watch(
   [() => route.name, isPhone, isLoggedIn],
   ([name, phone, loggedIn]) => {
     if (!isMineRoute(name) || phone || loggedIn) return
     openLogin()
-    void router.replace({ name: 'home' })
+    void router.replace({ name: 'predictions' })
   },
   { immediate: true },
 )
@@ -95,10 +94,9 @@ watch(
 const bottomItems: {
   key: NavKey
   label: string
-  icon: typeof FlashOutline
+  icon: typeof StatsChartOutline
   onClick: () => void
 }[] = [
-  { key: 'home', label: '即时', icon: FlashOutline, onClick: () => goNav('home') },
   {
     key: 'predictions',
     label: '计算器',
@@ -135,8 +133,8 @@ const bottomItems: {
               class="brand"
               role="link"
               tabindex="0"
-              @click="goNav('home')"
-              @keydown.enter="goNav('home')"
+              @click="goNav('predictions')"
+              @keydown.enter="goNav('predictions')"
             >
               <span class="brand-title">Football Analytics</span>
               <span class="brand-subtitle">赛前分析 · 人机协同</span>
@@ -144,7 +142,6 @@ const bottomItems: {
 
             <div class="header-actions">
               <n-button-group size="small">
-                <n-button :type="navType('home')" @click="goNav('home')">即时</n-button>
                 <n-button
                   :type="navType('predictions')"
                   @click="goNav('predictions')"
@@ -296,7 +293,7 @@ const bottomItems: {
 .bottom-nav {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   align-items: stretch;
   gap: 0;
   min-height: 52px;

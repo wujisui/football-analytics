@@ -83,7 +83,7 @@ function syncTrackedWithFilterOptions() {
 }
 
 /**
- * Before 赛程 loads filter-options for a future day: keep 即时 selection so
+ * Before 赛程 loads filter-options for a future day: keep calculator selection so
  * returning home can restore instantly (no flash of future-day leagues).
  */
 export function beginScheduleFilterOverride(): void {
@@ -96,7 +96,7 @@ export function beginScheduleFilterOverride(): void {
   }
 }
 
-/** Restore 即时 filter after leaving future schedule. */
+/** Restore calculator filter after leaving future schedule. */
 export function endScheduleFilterOverride(): void {
   if (!frozenPrematch) return
   filterOptions.value = frozenPrematch.filterOptions

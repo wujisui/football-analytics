@@ -41,7 +41,7 @@ const {
   isScheduleFutureDay,
 } = useFixturesShell()
 
-/** Results past/today: date strip only. Future schedule day: same league chrome as 即时. */
+/** Results past/today: date strip only. Future schedule day: same league chrome as calculator. */
 const showShellLeagueNav = computed(
   () => !isResultsPage.value || isScheduleFutureDay.value,
 )
@@ -129,7 +129,7 @@ onActivated(() => {
             v-model="selectedDay"
           />
 
-          <!-- 即时 / 计算器 / 赛程·未来(手机联赛行) -->
+          <!-- 计算器 / 赛程·未来(手机联赛行) -->
           <div
             v-if="!isResultsPage || (isScheduleFutureDay && isPhone)"
             class="fa-toolbar-top"
@@ -173,7 +173,7 @@ onActivated(() => {
 
         <div class="shell-content">
           <router-view v-slot="{ Component }">
-            <keep-alive v-if="!isPhone" :include="['Home', 'Predictions', 'Results']">
+            <keep-alive v-if="!isPhone" :include="['Predictions', 'Results']">
               <component :is="Component" />
             </keep-alive>
             <component v-else :is="Component" />

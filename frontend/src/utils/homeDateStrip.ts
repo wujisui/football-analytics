@@ -2,11 +2,11 @@
 
 export const HOME_DATE_RADIUS = 7
 
-/** 即时：UTC 比赛日今天 + 明天（与 API date= / 入库赛程日一致） */
+/** 计算器：UTC 比赛日今天 + 明天（与 API date= / 入库赛程日一致） */
 export const PREMATCH_MATCH_DAY_SPAN = 2
 
 const WEEKDAY_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-/** 即时 / 计算器只展示未开赛；进行中已无法投注，归赛果列表。 */
+/** 计算器只展示未开赛；进行中已无法投注，归赛果列表。 */
 const PREMATCH_STATUSES = new Set(['pending'])
 
 function parseIso(iso: string): Date {
@@ -81,7 +81,7 @@ export function buildHomeDateTabs(
   return tabs
 }
 
-/** Prematch lists (即时 / 计算器): pending only. Live + finished belong on 赛果. */
+/** Calculator prematch list: pending only. Live + finished belong on 赛果. */
 export function isPrematchFixtureVisible(status: string): boolean {
   return PREMATCH_STATUSES.has(status.toLowerCase())
 }
@@ -94,7 +94,7 @@ export function isScheduleFutureDay(day: string, today: string = todayDate()): b
   return day > today
 }
 
-/** 即时可见的 UTC 比赛日集合 */
+/** 计算器可见的 UTC 比赛日集合 */
 export function prematchAllowedMatchDays(
   scheduleToday: string = scheduleTodayDate(),
 ): Set<string> {
@@ -112,7 +112,7 @@ export function isPrematchMatchDay(
   return prematchAllowedMatchDays(scheduleToday).has(matchDay)
 }
 
-/** 拉取即时列表：从 UTC 今天起共 2 个比赛日 */
+/** 拉取计算器列表：从 UTC 今天起共 2 个比赛日 */
 export function prematchFetchParams(now = new Date()): {
   date: string
   days: number

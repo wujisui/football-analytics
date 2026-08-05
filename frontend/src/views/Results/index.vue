@@ -381,7 +381,7 @@ async function loadScheduleDay() {
   loading.value = true
   setResultsLoading(true)
   error.value = ''
-  // Future-day catalog overrides shared prematch filter; freeze 即时 first.
+  // Future-day catalog overrides shared prematch filter; freeze calculator first.
   beginScheduleFilterOverride()
   try {
     await loadFilterOptions({date: selectedDay.value, scope: 'prematch'})
@@ -629,7 +629,7 @@ onMounted(() => {
       </n-modal>
     </div>
 
-    <!-- Phone / desktop: future schedule — same list chrome as 即时 -->
+    <!-- Phone / desktop: future schedule — same list chrome as calculator -->
     <div
         v-else-if="isScheduleFutureDay"
         ref="desktopListShellRef"
@@ -648,7 +648,6 @@ onMounted(() => {
       </n-alert>
       <n-spin v-else :show="contentLoading" class="schedule-spin">
         <FixtureList
-            mode="full"
             :fixtures="scheduleDisplayedFixtures"
             :empty-description="scheduleEmptyText"
             :group-by-day="false"

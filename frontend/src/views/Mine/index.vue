@@ -159,7 +159,7 @@ function openSection(section: string) {
 
 function onLogout() {
   logout()
-  if (!isPhone.value) void router.replace({ name: 'home' })
+  if (!isPhone.value) void router.replace({ name: 'predictions' })
 }
 </script>
 

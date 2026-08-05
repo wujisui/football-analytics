@@ -86,7 +86,10 @@ function isIntegerHandicapLine(line?: string | null): boolean {
 }
 
 /** Build selectable rows for one fixture from available odds. */
-export function buildMarketRows(fixture: FixtureResponse): CalcMarketRow[] {
+export function buildMarketRows(
+  fixture: FixtureResponse,
+  options?: { combineOuBtts?: boolean },
+): CalcMarketRow[] {
   const odds = oddsSnippetFromFixture(fixture)
   const rows: CalcMarketRow[] = []
 
@@ -132,17 +135,35 @@ export function buildMarketRows(fixture: FixtureResponse): CalcMarketRow[] {
   const ouLine = ou?.line != null ? String(ou.line) : undefined
   const ouPlay = ouLine ? `大小 ${ouLine}` : '大小球'
   const btts = odds?.both_teams_score
-  rows.push({
-    market: 'ou',
-    playLabel: '大小/双进',
-    line: ouLine,
-    cells: [
-      cell('ou', 'over', ouPlay, parseOddNumber(ou?.home), ouLine),
-      cell('ou', 'under', ouPlay, parseOddNumber(ou?.away), ouLine),
-      cell('btts', 'yes', '双进', parseOddNumber(btts?.home)),
-      cell('btts', 'no', '双进', parseOddNumber(btts?.away)),
-    ],
-  })
+  const ouCells = [
+    cell('ou', 'over', ouPlay, parseOddNumber(ou?.home), ouLine),
+    cell('ou', 'under', ouPlay, parseOddNumber(ou?.away), ouLine),
+  ]
+  const bttsCells = [
+    cell('btts', 'yes', '双进', parseOddNumber(btts?.home)),
+    cell('btts', 'no', '双进', parseOddNumber(btts?.away)),
+  ]
+  // Phone calculator keeps ou/btts on one row to save vertical space.
+  if (options?.combineOuBtts) {
+    rows.push({
+      market: 'ou',
+      playLabel: '大小/双进',
+      line: ouLine,
+      cells: [...ouCells, ...bttsCells],
+    })
+  } else {
+    rows.push({
+      market: 'ou',
+      playLabel: ouLine ? `大小 ${ouLine}` : '大小',
+      line: ouLine,
+      cells: ouCells,
+    })
+    rows.push({
+      market: 'btts',
+      playLabel: '双进',
+      cells: bttsCells,
+    })
+  }
 
   return rows
 }

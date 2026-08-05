@@ -1,6 +1,6 @@
 import { parseApiDate } from '@/utils/format'
 
-/** Favorites first, then kickoff time (same rule for 即时 / 赛果 lists). */
+/** Favorites first, then kickoff time (same rule for calculator / 赛果 lists). */
 export function sortFixturesFavoritesFirst<
   T extends { fixture_id: number; fixture_date: string },
 >(list: readonly T[], favoriteIds: ReadonlySet<number>): T[] {

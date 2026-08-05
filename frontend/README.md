@@ -74,7 +74,7 @@ frontend/
 推荐调用顺序（与 `.cursor/rules/frontend-api.mdc` 一致）：
 
 1. `GET /leagues?days=7` → 联赛菜单
-2. `GET /fixtures/today?days=7` → 全量近期赛程（首页一次拉取，联赛筛选在前端）
+2. `GET /fixtures/today?days=7` → 全量近期赛程（计算器一次拉取，联赛筛选在前端）
 3. `GET /fixtures/{fixture_id}/analysis` → 详情 Tabs 共用的赛前包
 
 说明：

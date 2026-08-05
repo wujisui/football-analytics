@@ -110,7 +110,7 @@ function openStats() {
   )
 }
 
-const FIXTURES_ROUTES = new Set(['home', 'predictions', 'results'])
+const FIXTURES_ROUTES = new Set(['predictions', 'results'])
 
 /** Filter the shell list to this league (toggle off if already selected). */
 function onLeagueClick(e: Event) {
@@ -120,7 +120,7 @@ function onLeagueClick(e: Event) {
   const next = selectedLeagueId.value === id ? null : id
   selectLeague(next)
   if (FIXTURES_ROUTES.has(String(route.name))) return
-  const target = props.from === 'results' ? 'results' : 'home'
+  const target = props.from === 'results' ? 'results' : 'predictions'
   void router.push({
     name: target,
     query: next == null ? {} : { league: String(next) },

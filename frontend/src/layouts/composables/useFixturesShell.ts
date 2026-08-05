@@ -41,7 +41,7 @@ import { toScheduleDayKey } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
 
-const FIXTURES_ROUTE_NAMES = new Set<string>(['home', 'predictions', 'results'])
+const FIXTURES_ROUTE_NAMES = new Set<string>(['predictions', 'results'])
 
 /**
  * Mobile browsers discard background tabs and reload on return; keep the
@@ -265,9 +265,8 @@ export function useFixturesShell() {
   })
 
   const breadcrumbRoot = computed(() => {
-    if (pageName.value === 'predictions') return '计算器'
     if (pageName.value === 'results') return '赛程'
-    return '即时'
+    return '计算器'
   })
 
   const breadcrumbFilter = computed(() =>
@@ -309,41 +308,18 @@ export function useFixturesShell() {
     return predictionsDayCountLabel(count)
   })
 
-  const homeEmptyText = computed(() => {
-    if (error.value) return ''
-    const day = scheduleTodayDate()
-    if (!prematchFilterOptions.value.length && !prematchVisibleFixtures.value.length) {
-      return officialSyncing.value ? '正在从官方获取赛程…' : '暂无赛程，可刷新页面重试'
-    }
-    if (!prematchTrackedIds.value.length) {
-      return '请先在「筛选」中勾选要关注的联赛'
-    }
-    if (!prematchDisplayedFixtures.value.length && !teamSearch.value.trim()) {
-      return `${day} 暂无当日赛事`
-    }
-    const teamHint = teamSearchEmptyHint(teamSearch.value)
-    if (teamHint && sortFixtures(leagueFiltered(prematchVisibleFixtures.value)).length) {
-      return teamHint
-    }
-    if (selectedLeagueId.value == null) {
-      return `${day} 勾选联赛暂无当日赛事`
-    }
-    const name = leagueLabel(selectedLeague.value?.league_name) || '该联赛'
-    return `${day} 暂无${name}当日赛事`
-  })
-
   const predictionsEmptyText = computed(() => {
     if (error.value) return ''
     const day = scheduleTodayDate()
     if (!prematchTrackedIds.value.length) return '请先在「筛选」中勾选联赛'
     if (!prematchDisplayedFixtures.value.length && !teamSearch.value.trim()) {
-      return `${day} 暂无未开赛预测`
+      return `${day} 暂无未开赛赛事`
     }
     const teamHint = teamSearchEmptyHint(teamSearch.value)
     if (teamHint && sortFixtures(leagueFiltered(prematchVisibleFixtures.value)).length) {
       return teamHint
     }
-    return `${day} 暂无未开赛预测`
+    return `${day} 暂无未开赛赛事`
   })
 
   function syncLeagueFromRoute() {
@@ -525,7 +501,7 @@ export function useFixturesShell() {
     await loadDayLocal(force)
   }
 
-  /** Leave 赛程: restore frozen 即时 filter, then refresh list/filter if stale. */
+  /** Leave 赛程: restore frozen calculator filter, then refresh list/filter if stale. */
   function restorePrematchAfterResults() {
     endScheduleFilterOverride()
     const force =
@@ -682,7 +658,7 @@ export function useFixturesShell() {
       () => route.name,
       (name, prev) => {
         syncLeagueFromRoute()
-        const prematch = name === 'home' || name === 'predictions'
+        const prematch = name === 'predictions'
         if (prematch && prev === 'results') {
           restorePrematchAfterResults()
         }
@@ -709,7 +685,6 @@ export function useFixturesShell() {
     dayCountLabel,
     resultsDayFixtureCount,
     prematchDisplayedFixtures,
-    homeEmptyText,
     predictionsEmptyText,
     officialSyncRevision,
     officialSyncedDay,

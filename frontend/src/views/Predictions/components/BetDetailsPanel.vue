@@ -109,74 +109,65 @@ defineExpose({ openFormula, openDetails })
     </div>
 
     <n-flex vertical :size="8" class="details-footer">
-      <n-grid :cols="12" :x-gap="8">
-        <n-gi :span="5">
-          <n-select
-            v-model:value="fold"
-            size="small"
-            :options="foldOptions"
-            :disabled="!foldOptions.length"
-            placeholder="过关方式"
-          />
-        </n-gi>
-        <n-gi :span="5">
-          <n-input-number
-            v-model:value="multiplier"
-            size="small"
-            :min="1"
-            :max="99"
-            button-placement="both"
-          >
-            <template #prefix>倍数</template>
-          </n-input-number>
-        </n-gi>
-        <n-gi :span="2">
-          <n-button
-            block
-            size="small"
-            type="error"
-            tertiary
-            :disabled="!matchCount"
-            aria-label="清空已选"
-            @click="clearAll"
-          >
-            <template #icon>
-              <n-icon :component="TrashOutline" />
-            </template>
-          </n-button>
-        </n-gi>
-      </n-grid>
+      <div class="details-controls">
+        <n-select
+          v-model:value="fold"
+          class="fold-select"
+          size="small"
+          :options="foldOptions"
+          :disabled="!foldOptions.length"
+          placeholder="过关方式"
+        />
+        <n-input-number
+          v-model:value="multiplier"
+          class="multiplier-input"
+          size="small"
+          :min="1"
+          :max="99"
+          button-placement="both"
+        >
+          <template #prefix>倍数</template>
+        </n-input-number>
+        <n-button
+          size="small"
+          type="primary"
+          secondary
+          :disabled="!matchCount"
+          @click="openSave"
+        >
+          保存方案
+        </n-button>
+        <n-button
+          v-if="props.footerOnly"
+          size="small"
+          type="primary"
+          :disabled="!groupedSelections.length"
+          @click="openDetails"
+        >
+          详情
+        </n-button>
+        <n-button
+          size="small"
+          type="error"
+          tertiary
+          :disabled="!matchCount"
+          aria-label="清空已选"
+          @click="clearAll"
+        >
+          <template #icon>
+            <n-icon :component="TrashOutline" />
+          </template>
+        </n-button>
+      </div>
 
-      <n-flex :wrap="false" align="center" justify="space-between" :size="8">
-        <n-text depth="3" style="flex: 1; min-width: 0;">
-          已选 {{ matchCount }} 场 · {{ foldModeLabel(fold) }} ·
-          {{ result.betCount }} 注 {{ result.stakeYuan }} 元 · 预计奖金
-          <n-text type="error" strong>
-            {{ result.estimatedPrize || '—' }}
-          </n-text>
-          元
+      <n-text depth="3">
+        已选 {{ matchCount }} 场 · {{ foldModeLabel(fold) }} ·
+        {{ result.betCount }} 注 {{ result.stakeYuan }} 元 · 预计奖金
+        <n-text type="error" strong>
+          {{ result.estimatedPrize || '—' }}
         </n-text>
-        <n-flex :size="6" :wrap="false">
-          <n-button
-            size="tiny"
-            type="primary"
-            secondary
-            :disabled="!matchCount"
-            @click="openSave"
-          >
-            保存方案
-          </n-button>
-          <n-button
-            v-if="props.footerOnly"
-            size="tiny"
-            type="primary"
-            :disabled="!groupedSelections.length"
-            @click="openDetails"
-          >
-            投注详情
-          </n-button>
-        </n-flex>
-      </n-flex>
+        元
+      </n-text>
 
       <n-text depth="3" style="text-align: center;">
         提示：计算器仅供赛前参考，不提供购彩服务
@@ -330,6 +321,29 @@ defineExpose({ openFormula, openDetails })
   padding: 10px;
   border-top: 1px solid var(--fa-border);
   background-color: var(--fa-bg-elevated);
+}
+
+.details-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fold-select {
+  width: 84px;
+  flex-shrink: 0;
+}
+
+.multiplier-input {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.details-controls :deep(.n-button) {
+  flex-shrink: 0;
+  padding-right: 8px;
+  padding-left: 8px;
 }
 
 .footer-only .details-footer {

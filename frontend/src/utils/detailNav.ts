@@ -5,10 +5,10 @@ import { findPrematchListFixture } from '@/composables/useHomeFixtures'
 import { findResultsListFixture } from '@/composables/useResultsLeagues'
 import {
   fixturesRouteWithLeague,
-  homeRouteWithLeague,
+  predictionsRouteWithLeague,
 } from '@/utils/fixturesLeagueFilter'
 
-export type DetailFrom = 'home' | 'results' | 'predictions' | 'favorites'
+export type DetailFrom = 'results' | 'predictions' | 'favorites'
 
 export type DetailTab = 'record' | 'stats' | 'lineup' | 'briefing' | 'prediction'
 
@@ -29,7 +29,7 @@ export const FIXTURE_DETAIL_TOOLTIP = '查看详细分析（统计）'
 
 export function parseDetailFrom(raw: unknown): DetailFrom {
   if (raw === 'results' || raw === 'predictions' || raw === 'favorites') return raw
-  return 'home'
+  return 'predictions'
 }
 
 export function parseDetailTab(raw: unknown): DetailTab | null {
@@ -64,7 +64,7 @@ export function detailRootLabel(from: DetailFrom): string {
   if (from === 'results') return '赛程'
   if (from === 'predictions') return '计算器'
   if (from === 'favorites') return '收藏'
-  return '即时'
+  return '计算器'
 }
 
 /**
@@ -113,7 +113,7 @@ export function detailBackRoute(
   }
   // Omit leagueId → restore session filter; pass id for「联赛」crumb.
   if (opts && 'leagueId' in opts) {
-    return homeRouteWithLeague(opts.leagueId ?? null)
+    return predictionsRouteWithLeague(opts.leagueId ?? null)
   }
-  return homeRouteWithLeague()
+  return predictionsRouteWithLeague()
 }

@@ -63,12 +63,14 @@ function goLeague() {
     goBack()
     return
   }
-  if (from.value !== 'home') {
+  if (from.value !== 'predictions') {
     goBack()
     return
   }
   writeFixturesLeagueFilter(props.fixture.league_id, 'prematch')
-  void router.push(detailBackRoute('home', { leagueId: props.fixture.league_id }))
+  void router.push(
+    detailBackRoute('predictions', { leagueId: props.fixture.league_id }),
+  )
 }
 </script>
 

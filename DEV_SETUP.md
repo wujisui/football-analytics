@@ -218,7 +218,7 @@ npm run dev
 - [ ] `secrets.local.env` 已填 `API_SPORTS_KEY`（且未提交）  
 - [ ] `.env` 已从 example 复制（至少确认 `REDIS_ENABLED` / SSL）  
 - [ ] `python manage.py init-db` 成功，`data/football.db` 可生成  
-- [ ] 后端 `:8000/docs` 可开，前端 `:5173` 可开且首页能拉赛程  
+- [ ] 后端 `:8000/docs` 可开，前端 `:5173` 可开且计算器能拉赛程
 - [ ] IDE 解释器指向 venv；Vue 用 Volar 而非 Vetur  
 - [ ] 联赛清单按需改 `backend/config/leagues.json` 后重启后端  
 

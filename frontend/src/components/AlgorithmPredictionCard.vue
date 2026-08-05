@@ -1,43 +1,44 @@
 <script setup lang="ts">
 import { NCard } from 'naive-ui'
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
-import { hasRealProbabilities, toPercent } from '@/utils/format'
-import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
-import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
+import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
+import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import {
-  HANDICAP_MISSING_LABEL,
-  isHandicapPending,
-} from '@/utils/handicapDisplay'
-import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
+  formatOdd,
+  hasRealProbabilities,
+  leagueTagColor,
+  toPercent,
+} from '@/utils/format'
+import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
+import { leagueLabel } from '@/utils/leagueNames'
+import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
+import { ahLinesOf, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 
 const props = withDefaults(
   defineProps<{
     fixture?: FixtureResponse
     snapshot?: PredictionSnapshot
     fixtureId?: number
-    /** Elevated card for the predictions list. */
+    /** Elevated card for the desktop predictions list (includes handicap line). */
     standalone?: boolean
-    /** Compact standalone card for dense comparison lists. */
-    compact?: boolean
-    /** Show home vs away title link above recommendation row. */
+    /** League tag + centered matchup title. */
     showMatchupTitle?: boolean
     /** Parent card owns padding/background; render only the prediction content. */
     flush?: boolean
-    /** Click win/draw/away bars to open pre-match odds (e.g. phone home list). */
+    /** Click win/draw/away bars to open pre-match odds (e.g. phone list). */
     oddsClickable?: boolean
     from?: DetailFrom
     date?: string | null
   }>(),
   {
     standalone: false,
-    compact: false,
     showMatchupTitle: true,
     flush: false,
     oddsClickable: false,
-    from: 'home',
+    from: 'predictions',
     date: null,
   },
 )
@@ -47,6 +48,8 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const route = useRoute()
+const { selectedLeagueId, selectLeague } = useFixturesShell()
 
 const resolvedFixtureId = computed(
   () => props.fixture?.fixture_id ?? props.fixtureId ?? null,
@@ -77,27 +80,31 @@ const predictionReady = computed(() => {
   )
 })
 
-const recommendationPending = computed(
-  () => !predictionReady.value || prediction.value.recommendation === '待分析',
-)
-const handicapPending = computed(() =>
-  isHandicapPending(prediction.value.handicap_lean),
-)
-
-const recommendationTagColor = computed(() =>
-  recommendationPending.value
-    ? undefined
-    : wdlTagColor(leanWdlTone(prediction.value.recommendation)),
-)
-const handicapTagColor = computed(() =>
-  handicapPending.value
-    ? undefined
-    : wdlTagColor(leanWdlTone(prediction.value.handicap_lean)),
-)
-
 const homeName = computed(() => props.fixture?.home_team_name || '—')
 const awayName = computed(() => props.fixture?.away_team_name || '—')
 const matchupTitle = computed(() => `${homeName.value} vs ${awayName.value}`)
+const leagueName = computed(() => leagueLabel(props.fixture?.league_name))
+const leagueId = computed(() => props.fixture?.league_id ?? null)
+const leagueActive = computed(
+  () => leagueId.value != null && selectedLeagueId.value === leagueId.value,
+)
+const leagueColor = computed(() =>
+  leagueId.value != null ? leagueTagColor(leagueId.value) : undefined,
+)
+
+const ahLines = computed(() => {
+  if (!props.standalone || !props.fixture) return []
+  return ahLinesOf(oddsSnippetFromFixture(props.fixture)?.asian_handicap)
+})
+const primaryAh = computed(() => ahLines.value[0] ?? null)
+const ahExtraCount = computed(() => Math.max(0, ahLines.value.length - 1))
+const primaryHomeOdd = computed(() =>
+  primaryAh.value ? formatOdd(primaryAh.value.home) : '—',
+)
+const primaryAwayOdd = computed(() =>
+  primaryAh.value ? formatOdd(primaryAh.value.away) : '—',
+)
+const primaryLine = computed(() => primaryAh.value?.line || '—')
 
 const probs = computed(() => {
   if (!predictionReady.value) return []
@@ -107,6 +114,22 @@ const probs = computed(() => {
     { key: 'away', label: '客胜', value: prediction.value.away_win_prob },
   ]
 })
+
+const FIXTURES_ROUTES = new Set(['predictions', 'results'])
+
+function onLeagueClick(e: Event) {
+  e.stopPropagation()
+  const id = leagueId.value
+  if (id == null || !Number.isFinite(id)) return
+  const next = selectedLeagueId.value === id ? null : id
+  selectLeague(next)
+  if (FIXTURES_ROUTES.has(String(route.name))) return
+  const target = props.from === 'results' ? 'results' : 'predictions'
+  void router.push({
+    name: target,
+    query: next == null ? {} : { league: String(next) },
+  })
+}
 
 function goStats() {
   if (resolvedFixtureId.value == null) return
@@ -130,6 +153,18 @@ function goBriefing() {
   )
 }
 
+function goPredictionDetail(e?: Event) {
+  e?.stopPropagation()
+  if (resolvedFixtureId.value == null) return
+  void router.push(
+    fixtureDetailRoute(resolvedFixtureId.value, {
+      from: props.from,
+      tab: 'prediction',
+      date: props.date,
+    }),
+  )
+}
+
 function onOddsClick() {
   if (!props.oddsClickable) return
   emit('openOdds')
@@ -140,13 +175,33 @@ function onOddsClick() {
   <component
     :is="standalone ? NCard : 'section'"
     class="predict-card"
-    :class="{ standalone, compact, zone: !standalone, flush }"
+    :class="{ standalone, zone: !standalone, flush }"
     :size="standalone ? 'small' : undefined"
     :bordered="standalone ? false : undefined"
   >
-    <div class="rec-row">
+    <header v-if="showMatchupTitle" class="card-head">
+      <n-tag
+        v-if="leagueId != null"
+        class="league-tag"
+        :class="{ active: leagueActive }"
+        size="small"
+        :bordered="false"
+        role="button"
+        tabindex="0"
+        :aria-label="`筛选联赛 ${leagueName}`"
+        :aria-pressed="leagueActive"
+        :color="
+          leagueColor
+            ? { color: `${leagueColor}18`, textColor: leagueColor }
+            : undefined
+        "
+        @click="onLeagueClick"
+        @keydown.enter.prevent="onLeagueClick"
+        @keydown.space.prevent="onLeagueClick"
+      >
+        {{ leagueName }}
+      </n-tag>
       <n-button
-        v-if="showMatchupTitle"
         text
         type="primary"
         size="small"
@@ -155,33 +210,8 @@ function onOddsClick() {
       >
         {{ matchupTitle }}
       </n-button>
-      <n-button
-        text
-        size="small"
-        class="rec-label"
-        @click.stop="goBriefing"
-      >
-        推荐
-      </n-button>
-      <n-tag
-        size="small"
-        class="rec-chip"
-        :type="recommendationTagColor ? undefined : 'default'"
-        :color="recommendationTagColor"
-        @click.stop="goBriefing"
-      >
-        {{ prediction.recommendation }}
-      </n-tag>
-      <n-tag
-        size="small"
-        class="rec-tag rec-chip"
-        :type="handicapTagColor ? undefined : 'default'"
-        :color="handicapTagColor"
-        @click.stop="goBriefing"
-      >
-        {{ prediction.handicap_lean || HANDICAP_MISSING_LABEL }}
-      </n-tag>
-    </div>
+    </header>
+
     <div
       v-if="predictionReady"
       class="prob-row"
@@ -217,23 +247,71 @@ function onOddsClick() {
     >
       暂无有效胜平负概率（缺近况或盘口）
     </p>
-    <div v-if="predictionReady" class="lean-row">
-      <n-tag size="small" :bordered="false">{{ prediction.goal_lean }}</n-tag>
-      <n-tag size="small" :bordered="false">{{ prediction.both_score_lean }}</n-tag>
-      <n-tag size="small" :bordered="false" type="info">
-        {{ prediction.score_hint }}
-      </n-tag>
+
+    <div v-if="standalone" class="handicap-line" @click.stop>
+      <span class="handicap-label">让球：</span>
+      <div v-if="primaryAh" class="handicap-values">
+        <span class="handicap-odd">{{ primaryHomeOdd }}</span>
+        <n-popover
+          v-if="ahExtraCount > 0"
+          trigger="hover"
+          placement="bottom"
+          :show-arrow="false"
+          :delay="120"
+          raw
+        >
+          <template #trigger>
+            <button
+              type="button"
+              class="handicap-mid"
+              :aria-label="`主盘 ${primaryLine}，另有 ${ahExtraCount} 条让球盘，点击查看详情`"
+              @click="goPredictionDetail"
+            >
+              {{ primaryLine }}
+            </button>
+          </template>
+          <div class="ah-popover-panel">
+            <div class="ah-popover-row ah-popover-head">
+              <span class="ah-popover-label">让球</span>
+              <span class="ah-popover-col">主队</span>
+              <span class="ah-popover-col mid">盘口</span>
+              <span class="ah-popover-col">客队</span>
+            </div>
+            <div
+              v-for="(line, idx) in ahLines"
+              :key="`ah-pop-${line.line}-${idx}`"
+              class="ah-popover-row"
+            >
+              <span class="ah-popover-label" />
+              <span class="ah-popover-col">{{ formatOdd(line.home) }}</span>
+              <span class="ah-popover-col mid line">{{ line.line || '—' }}</span>
+              <span class="ah-popover-col">{{ formatOdd(line.away) }}</span>
+            </div>
+          </div>
+        </n-popover>
+        <button
+          v-else
+          type="button"
+          class="handicap-mid plain"
+          aria-label="查看盘口详情"
+          @click="goPredictionDetail"
+        >
+          {{ primaryLine }}
+        </button>
+        <span class="handicap-odd">{{ primaryAwayOdd }}</span>
+      </div>
+      <span v-else class="handicap-empty">暂无盘口</span>
     </div>
-    <div v-else-if="!handicapPending" class="lean-row">
-      <n-tag
-        size="small"
-        :bordered="false"
-        :type="handicapTagColor ? undefined : 'default'"
-        :color="handicapTagColor"
-      >
-        {{ prediction.handicap_lean }}
-      </n-tag>
-    </div>
+
+    <PredictionRecommendationRow
+      :recommendation="prediction.recommendation"
+      :handicap-lean="prediction.handicap_lean"
+      :goal-lean="prediction.goal_lean"
+      :both-score="prediction.both_score_lean"
+      :score-hint="prediction.score_hint"
+      clickable
+      @open="goBriefing"
+    />
   </component>
 </template>
 
@@ -268,7 +346,7 @@ function onOddsClick() {
 
 .predict-card.standalone :deep(.n-card-content) {
   display: grid;
-  grid-template-rows: auto auto auto;
+  grid-template-rows: auto auto auto auto;
   align-content: space-between;
   gap: 6px;
   height: 100%;
@@ -276,52 +354,50 @@ function onOddsClick() {
   box-sizing: border-box;
 }
 
-.predict-card.standalone:not(.compact) :deep(.n-card-content) {
-  gap: 10px;
-  padding: 14px;
-  align-content: start;
-  grid-template-rows: none;
-}
-
-.predict-card.standalone.compact .prob-item,
-.predict-card.standalone.compact .prob-head {
-  gap: 2px;
-}
-
-.rec-row {
+.card-head {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
 }
 
-.zone-matchup {
-  max-width: 100%;
-  white-space: normal;
-  height: auto;
-  line-height: 1.4;
-  padding: 0 2px;
-  flex-shrink: 0;
-}
-
-.rec-label {
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-  flex-shrink: 0;
-  padding: 0 2px;
-  height: auto;
-}
-
-.rec-chip {
+.league-tag {
+  position: relative;
+  z-index: 1;
+  max-width: 88px;
   cursor: pointer;
 }
 
-.rec-tag {
-  max-width: 100%;
-  white-space: normal;
+.league-tag.active {
+  outline: 1px solid currentColor;
+}
+
+.league-tag :deep(.n-tag__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zone-matchup {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 96px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   height: auto;
   line-height: 1.4;
-  padding: 2px 8px;
+  padding: 0 2px;
+  text-align: center;
+}
+
+.zone-matchup :deep(.n-button__content) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .prob-row {
@@ -366,10 +442,62 @@ function onOddsClick() {
   font-variant-numeric: tabular-nums;
 }
 
-.lean-row {
+.handicap-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.handicap-values {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.handicap-label {
+  color: var(--fa-text-secondary);
+  font-weight: 500;
+}
+
+.handicap-odd {
+  color: var(--fa-text);
+  font-weight: 600;
+}
+
+.handicap-mid {
+  appearance: none;
+  margin: 0;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--fa-text-strong);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.handicap-mid.plain {
+  text-decoration: none;
+}
+
+.handicap-mid:hover,
+.handicap-mid:focus-visible {
+  background: var(--fa-bg-elevated);
+  border-radius: 2px;
+  outline: none;
+}
+
+.handicap-empty {
+  color: var(--fa-text-faint);
+  font-size: 12px;
 }
 
 .predict-empty {
@@ -383,18 +511,11 @@ function onOddsClick() {
 }
 
 .predict-card.standalone .prob-head {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  font-size: 12px;
+  gap: 2px;
 }
 
 .predict-card.standalone .prob-head strong {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.predict-card.standalone.compact .prob-head strong {
   font-size: 14px;
+  font-weight: 700;
 }
 </style>

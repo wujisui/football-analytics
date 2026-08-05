@@ -30,7 +30,7 @@ const props = withDefaults(
   }>(),
   {
     linkMiddleToDetail: false,
-    from: 'home',
+    from: 'predictions',
     detailTab: 'prediction',
     date: null,
     emptyText: '暂无盘口（打开详情拉取后显示）',
@@ -290,62 +290,5 @@ function renderMidCell(row: OddsRow) {
   font-size: 10px;
   font-weight: 600;
   color: var(--fa-accent, #2080f0);
-}
-</style>
-
-<style>
-.ah-popover-panel {
-  min-width: 280px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--fa-bg-elevated);
-  box-shadow: 0 8px 24px var(--fa-hover-shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--fa-text-secondary);
-}
-
-.ah-popover-row {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 52px minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-}
-
-.ah-popover-head {
-  margin-bottom: 2px;
-  color: var(--fa-text-faint);
-  font-size: 11px;
-}
-
-.ah-popover-label {
-  text-align: left;
-  color: var(--fa-text-faint);
-}
-
-.ah-popover-col {
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--fa-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ah-popover-col.mid {
-  color: var(--fa-text-secondary);
-}
-
-.ah-popover-col.line {
-  font-weight: 700;
-  color: var(--fa-accent, #2080f0);
-}
-
-.ah-popover-head .ah-popover-col {
-  font-weight: 500;
-  color: var(--fa-text-faint);
 }
 </style>

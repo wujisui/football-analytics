@@ -177,7 +177,7 @@ export function invalidateCachedResultsDay(day: string, schedule: boolean) {
 
 /**
  * After detail pulls odds/analysis, merge into schedule day caches so
- * returning to 赛程 future days shows the snippet (same as 即时 list).
+ * returning to 赛程 future days shows the snippet (same as calculator list).
  */
 export function patchScheduleFixtureFromDetail(detail: FixtureResponse): void {
   let touchedLive = false
