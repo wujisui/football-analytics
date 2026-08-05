@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
-const filterDate = defineModel<string | null>({ required: true })
+import { todayDate } from '@/utils/homeDateStrip'
+
+const filterDate = defineModel<string>({ required: true })
+
+/** Bumped to remount the picker when clearing leaves the bound value unchanged. */
+const pickerKey = ref(0)
 
 const props = withDefaults(
   defineProps<{
@@ -113,6 +118,15 @@ function onPanelShow(open: boolean) {
   void nextTick(startPanelObserver)
 }
 
+/** Clear button acts as「今天」; naive-ui already blanked its own display, so resync it. */
+function onDateUpdate(date: string | null) {
+  if (date == null && filterDate.value === todayDate()) {
+    pickerKey.value += 1
+    return
+  }
+  filterDate.value = date ?? todayDate()
+}
+
 watch(() => props.favoriteDays, scheduleMark)
 
 onBeforeUnmount(() => {
@@ -127,13 +141,15 @@ onBeforeUnmount(() => {
 
 <template>
   <n-date-picker
-    v-model:formatted-value="filterDate"
+    :key="pickerKey"
+    :formatted-value="filterDate"
     value-format="yyyy-MM-dd"
     type="date"
     size="small"
     clearable
     :placeholder="placeholder"
     class="favorite-dates-picker"
+    @update:formatted-value="onDateUpdate"
     @update:show="onPanelShow"
     @prev-month="scheduleMark"
     @next-month="scheduleMark"

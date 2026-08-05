@@ -46,17 +46,10 @@ type FavoriteBucket = {
 const router = useRouter()
 const { favorites, reloadFavorites } = useFavoriteFixtures()
 
-const filterDate = ref<string | null>(readSavedFilterDate())
+const filterDate = ref<string>(readSavedFilterDate())
 const refreshing = ref(false)
 
-watch(filterDate, (date) => {
-  // Clearable X replaces「今天」: empty → jump back to today.
-  if (date == null) {
-    filterDate.value = todayDate()
-    return
-  }
-  writeSavedFilterDate(date)
-})
+watch(filterDate, writeSavedFilterDate)
 
 async function refreshList() {
   if (refreshing.value) return
@@ -72,15 +65,13 @@ const favoriteDays = computed(() => favoriteFixtureDays(favorites.value))
 
 const filteredFavorites = computed(() => {
   const day = filterDate.value
-  let list = [...favorites.value]
-  if (day) {
-    list = list.filter((item) => toScheduleDayKey(item.fixture_date) === day)
-  }
-  return list.sort(
-    (a, b) =>
-      parseApiDate(a.fixture_date).getTime() -
-      parseApiDate(b.fixture_date).getTime(),
-  )
+  return favorites.value
+    .filter((item) => toScheduleDayKey(item.fixture_date) === day)
+    .sort(
+      (a, b) =>
+        parseApiDate(a.fixture_date).getTime() -
+        parseApiDate(b.fixture_date).getTime(),
+    )
 })
 
 /** Newest schedule day first; title is the calendar date only. */
@@ -125,16 +116,12 @@ onMounted(() => {
           <div class="fa-page-content-padding favorites-scroll-pad">
             <n-empty
               v-if="!favoriteBuckets.length"
-              :description="
-                filterDate
-                  ? `${filterDate} 无收藏场次`
-                  : '暂无收藏，可在列表或详情页点击星标'
-              "
+              :description="`${filterDate} 无收藏场次`"
               class="favorites-empty"
             />
             <n-collapse
               v-else
-              :key="`${filterDate ?? 'all'}-${favoriteBuckets.map((b) => b.key).join('-')}`"
+              :key="`${filterDate}-${favoriteBuckets.map((b) => b.key).join('-')}`"
               class="fa-day-collapse"
               accordion
               display-directive="if"

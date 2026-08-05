@@ -16,6 +16,7 @@ import ChartWindowControls, {
 import FixtureList from '@/components/FixtureList.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import PullToRefresh from '@/components/PullToRefresh.vue'
+import HomeDateStrip from '@/layouts/components/HomeDateStrip.vue'
 import ResultsListToolbar from '@/views/Results/components/ResultsListToolbar.vue'
 import ResultsFixtureVirtualList from '@/views/Results/components/ResultsFixtureVirtualList.vue'
 import {
@@ -664,6 +665,7 @@ onMounted(() => {
     <template v-else>
       <n-layout-sider
           placement="left"
+          class="results-list-sider"
           :width="320"
           :native-scrollbar="true"
           content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
@@ -708,9 +710,14 @@ onMounted(() => {
 
       <n-layout
           class="results-main"
-          content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; background: var(--fa-bg); box-sizing: border-box; padding: var(--fa-content-block-start) var(--fa-content-inline) var(--fa-content-block-end);"
+          content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--fa-bg); box-sizing: border-box;"
       >
-        <n-grid :cols="20" :x-gap="10" :y-gap="10" style="flex-shrink: 0;">
+        <div class="desktop-results-date-toolbar fa-page-toolbar">
+          <HomeDateStrip v-model="selectedDay" />
+        </div>
+
+        <div class="results-dashboard">
+          <n-grid :cols="20" :x-gap="10" :y-gap="10" style="flex-shrink: 0;">
           <n-gi :span="9">
             <n-card
                 size="small"
@@ -749,9 +756,9 @@ onMounted(() => {
               </n-spin>
             </n-card>
           </n-gi>
-        </n-grid>
+          </n-grid>
 
-        <n-card
+          <n-card
             size="small"
             :bordered="false"
             class="chart-card"
@@ -784,7 +791,8 @@ onMounted(() => {
               />
             </div>
           </n-spin>
-        </n-card>
+          </n-card>
+        </div>
       </n-layout>
     </template>
   </n-layout>
@@ -810,6 +818,29 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+.results-list-sider {
+  position: relative;
+  z-index: 3;
+  box-shadow: var(--fa-sider-shadow);
+}
+
+.desktop-results-date-toolbar {
+  flex-shrink: 0;
+  box-shadow: var(--fa-header-shadow);
+}
+
+.results-dashboard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--fa-content-block-start) var(--fa-content-inline)
+    var(--fa-content-block-end);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .phone-results-tabs-wrap {

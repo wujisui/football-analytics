@@ -99,7 +99,11 @@ onActivated(() => {
         style="height: 100%; flex: 1; min-height: 0; min-width: 0;"
         content-style="display: flex; flex-direction: column; height: 100%; overflow: hidden;"
       >
-        <n-layout-header class="fa-page-toolbar" style="flex-shrink: 0;">
+        <n-layout-header
+          v-if="isPhone || showShellLeagueNav"
+          class="fa-page-toolbar"
+          style="flex-shrink: 0;"
+        >
           <!-- 赛果日：仅日期条 -->
           <HomeDateStrip
             v-if="isResultsPage && !isScheduleFutureDay"
