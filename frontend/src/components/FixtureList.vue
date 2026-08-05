@@ -15,12 +15,12 @@ const props = withDefaults(
     emptyDescription?: string
     /** full = odds+prediction card; prediction = algorithm card only */
     mode?: 'full' | 'prediction'
-    /** Date sections as accordion headers inside the virtual list. */
+    /** Date sections as collapsible headers inside the virtual list. */
     groupByDay?: boolean
     from?: DetailFrom
     date?: string | null
-    /** Controlled expand (accordion name = day key). Omit for internal default. */
-    expandedNames?: string | null
+    /** Controlled expand set (day keys). Omit for internal default. Multiple days may be open. */
+    expandedNames?: string[]
     /** Estimated row height before resize measure. */
     itemSize?: number
     paddingTop?: number | string
@@ -39,7 +39,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'update:expandedNames': [value: string | null]
+  'update:expandedNames': [value: string[]]
   scroll: [event: Event]
 }>()
 
@@ -62,48 +62,62 @@ type VirtualRow = DayRow | FixtureRow
 const slots = useSlots()
 const hasCardSlot = computed(() => !!slots.card)
 const controlled = computed(() => props.expandedNames !== undefined)
-const internalExpanded = ref<string | null>(null)
+const internalExpanded = ref<string[]>([])
 
 const dayGroups = computed(() =>
   props.groupByDay ? groupFixturesByScheduleDay(props.fixtures) : [],
 )
 
-function firstDayKey(): string | null {
-  return dayGroups.value[0]?.key ?? null
+function sameKeys(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((key, i) => key === b[i])
+}
+
+/** Keep open days that still exist; default to the first day when none remain. */
+function reconcileExpanded(current: string[], groups: { key: string }[]): string[] {
+  const valid = new Set(groups.map((g) => g.key))
+  const kept = current.filter((key) => valid.has(key))
+  if (kept.length) return kept
+  const first = groups[0]?.key
+  return first ? [first] : []
 }
 
 watch(
   dayGroups,
   (groups) => {
-    const next = firstDayKey()
     if (controlled.value) {
-      const cur = props.expandedNames ?? null
-      if (cur && groups.some((g) => g.key === cur)) return
-      if (cur !== next) emit('update:expandedNames', next)
+      const next = reconcileExpanded(props.expandedNames ?? [], groups)
+      if (!sameKeys(props.expandedNames ?? [], next)) {
+        emit('update:expandedNames', next)
+      }
       return
     }
-    if (
-      internalExpanded.value &&
-      groups.some((g) => g.key === internalExpanded.value)
-    ) {
-      return
+    const next = reconcileExpanded(internalExpanded.value, groups)
+    if (!sameKeys(internalExpanded.value, next)) {
+      internalExpanded.value = next
     }
-    internalExpanded.value = next
   },
   { immediate: true },
 )
 
-const expandedDay = computed({
+const expandedDays = computed({
   get: () =>
-    controlled.value ? props.expandedNames ?? null : internalExpanded.value,
-  set: (value: string | null) => {
+    controlled.value ? props.expandedNames ?? [] : internalExpanded.value,
+  set: (value: string[]) => {
     if (controlled.value) emit('update:expandedNames', value)
     else internalExpanded.value = value
   },
 })
 
+function isDayExpanded(dayKey: string): boolean {
+  return expandedDays.value.includes(dayKey)
+}
+
 function toggleDay(dayKey: string) {
-  expandedDay.value = expandedDay.value === dayKey ? null : dayKey
+  const cur = expandedDays.value
+  expandedDays.value = cur.includes(dayKey)
+    ? cur.filter((key) => key !== dayKey)
+    : [...cur, dayKey]
 }
 
 const virtualRows = computed((): VirtualRow[] => {
@@ -117,7 +131,7 @@ const virtualRows = computed((): VirtualRow[] => {
   }
 
   const rows: VirtualRow[] = []
-  const open = expandedDay.value
+  const open = new Set(expandedDays.value)
   for (const group of dayGroups.value) {
     rows.push({
       key: `d-${group.key}`,
@@ -126,7 +140,7 @@ const virtualRows = computed((): VirtualRow[] => {
       label: group.label,
       count: group.fixtures.length,
     })
-    if (open !== group.key) continue
+    if (!open.has(group.key)) continue
     for (const fixture of group.fixtures) {
       rows.push({
         key: `f-${fixture.fixture_id}`,
@@ -177,7 +191,7 @@ const defaultItemsStyle = computed(() => {
           class="virtual-day-header"
           role="button"
           tabindex="0"
-          :aria-expanded="expandedDay === (asVirtualRow(item) as DayRow).dayKey"
+          :aria-expanded="isDayExpanded((asVirtualRow(item) as DayRow).dayKey)"
           @click="toggleDay((asVirtualRow(item) as DayRow).dayKey)"
           @keydown.enter.prevent="toggleDay((asVirtualRow(item) as DayRow).dayKey)"
           @keydown.space.prevent="toggleDay((asVirtualRow(item) as DayRow).dayKey)"
@@ -188,7 +202,7 @@ const defaultItemsStyle = computed(() => {
           </div>
           <n-icon
             class="virtual-day-chevron"
-            :class="{ open: expandedDay === (asVirtualRow(item) as DayRow).dayKey }"
+            :class="{ open: isDayExpanded((asVirtualRow(item) as DayRow).dayKey) }"
             :component="ChevronDownOutline"
             :size="16"
           />

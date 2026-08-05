@@ -23,8 +23,8 @@ const isPhone = useIsPhone()
 const listShellRef = ref<HTMLElement | null>(null)
 const calcShellRef = ref<HTMLElement | null>(null)
 const phoneCalcShellRef = ref<HTMLElement | null>(null)
-/** Shared day accordion across desktop odds/calc columns. */
-const expandedDay = ref<string | null>(null)
+/** Shared day expand set across desktop odds/calc columns. */
+const expandedDays = ref<string[]>([])
 
 useScrollRestore('predictions-list', listShellRef)
 useScrollRestore('predictions-phone-list', phoneCalcShellRef)
@@ -135,7 +135,7 @@ onActivated(() => {
               <FixtureList
                 :fixtures="prematchDisplayedFixtures"
                 :empty-description="predictionsEmptyText"
-                v-model:expanded-names="expandedDay"
+                v-model:expanded-names="expandedDays"
                 :item-size="160"
                 :padding-top="10"
                 :padding-bottom="12"
@@ -175,7 +175,7 @@ onActivated(() => {
               <FixtureList
                 :fixtures="prematchDisplayedFixtures"
                 :empty-description="predictionsEmptyText"
-                v-model:expanded-names="expandedDay"
+                v-model:expanded-names="expandedDays"
                 :item-size="200"
                 :padding-top="10"
                 :padding-bottom="12"
