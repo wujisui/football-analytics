@@ -3,6 +3,7 @@ import {
   CalendarOutline,
   MoonOutline,
   PersonOutline,
+  StarOutline,
   StatsChartOutline,
   SunnyOutline,
 } from '@vicons/ionicons5'
@@ -28,7 +29,7 @@ import LoginModal from '@/views/Mine/components/LoginModal.vue'
 import { parseDetailFrom } from '@/utils/detailNav'
 import { fixturesRouteWithLeague } from '@/utils/fixturesLeagueFilter'
 
-type NavKey = 'predictions' | 'results' | 'mine'
+type NavKey = 'predictions' | 'results' | 'favorites' | 'mine'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,13 +52,14 @@ function isMineRoute(name: unknown) {
 
 const activeNav = computed<NavKey>(() => {
   if (isMineRoute(route.name)) return 'mine'
+  if (route.name === 'favorites') return 'favorites'
   if (route.name === 'results') return 'results'
   if (route.name === 'predictions') return 'predictions'
   if (route.name === 'fixture-detail') {
     const from = parseDetailFrom(route.query.from)
     if (from === 'results') return 'results'
     if (from === 'predictions') return 'predictions'
-    if (from === 'favorites') return 'mine'
+    if (from === 'favorites') return 'favorites'
   }
   return 'predictions'
 })
@@ -78,6 +80,11 @@ function goMine() {
   }
   if (isMineRoute(route.name)) return
   void router.push({ name: 'mine-account' })
+}
+
+function goFavorites() {
+  if (route.name === 'favorites') return
+  void router.push({ name: 'favorites' })
 }
 
 /** Desktop deep-link to a Mine section while logged out → calculator + login form. */
@@ -109,6 +116,7 @@ const bottomItems: {
     icon: CalendarOutline,
     onClick: () => goNav('results'),
   },
+  { key: 'favorites', label: '关注', icon: StarOutline, onClick: goFavorites },
   { key: 'mine', label: '我的', icon: PersonOutline, onClick: goMine },
 ]
 </script>
@@ -293,7 +301,7 @@ const bottomItems: {
 .bottom-nav {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   align-items: stretch;
   gap: 0;
   min-height: 52px;

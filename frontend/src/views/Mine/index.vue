@@ -36,8 +36,8 @@ const sectionMeta: Record<
   },
   favorites: {
     routeName: 'mine-favorites',
-    title: '收藏',
-    description: '按比赛日期查看收藏场次',
+    title: '关注',
+    description: '按比赛日期查看关注场次',
   },
   plans: {
     routeName: 'mine-plans',
@@ -91,7 +91,7 @@ const menuOptions = computed<MenuOption[]>(() => [
     children: [
       {
         key: 'favorites',
-        label: '收藏',
+        label: '关注',
         icon: renderIcon(StarOutline),
       },
       {
@@ -217,7 +217,7 @@ function onLogout() {
                   <template #description>
                     {{
                       isLoggedIn
-                        ? '偏好、收藏与方案当前保存在本机'
+                        ? '偏好、关注与方案当前保存在本机'
                         : '登录后可使用桌面端“我的”入口'
                     }}
                   </template>

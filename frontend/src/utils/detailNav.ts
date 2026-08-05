@@ -63,7 +63,7 @@ export function fixtureDetailRoute(
 export function detailRootLabel(from: DetailFrom): string {
   if (from === 'results') return '赛程'
   if (from === 'predictions') return '计算器'
-  if (from === 'favorites') return '收藏'
+  if (from === 'favorites') return '关注'
   return '计算器'
 }
 
@@ -109,7 +109,7 @@ export function detailBackRoute(
     return fixturesRouteWithLeague('predictions')
   }
   if (from === 'favorites') {
-    return { name: 'mine-favorites' }
+    return { name: 'favorites' }
   }
   // Omit leagueId → restore session filter; pass id for「联赛」crumb.
   if (opts && 'leagueId' in opts) {

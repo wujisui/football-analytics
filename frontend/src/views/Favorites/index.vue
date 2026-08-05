@@ -4,13 +4,14 @@ import { useRouter } from 'vue-router'
 
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import FavoriteFixtureCard from '@/views/Favorites/components/FavoriteFixtureCard.vue'
+import HomeDateStrip from '@/layouts/components/HomeDateStrip.vue'
+import ListBackTop from '@/components/ListBackTop.vue'
 import {
   favoriteFixtureDays,
   useFavoriteFixtures,
-  type FavoriteFixtureRecord,
 } from '@/composables/useFavoriteFixtures'
-import { formatScheduleDay, parseApiDate, toScheduleDayKey } from '@/utils/format'
-import { groupFixturesByScheduleDay } from '@/utils/fixtureDayGroups'
+import { useIsPhone } from '@/composables/useMediaQuery'
+import { parseApiDate, toScheduleDayKey } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'
 import { todayDate } from '@/utils/homeDateStrip'
 
@@ -37,17 +38,13 @@ function writeSavedFilterDate(date: string) {
   }
 }
 
-type FavoriteBucket = {
-  key: string
-  title: string
-  items: FavoriteFixtureRecord[]
-}
-
 const router = useRouter()
+const isPhone = useIsPhone()
 const { favorites, reloadFavorites } = useFavoriteFixtures()
 
 const filterDate = ref<string>(readSavedFilterDate())
 const refreshing = ref(false)
+const favoritesShellRef = ref<HTMLElement | null>(null)
 
 watch(filterDate, writeSavedFilterDate)
 
@@ -74,21 +71,6 @@ const filteredFavorites = computed(() => {
     )
 })
 
-/** Newest schedule day first; title is the calendar date only. */
-const favoriteBuckets = computed((): FavoriteBucket[] =>
-  groupFixturesByScheduleDay(filteredFavorites.value)
-    .reverse()
-    .map((group) => ({
-      key: group.key,
-      title: formatScheduleDay(group.key),
-      items: group.fixtures,
-    })),
-)
-
-const defaultExpandedName = computed(
-  () => favoriteBuckets.value[0]?.key ?? null,
-)
-
 function goDetail(fixtureId: number) {
   void router.push(fixtureDetailRoute(fixtureId, { from: 'favorites' }))
 }
@@ -101,58 +83,40 @@ onMounted(() => {
 <template>
   <div class="favorites-panel">
     <div class="favorites-header fa-page-toolbar">
+      <HomeDateStrip v-if="isPhone" v-model="filterDate" />
       <div class="favorites-toolbar">
-        <span class="favorites-title">收藏</span>
+        <span class="favorites-title">关注</span>
         <FavoriteDatesPicker
+          v-if="!isPhone"
           v-model="filterDate"
           :marked-days="favoriteDays"
-          legend="当天有收藏（赛程日）"
+          legend="当天有关注（赛程日）"
         />
+        <n-text v-else depth="3">{{ filteredFavorites.length }} 场</n-text>
       </div>
     </div>
 
     <n-spin :show="refreshing" class="favorites-body">
-      <n-scrollbar class="favorites-scroll" trigger="hover">
-        <div class="fa-page-content-padding favorites-scroll-pad">
-          <n-empty
-            v-if="!favoriteBuckets.length"
-            :description="`${filterDate} 无收藏场次`"
-            class="favorites-empty"
-          />
-          <n-collapse
-            v-else
-            :key="`${filterDate}-${favoriteBuckets.map((b) => b.key).join('-')}`"
-            class="fa-day-collapse"
-            accordion
-            display-directive="if"
-            :default-expanded-names="defaultExpandedName"
-            arrow-placement="right"
-          >
-            <n-collapse-item
-              v-for="bucket in favoriteBuckets"
-              :key="bucket.key"
-              :name="bucket.key"
-            >
-              <template #header>
-                <div class="fa-day-collapse-title">
-                  <n-text strong class="fa-day-collapse-title__label">{{ bucket.title }}</n-text>
-                  <n-text depth="3" class="fa-day-collapse-title__count">
-                    {{ bucket.items.length }} 场
-                  </n-text>
-                </div>
-              </template>
-              <div class="favorites-card-stack">
-                <FavoriteFixtureCard
-                  v-for="item in bucket.items"
-                  :key="item.fixture_id"
-                  :item="item"
-                  @open-detail="goDetail"
-                />
-              </div>
-            </n-collapse-item>
-          </n-collapse>
-        </div>
-      </n-scrollbar>
+      <div ref="favoritesShellRef" class="favorites-list-shell">
+        <n-scrollbar class="favorites-scroll" trigger="hover">
+          <div class="fa-page-content-padding favorites-scroll-pad">
+            <n-empty
+              v-if="!filteredFavorites.length"
+              :description="`${filterDate} 无关注场次`"
+              class="favorites-empty"
+            />
+            <div v-else class="favorites-card-stack">
+              <FavoriteFixtureCard
+                v-for="item in filteredFavorites"
+                :key="item.fixture_id"
+                :item="item"
+                @open-detail="goDetail"
+              />
+            </div>
+          </div>
+        </n-scrollbar>
+        <ListBackTop :shell="favoritesShellRef" :right="12" :bottom="12" />
+      </div>
     </n-spin>
   </div>
 </template>
@@ -181,6 +145,10 @@ onMounted(() => {
   min-width: 0;
 }
 
+.favorites-header :deep(.date-strip) {
+  margin: 0 auto;
+}
+
 .favorites-title {
   flex-shrink: 0;
   font-size: 16px;
@@ -200,6 +168,14 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.favorites-list-shell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .favorites-scroll {
