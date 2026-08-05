@@ -94,6 +94,22 @@
 
 密码与密钥规范遵循现有 secrets 规则；生产再定 OAuth（可选，非必须首版）。
 
+### 4.3 用户私有数据（留坑 · 无痛衔接）
+
+收藏、计算器方案等**按用户隔离**的数据，在真登录落地前也要按「以后有 user_id」来写，避免全民共用一张表。
+
+| 约定 | 说明 |
+|------|------|
+| `user_id` 可空 | `NULL` = 登录前的本机单租户桶（当前行为）；登录后写入真实用户 id |
+| 查询必带作用域 | `owner_is(column, user_id)`（`app/services/user_scope.py`）；禁止无过滤全表扫私有数据 |
+| 鉴权依赖 | `CurrentUserId`（`app/api/deps_auth.py`）现恒为 `None`；接 JWT/session 时只改这一处 |
+| 首登迁移 | 可选：把该设备上 `user_id IS NULL` 的收藏/方案认领到当前账号一次，再禁止匿名写 |
+| 收藏 PK | 现为 `fixture_id`（单租户够用）；多用户时改为 `(user_id, fixture_id)` 或代理主键 |
+
+已挂钩的表/接口：`favorite_fixtures.user_id`、`bet_plans.user_id`，以及 `/favorites`、`/bet-plans`。
+
+**原则**：未登录时**不假装**做云同步或跨设备私有；新功能可以先落地业务，但私有数据路径必须过 `CurrentUserId` + `owner_is`，登录完善后只接身份、不改业务语义。
+
 ---
 
 ## 5. 与现有同步链路的对齐
@@ -127,13 +143,14 @@ UI 细则后续写入 [frontend/FRONTEND_UI_SPEC.md](../frontend/FRONTEND_UI_SPE
 
 代码按此顺序迭代，**当前仓库尚未开始**：
 
-1. **用户表 + 真登录 API**（替换前端 stub）  
-2. **`quota_ledger` + 中间件/依赖注入**（先 `log_only` 模式，不拦截）  
-3. **动作接入**：`sync` / `odds_only` / `fixture_enrich` 打点  
-4. **档位限额配置**（环境变量或 DB）：游客 / free / vip  
-5. **拦截模式**：额度不足拒绝；公共调度路径豁免  
-6. **前端**：剩余额度展示、PC 刷新入口、用尽态  
-7. **支付 / 订阅**（最后）：发卡或第三方支付写 `entitlements`
+1. **用户表 + 真登录 API**（替换前端 stub；填充 `CurrentUserId`）  
+2. **私有数据认领**：`favorite_fixtures` / `bet_plans` 的 `NULL → user_id` 一次性迁移；收藏 PK 升级为复合键  
+3. **`quota_ledger` + 中间件/依赖注入**（先 `log_only` 模式，不拦截）  
+4. **动作接入**：`sync` / `odds_only` / `fixture_enrich` 打点  
+5. **档位限额配置**（环境变量或 DB）：游客 / free / vip  
+6. **拦截模式**：额度不足拒绝；公共调度路径豁免  
+7. **前端**：剩余额度展示、PC 刷新入口、用尽态  
+8. **支付 / 订阅**（最后）：发卡或第三方支付写 `entitlements`
 
 ---
 

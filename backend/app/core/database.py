@@ -105,6 +105,14 @@ async def _ensure_sqlite_columns(conn) -> None:
             "away_goals_label": "INTEGER",
         },
     )
+    await _ensure_table_columns(
+        conn,
+        "favorite_fixtures",
+        {
+            # Pre-auth single-tenant; real login fills this (AUTH_VIP_QUOTA §4.3).
+            "user_id": "TEXT",
+        },
+    )
 
 
 async def init_db() -> None:

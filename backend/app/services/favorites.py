@@ -1,4 +1,4 @@
-"""Single-tenant favorite fixtures CRUD + list hydration from local DB."""
+"""Favorite fixtures CRUD — scoped by optional user_id (NULL = pre-auth local)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app.models.favorite_fixture import FavoriteFixture
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.schemas.response import FavoriteFixtureResponse
+from app.services.user_scope import owner_is
 
 
 def _utc_now() -> datetime:
@@ -142,10 +143,16 @@ async def _load_prematch_map(
     return {row.fixture_id: row for row in rows}
 
 
-async def list_favorite_responses(db: AsyncSession) -> list[FavoriteFixtureResponse]:
+async def list_favorite_responses(
+    db: AsyncSession,
+    *,
+    user_id: str | None = None,
+) -> list[FavoriteFixtureResponse]:
     fav_rows = (
         await db.execute(
-            select(FavoriteFixture).order_by(FavoriteFixture.saved_at.desc())
+            select(FavoriteFixture)
+            .where(owner_is(FavoriteFixture.user_id, user_id))
+            .order_by(FavoriteFixture.saved_at.desc())
         )
     ).scalars().all()
     if not fav_rows:
@@ -167,8 +174,17 @@ async def list_favorite_responses(db: AsyncSession) -> list[FavoriteFixtureRespo
 async def get_favorite_response(
     db: AsyncSession,
     fixture_id: int,
+    *,
+    user_id: str | None = None,
 ) -> FavoriteFixtureResponse | None:
-    fav = await db.get(FavoriteFixture, fixture_id)
+    fav = (
+        await db.execute(
+            select(FavoriteFixture).where(
+                FavoriteFixture.fixture_id == fixture_id,
+                owner_is(FavoriteFixture.user_id, user_id),
+            )
+        )
+    ).scalar_one_or_none()
     if fav is None:
         return None
     fixtures = await _load_fixtures_map(db, [fixture_id])
@@ -179,28 +195,52 @@ async def get_favorite_response(
     return _to_favorite_response(fav, fixture, stored.get(fixture_id))
 
 
-async def add_favorite(db: AsyncSession, fixture_id: int) -> FavoriteFixtureResponse:
+async def add_favorite(
+    db: AsyncSession,
+    fixture_id: int,
+    *,
+    user_id: str | None = None,
+) -> FavoriteFixtureResponse:
     fixture = await db.get(Fixture, fixture_id)
     if fixture is None:
         raise LookupError(f"fixture {fixture_id} not found")
 
-    fav = await db.get(FavoriteFixture, fixture_id)
+    fav = (
+        await db.execute(
+            select(FavoriteFixture).where(
+                FavoriteFixture.fixture_id == fixture_id,
+                owner_is(FavoriteFixture.user_id, user_id),
+            )
+        )
+    ).scalar_one_or_none()
     now = _utc_now()
     if fav is None:
-        fav = FavoriteFixture(fixture_id=fixture_id, saved_at=now)
+        fav = FavoriteFixture(fixture_id=fixture_id, user_id=user_id, saved_at=now)
         db.add(fav)
     else:
         fav.saved_at = now
     await db.commit()
 
-    response = await get_favorite_response(db, fixture_id)
+    response = await get_favorite_response(db, fixture_id, user_id=user_id)
     if response is None:
         raise RuntimeError(f"favorite {fixture_id} missing after commit")
     return response
 
 
-async def remove_favorite(db: AsyncSession, fixture_id: int) -> bool:
-    fav = await db.get(FavoriteFixture, fixture_id)
+async def remove_favorite(
+    db: AsyncSession,
+    fixture_id: int,
+    *,
+    user_id: str | None = None,
+) -> bool:
+    fav = (
+        await db.execute(
+            select(FavoriteFixture).where(
+                FavoriteFixture.fixture_id == fixture_id,
+                owner_is(FavoriteFixture.user_id, user_id),
+            )
+        )
+    ).scalar_one_or_none()
     if fav is None:
         return False
     await db.delete(fav)

@@ -18,6 +18,8 @@ export interface CalcSelection {
   homeName: string
   awayName: string
   kickoff: string
+  /** ISO kickoff from API — used for calendar day / settlement. */
+  fixtureDate?: string
   leagueName: string
   market: CalcMarket
   outcome: CalcOutcome

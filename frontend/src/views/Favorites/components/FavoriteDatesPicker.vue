@@ -10,10 +10,14 @@ const pickerKey = ref(0)
 
 const props = withDefaults(
   defineProps<{
-    favoriteDays: ReadonlySet<string>
+    markedDays: ReadonlySet<string>
     placeholder?: string
+    legend?: string
   }>(),
-  { placeholder: '赛程日' },
+  {
+    placeholder: '赛程日',
+    legend: '当天有记录（赛程日）',
+  },
 )
 
 let markTimer: ReturnType<typeof setTimeout> | null = null
@@ -65,7 +69,7 @@ function markPanels() {
     for (const cell of panel.querySelectorAll('.n-date-panel-date')) {
       const el = cell as HTMLElement
       const key = cellDayKey(el, parsed.year, parsed.month)
-      const hasFavorite = !!key && props.favoriteDays.has(key)
+      const hasFavorite = !!key && props.markedDays.has(key)
       el.classList.toggle('fa-date-has-favorite', hasFavorite)
 
       let mark = el.querySelector('.fa-date-favorite-mark')
@@ -127,7 +131,7 @@ function onDateUpdate(date: string | null) {
   filterDate.value = date ?? todayDate()
 }
 
-watch(() => props.favoriteDays, scheduleMark)
+watch(() => props.markedDays, scheduleMark)
 
 onBeforeUnmount(() => {
   if (markTimer) clearTimeout(markTimer)
@@ -159,7 +163,7 @@ onBeforeUnmount(() => {
     <template #footer>
       <div class="favorite-date-legend">
         <span class="favorite-date-dot" aria-hidden="true" />
-        当天有收藏（赛程日）
+        {{ legend }}
       </div>
     </template>
   </n-date-picker>

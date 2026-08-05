@@ -395,6 +395,62 @@ class FavoriteFixtureCreateRequest(BaseModel):
     fixture_id: int = Field(..., gt=0, description="比赛 ID")
 
 
+class BetPlanSelectionResponse(BaseModel):
+    """Opaque calculator pick snapshot — validated loosely for forward-compat."""
+
+    model_config = {"extra": "allow"}
+
+    fixtureId: int
+    leagueId: int
+    homeName: str
+    awayName: str
+    kickoff: str
+    leagueName: str
+    market: str
+    outcome: str
+    playLabel: str
+    pickLabel: str
+    odd: float
+    line: str | None = None
+    fixtureDate: str | None = None
+
+
+class BetPlanResponse(BaseModel):
+    id: str
+    name: str
+    saved_at: datetime
+    plan_day: str
+    fold: str
+    multiplier: int
+    selections: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_serializer("saved_at")
+    def serialize_saved_at(self, value: datetime) -> str:
+        return _utc_iso(value)
+
+
+class BetPlansResponse(BaseModel):
+    total: int
+    plans: list[BetPlanResponse] = Field(default_factory=list)
+
+
+class BetPlanDaysResponse(BaseModel):
+    days: list[str] = Field(default_factory=list, description="有方案的赛程日 YYYY-MM-DD")
+
+
+class BetPlanCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    plan_day: str = Field(..., description="最早开赛赛程日 YYYY-MM-DD")
+    fold: str = Field(..., max_length=16)
+    multiplier: int = Field(1, ge=1, le=99)
+    selections: list[dict[str, Any]] = Field(..., min_length=1)
+    id: str | None = Field(default=None, description="可选；迁移本机旧方案时保留原 id")
+
+
+class BetPlanRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+
+
 class AccuracyStatResponse(BaseModel):
     hits: int = 0
     total: int = 0
@@ -443,6 +499,19 @@ class ResultsResponse(BaseModel):
     date: str = Field(..., description="查询日期 YYYY-MM-DD")
     total: int = Field(..., description="赛果场次")
     fixtures: list[ResultFixtureResponse] = Field(default_factory=list)
+
+
+class FixtureScoreResponse(BaseModel):
+    fixture_id: int
+    status: str
+    fixture_date: str
+    home_goals: int | None = None
+    away_goals: int | None = None
+
+
+class FixtureScoresResponse(BaseModel):
+    total: int = 0
+    fixtures: list[FixtureScoreResponse] = Field(default_factory=list)
 
 
 class SyncFixturesResponse(BaseModel):

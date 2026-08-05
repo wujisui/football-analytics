@@ -38,8 +38,9 @@ const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
 const { isLoggedIn, openLogin } = useAuthSession()
 
+const PHONE_STANDALONE_ROUTES = new Set(['fixture-detail', 'bet-plans', 'bet-plan-detail'])
 const showBottomNav = computed(
-  () => isPhone.value && route.name !== 'fixture-detail',
+  () => isPhone.value && !PHONE_STANDALONE_ROUTES.has(String(route.name)),
 )
 
 /** Desktop: 「我的」 only after login; otherwise show 登录. Mobile always has Mine. */

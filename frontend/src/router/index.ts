@@ -9,6 +9,8 @@ import Results from '@/views/Results/index.vue'
 const Detail = () => import('@/views/Detail/index.vue')
 const Favorites = () => import('@/views/Favorites/index.vue')
 const Mine = () => import('@/views/Mine/index.vue')
+const BetPlans = () => import('@/views/Plans/index.vue')
+const BetPlanDetail = () => import('@/views/Plans/PlanDetail.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -38,6 +40,17 @@ const router = createRouter({
       path: '/favorites',
       name: 'favorites',
       component: Favorites,
+    },
+    {
+      path: '/plans',
+      name: 'bet-plans',
+      component: BetPlans,
+    },
+    {
+      path: '/plans/:planId',
+      name: 'bet-plan-detail',
+      component: BetPlanDetail,
+      props: true,
     },
     {
       path: '/mine',

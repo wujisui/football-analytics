@@ -4,6 +4,7 @@ import { StatsChartOutline } from '@vicons/ionicons5'
 import PageToolbarSearch from '@/components/PageToolbarSearch.vue'
 import LeagueFilterTrigger from '@/layouts/components/LeagueFilterTrigger.vue'
 import type { LeagueFilterOption } from '@/api/leagues'
+import { useIsPhone } from '@/composables/useMediaQuery'
 
 withDefaults(
   defineProps<{
@@ -17,6 +18,7 @@ withDefaults(
 )
 
 const teamSearch = defineModel<string>('teamSearch', { required: true })
+const isPhone = useIsPhone()
 
 const emit = defineEmits<{
   confirmFilter: [ids: number[]]
@@ -43,8 +45,9 @@ const emit = defineEmits<{
       </template>
       当日统计
     </n-button>
+    <!-- Desktop: same popover as 即时 sider; phone keeps modal for tap targets. -->
     <LeagueFilterTrigger
-      drawer-mode
+      :drawer-mode="isPhone"
       :options="filterOptions"
       :tracked-ids="trackedIds"
       :filter-active="filterActive"

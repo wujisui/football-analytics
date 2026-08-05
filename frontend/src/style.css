@@ -59,6 +59,7 @@ html[data-theme='dark'] {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   --fa-page-max-width: 1520px;
+  --fa-mine-page-max-width: 720px;
   --fa-content-inline: 12px;
   --fa-content-block-start: 12px;
   --fa-content-block-end: 20px;

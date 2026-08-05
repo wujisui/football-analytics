@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { TrashOutline } from '@vicons/ionicons5'
+import { useMessage } from 'naive-ui'
 import { ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 import BetSelectionList from '@/views/Predictions/components/BetSelectionList.vue'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
+import { useBetPlans } from '@/composables/useBetPlans'
 import {
   foldModeLabel,
   outcomeTitle,
   STAKE_PER_BET,
   type CalcSelection,
 } from '@/utils/betCalculator'
+import { defaultPlanName } from '@/utils/betPlans'
 
 const props = withDefaults(
   defineProps<{
@@ -19,19 +23,25 @@ const props = withDefaults(
   { footerOnly: false },
 )
 
+const message = useMessage()
+const router = useRouter()
 const {
   matchCount,
   multiplier,
   fold,
   foldOptions,
   result,
+  selections,
   groupedSelections,
   clearAll,
   removeFixture,
 } = useBetCalculator()
+const { savePlan } = useBetPlans()
 
 const showDetails = ref(false)
 const showFormula = ref(false)
+const showSave = ref(false)
+const saveName = ref('')
 
 function openDetails() {
   if (!groupedSelections.value.length) return
@@ -40,6 +50,35 @@ function openDetails() {
 
 function openFormula() {
   if (result.value.combos.length) showFormula.value = true
+}
+
+function openSave() {
+  if (!matchCount.value) return
+  saveName.value = defaultPlanName(selections.value, fold.value)
+  showSave.value = true
+}
+
+async function confirmSave(): Promise<boolean> {
+  if (!selections.value.length) return false
+  const plan = await savePlan({
+    name: saveName.value,
+    fold: fold.value,
+    multiplier: multiplier.value,
+    selections: selections.value,
+  })
+  if (!plan) {
+    message.error('保存失败，请稍后重试')
+    return false
+  }
+  showSave.value = false
+  message.success(`已保存「${plan.name}」`)
+  return true
+}
+
+/** Save first — jumping away without persisting silently dropped the plan. */
+async function saveAndGoPlans() {
+  if (!(await confirmSave())) return
+  void router.push({ name: 'bet-plans' })
 }
 
 function legLabel(pick: CalcSelection): string {
@@ -117,15 +156,26 @@ defineExpose({ openFormula, openDetails })
           </n-text>
           元
         </n-text>
-        <n-button
-          v-if="props.footerOnly"
-          size="tiny"
-          type="primary"
-          :disabled="!groupedSelections.length"
-          @click="openDetails"
-        >
-          投注详情
-        </n-button>
+        <n-flex :size="6" :wrap="false">
+          <n-button
+            size="tiny"
+            type="primary"
+            secondary
+            :disabled="!matchCount"
+            @click="openSave"
+          >
+            保存方案
+          </n-button>
+          <n-button
+            v-if="props.footerOnly"
+            size="tiny"
+            type="primary"
+            :disabled="!groupedSelections.length"
+            @click="openDetails"
+          >
+            投注详情
+          </n-button>
+        </n-flex>
       </n-flex>
 
       <n-text depth="3" style="text-align: center;">
@@ -220,6 +270,36 @@ defineExpose({ openFormula, openDetails })
           <n-text>元（投注 {{ result.stakeYuan }} 元）</n-text>
         </n-flex>
       </div>
+    </n-modal>
+    <n-modal
+      v-model:show="showSave"
+      preset="dialog"
+      title="保存方案"
+      positive-text="保存"
+      negative-text="取消"
+      :positive-button-props="{ disabled: !matchCount }"
+      @positive-click="() => confirmSave()"
+    >
+      <n-space vertical :size="10">
+        <n-input
+          v-model:value="saveName"
+          maxlength="40"
+          show-count
+          placeholder="方案名称"
+        />
+        <n-text depth="3" style="font-size: 12px;">
+          保存后可在「我的 → 我的方案」按赛程日回溯命中情况。
+          <n-button
+            text
+            type="primary"
+            size="tiny"
+            :disabled="!matchCount"
+            @click="saveAndGoPlans"
+          >
+            保存并查看
+          </n-button>
+        </n-text>
+      </n-space>
     </n-modal>
   </div>
 </template>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  BookmarkOutline,
   InformationCircleOutline,
   LogInOutline,
   LogOutOutline,
@@ -12,6 +13,7 @@ import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useAuthSession } from '@/composables/useAuthSession'
+import { useBetPlans } from '@/composables/useBetPlans'
 import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
@@ -24,6 +26,7 @@ defineOptions({ name: 'Mine' })
 const router = useRouter()
 const isPhone = useIsPhone()
 const { favorites, reloadFavorites } = useFavoriteFixtures()
+const { plans, reload: reloadPlans } = useBetPlans()
 const { isDark, toggleTheme } = useTheme()
 const { isLoggedIn, username, openLogin, logout } = useAuthSession()
 
@@ -33,6 +36,12 @@ const todayFavoriteCount = computed(() => {
   return favorites.value.filter(
     (item) => toScheduleDayKey(item.fixture_date) === day,
   ).length
+})
+
+const planCount = computed(() => plans.value.length)
+const todayPlanCount = computed(() => {
+  const day = todayDate()
+  return plans.value.filter((p) => p.planDay === day).length
 })
 
 const profileTitle = computed(() =>
@@ -49,6 +58,10 @@ function goFavorites() {
   void router.push({ name: 'favorites' })
 }
 
+function goPlans() {
+  void router.push({ name: 'bet-plans' })
+}
+
 function onLogout() {
   logout()
   // Desktop hides 「我的」 after logout; leave the gated page.
@@ -57,6 +70,7 @@ function onLogout() {
 
 onMounted(() => {
   void reloadFavorites()
+  void reloadPlans()
 })
 </script>
 
@@ -94,6 +108,21 @@ onMounted(() => {
                     </template>
                     <template #header-extra>
                       <n-button size="small" secondary type="warning" @click="goFavorites">
+                        查看
+                      </n-button>
+                    </template>
+                  </n-thing>
+                </n-list-item>
+                <n-list-item>
+                  <n-thing
+                    title="我的方案"
+                    :description="`共 ${planCount} 个 · 今日 ${todayPlanCount} 个`"
+                  >
+                    <template #avatar>
+                      <n-icon :component="BookmarkOutline" :size="20" />
+                    </template>
+                    <template #header-extra>
+                      <n-button size="small" secondary type="primary" @click="goPlans">
                         查看
                       </n-button>
                     </template>
@@ -195,7 +224,7 @@ onMounted(() => {
 
 .mine-body {
   width: 100%;
-  max-width: 720px;
+  max-width: var(--fa-mine-page-max-width);
   margin: 0 auto;
   box-sizing: border-box;
 }

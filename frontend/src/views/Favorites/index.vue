@@ -106,7 +106,8 @@ onMounted(() => {
           <span class="favorites-title">收藏</span>
           <FavoriteDatesPicker
             v-model="filterDate"
-            :favorite-days="favoriteDays"
+            :marked-days="favoriteDays"
+            legend="当天有收藏（赛程日）"
           />
         </div>
       </div>

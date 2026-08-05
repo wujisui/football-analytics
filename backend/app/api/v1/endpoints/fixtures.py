@@ -16,6 +16,8 @@ from app.schemas.response import (
     AnalysisResponse,
     FixtureOddsSnippetResponse,
     FixtureResponse,
+    FixtureScoreResponse,
+    FixtureScoresResponse,
     OpinionFactorResponse,
     OpinionFactorsResponse,
     PredictionSnapshotResponse,
@@ -335,6 +337,51 @@ async def get_today_fixtures(
         total=len(fixture_responses),
         fixtures=fixture_responses,
     )
+
+
+@router.get("/scores", response_model=FixtureScoresResponse)
+async def get_fixture_scores(
+    response: Response,
+    ids: list[int] = Query(
+        ...,
+        description="比赛 ID 列表（计算器保存方案结算用）",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FixtureScoresResponse:
+    """Batch local scores for saved calculator plans — no official API calls."""
+    unique = []
+    seen: set[int] = set()
+    for raw in ids:
+        fid = int(raw)
+        if fid in seen:
+            continue
+        seen.add(fid)
+        unique.append(fid)
+        if len(unique) >= 40:
+            break
+    if not unique:
+        set_no_store_headers(response)
+        return FixtureScoresResponse(total=0, fixtures=[])
+
+    result = await db.execute(select(Fixture).where(Fixture.id.in_(unique)))
+    rows = list(result.scalars().all())
+    by_id = {fx.id: fx for fx in rows}
+    items: list[FixtureScoreResponse] = []
+    for fid in unique:
+        fx = by_id.get(fid)
+        if fx is None:
+            continue
+        items.append(
+            FixtureScoreResponse(
+                fixture_id=fx.id,
+                status=fx.status or "",
+                fixture_date=fx.date.isoformat() if fx.date else "",
+                home_goals=fx.home_goals,
+                away_goals=fx.away_goals,
+            )
+        )
+    set_no_store_headers(response)
+    return FixtureScoresResponse(total=len(items), fixtures=items)
 
 
 @router.get("/results", response_model=ResultsResponse)

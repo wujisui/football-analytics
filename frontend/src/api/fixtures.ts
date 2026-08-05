@@ -63,6 +63,30 @@ export async function syncFixtures(
   return data
 }
 
+export interface FixtureScoreItem {
+  fixture_id: number
+  status: string
+  fixture_date: string
+  home_goals?: number | null
+  away_goals?: number | null
+}
+
+export interface FixtureScoresResponse {
+  total: number
+  fixtures: FixtureScoreItem[]
+}
+
+export async function fetchFixtureScores(
+  ids: number[],
+): Promise<FixtureScoresResponse> {
+  const unique = [...new Set(ids.filter((id) => Number.isFinite(id)))]
+  if (!unique.length) return { total: 0, fixtures: [] }
+  const { data } = await apiClient.get<FixtureScoresResponse>('/fixtures/scores', {
+    params: { ids: unique },
+  })
+  return data
+}
+
 export interface ResultFixture {
   fixture_id: number
   league_id: number

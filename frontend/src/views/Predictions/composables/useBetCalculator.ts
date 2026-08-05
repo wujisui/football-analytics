@@ -52,7 +52,8 @@ function isCalcSelection(raw: unknown): raw is CalcSelection {
     typeof s.playLabel === 'string' &&
     typeof s.pickLabel === 'string' &&
     typeof s.odd === 'number' &&
-    Number.isFinite(s.odd)
+    Number.isFinite(s.odd) &&
+    (s.fixtureDate == null || typeof s.fixtureDate === 'string')
   )
 }
 
@@ -200,6 +201,7 @@ export function useBetCalculator() {
       homeName: fixture.home_team_name || '—',
       awayName: fixture.away_team_name || '—',
       kickoff: `${formatDate(fixture.fixture_date)} ${formatTime(fixture.fixture_date)}`,
+      fixtureDate: fixture.fixture_date,
       leagueName: leagueLabel(fixture.league_name),
       market: cell.market,
       outcome: cell.outcome,
@@ -245,6 +247,7 @@ export function useBetCalculator() {
     matchCount,
     foldOptions,
     result,
+    selections,
     groupedSelections,
     isSelected,
     toggleCell,
