@@ -26,4 +26,5 @@ alwaysApply: true
 
 ## 进度与规划
 
-以根目录 `PROJECT_PLAN.md` 为准；改产品边界先改该文档第 1 节，再改代码。
+以根目录 `PROJECT_PLAN.md` 为准；改产品边界先改该文档第 1 节，再改代码。  
+用户鉴权 / VIP / API 配额设计见 `docs/AUTH_VIP_QUOTA.md`（规划中）；未要求落地前不要擅自加付费拦截。

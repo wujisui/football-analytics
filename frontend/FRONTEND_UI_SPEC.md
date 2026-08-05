@@ -256,6 +256,12 @@ frontend/src/
 
 ---
 
+## 7.1 登录 / VIP / 配额（规划，未落地）
+
+当前登录为前端 stub。后续用户档位、手动同步额度、PC「刷新官方」、用尽只读等，以根目录 **[docs/AUTH_VIP_QUOTA.md](../docs/AUTH_VIP_QUOTA.md)** 为准；落地时同步改「我的」页与顶栏入口，并回写本节。
+
+---
+
 ## 8. 本地运行
 
 ```bash
@@ -272,4 +278,5 @@ cd frontend && npm install && npm run dev
 
 - 页面交互或默认筛选策略变更时，先改本文，再改代码。
 - 产品是否做直播等边界变更，先改根目录 `PROJECT_PLAN.md` 第 1 节。
+- 用户鉴权 / VIP / 配额变更，先改 `docs/AUTH_VIP_QUOTA.md` 与 `PROJECT_PLAN.md` §1.4，再改代码。
 - 本文替代原 `frontend/web.md`（提示词草稿）。
