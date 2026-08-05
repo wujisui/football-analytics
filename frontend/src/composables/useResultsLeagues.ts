@@ -203,6 +203,25 @@ export function patchScheduleFixtureFromDetail(detail: FixtureResponse): void {
   )
 }
 
+/** Instant detail crumb while /analysis is still in flight. */
+export function findResultsListFixture(
+  fixtureId: number,
+): ResultFixture | FixtureResponse | null {
+  const fromResults =
+    resultsFixtures.value.find((f) => f.fixture_id === fixtureId) ??
+    [...resultsByDay.values()]
+      .flat()
+      .find((f) => f.fixture_id === fixtureId)
+  if (fromResults) return fromResults
+  return (
+    scheduleFixtures.value.find((f) => f.fixture_id === fixtureId) ??
+    [...scheduleByDay.values()]
+      .flat()
+      .find((f) => f.fixture_id === fixtureId) ??
+    null
+  )
+}
+
 export function useResultsLeagues() {
   const trackedIdSet = computed(() => new Set(resultsTrackedIds.value))
 

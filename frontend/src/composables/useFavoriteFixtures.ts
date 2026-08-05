@@ -211,6 +211,13 @@ async function reloadFavorites(): Promise<void> {
   }
 }
 
+/** Instant detail crumb while /analysis is still in flight. */
+export function findFavoriteListFixture(
+  fixtureId: number,
+): FavoriteFixtureRecord | null {
+  return favorites.value.find((f) => f.fixture_id === fixtureId) ?? null
+}
+
 export function useFavoriteFixtures() {
   return {
     favorites: favoriteList,

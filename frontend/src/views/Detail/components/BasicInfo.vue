@@ -3,18 +3,18 @@ import { ArrowBackOutline } from '@vicons/ionicons5'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import type { FixtureResponse } from '@/api/types'
-import { rankBracket } from '@/utils/format'
 import {
   detailBackRoute,
   detailRootLabel,
   parseDetailFrom,
+  type DetailCrumbFixture,
 } from '@/utils/detailNav'
 import { writeFixturesLeagueFilter } from '@/utils/fixturesLeagueFilter'
+import { rankBracket } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
 const props = defineProps<{
-  fixture: FixtureResponse
+  fixture: DetailCrumbFixture | null
 }>()
 
 const route = useRoute()
@@ -25,22 +25,26 @@ const fromDate = computed(() =>
   typeof route.query.date === 'string' ? route.query.date : null,
 )
 const rootLabel = computed(() => detailRootLabel(from.value))
-const leagueLabelText = computed(() => leagueLabel(props.fixture.league_name))
+const leagueLabelText = computed(() =>
+  props.fixture?.league_name ? leagueLabel(props.fixture.league_name) : '',
+)
 
 const scoreText = computed(() => {
-  const h = props.fixture.home_goals
-  const a = props.fixture.away_goals
+  const h = props.fixture?.home_goals
+  const a = props.fixture?.away_goals
   if (h == null || a == null) return null
   return `${h}:${a}`
 })
 
 const homeLabel = computed(() => {
+  if (!props.fixture) return '—'
   const hr = rankBracket(props.fixture.home_rank)
   const homeName = props.fixture.home_team_name || '—'
   return hr ? `${hr} ${homeName}` : homeName
 })
 
 const awayLabel = computed(() => {
+  if (!props.fixture) return '—'
   const ar = rankBracket(props.fixture.away_rank)
   const awayName = props.fixture.away_team_name || '—'
   return ar ? `${awayName} ${ar}` : awayName
@@ -59,6 +63,10 @@ function goBack() {
 }
 
 function goLeague() {
+  if (!props.fixture?.league_id) {
+    goBack()
+    return
+  }
   if (from.value !== 'home') {
     goBack()
     return
@@ -86,8 +94,10 @@ function goLeague() {
 
       <n-breadcrumb class="header-crumb">
         <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
-        <n-breadcrumb-item @click="goLeague">{{ leagueLabelText }}</n-breadcrumb-item>
-        <n-breadcrumb-item>
+        <n-breadcrumb-item v-if="leagueLabelText" @click="goLeague">
+          {{ leagueLabelText }}
+        </n-breadcrumb-item>
+        <n-breadcrumb-item v-if="fixture">
           <n-tooltip v-if="scoreText" placement="bottom">
             <template #trigger>
               <span class="match-title crumb-match">

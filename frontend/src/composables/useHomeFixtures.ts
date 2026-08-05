@@ -86,6 +86,13 @@ export function patchFixtureFromDetail(detail: FixtureResponse): void {
   pendingDetailPatches.delete(detail.fixture_id)
 }
 
+/** Instant detail crumb while /analysis is still in flight. */
+export function findPrematchListFixture(
+  fixtureId: number,
+): FixtureResponse | null {
+  return allFixtures.value.find((f) => f.fixture_id === fixtureId) ?? null
+}
+
 /** Apply queued patches; reload local list only when a patch could not merge yet. */
 export function syncHomeListAfterDetail(
   _date: string,

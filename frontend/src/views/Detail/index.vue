@@ -6,7 +6,7 @@ import BasicInfo from '@/views/Detail/components/BasicInfo.vue'
 import TabsContainer from '@/views/Detail/components/TabsContainer.vue'
 import { useFixtureAnalysis } from '@/views/Detail/composables/useFixtureAnalysis'
 import { useIsPhone } from '@/composables/useMediaQuery'
-import { parseDetailTab, type DetailTab } from '@/utils/detailNav'
+import { parseDetailTab, peekDetailCrumb, type DetailTab } from '@/utils/detailNav'
 
 const props = defineProps<{
   fixtureId: string
@@ -26,6 +26,11 @@ const fixtureIdNumber = computed(() => Number(props.fixtureId))
 const { data, loading, error, ensureLoaded, reload, reset } =
   useFixtureAnalysis(fixtureIdNumber)
 const contentLoading = computed(() => loading.value || !data.value)
+
+/** Breadcrumb is list-known chrome — never wait on /analysis skeleton. */
+const crumbFixture = computed(
+  () => data.value ?? peekDetailCrumb(fixtureIdNumber.value),
+)
 
 const initialTab = computed(() => parseDetailTab(route.query.tab))
 
@@ -61,13 +66,7 @@ watch(
       :content-style="contentStyle"
     >
       <div class="detail-body">
-        <BasicInfo v-if="data" :fixture="data" />
-        <div v-else class="basic-info-skel">
-          <div class="skel-row">
-            <n-skeleton circle :width="28" :height="28" :sharp="false" />
-            <n-skeleton text :width="isPhone ? '70%' : 280" :sharp="false" />
-          </div>
-        </div>
+        <BasicInfo :fixture="crumbFixture" />
 
         <TabsContainer
           class="tabs-fill"
@@ -108,33 +107,8 @@ watch(
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.detail-body :deep(.basic-info),
-.basic-info-skel {
+.detail-body :deep(.basic-info) {
   flex-shrink: 0;
-}
-
-.basic-info-skel {
-  display: flex;
-  flex-direction: column;
-  background: var(--fa-bg-elevated);
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-
-.skel-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.skel-row :deep(.n-skeleton) {
-  flex-shrink: 0;
-}
-
-.skel-row :deep(.n-skeleton:nth-child(2)) {
-  flex: 1;
-  min-width: 0;
 }
 
 .tabs-fill {
