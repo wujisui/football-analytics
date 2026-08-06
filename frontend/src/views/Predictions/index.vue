@@ -285,9 +285,8 @@ onActivated(() => {
 .phone-calc-footer {
   flex-shrink: 0;
   z-index: 2;
-  border-top: 1px solid var(--fa-border);
   background-color: var(--fa-bg-elevated);
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.22);
 }
 
 .pred-grid {

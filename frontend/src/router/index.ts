@@ -3,9 +3,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import FixturesShellLayout from '@/layouts/FixturesShellLayout.vue'
 import Predictions from '@/views/Predictions/index.vue'
 import Results from '@/views/Results/index.vue'
+import Detail from '@/views/Detail/index.vue'
 
-// Off the first-paint path — split so a cold reload boots the lists sooner.
-const Detail = () => import('@/views/Detail/index.vue')
+// Off the first-paint path — keep secondary shells split so cold reload boots lists sooner.
 const Favorites = () => import('@/views/Favorites/index.vue')
 const Mine = () => import('@/views/Mine/index.vue')
 

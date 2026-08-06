@@ -44,6 +44,7 @@ const emit = defineEmits<{
       </template>
       <template #header-extra>
         <n-button
+          data-export-hide
           size="tiny"
           type="error"
           quaternary
@@ -91,7 +92,7 @@ const emit = defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 8px;
+  padding: 20px;
 }
 
 .selection-card {

@@ -306,6 +306,8 @@ const bottomItems: {
 }
 
 .bottom-nav {
+  position: relative;
+  z-index: 3;
   flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -315,7 +317,7 @@ const bottomItems: {
   padding: 4px max(8px, env(safe-area-inset-right, 0px))
     max(4px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
   background: var(--fa-bg-elevated);
-  box-shadow: 0 -1px 6px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--fa-bottom-nav-shadow);
   box-sizing: border-box;
   user-select: none;
   -webkit-user-select: none;

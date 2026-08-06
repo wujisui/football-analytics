@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowBackOutline } from '@vicons/ionicons5'
+import { ChevronBackOutline } from '@vicons/ionicons5'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -9,6 +9,7 @@ import {
   parseDetailFrom,
   type DetailCrumbFixture,
 } from '@/utils/detailNav'
+import { useIsPhone } from '@/composables/useMediaQuery'
 import { writeFixturesLeagueFilter } from '@/utils/fixturesLeagueFilter'
 import { rankBracket } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
@@ -19,6 +20,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
+const isPhone = useIsPhone()
 
 const from = computed(() => parseDetailFrom(route.query.from))
 const fromDate = computed(() =>
@@ -86,13 +88,18 @@ function goLeague() {
         @click="goBack"
       >
         <template #icon>
-          <n-icon :component="ArrowBackOutline" />
+          <n-icon :component="ChevronBackOutline" />
         </template>
       </n-button>
 
       <n-breadcrumb class="header-crumb">
-        <n-breadcrumb-item @click="goBack">{{ rootLabel }}</n-breadcrumb-item>
-        <n-breadcrumb-item v-if="leagueLabelText" @click="goLeague">
+        <n-breadcrumb-item v-if="!isPhone" @click="goBack">
+          {{ rootLabel }}
+        </n-breadcrumb-item>
+        <n-breadcrumb-item
+          v-if="!isPhone && leagueLabelText"
+          @click="goLeague"
+        >
           {{ leagueLabelText }}
         </n-breadcrumb-item>
         <n-breadcrumb-item v-if="fixture">

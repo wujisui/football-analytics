@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useMessage } from 'naive-ui'
+import { useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
 import FavoriteButton from '@/components/FavoriteButton.vue'
@@ -10,6 +11,7 @@ import { useIsPhone } from '@/composables/useMediaQuery'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import { buildMarketRows, type CalcCell } from '@/utils/betCalculator'
+import { fixtureDetailRoute } from '@/utils/detailNav'
 import { formatDate, formatTime, leagueTagColor } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
@@ -18,8 +20,10 @@ const props = defineProps<{
 }>()
 
 const message = useMessage()
+const router = useRouter()
 const isPhone = useIsPhone()
 const showOddsModal = ref(false)
+const openingDetail = ref(false)
 const { isSelected, toggleCell } = useBetCalculator()
 
 const rows = computed(() =>
@@ -42,6 +46,17 @@ function onPick(cell: CalcCell) {
 function selected(cell: CalcCell): boolean {
   return isSelected(props.fixture.fixture_id, cell)
 }
+
+function goDetail() {
+  if (openingDetail.value) return
+  openingDetail.value = true
+  void router.push(
+    fixtureDetailRoute(props.fixture.fixture_id, {
+      from: 'predictions',
+      tab: 'record',
+    }),
+  )
+}
 </script>
 
 <template>
@@ -57,7 +72,17 @@ function selected(cell: CalcCell): boolean {
       </n-text>
       <div class="matchup">
         <n-ellipsis class="team">{{ fixture.home_team_name || '—' }}</n-ellipsis>
-        <n-text depth="3" class="versus">VS</n-text>
+        <n-button
+          v-if="isPhone"
+          text
+          class="versus versus-link"
+          :class="{ opening: openingDetail }"
+          aria-label="查看详情"
+          @click="goDetail"
+        >
+          VS
+        </n-button>
+        <n-text v-else depth="3" class="versus">VS</n-text>
         <n-ellipsis class="team">{{ fixture.away_team_name || '—' }}</n-ellipsis>
       </div>
       <n-text depth="3" class="kickoff">{{ kickoffText }}</n-text>
@@ -204,6 +229,18 @@ function selected(cell: CalcCell): boolean {
 
 .versus {
   white-space: nowrap;
+}
+
+.versus-link {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fa-text-muted);
+}
+
+.versus-link:hover,
+.versus-link:focus-visible,
+.versus-link.opening {
+  color: var(--fa-highlight-text);
 }
 
 .kickoff {

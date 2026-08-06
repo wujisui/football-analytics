@@ -16,6 +16,7 @@ html[data-theme='light'] {
   --fa-highlight-border: #f0c78a;
   --fa-highlight-text: #c2410c;
   --fa-header-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  --fa-bottom-nav-shadow: 0 -1px 6px rgba(0, 0, 0, 0.12);
   --fa-sider-shadow: 1px 0 6px rgba(0, 0, 0, 0.1);
   /* 胜平负业务色（与 theme/wdlColors.ts、统计 tab 徽章一致） */
   --fa-wdl-win: #c23b3b;
@@ -42,6 +43,9 @@ html[data-theme='dark'] {
   --fa-header-shadow:
     0 1px 0 rgba(255, 255, 255, 0.08),
     0 4px 10px rgba(0, 0, 0, 0.42);
+  --fa-bottom-nav-shadow:
+    0 -1px 0 rgba(0, 0, 0, 0.08),
+    0 -4px 12px rgba(0, 0, 0, 0.22);
   --fa-sider-shadow:
     1px 0 0 rgba(255, 255, 255, 0.07),
     4px 0 10px rgba(0, 0, 0, 0.38);

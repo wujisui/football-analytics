@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { TrashOutline } from '@vicons/ionicons5'
+import { ImageOutline, TrashOutline } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
-import { ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import BetSelectionList from '@/views/Predictions/components/BetSelectionList.vue'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import { useBetPlans } from '@/composables/useBetPlans'
+import { useIsPhone } from '@/composables/useMediaQuery'
 import {
   foldModeLabel,
   outcomeTitle,
@@ -14,6 +15,8 @@ import {
   type CalcSelection,
 } from '@/utils/betCalculator'
 import { defaultPlanName } from '@/utils/betPlans'
+import { saveDomAsPng, sharePngFile } from '@/utils/saveDomImage'
+import { todayDate } from '@/utils/homeDateStrip'
 
 const props = withDefaults(
   defineProps<{
@@ -25,6 +28,7 @@ const props = withDefaults(
 
 const message = useMessage()
 const router = useRouter()
+const isPhone = useIsPhone()
 const {
   matchCount,
   multiplier,
@@ -42,6 +46,26 @@ const showDetails = ref(false)
 const showFormula = ref(false)
 const showSave = ref(false)
 const saveName = ref('')
+const savingImage = ref(false)
+const detailsExportRef = ref<HTMLElement | null>(null)
+const previewUrl = ref<string | null>(null)
+const previewFile = ref<File | null>(null)
+const sharingPreview = ref(false)
+
+const detailsModalStyle = computed(() =>
+  isPhone.value
+    ? {
+        width: 'min(400px, calc(100vw - 40px))',
+        maxHeight: 'min(68vh, 560px)',
+        margin: '12vh auto auto',
+      }
+    : {
+        width: '92%',
+        maxWidth: '480px',
+        maxHeight: 'calc(100vh - 32px)',
+        margin: 'auto',
+      },
+)
 
 function openDetails() {
   if (!groupedSelections.value.length) return
@@ -89,8 +113,68 @@ function oddsFormula(picks: CalcSelection[]): string {
   return picks.map((pick) => pick.odd).join(' × ')
 }
 
+function closePreview() {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = null
+  }
+  previewFile.value = null
+}
+
+async function saveDetailsToAlbum() {
+  if (!groupedSelections.value.length || savingImage.value) return
+  savingImage.value = true
+  closePreview()
+  try {
+    await nextTick()
+    const el = detailsExportRef.value
+    if (!el) throw new Error('未找到导出内容')
+    const filename = `投注方案-${todayDate()}.png`
+    const result = await saveDomAsPng(el, filename)
+    if (result.mode === 'shared') {
+      message.success('请在分享菜单中选择「存储图像」')
+    } else if (result.mode === 'preview') {
+      previewFile.value = result.file
+      previewUrl.value = result.url
+    } else {
+      message.success('图片已下载')
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') return
+    message.error(err instanceof Error ? err.message : '保存图片失败')
+  } finally {
+    savingImage.value = false
+  }
+}
+
+/** Call share from a fresh tap — iOS needs user activation for the Photos sheet. */
+async function sharePreviewImage() {
+  const file = previewFile.value
+  if (!file || sharingPreview.value) return
+  sharingPreview.value = true
+  try {
+    // Do not await anything before share — preserves the tap's user activation.
+    const shared = await sharePngFile(file)
+    if (shared) {
+      closePreview()
+      message.success('请在分享菜单中选择「存储图像」')
+      return
+    }
+    message.info('请长按上方图片，选择「存储到照片」')
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') return
+    message.error(err instanceof Error ? err.message : '分享失败')
+  } finally {
+    sharingPreview.value = false
+  }
+}
+
 watch(matchCount, (count) => {
   if (!count) showDetails.value = false
+})
+
+watch(showDetails, (open) => {
+  if (!open) closePreview()
 })
 
 defineExpose({ openFormula, openDetails })
@@ -182,21 +266,72 @@ defineExpose({ openFormula, openDetails })
       title="投注详情"
       :bordered="false"
       to="body"
-      :style="{
-        width: '92%',
-        maxWidth: '480px',
-        maxHeight: 'calc(100vh - 32px)',
-        margin: 'auto',
-      }"
+      closable
+      mask-closable
+      :style="detailsModalStyle"
     >
+      <template #header-extra>
+        <n-button
+          size="tiny"
+          type="primary"
+          secondary
+          :loading="savingImage"
+          :disabled="!groupedSelections.length"
+          @click="saveDetailsToAlbum"
+        >
+          <template #icon>
+            <n-icon :component="ImageOutline" />
+          </template>
+          保存到相册
+        </n-button>
+      </template>
+
       <div class="details-modal-body">
         <n-scrollbar style="height: 100%;" trigger="hover">
-          <BetSelectionList
-            :groups="groupedSelections"
-            @remove="removeFixture"
-          />
+          <div ref="detailsExportRef" class="details-export">
+            <BetSelectionList
+              :groups="groupedSelections"
+              @remove="removeFixture"
+            />
+          </div>
         </n-scrollbar>
       </div>
+    </n-modal>
+
+    <n-modal
+      :show="!!previewUrl"
+      preset="card"
+      title="保存到相册"
+      :bordered="false"
+      to="body"
+      closable
+      mask-closable
+      :style="{
+        width: 'min(400px, calc(100vw - 40px))',
+        margin: 'auto',
+      }"
+      @update:show="(v: boolean) => { if (!v) closePreview() }"
+    >
+      <n-flex vertical :size="12" align="center">
+        <img
+          v-if="previewUrl"
+          class="preview-image"
+          :src="previewUrl"
+          alt="投注方案"
+        />
+        <n-text depth="3" style="font-size: 12px; text-align: center;">
+          上方已是生成好的图片。请点下方按钮，在分享菜单选「存储图像」；
+          长按图中文字可能触发系统「实时文本」，不一定是保存。
+        </n-text>
+        <n-button
+          type="primary"
+          block
+          :loading="sharingPreview"
+          @click="sharePreviewImage"
+        >
+          存储到相册
+        </n-button>
+      </n-flex>
     </n-modal>
 
     <n-modal
@@ -205,6 +340,8 @@ defineExpose({ openFormula, openDetails })
       :title="`奖金算式 · ${foldModeLabel(fold)}`"
       :bordered="false"
       to="body"
+      closable
+      mask-closable
       :style="{
         width: '20%',
         minWidth: '360px',
@@ -377,9 +514,24 @@ defineExpose({ openFormula, openDetails })
 }
 
 .details-modal-body {
-  height: min(70vh, 640px);
+  height: min(52vh, 480px);
   min-height: 0;
   overflow: hidden;
+}
+
+.details-export {
+  background: var(--fa-bg-elevated);
+}
+
+.preview-image {
+  display: block;
+  width: 100%;
+  max-height: min(52vh, 420px);
+  object-fit: contain;
+  border-radius: 6px;
+  background: var(--fa-bg-soft);
+  -webkit-touch-callout: default;
+  user-select: none;
 }
 
 .formula-modal-body {
@@ -387,5 +539,11 @@ defineExpose({ openFormula, openDetails })
   grid-template-rows: minmax(0, 1fr) auto;
   height: min(70vh, 640px);
   min-height: 0;
+}
+
+@media (min-width: 768px) {
+  .details-modal-body {
+    height: min(70vh, 640px);
+  }
 }
 </style>
