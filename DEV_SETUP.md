@@ -185,6 +185,7 @@ npm run dev
 - 开发地址：http://127.0.0.1:5173  
 - Vite 已将 `/api` 代理到 `http://127.0.0.1:8000`，**前端不配 API Key**  
 - 生产构建：`npm run build`（含 `vue-tsc`）
+- 本机用生产包 + 后端部署预览：见 **[docs/LOCAL_PROD_DEPLOY.md](docs/LOCAL_PROD_DEPLOY.md)**
 
 依赖以 `frontend/package.json` 为准（Vue 3、Vite 6、TypeScript 5.7、Naive UI、ECharts、Axios、Vue Router）。
 
@@ -242,6 +243,7 @@ npm run dev
 | 文档 | 内容 |
 |------|------|
 | [DEV_SETUP.md](DEV_SETUP.md) | **本文：换机环境标准** |
+| [docs/LOCAL_PROD_DEPLOY.md](docs/LOCAL_PROD_DEPLOY.md) | 本机生产打包与部署 |
 | [PROJECT_PLAN.md](PROJECT_PLAN.md) | 产品边界与进度 |
 | [backend/README.md](backend/README.md) | API、调度、联赛配置 |
 | [frontend/README.md](frontend/README.md) | 前端路由与对接 |
