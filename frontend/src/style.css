@@ -145,7 +145,7 @@ button {
 .fa-toolbar-top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -155,10 +155,42 @@ button {
   overflow: hidden;
 }
 
+.fa-toolbar-day-stat {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--fa-text-secondary);
+  white-space: nowrap;
+}
+
+/* 手机顶栏右侧：搜索 / 日期选择器共用 */
+.fa-toolbar-end {
+  margin-left: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: min(200px, 42vw);
+  --fa-date-picker-width: 100%;
+}
+
+.fa-toolbar-end > .fa-toolbar-search,
+.fa-toolbar-end > .favorite-dates-picker {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
 .fa-toolbar-search {
   width: 200px;
   min-width: 160px;
   max-width: min(240px, 36vw);
+}
+
+/* PC 列表顶栏第二行：场次统计 + 搜索/日期 */
+.fa-toolbar-list-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 4px;
 }
 
 /* Main list / card band — align with .fa-page-toolbar horizontal padding */

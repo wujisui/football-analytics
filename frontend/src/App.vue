@@ -37,7 +37,13 @@ const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
 const { isLoggedIn, openLogin } = useAuthSession()
 
-const PHONE_STANDALONE_ROUTES = new Set(['fixture-detail'])
+const PHONE_STANDALONE_ROUTES = new Set([
+  'fixture-detail',
+  'mine-plans',
+  'mine-theme',
+  'mine-session',
+  'mine-about',
+])
 const showBottomNav = computed(
   () => isPhone.value && !PHONE_STANDALONE_ROUTES.has(String(route.name)),
 )
@@ -78,7 +84,7 @@ function goMine() {
     openLogin()
     return
   }
-  if (isMineRoute(route.name)) return
+  if (route.name === 'mine-account') return
   void router.push({ name: 'mine-account' })
 }
 
@@ -154,9 +160,10 @@ const bottomItems: {
                   :type="navType('predictions')"
                   @click="goNav('predictions')"
                 >
-                  计算器
+                  比赛
                 </n-button>
                 <n-button :type="navType('results')" @click="goNav('results')">赛程</n-button>
+                <n-button :type="navType('favorites')" @click="goFavorites">关注</n-button>
                 <n-button
                   v-if="showDesktopMine"
                   :type="navType('mine')"
@@ -336,7 +343,7 @@ const bottomItems: {
 }
 
 .bottom-nav-item.active {
-  color: var(--n-color-target, var(--fa-highlight-text));
+  color: var(--fa-highlight-text);
   font-weight: 600;
 }
 

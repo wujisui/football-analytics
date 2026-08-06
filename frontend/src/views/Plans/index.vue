@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { ChevronForwardOutline } from '@vicons/ionicons5'
+import { useRoute } from 'vue-router'
 
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import PlanDetail from '@/views/Plans/PlanDetail.vue'
@@ -33,9 +34,13 @@ function writeSavedFilterDate(date: string) {
   }
 }
 
+const route = useRoute()
 const message = useMessage()
 const { planDays, plansForDay, reload, renamePlan, removePlan, getPlan } =
   useBetPlans()
+
+/** 「我的」二级入口由外层顶栏承载标题，避免双标题 */
+const showTitle = computed(() => route.name !== 'mine-plans')
 
 const filterDate = ref<string>(readSavedFilterDate())
 const editingPlan = ref<SavedBetPlan | null>(null)
@@ -98,13 +103,15 @@ onMounted(() => {
 <template>
   <div class="plans-panel">
     <div class="plans-header fa-page-toolbar">
-      <div class="plans-toolbar">
-        <span class="plans-title">我的方案</span>
-        <FavoriteDatesPicker
-          v-model="filterDate"
-          :marked-days="planDays"
-          legend="当天有方案（赛程日）"
-        />
+      <div class="fa-toolbar-top">
+        <span v-if="showTitle" class="plans-title">我的方案</span>
+        <div class="fa-toolbar-end">
+          <FavoriteDatesPicker
+            v-model="filterDate"
+            :marked-days="planDays"
+            legend="当天有方案（赛程日）"
+          />
+        </div>
       </div>
     </div>
 
@@ -196,20 +203,6 @@ onMounted(() => {
   flex-shrink: 0;
   width: 100%;
   box-sizing: border-box;
-}
-
-@media (max-width: 767px) {
-  .plans-header {
-    border-bottom: none;
-  }
-}
-
-.plans-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
 }
 
 .plans-title {

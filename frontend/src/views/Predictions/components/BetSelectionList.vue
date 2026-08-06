@@ -90,12 +90,17 @@ const emit = defineEmits<{
 .selection-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
 }
 
 .selection-card {
   background: var(--fa-bg-soft);
+}
+
+.selection-card :deep(.n-card-header),
+.selection-card :deep(.n-card__content) {
+  padding: 8px;
 }
 
 .selection-card :deep(.n-card-header__main) {

@@ -44,7 +44,7 @@ function onClick(event: MouseEvent) {
     circle
     :size="size"
     :type="active ? 'warning' : 'default'"
-    :aria-label="active ? '取消收藏' : '收藏'"
+    :aria-label="active ? '取消关注' : '关注'"
     @click="onClick"
   >
     <template #icon>

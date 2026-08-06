@@ -218,7 +218,7 @@ class AnalysisResponse(BaseModel):
     score_hint: str = Field(default="", description="参考比分")
     handicap_lean: str = Field(
         default="",
-        description="让球推荐（主盘）：让球胜/让球平/让球负 + 盘口",
+        description="让球推荐（主盘）：让球胜/让球平/让球负",
     )
     handicap_market_note: str = Field(
         default="",

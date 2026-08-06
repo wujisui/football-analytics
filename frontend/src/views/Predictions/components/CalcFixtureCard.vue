@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 
 import type { FixtureResponse } from '@/api/types'
+import FavoriteButton from '@/components/FavoriteButton.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
+import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
@@ -17,6 +19,7 @@ const props = defineProps<{
 
 const message = useMessage()
 const isPhone = useIsPhone()
+const showOddsModal = ref(false)
 const { isSelected, toggleCell } = useBetCalculator()
 
 const rows = computed(() =>
@@ -48,22 +51,29 @@ function selected(cell: CalcCell): boolean {
     class="calc-fixture"
     :class="{ phone: isPhone }"
   >
-    <n-flex :wrap="false" align="center" :size="8" class="fixture-meta">
+    <div class="fixture-meta">
       <n-text strong class="league" :style="{ color: leagueColor }">
         {{ leagueName }}
       </n-text>
-      <n-flex :wrap="false" justify="center" align="center" :size="6" class="matchup">
-        <n-ellipsis>{{ fixture.home_team_name || '—' }}</n-ellipsis>
+      <div class="matchup">
+        <n-ellipsis class="team">{{ fixture.home_team_name || '—' }}</n-ellipsis>
         <n-text depth="3" class="versus">VS</n-text>
-        <n-ellipsis>{{ fixture.away_team_name || '—' }}</n-ellipsis>
-      </n-flex>
+        <n-ellipsis class="team">{{ fixture.away_team_name || '—' }}</n-ellipsis>
+      </div>
       <n-text depth="3" class="kickoff">{{ kickoffText }}</n-text>
-    </n-flex>
+      <FavoriteButton
+        v-if="isPhone"
+        class="fav"
+        :fixture-id="fixture.fixture_id"
+        :fixture="fixture"
+        size="tiny"
+      />
+    </div>
 
     <div v-nested-scroll class="market-list">
       <n-flex vertical :size="8">
         <n-grid
-        v-for="row in rows"
+          v-for="row in rows"
           :key="row.market"
           :cols="5"
           :x-gap="6"
@@ -108,8 +118,27 @@ function selected(cell: CalcCell): boolean {
       :goal-lean="prediction.goal_lean"
       :both-score="prediction.both_score_lean"
       :score-hint="prediction.score_hint"
+      clickable
+      @open="showOddsModal = true"
     />
   </n-card>
+
+  <n-modal
+    v-if="isPhone"
+    v-model:show="showOddsModal"
+    preset="card"
+    title="赛前盘口"
+    to="body"
+    :style="{ width: 'min(360px, calc(100vw - 24px))' }"
+    :segmented="{ content: true, footer: false }"
+  >
+    <PreMatchOddsTable
+      :odds="fixture.odds_snippet"
+      link-middle-to-detail
+      :fixture-id="fixture.fixture_id"
+      from="predictions"
+    />
+  </n-modal>
 </template>
 
 <style scoped>
@@ -142,9 +171,15 @@ function selected(cell: CalcCell): boolean {
   -webkit-overflow-scrolling: touch;
 }
 
+.fixture-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .league {
-  flex: 0 1 auto;
-  min-width: 48px;
   max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -152,26 +187,32 @@ function selected(cell: CalcCell): boolean {
 }
 
 .matchup {
-  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  justify-items: center;
+  gap: 6px;
   min-width: 0;
   font-size: 13px;
 }
 
-.matchup :deep(.n-ellipsis) {
-  flex: 0 1 auto;
+.team {
+  max-width: 100%;
   min-width: 0;
   font-weight: 600;
 }
 
 .versus {
-  flex: 0 0 auto;
   white-space: nowrap;
 }
 
 .kickoff {
-  flex-shrink: 0;
   font-size: 12px;
   white-space: nowrap;
+}
+
+.fav {
+  justify-self: end;
 }
 
 .market-row {
@@ -203,9 +244,8 @@ function selected(cell: CalcCell): boolean {
 
 @media (max-width: 767px) {
   .fixture-meta {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 2px 8px !important;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 2px 8px;
   }
 
   .league {
@@ -215,6 +255,11 @@ function selected(cell: CalcCell): boolean {
 
   .kickoff {
     grid-column: 2;
+  }
+
+  .fav {
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .matchup {

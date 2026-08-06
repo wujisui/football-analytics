@@ -266,7 +266,7 @@ export function useFixturesShell() {
 
   const breadcrumbRoot = computed(() => {
     if (pageName.value === 'results') return '赛程'
-    return '计算器'
+    return '比赛'
   })
 
   const breadcrumbFilter = computed(() =>

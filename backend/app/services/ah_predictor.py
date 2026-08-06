@@ -18,7 +18,6 @@ from app.services.ah_features import (
     build_ah_features,
     dumps_ah_features,
     extract_main_ah_line,
-    format_ah_line,
     loads_ah_features,
     parse_score_hint,
     pick_to_lean,
@@ -280,9 +279,8 @@ def predict_handicap(
 
 
 def format_handicap_lean(pred: HandicapPrediction) -> str:
-    """Product default: pick + main line only (fits list tag)."""
-    line_label = format_ah_line(pred.line_f) if pred.line_f is not None else "?"
-    return f"{pick_to_lean(pred.pick)}（{line_label}）"
+    """Product default: pick only (line already shown in odds)."""
+    return pick_to_lean(pred.pick)
 
 
 def handicap_bundle_from_markets(

@@ -129,6 +129,7 @@ defineExpose({ openFormula, openDetails })
           <template #prefix>倍数</template>
         </n-input-number>
         <n-button
+          class="save-button"
           size="small"
           type="primary"
           secondary
@@ -147,6 +148,7 @@ defineExpose({ openFormula, openDetails })
           详情
         </n-button>
         <n-button
+          class="clear-button"
           size="small"
           type="error"
           tertiary
@@ -344,6 +346,29 @@ defineExpose({ openFormula, openDetails })
   flex-shrink: 0;
   padding-right: 8px;
   padding-left: 8px;
+}
+
+.bet-details-panel:not(.footer-only) .details-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.bet-details-panel:not(.footer-only) .fold-select {
+  width: auto;
+  min-width: 0;
+}
+
+.bet-details-panel:not(.footer-only) .multiplier-input {
+  grid-column: 2 / 4;
+  min-width: 0;
+}
+
+.bet-details-panel:not(.footer-only) .save-button {
+  grid-column: 1 / 3;
+}
+
+.bet-details-panel:not(.footer-only) .clear-button {
+  grid-column: 3;
 }
 
 .footer-only .details-footer {

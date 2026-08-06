@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import {
+  ChevronBackOutline,
+  ChevronForwardOutline,
   BookmarkOutline,
   ColorPaletteOutline,
   InformationCircleOutline,
@@ -7,7 +9,6 @@ import {
   LogOutOutline,
   MoonOutline,
   PersonOutline,
-  StarOutline,
   SunnyOutline,
 } from '@vicons/ionicons5'
 import { NIcon, type MenuOption } from 'naive-ui'
@@ -17,47 +18,46 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthSession } from '@/composables/useAuthSession'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
-import FavoritesView from '@/views/Favorites/index.vue'
 import PlansView from '@/views/Plans/index.vue'
 import pkg from '../../../package.json'
 
 defineOptions({ name: 'Mine' })
 
-type MineSection = 'account' | 'favorites' | 'plans' | 'theme' | 'session' | 'about'
+type MineSection = 'account' | 'plans' | 'theme' | 'session' | 'about'
 
 const sectionMeta: Record<
   MineSection,
-  { routeName: string; title: string; description: string }
+  { routeName: string; title: string; description: string; icon: Component }
 > = {
   account: {
     routeName: 'mine-account',
     title: '个人主页',
     description: '查看当前账号状态与基础信息',
-  },
-  favorites: {
-    routeName: 'mine-favorites',
-    title: '关注',
-    description: '按比赛日期查看关注场次',
+    icon: PersonOutline,
   },
   plans: {
     routeName: 'mine-plans',
     title: '我的方案',
     description: '查看和管理已保存的投注方案',
+    icon: BookmarkOutline,
   },
   theme: {
     routeName: 'mine-theme',
     title: '主题设置',
     description: '设置界面的显示主题',
+    icon: ColorPaletteOutline,
   },
   session: {
     routeName: 'mine-session',
     title: '登录与退出',
     description: '管理当前浏览器的登录状态',
+    icon: LogOutOutline,
   },
   about: {
     routeName: 'mine-about',
     title: '关于',
     description: 'Football Analytics 产品与版本信息',
+    icon: InformationCircleOutline,
   },
 }
 
@@ -80,7 +80,7 @@ const menuOptions = computed<MenuOption[]>(() => [
       {
         key: 'account',
         label: '个人主页',
-        icon: renderIcon(PersonOutline),
+        icon: renderIcon(sectionMeta.account.icon),
       },
     ],
   },
@@ -90,14 +90,9 @@ const menuOptions = computed<MenuOption[]>(() => [
     label: '本地数据',
     children: [
       {
-        key: 'favorites',
-        label: '关注',
-        icon: renderIcon(StarOutline),
-      },
-      {
         key: 'plans',
         label: '我的方案',
-        icon: renderIcon(BookmarkOutline),
+        icon: renderIcon(sectionMeta.plans.icon),
       },
     ],
   },
@@ -109,7 +104,7 @@ const menuOptions = computed<MenuOption[]>(() => [
       {
         key: 'theme',
         label: '主题设置',
-        icon: renderIcon(ColorPaletteOutline),
+        icon: renderIcon(sectionMeta.theme.icon),
       },
       {
         key: 'session',
@@ -126,7 +121,7 @@ const menuOptions = computed<MenuOption[]>(() => [
       {
         key: 'about',
         label: '关于',
-        icon: renderIcon(InformationCircleOutline),
+        icon: renderIcon(sectionMeta.about.icon),
       },
     ],
   },
@@ -139,8 +134,12 @@ const activeSection = computed<MineSection>(() => {
   return (matched?.[0] as MineSection | undefined) ?? 'account'
 })
 const activeMeta = computed(() => sectionMeta[activeSection.value])
-const isEmbeddedSection = computed(
-  () => activeSection.value === 'favorites' || activeSection.value === 'plans',
+const isPlansSection = computed(() => activeSection.value === 'plans')
+/** PC 非嵌入区 / 手机二级页：共用同一顶栏，手机多一个返回 */
+const showSectionHeader = computed(
+  () =>
+    (isPhone.value && activeSection.value !== 'account') ||
+    (!isPhone.value && !isPlansSection.value),
 )
 
 const profileTitle = computed(() =>
@@ -148,6 +147,24 @@ const profileTitle = computed(() =>
 )
 const profileDescription = computed(() =>
   isLoggedIn.value ? '已登录' : '暂未登录',
+)
+const mobileSections = computed(() =>
+  (['plans', 'theme', 'session', 'about'] as MineSection[]).map((key) => ({
+    key,
+    ...sectionMeta[key],
+    title:
+      key === 'session'
+        ? isLoggedIn.value
+          ? '退出登录'
+          : '登录账号'
+        : sectionMeta[key].title,
+    icon:
+      key === 'session'
+        ? isLoggedIn.value
+          ? LogOutOutline
+          : LogInOutline
+        : sectionMeta[key].icon,
+  })),
 )
 
 function openSection(section: string) {
@@ -166,7 +183,7 @@ function onLogout() {
 <template>
   <div class="fa-page-frame">
     <div class="fa-page-shell mine-shell">
-      <aside class="mine-sider">
+      <aside v-if="!isPhone" class="mine-sider">
         <div class="profile-summary">
           <n-avatar :size="48" round>
             <n-icon :component="PersonOutline" :size="24" />
@@ -182,7 +199,7 @@ function onLogout() {
             class="mine-menu"
             :value="activeSection"
             :options="menuOptions"
-            :mode="isPhone ? 'horizontal' : 'vertical'"
+            mode="vertical"
             :indent="20"
             @update:value="openSection"
           />
@@ -190,18 +207,86 @@ function onLogout() {
       </aside>
 
       <main class="mine-main">
-        <div v-if="isEmbeddedSection" class="mine-embedded">
-          <FavoritesView v-if="activeSection === 'favorites'" />
-          <PlansView v-else />
-        </div>
+        <n-scrollbar
+          v-if="isPhone && activeSection === 'account'"
+          class="mobile-mine-scroll"
+          trigger="hover"
+        >
+          <div class="mobile-mine-home">
+            <section class="mobile-profile-card">
+              <n-avatar :size="52" round>
+                <n-icon :component="PersonOutline" :size="26" />
+              </n-avatar>
+              <div class="mobile-profile-copy">
+                <strong>{{ profileTitle }}</strong>
+                <span>
+                  {{
+                    isLoggedIn
+                      ? '方案与偏好保存在本机'
+                      : '登录后可同步账号状态'
+                  }}
+                </span>
+              </div>
+              <n-tag v-if="isLoggedIn" size="small" type="success">已登录</n-tag>
+              <n-button v-else size="small" type="primary" @click="openLogin">
+                登录
+              </n-button>
+            </section>
 
-        <header v-if="!isEmbeddedSection" class="mine-header">
-          <h1>{{ activeMeta.title }}</h1>
-          <p>{{ activeMeta.description }}</p>
+            <section class="mobile-settings-card" aria-label="我的功能">
+              <button
+                v-for="item in mobileSections"
+                :key="item.key"
+                type="button"
+                class="mobile-settings-row"
+                @click="openSection(item.key)"
+              >
+                <span class="mobile-settings-icon">
+                  <n-icon :component="item.icon" :size="21" />
+                </span>
+                <span class="mobile-settings-copy">
+                  <strong>{{ item.title }}</strong>
+                  <small>{{ item.description }}</small>
+                </span>
+                <n-icon
+                  :component="ChevronForwardOutline"
+                  :size="18"
+                  class="mobile-settings-arrow"
+                />
+              </button>
+            </section>
+
+            <p class="mobile-local-note">
+              服务端鉴权仍在规划中，当前登录状态仅保存在本机浏览器。
+            </p>
+          </div>
+        </n-scrollbar>
+
+        <header v-if="showSectionHeader" class="mine-header">
+          <n-button
+            v-if="isPhone"
+            quaternary
+            circle
+            size="small"
+            aria-label="返回"
+            @click="openSection('account')"
+          >
+            <template #icon>
+              <n-icon :component="ChevronBackOutline" />
+            </template>
+          </n-button>
+          <div class="mine-header__copy">
+            <h1>{{ activeMeta.title }}</h1>
+            <p v-if="!isPhone">{{ activeMeta.description }}</p>
+          </div>
         </header>
 
+        <div v-if="isPlansSection" class="mine-embedded">
+          <PlansView />
+        </div>
+
         <n-scrollbar
-          v-if="!isEmbeddedSection"
+          v-if="!isPlansSection && !(isPhone && activeSection === 'account')"
           class="mine-content-scroll"
           trigger="hover"
         >
@@ -217,7 +302,7 @@ function onLogout() {
                   <template #description>
                     {{
                       isLoggedIn
-                        ? '偏好、关注与方案当前保存在本机'
+                        ? '偏好与方案当前保存在本机'
                         : '登录后可使用桌面端“我的”入口'
                     }}
                   </template>
@@ -413,11 +498,20 @@ function onLogout() {
 }
 
 .mine-header {
+  display: flex;
   flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
   min-height: 92px;
   padding: 18px 28px;
   border-bottom: 1px solid var(--fa-border);
   background: var(--fa-bg-elevated);
+  box-sizing: border-box;
+}
+
+.mine-header__copy {
+  min-width: 0;
+  flex: 1;
 }
 
 .mine-header h1 {
@@ -447,44 +541,150 @@ function onLogout() {
   margin-top: 14px;
 }
 
+.mobile-mine-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.mobile-mine-home {
+  padding: 14px var(--fa-content-inline) 28px;
+}
+
+.mobile-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 16px;
+  border: 1px solid var(--fa-border);
+  border-radius: 12px;
+  background: var(--fa-bg-elevated);
+}
+
+.mobile-profile-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-profile-copy strong {
+  overflow: hidden;
+  color: var(--fa-text-strong);
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-profile-copy span {
+  overflow: hidden;
+  color: var(--fa-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-settings-card {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--fa-border);
+  border-radius: 12px;
+  background: var(--fa-bg-elevated);
+}
+
+.mobile-settings-row {
+  display: flex;
+  width: 100%;
+  min-height: 64px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--fa-border);
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-settings-row:last-child {
+  border-bottom: 0;
+}
+
+.mobile-settings-row:active {
+  background: var(--fa-bg);
+}
+
+.mobile-settings-icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: var(--fa-highlight-text);
+  background: color-mix(in srgb, var(--fa-highlight-text) 12%, transparent);
+}
+
+.mobile-settings-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mobile-settings-copy strong {
+  color: var(--fa-text-strong);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mobile-settings-copy small {
+  overflow: hidden;
+  color: var(--fa-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-settings-arrow {
+  flex-shrink: 0;
+  color: var(--fa-text-muted);
+}
+
+.mobile-local-note {
+  margin: 14px 8px 0;
+  color: var(--fa-text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: center;
+}
+
 @media (max-width: 767px) {
-  .mine-shell {
-    flex-direction: column;
-  }
-
-  .mine-sider {
-    flex: 0 0 auto;
-    width: 100%;
-    box-shadow: var(--fa-header-shadow);
-  }
-
-  .profile-summary {
-    min-height: 64px;
-    padding: 8px 12px;
-  }
-
-  .profile-summary :deep(.n-avatar) {
-    width: 38px !important;
-    height: 38px !important;
-  }
-
-  .mine-menu-scroll {
-    flex: none;
-  }
-
-  .mine-menu {
-    width: max-content;
-    min-width: 100%;
-    padding: 0 6px;
-  }
-
   .mine-header {
-    min-height: 70px;
-    padding: 12px var(--fa-content-inline);
+    position: relative;
+    justify-content: center;
+    min-height: 48px;
+    padding: 8px 48px;
+  }
+
+  .mine-header > :deep(.n-button) {
+    position: absolute;
+    left: 10px;
+  }
+
+  .mine-header__copy {
+    flex: none;
+    max-width: 100%;
+    text-align: center;
   }
 
   .mine-header h1 {
-    font-size: 18px;
+    font-size: 16px;
+    line-height: 1.3;
   }
 
   .mine-content {

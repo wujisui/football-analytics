@@ -12,7 +12,7 @@ from app.services.ah_features import (
     settle_ah_label,
     settle_handicap_result,
 )
-from app.services.ah_predictor import _BinaryLogReg, load_trained_model
+from app.services.ah_predictor import HandicapPrediction, _BinaryLogReg, format_handicap_lean, load_trained_model
 from app.services.features import extract_features
 
 
@@ -22,6 +22,12 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(settle_ah_label(1, 1, -0.5), "no_cover")
         self.assertEqual(settle_ah_label(1, 1, 0.0), "push")
         self.assertIsNone(settle_ah_label(None, 1, -0.5))
+
+    def test_format_handicap_lean_omits_line(self) -> None:
+        pred = HandicapPrediction(0.62, "cover", "multifactor", -0.25)
+        self.assertEqual(format_handicap_lean(pred), "让球胜")
+        pred_lose = HandicapPrediction(0.4, "no_cover", "multifactor", -0.25)
+        self.assertEqual(format_handicap_lean(pred_lose), "让球负")
 
     def test_settle_three_way_handicap_result(self) -> None:
         # Home gives one: 1-0 pushes, 2-0 wins, any level score loses.
@@ -35,8 +41,10 @@ class AhFeaturesTests(unittest.TestCase):
 
     def test_parse_frozen_handicap_lean(self) -> None:
         self.assertEqual(handicap_pick_from_lean("让球胜（-1）"), "让球胜")
+        self.assertEqual(handicap_pick_from_lean("让球负"), "让球负")
         self.assertEqual(handicap_line_from_lean("让球胜（-1）"), -1.0)
         self.assertEqual(handicap_line_from_lean("让球负（+1）"), 1.0)
+        self.assertIsNone(handicap_line_from_lean("让球平"))
 
     def test_mx_probs_follow_market(self) -> None:
         package = {

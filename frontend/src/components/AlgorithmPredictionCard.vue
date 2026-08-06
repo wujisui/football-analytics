@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
+import FavoriteButton from '@/components/FavoriteButton.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import {
@@ -210,6 +211,13 @@ function onOddsClick() {
       >
         {{ matchupTitle }}
       </n-button>
+      <FavoriteButton
+        v-if="fixture"
+        class="card-fav"
+        :fixture-id="fixture.fixture_id"
+        :fixture="fixture"
+        size="tiny"
+      />
     </header>
 
     <div
@@ -355,9 +363,10 @@ function onOddsClick() {
 }
 
 .card-head {
-  position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
+  gap: 8px;
   min-width: 0;
   min-height: 28px;
 }
@@ -380,10 +389,9 @@ function onOddsClick() {
 }
 
 .zone-matchup {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: calc(100% - 96px);
+  width: 100%;
+  max-width: none;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -398,6 +406,10 @@ function onOddsClick() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.card-fav {
+  justify-self: end;
 }
 
 .prob-row {
@@ -448,6 +460,9 @@ function onOddsClick() {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--fa-bg-elevated);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }

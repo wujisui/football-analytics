@@ -10,8 +10,8 @@ import { leagueLabel } from '@/utils/leagueNames'
 const props = defineProps<{
   leagues: LeagueSummaryResponse[]
   selectedLeagueId: number | null
-  pendingCountByLeague: Map<number, number>
-  totalPending: number
+  countByLeague: Map<number, number>
+  totalCount: number
   loading?: boolean
   collapsed?: boolean
 }>()
@@ -60,7 +60,7 @@ function selectLeague(leagueId: number) {
 }
 
 function countOf(leagueId: number): number {
-  return props.pendingCountByLeague.get(leagueId) || 0
+  return props.countByLeague.get(leagueId) || 0
 }
 </script>
 
@@ -109,13 +109,13 @@ function countOf(leagueId: number): number {
                 <template #trigger>
                   <span class="lm-chip lm-chip-all" aria-hidden="true">全</span>
                 </template>
-                全部（{{ totalPending }}）
+                全部（{{ totalCount }}）
               </n-tooltip>
             </template>
             <template v-if="!collapsed">全部</template>
             <template v-if="!collapsed" #suffix>
               <span class="lm-suffix">
-                <span v-if="totalPending > 0" class="lm-count">{{ totalPending }}</span>
+                <span v-if="totalCount > 0" class="lm-count">{{ totalCount }}</span>
                 <n-icon class="lm-chevron" :component="ChevronForwardOutline" :size="14" />
               </span>
             </template>

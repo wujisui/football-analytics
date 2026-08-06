@@ -171,8 +171,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .favorite-dates-picker {
-  width: 148px;
-  flex: 0 0 auto;
+  width: var(--fa-date-picker-width, 148px);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .favorite-date-legend {

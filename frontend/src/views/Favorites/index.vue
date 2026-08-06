@@ -4,16 +4,19 @@ import { useRouter } from 'vue-router'
 
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import FavoriteFixtureCard from '@/views/Favorites/components/FavoriteFixtureCard.vue'
-import HomeDateStrip from '@/layouts/components/HomeDateStrip.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
+import LeagueMenu from '@/layouts/components/LeagueMenu.vue'
+import ShellBreadcrumb from '@/layouts/components/ShellBreadcrumb.vue'
+import { useIsPhone } from '@/composables/useMediaQuery'
 import {
   favoriteFixtureDays,
   useFavoriteFixtures,
 } from '@/composables/useFavoriteFixtures'
-import { useIsPhone } from '@/composables/useMediaQuery'
+import type { LeagueSummaryResponse } from '@/api/types'
 import { parseApiDate, toScheduleDayKey } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'
 import { todayDate } from '@/utils/homeDateStrip'
+import { leagueLabel } from '@/utils/leagueNames'
 
 defineOptions({ name: 'Favorites' })
 
@@ -43,6 +46,8 @@ const isPhone = useIsPhone()
 const { favorites, reloadFavorites } = useFavoriteFixtures()
 
 const filterDate = ref<string>(readSavedFilterDate())
+const selectedLeagueId = ref<number | null>(null)
+const siderCollapsed = ref(false)
 const refreshing = ref(false)
 const favoritesShellRef = ref<HTMLElement | null>(null)
 
@@ -60,7 +65,7 @@ async function refreshList() {
 
 const favoriteDays = computed(() => favoriteFixtureDays(favorites.value))
 
-const filteredFavorites = computed(() => {
+const dayFavorites = computed(() => {
   const day = filterDate.value
   return favorites.value
     .filter((item) => toScheduleDayKey(item.fixture_date) === day)
@@ -69,6 +74,52 @@ const filteredFavorites = computed(() => {
         parseApiDate(a.fixture_date).getTime() -
         parseApiDate(b.fixture_date).getTime(),
     )
+})
+
+const favoriteCountByLeague = computed(() => {
+  const counts = new Map<number, number>()
+  for (const item of dayFavorites.value) {
+    counts.set(item.league_id, (counts.get(item.league_id) || 0) + 1)
+  }
+  return counts
+})
+
+const favoriteLeagues = computed<LeagueSummaryResponse[]>(() => {
+  const leagues = new Map<number, LeagueSummaryResponse>()
+  for (const item of dayFavorites.value) {
+    if (leagues.has(item.league_id)) continue
+    leagues.set(item.league_id, {
+      league_id: item.league_id,
+      league_name: item.league_name,
+      country: item.league_country ?? null,
+      today_fixtures_count: 0,
+      upcoming_fixtures_count: 0,
+    })
+  }
+  return [...leagues.values()]
+})
+
+const filteredFavorites = computed(() => {
+  const leagueId = selectedLeagueId.value
+  if (leagueId == null) return dayFavorites.value
+  return dayFavorites.value.filter((item) => item.league_id === leagueId)
+})
+
+const selectedLeagueLabel = computed(() => {
+  if (selectedLeagueId.value == null) return '全部'
+  const league = favoriteLeagues.value.find(
+    (item) => item.league_id === selectedLeagueId.value,
+  )
+  return league ? leagueLabel(league.league_name) : '全部'
+})
+
+const dayCountLabel = computed(() => `${filteredFavorites.value.length} 场`)
+
+watch(favoriteLeagues, (leagues) => {
+  const selected = selectedLeagueId.value
+  if (selected != null && !leagues.some((item) => item.league_id === selected)) {
+    selectedLeagueId.value = null
+  }
 })
 
 function goDetail(fixtureId: number) {
@@ -81,79 +132,127 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="favorites-panel">
-    <div class="favorites-header fa-page-toolbar">
-      <HomeDateStrip v-if="isPhone" v-model="filterDate" />
-      <div class="favorites-toolbar">
-        <span class="favorites-title">关注</span>
-        <FavoriteDatesPicker
-          v-if="!isPhone"
-          v-model="filterDate"
-          :marked-days="favoriteDays"
-          legend="当天有关注（赛程日）"
+  <div class="fa-page-frame">
+    <div class="fa-page-shell favorites-panel">
+      <n-layout-sider
+        v-if="!isPhone"
+        v-model:collapsed="siderCollapsed"
+        class="favorites-sider"
+        collapse-mode="width"
+        :collapsed-width="64"
+        :width="232"
+        :native-scrollbar="false"
+        show-trigger="bar"
+        content-style="height: 100%;"
+      >
+        <LeagueMenu
+          :leagues="favoriteLeagues"
+          :selected-league-id="selectedLeagueId"
+          :count-by-league="favoriteCountByLeague"
+          :total-count="dayFavorites.length"
+          :loading="refreshing"
+          :collapsed="siderCollapsed"
+          @select="selectedLeagueId = $event"
         />
-        <n-text v-else depth="3">{{ filteredFavorites.length }} 场</n-text>
-      </div>
-    </div>
+      </n-layout-sider>
 
-    <n-spin :show="refreshing" class="favorites-body">
-      <div ref="favoritesShellRef" class="favorites-list-shell">
-        <n-scrollbar class="favorites-scroll" trigger="hover">
-          <div class="fa-page-content-padding favorites-scroll-pad">
-            <n-empty
-              v-if="!filteredFavorites.length"
-              :description="`${filterDate} 无关注场次`"
-              class="favorites-empty"
-            />
-            <div v-else class="favorites-card-stack">
-              <FavoriteFixtureCard
-                v-for="item in filteredFavorites"
-                :key="item.fixture_id"
-                :item="item"
-                @open-detail="goDetail"
+      <section class="favorites-main">
+        <div class="favorites-header fa-page-toolbar">
+          <!-- 手机沿用比赛顶栏节奏，日期选择器占搜索槽位 -->
+          <div v-if="isPhone" class="fa-toolbar-top">
+            <span class="favorites-title">关注</span>
+            <span class="fa-toolbar-day-stat">{{ dayCountLabel }}</span>
+            <div class="fa-toolbar-end">
+              <FavoriteDatesPicker
+                v-model="filterDate"
+                :marked-days="favoriteDays"
+                legend="当天有关注（赛程日）"
               />
             </div>
           </div>
-        </n-scrollbar>
-        <ListBackTop :shell="favoritesShellRef" :right="12" :bottom="12" />
-      </div>
-    </n-spin>
+
+          <!-- PC 对齐比赛页：面包屑在上，列表统计与日期在下 -->
+          <template v-else>
+            <div class="fa-toolbar-top">
+              <ShellBreadcrumb
+                root-label="关注"
+                :filter-label="selectedLeagueLabel"
+                @select-root="selectedLeagueId = null"
+              />
+            </div>
+            <div class="fa-toolbar-list-meta">
+              <span class="fa-toolbar-day-stat">{{ dayCountLabel }}</span>
+              <FavoriteDatesPicker
+                v-model="filterDate"
+                :marked-days="favoriteDays"
+                legend="当天有关注（赛程日）"
+              />
+            </div>
+          </template>
+        </div>
+
+        <n-spin :show="refreshing" class="favorites-body">
+          <div ref="favoritesShellRef" class="favorites-list-shell">
+            <n-scrollbar class="favorites-scroll" trigger="hover">
+              <div class="fa-page-content-padding favorites-scroll-pad">
+                <n-empty
+                  v-if="!filteredFavorites.length"
+                  :description="`${filterDate} 无关注场次`"
+                  class="favorites-empty"
+                />
+                <div v-else class="favorites-card-stack">
+                  <FavoriteFixtureCard
+                    v-for="item in filteredFavorites"
+                    :key="item.fixture_id"
+                    :item="item"
+                    @open-detail="goDetail"
+                  />
+                </div>
+              </div>
+            </n-scrollbar>
+            <ListBackTop :shell="favoritesShellRef" :right="12" :bottom="12" />
+          </div>
+        </n-spin>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .favorites-panel {
-  height: 100%;
-  min-height: 0;
   display: flex;
-  flex-direction: column;
   overflow: hidden;
   background: var(--fa-bg);
+}
+
+.favorites-sider {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  box-shadow: var(--fa-sider-shadow);
+}
+
+.favorites-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .favorites-header {
   flex-shrink: 0;
   width: 100%;
   box-sizing: border-box;
-}
-
-.favorites-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.favorites-header :deep(.date-strip) {
-  margin: 0 auto;
+  box-shadow: var(--fa-header-shadow);
 }
 
 .favorites-title {
   flex-shrink: 0;
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.2;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fa-text-strong);
 }
 
 .favorites-body {

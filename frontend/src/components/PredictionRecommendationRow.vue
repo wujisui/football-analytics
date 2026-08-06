@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 import {
   HANDICAP_MISSING_LABEL,
+  handicapLeanLabel,
   isHandicapPending,
 } from '@/utils/handicapDisplay'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
@@ -35,6 +36,9 @@ const recommendationTagColor = computed(() =>
     ? undefined
     : wdlTagColor(leanWdlTone(props.recommendation)),
 )
+const handicapLabel = computed(
+  () => handicapLeanLabel(props.handicapLean) || HANDICAP_MISSING_LABEL,
+)
 const handicapTagColor = computed(() =>
   isHandicapPending(props.handicapLean)
     ? undefined
@@ -47,34 +51,30 @@ function open() {
 </script>
 
 <template>
-  <div class="recommendation-row">
-    <n-button
-      text
-      size="small"
-      class="recommendation-label"
-      :class="{ clickable }"
-      @click.stop="open"
-    >
-      推荐
-    </n-button>
+  <div
+    class="recommendation-row"
+    :class="{ clickable }"
+    :role="clickable ? 'button' : undefined"
+    :tabindex="clickable ? 0 : undefined"
+    @click.stop="open"
+    @keydown.enter.prevent="open"
+    @keydown.space.prevent="open"
+  >
+    <span class="recommendation-label">推荐</span>
     <n-tag
       size="small"
-      :class="{ clickable }"
       :type="recommendationTagColor ? undefined : 'default'"
       :color="recommendationTagColor"
-      @click.stop="open"
     >
       {{ recommendation }}
     </n-tag>
     <n-tag
       size="small"
       class="handicap-tag"
-      :class="{ clickable }"
       :type="handicapTagColor ? undefined : 'default'"
       :color="handicapTagColor"
-      @click.stop="open"
     >
-      {{ handicapLean || HANDICAP_MISSING_LABEL }}
+      {{ handicapLabel }}
     </n-tag>
     <n-tag v-if="goalLean" size="small" :bordered="false">
       {{ goalLean }}
@@ -99,11 +99,11 @@ function open() {
 
 .recommendation-label {
   flex-shrink: 0;
-  height: auto;
   padding: 0 2px;
   color: var(--fa-highlight-text);
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .recommendation-row :deep(.n-tag) {

@@ -57,8 +57,7 @@ const router = createRouter({
     },
     {
       path: '/mine/favorites',
-      name: 'mine-favorites',
-      component: Mine,
+      redirect: { name: 'favorites' },
     },
     {
       path: '/mine/plans',

@@ -76,8 +76,8 @@ onActivated(() => {
         <LeagueMenu
           :leagues="shellMenuLeagues"
           :selected-league-id="selectedLeagueId"
-          :pending-count-by-league="shellCountByLeague"
-          :total-pending="shellTotalCount"
+          :count-by-league="shellCountByLeague"
+          :total-count="shellTotalCount"
           :loading="contentLoading"
           :collapsed="siderCollapsed"
           @select="selectLeague"
@@ -155,8 +155,8 @@ onActivated(() => {
             />
 
             <template v-if="isPhone">
-              <span class="day-stat">{{ dayCountLabel }}</span>
-              <div class="toolbar-search-end">
+              <span class="fa-toolbar-day-stat">{{ dayCountLabel }}</span>
+              <div class="fa-toolbar-end">
                 <PageToolbarSearch v-model="teamSearch" />
               </div>
             </template>
@@ -164,9 +164,9 @@ onActivated(() => {
 
           <div
             v-if="!isPhone && showShellLeagueNav"
-            class="shell-list-meta"
+            class="fa-toolbar-list-meta"
           >
-            <span class="day-stat">{{ dayCountLabel }}</span>
+            <span class="fa-toolbar-day-stat">{{ dayCountLabel }}</span>
             <PageToolbarSearch v-model="teamSearch" />
           </div>
         </n-layout-header>
@@ -200,8 +200,8 @@ onActivated(() => {
         <LeagueMenu
           :leagues="shellMenuLeagues"
           :selected-league-id="selectedLeagueId"
-          :pending-count-by-league="shellCountByLeague"
-          :total-pending="shellTotalCount"
+          :count-by-league="shellCountByLeague"
+          :total-count="shellTotalCount"
           :loading="contentLoading"
           :collapsed="false"
           @select="selectLeague"
@@ -246,34 +246,6 @@ onActivated(() => {
 
 .league-trigger {
   flex-shrink: 0;
-}
-
-.day-stat {
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.toolbar-search-end {
-  margin-left: auto;
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: min(200px, 42vw);
-}
-
-.toolbar-search-end :deep(.fa-toolbar-search) {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-}
-
-.shell-list-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 0 4px;
 }
 
 .results-future-header {

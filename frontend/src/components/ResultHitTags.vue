@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
+import { handicapLeanLabel } from '@/utils/handicapDisplay'
 
 const props = withDefaults(
   defineProps<{
@@ -18,10 +19,6 @@ const props = withDefaults(
 const emit = defineEmits<{
   filterHit: [key: ResultsHitKey]
 }>()
-
-function handicapTagLabel(lean: string): string {
-  return lean.replace(/\s*[（(][+-]?\d+(?:\.\d+)?[）)]\s*$/, '')
-}
 
 function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
   if (!props.filterable || hit == null) return
@@ -95,7 +92,7 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       :bordered="false"
       @click.stop="onTagClick('handicap', fixture.handicap_hit)"
     >
-      {{ handicapTagLabel(fixture.handicap_lean) }}
+      {{ handicapLeanLabel(fixture.handicap_lean) }}
     </n-tag>
   </n-flex>
 </template>

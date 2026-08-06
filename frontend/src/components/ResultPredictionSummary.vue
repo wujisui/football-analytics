@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 import ResultHitTags from '@/components/ResultHitTags.vue'
 import { toPercent } from '@/utils/format'
+import { handicapLeanLabel } from '@/utils/handicapDisplay'
 import type { HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
 
@@ -62,7 +63,7 @@ const probabilities = computed(() => {
   >
     <n-text depth="3" class="pred-line">
       {{ fixture.recommendation || '—' }}
-      · {{ fixture.handicap_lean || '—' }}
+      · {{ handicapLeanLabel(fixture.handicap_lean) || '—' }}
       · {{ fixture.score_hint || '—' }}
       · {{ fixture.goal_lean || '—' }}
       · {{ fixture.both_score_lean || '—' }}
