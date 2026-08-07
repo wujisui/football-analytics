@@ -13,7 +13,7 @@ import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import { buildMarketRows, type CalcCell } from '@/utils/betCalculator'
 import { fixtureDetailRoute } from '@/utils/detailNav'
-import { formatDate, formatTime, leagueTagColor } from '@/utils/format'
+import { formatTime, leagueTagColor } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
 const props = defineProps<{
@@ -35,10 +35,7 @@ const marketGap = computed(() => (isPhone.value ? 8 : 6))
 
 const leagueName = computed(() => leagueLabel(props.fixture.league_name))
 const leagueColor = computed(() => leagueTagColor(props.fixture.league_id))
-const kickoffText = computed(
-  () =>
-    `${formatDate(props.fixture.fixture_date)} ${formatTime(props.fixture.fixture_date)}`,
-)
+const kickoffText = computed(() => formatTime(props.fixture.fixture_date))
 
 function onPick(cell: CalcCell) {
   const err = toggleCell(props.fixture, cell)
@@ -93,7 +90,7 @@ function goDetail() {
       <span v-else class="meta-trail" aria-hidden="true" />
     </div>
 
-    <div v-nested-scroll class="market-list">
+    <div class="market-list">
       <div class="market-rows">
         <n-grid
           v-for="row in rows"
@@ -198,57 +195,52 @@ function goDetail() {
   font-size: 12px;
 }
 
-/* Same as prediction list: side chrome + compact matchup centered in the row. */
+/* League+time stay left; matchup fills the rest (no overlap with long names). */
 .fixture-meta {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.calc-fixture.phone .fixture-meta {
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
 
 .meta-left {
   display: flex;
   align-items: center;
   gap: 6px;
+  max-width: 7.5em;
   min-width: 0;
-  justify-self: start;
+  overflow: hidden;
 }
 
 .meta-matchup {
-  justify-self: center;
-  width: max-content;
+  justify-self: stretch;
+  width: 100%;
   max-width: 100%;
   min-width: 0;
 }
 
 .league {
-  flex-shrink: 1;
+  flex: 1 1 auto;
   max-width: 4.5em;
   min-width: 0;
   font-weight: 600;
 }
 
 .kickoff {
-  flex-shrink: 1;
-  min-width: 0;
+  flex: 0 0 auto;
   font-size: 12px;
   white-space: nowrap;
 }
 
-.fav,
-.meta-trail {
-  justify-self: end;
+.fav {
   flex-shrink: 0;
 }
 
 .meta-trail {
-  width: 1px;
-  height: 1px;
+  width: 0;
+  height: 0;
+  overflow: hidden;
 }
 
 .market-list {

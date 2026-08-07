@@ -186,7 +186,7 @@ defineExpose({ openFormula, openDetails })
       <n-scrollbar style="height: 100%;" trigger="hover">
         <BetSelectionList
           :groups="groupedSelections"
-          empty-description="在「计算器」点选玩法后显示已选场次"
+          empty-description="在「比赛」点选玩法后显示已选场次"
           @remove="removeFixture"
         />
       </n-scrollbar>

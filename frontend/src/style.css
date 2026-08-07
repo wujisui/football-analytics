@@ -212,35 +212,7 @@ button {
   flex-direction: column;
 }
 
-/* Flat day accordion shared by FixtureList / Favorites — title bar only. */
-.fa-day-collapse {
-  background: transparent;
-}
-
-.fa-day-collapse .n-collapse-item {
-  margin: 0 0 10px;
-  border-radius: 0;
-  background: transparent;
-}
-
-.fa-day-collapse .n-collapse-item > .n-collapse-item__header {
-  min-height: 40px;
-  padding: 8px 12px !important;
-  align-items: center;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--fa-highlight-text) 12%, var(--fa-bg-soft)) !important;
-}
-
-.fa-day-collapse .n-collapse-item__header-main {
-  flex: 1;
-  min-width: 0;
-  align-items: center;
-}
-
-.fa-day-collapse .n-collapse-item__content-inner {
-  padding: 10px 0 2px;
-}
-
+/* Day section title shared by FixtureList sticky headers. */
 .fa-day-collapse-title {
   display: flex;
   align-items: center;

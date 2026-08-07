@@ -9,14 +9,11 @@ const props = withDefaults(
   defineProps<{
     /** Primary scroll shell wrapping virtual-list / n-scrollbar. */
     shell: HTMLElement | null
-    /** Extra shell scrolled together (e.g. desktop odds column). */
-    syncShell?: HTMLElement | null
     visibilityHeight?: number
     right?: number
     bottom?: number
   }>(),
   {
-    syncShell: null,
     visibilityHeight: 240,
     right: 16,
     bottom: 20,
@@ -39,13 +36,8 @@ let mutationObserver: MutationObserver | null = null
 let visibilityRaf = 0
 
 function scrollTargets(): HTMLElement[] {
-  const targets: HTMLElement[] = []
-  for (const shell of [props.shell, props.syncShell]) {
-    if (!shell) continue
-    const el = findScrollContainer(shell)
-    if (el) targets.push(el)
-  }
-  return targets
+  const el = findScrollContainer(props.shell)
+  return el ? [el] : []
 }
 
 function updateVisibility() {

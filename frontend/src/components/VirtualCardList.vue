@@ -2,18 +2,23 @@
 const props = withDefaults(
   defineProps<{
     items: ReadonlyArray<Record<string, unknown>>
-    /** Initial estimate; `item-resizable` measures real card height. */
+    /** Row height. Prefer fixed size + `itemResizable=false` for heavy lists. */
     itemSize?: number
+    /** ResizeObserver per row — costly when cards are heavy; keep off if heights are fixed. */
+    itemResizable?: boolean
     keyField?: string
     paddingTop?: number | string
     paddingBottom?: number | string
     itemsStyle?: string | Record<string, string>
+    showScrollbar?: boolean
   }>(),
   {
     itemSize: 160,
+    itemResizable: true,
     keyField: 'key',
     paddingTop: 0,
     paddingBottom: 0,
+    showScrollbar: true,
   },
 )
 
@@ -32,11 +37,12 @@ function onScroll(event: Event) {
     class="virtual-card-list"
     :items="props.items as Record<string, unknown>[]"
     :item-size="itemSize"
-    item-resizable
+    :item-resizable="itemResizable"
     :key-field="keyField"
     :padding-top="paddingTop"
     :padding-bottom="paddingBottom"
     :items-style="itemsStyle"
+    :show-scrollbar="showScrollbar"
     @scroll="onScroll"
   >
     <template #default="slotProps">

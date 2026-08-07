@@ -233,12 +233,16 @@ function onOddsClick() {
           <span>{{ p.label }}</span>
           <strong>{{ toPercent(p.value) }}</strong>
         </span>
-        <n-progress
-          type="line"
-          :percentage="Math.round(p.value * 100)"
-          :show-indicator="false"
-          :height="standalone ? 6 : 8"
-        />
+        <div
+          class="prob-bar"
+          :class="{ slim: standalone }"
+          :aria-hidden="true"
+        >
+          <span
+            class="prob-bar-fill"
+            :style="{ width: `${Math.round(p.value * 100)}%` }"
+          />
+        </div>
       </div>
     </div>
     <p
@@ -435,6 +439,24 @@ function onOddsClick() {
   color: var(--fa-text-strong);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.prob-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--fa-bg-elevated);
+  overflow: hidden;
+}
+
+.prob-bar.slim {
+  height: 6px;
+}
+
+.prob-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--fa-highlight-text);
 }
 
 .handicap-line {
