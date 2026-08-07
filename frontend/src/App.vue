@@ -150,8 +150,8 @@ const bottomItems: {
               @click="goNav('predictions')"
               @keydown.enter="goNav('predictions')"
             >
-              <span class="brand-title">Football Analytics</span>
-              <span class="brand-subtitle">赛前分析 · 人机协同</span>
+              <n-ellipsis class="brand-title">Football Analytics</n-ellipsis>
+              <n-ellipsis class="brand-subtitle">赛前分析 · 人机协同</n-ellipsis>
             </div>
 
             <div class="header-actions">
@@ -278,18 +278,12 @@ const bottomItems: {
   font-size: 17px;
   font-weight: 700;
   line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .brand-subtitle {
   font-size: 11px;
   opacity: 0.65;
   line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .header-actions {

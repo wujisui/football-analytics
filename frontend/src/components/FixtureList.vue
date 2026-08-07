@@ -193,7 +193,9 @@ const defaultItemsStyle = computed(() => {
           @keydown.space.prevent="toggleDay((asVirtualRow(item) as DayRow).dayKey)"
         >
           <div class="fa-day-collapse-title">
-            <span class="fa-day-collapse-title__label">{{ (asVirtualRow(item) as DayRow).label }}</span>
+            <n-ellipsis class="fa-day-collapse-title__label">
+              {{ (asVirtualRow(item) as DayRow).label }}
+            </n-ellipsis>
             <span class="fa-day-collapse-title__count">{{ (asVirtualRow(item) as DayRow).count }} 场</span>
           </div>
           <n-icon

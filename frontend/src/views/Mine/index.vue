@@ -189,8 +189,12 @@ function onLogout() {
             <n-icon :component="PersonOutline" :size="24" />
           </n-avatar>
           <div class="profile-summary__text">
-            <strong>{{ profileTitle }}</strong>
-            <span>{{ profileDescription }}</span>
+            <n-ellipsis>
+              <strong>{{ profileTitle }}</strong>
+            </n-ellipsis>
+            <n-ellipsis>
+              <span>{{ profileDescription }}</span>
+            </n-ellipsis>
           </div>
         </div>
 
@@ -218,14 +222,18 @@ function onLogout() {
                 <n-icon :component="PersonOutline" :size="26" />
               </n-avatar>
               <div class="mobile-profile-copy">
-                <strong>{{ profileTitle }}</strong>
-                <span>
-                  {{
-                    isLoggedIn
-                      ? '方案与偏好保存在本机'
-                      : '登录后可同步账号状态'
-                  }}
-                </span>
+                <n-ellipsis>
+                  <strong>{{ profileTitle }}</strong>
+                </n-ellipsis>
+                <n-ellipsis>
+                  <span>
+                    {{
+                      isLoggedIn
+                        ? '方案与偏好保存在本机'
+                        : '登录后可同步账号状态'
+                    }}
+                  </span>
+                </n-ellipsis>
               </div>
               <n-tag v-if="isLoggedIn" size="small" type="success">已登录</n-tag>
               <n-button v-else size="small" type="primary" @click="openLogin">
@@ -246,7 +254,9 @@ function onLogout() {
                 </span>
                 <span class="mobile-settings-copy">
                   <strong>{{ item.title }}</strong>
-                  <small>{{ item.description }}</small>
+                  <n-ellipsis>
+                    <small>{{ item.description }}</small>
+                  </n-ellipsis>
                 </span>
                 <n-icon
                   :component="ChevronForwardOutline"
@@ -449,13 +459,6 @@ function onLogout() {
   flex-direction: column;
 }
 
-.profile-summary__text strong,
-.profile-summary__text span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .profile-summary__text strong {
   color: var(--fa-text-strong);
   font-size: 15px;
@@ -569,19 +572,13 @@ function onLogout() {
 }
 
 .mobile-profile-copy strong {
-  overflow: hidden;
   color: var(--fa-text-strong);
   font-size: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-profile-copy span {
-  overflow: hidden;
   color: var(--fa-text-muted);
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-settings-card {
@@ -643,11 +640,8 @@ function onLogout() {
 }
 
 .mobile-settings-copy small {
-  overflow: hidden;
   color: var(--fa-text-muted);
   font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-settings-arrow {

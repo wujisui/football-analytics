@@ -583,9 +583,9 @@ onMounted(() => {
                 <n-divider/>
                 <div class="phone-history-chart-block" data-no-tab-swipe>
                   <div class="phone-chart-toolbar">
-                    <n-text depth="3" class="chart-title-line">
+                    <n-ellipsis class="chart-title-line">
                       走势图 · 起始 {{ historyStartDate }}
-                    </n-text>
+                    </n-ellipsis>
                     <ChartWindowControls
                       v-model="chartWindowDays"
                       select-width="78px"
@@ -952,9 +952,7 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--fa-text-faint);
 }
 
 .phone-history-chart-spin {

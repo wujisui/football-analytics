@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, h } from 'vue'
-import type { DataTableColumns } from 'naive-ui'
+import { NEllipsis, type DataTableColumns } from 'naive-ui'
 
 import type { FormMatch } from '@/api/types'
 import {
@@ -101,7 +101,11 @@ const columns = computed<DataTableColumns<FormMatch>>(() => [
     width: 108,
     render(row) {
       return h('div', { class: 'meta-cell' }, [
-        h('div', { class: 'meta-league' }, competitionLabel(row) || '—'),
+        h(
+          NEllipsis,
+          { class: 'meta-league' },
+          { default: () => competitionLabel(row) || '—' },
+        ),
         h('div', { class: 'meta-date' }, formatDateYyMmDd(row.date || '')),
       ])
     },
@@ -113,9 +117,9 @@ const columns = computed<DataTableColumns<FormMatch>>(() => [
     render(row) {
       return h('div', { class: 'matchup' }, [
         h(
-          'span',
+          NEllipsis,
           { class: ['team-name', 'home', teamTone(row, 'home')] },
-          row.home || '—',
+          { default: () => row.home || '—' },
         ),
         h('span', { class: 'score-block' }, [
           renderScoreFt(row),
@@ -124,9 +128,9 @@ const columns = computed<DataTableColumns<FormMatch>>(() => [
             : null,
         ]),
         h(
-          'span',
+          NEllipsis,
           { class: ['team-name', 'away', teamTone(row, 'away')] },
-          row.away || '—',
+          { default: () => row.away || '—' },
         ),
       ])
     },
@@ -167,9 +171,6 @@ function rowKey(row: FormMatch): string | number {
   font-size: 12px;
   color: var(--fa-text-secondary);
   line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 :deep(.meta-date) {
@@ -188,9 +189,7 @@ function rowKey(row: FormMatch): string | number {
 }
 
 :deep(.team-name) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
   font-weight: 500;
 }
 

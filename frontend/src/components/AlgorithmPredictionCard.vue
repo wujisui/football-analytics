@@ -200,7 +200,7 @@ function onOddsClick() {
         @keydown.enter.prevent="onLeagueClick"
         @keydown.space.prevent="onLeagueClick"
       >
-        {{ leagueName }}
+        <n-ellipsis style="max-width: 100%">{{ leagueName }}</n-ellipsis>
       </n-tag>
       <n-button
         text
@@ -209,7 +209,7 @@ function onOddsClick() {
         class="zone-matchup"
         @click.stop="goStats"
       >
-        {{ matchupTitle }}
+        <n-ellipsis style="max-width: 100%">{{ matchupTitle }}</n-ellipsis>
       </n-button>
       <FavoriteButton
         v-if="fixture"
@@ -383,18 +383,15 @@ function onOddsClick() {
 }
 
 .league-tag :deep(.n-tag__content) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .zone-matchup {
   width: 100%;
   max-width: none;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   height: auto;
   line-height: 1.4;
   padding: 0 2px;
@@ -403,9 +400,8 @@ function onOddsClick() {
 
 .zone-matchup :deep(.n-button__content) {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .card-fav {

@@ -69,9 +69,9 @@ function goDetail() {
   >
     <div class="fixture-meta">
       <div class="meta-left">
-        <n-text strong class="league" :style="{ color: leagueColor }">
+        <n-ellipsis class="league" :style="{ color: leagueColor }">
           {{ leagueName }}
-        </n-text>
+        </n-ellipsis>
         <n-text depth="3" class="kickoff">{{ kickoffText }}</n-text>
       </div>
       <div class="matchup">
@@ -224,11 +224,10 @@ function goDetail() {
 }
 
 .league {
-  flex-shrink: 0;
+  flex-shrink: 1;
   max-width: 4.5em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  font-weight: 600;
 }
 
 .kickoff {

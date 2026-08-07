@@ -75,7 +75,7 @@ function open() {
       :type="handicapTagColor ? undefined : 'default'"
       :color="handicapTagColor"
     >
-      {{ handicapLabel }}
+      <n-ellipsis style="max-width: 100%">{{ handicapLabel }}</n-ellipsis>
     </n-tag>
     <n-tag v-if="goalLean" size="small" :bordered="false">
       {{ goalLean }}
@@ -83,8 +83,8 @@ function open() {
     <n-tag v-if="bothScore" size="small" :bordered="false">
       {{ bothScore }}
     </n-tag>
-    <n-tag v-if="scoreHint" size="small" :bordered="false" type="info">
-      {{ scoreHint }}
+    <n-tag v-if="scoreHint" size="small" class="score-tag" :bordered="false" type="info">
+      <n-ellipsis style="max-width: 100%">{{ scoreHint }}</n-ellipsis>
     </n-tag>
   </div>
 </template>
@@ -111,12 +111,20 @@ function open() {
   flex-shrink: 0;
 }
 
-.handicap-tag {
-  max-width: 100%;
+.handicap-tag,
+.score-tag {
+  flex-shrink: 1;
+  max-width: min(100%, 220px);
   height: auto;
   padding: 2px 8px;
-  white-space: normal;
   line-height: 1.4;
+}
+
+.handicap-tag :deep(.n-tag__content),
+.score-tag :deep(.n-tag__content) {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .clickable {

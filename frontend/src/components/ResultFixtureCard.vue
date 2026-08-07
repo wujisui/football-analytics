@@ -160,11 +160,11 @@ function onLeagueClick(e: Event) {
         @keydown.enter.prevent="onLeagueClick"
         @keydown.space.prevent="onLeagueClick"
       >
-        {{ leagueName }}
+        <n-ellipsis style="max-width: 100%">{{ leagueName }}</n-ellipsis>
       </n-tag>
-      <span class="kickoff">
+      <n-ellipsis class="kickoff">
         {{ kickoffText }}
-      </span>
+      </n-ellipsis>
       <n-tag
         size="small"
         :type="
@@ -189,18 +189,18 @@ function onLeagueClick(e: Event) {
       class="matchup matchup-link"
       @click="openStats"
     >
-      <span class="team home">{{ homeName }}</span>
+      <n-ellipsis class="team home">{{ homeName }}</n-ellipsis>
       <span class="versus">vs</span>
-      <span class="team away">{{ awayName }}</span>
+      <n-ellipsis class="team away">{{ awayName }}</n-ellipsis>
     </n-button>
     <div v-else class="matchup">
-      <span class="team home">{{ homeName }}</span>
+      <n-ellipsis class="team home">{{ homeName }}</n-ellipsis>
       <ScoreDetailLink
         class="score"
         :label="scoreText"
         @click="openDetail"
       />
-      <span class="team away">{{ awayName }}</span>
+      <n-ellipsis class="team away">{{ awayName }}</n-ellipsis>
     </div>
     <p v-if="!isPrematch && extraScoreLine" class="score-extra">{{ extraScoreLine }}</p>
 
@@ -298,17 +298,12 @@ function onLeagueClick(e: Event) {
 :deep(.league-tag .n-tag__content) {
   display: block;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
 }
 
 .kickoff {
   flex: 1 1 0;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 12px;
   color: var(--fa-text-secondary);
 }
@@ -355,9 +350,6 @@ function onLeagueClick(e: Event) {
   flex: 1 1 0;
   min-width: 0;
   font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .team.home {

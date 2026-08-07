@@ -149,9 +149,9 @@ function countOf(leagueId: number): number {
               </n-tooltip>
             </template>
             <template v-if="!collapsed">
-              <span class="lm-name">
+              <n-ellipsis class="lm-name">
                 {{ leagueLabel(league.league_name) }}
-              </span>
+              </n-ellipsis>
             </template>
             <template v-if="!collapsed" #suffix>
               <span class="lm-suffix">
@@ -262,9 +262,7 @@ function countOf(leagueId: number): number {
 .lm-name {
   display: block;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
 }
 
 .lm-item.active {
