@@ -11,6 +11,7 @@ declare module 'vue' {
     FavoriteButton: typeof import('./src/components/FavoriteButton.vue')['default']
     FixtureCard: typeof import('./src/components/FixtureCard.vue')['default']
     FixtureList: typeof import('./src/components/FixtureList.vue')['default']
+    FixtureMatchup: typeof import('./src/components/FixtureMatchup.vue')['default']
     ListBackTop: typeof import('./src/components/ListBackTop.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
     NAvatar: typeof import('naive-ui')['NAvatar']

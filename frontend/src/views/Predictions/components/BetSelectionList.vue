@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { TrashOutline } from '@vicons/ionicons5'
 
+import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import {
   outcomeTitle,
   type CalcOutcome,
@@ -98,17 +99,10 @@ function pickRows(picks: CalcSelection[]) {
       </template>
 
       <n-flex vertical :size="8">
-        <n-flex
-          :wrap="false"
-          justify="center"
-          align="center"
-          :size="6"
-          class="matchup"
-        >
-          <n-ellipsis>{{ group.homeName }}</n-ellipsis>
-          <n-text depth="3" class="versus">VS</n-text>
-          <n-ellipsis>{{ group.awayName }}</n-ellipsis>
-        </n-flex>
+        <FixtureMatchup
+          :home-name="group.homeName"
+          :away-name="group.awayName"
+        />
         <n-flex
           v-for="row in pickRows(group.picks)"
           :key="row.key"
@@ -145,21 +139,5 @@ function pickRows(picks: CalcSelection[]) {
 
 .selection-card :deep(.n-card-header__main) {
   min-width: 0;
-}
-
-.matchup {
-  width: 100%;
-  min-width: 0;
-}
-
-.matchup :deep(.n-ellipsis) {
-  flex: 0 1 auto;
-  min-width: 0;
-  font-weight: 600;
-}
-
-.versus {
-  flex: 0 0 auto;
-  white-space: nowrap;
 }
 </style>

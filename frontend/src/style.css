@@ -228,7 +228,7 @@ button {
   padding: 8px 12px !important;
   align-items: center;
   border-radius: 8px;
-  background: var(--fa-bg-soft) !important;
+  background: color-mix(in srgb, var(--fa-highlight-text) 12%, var(--fa-bg-soft)) !important;
 }
 
 .fa-day-collapse .n-collapse-item__header-main {
@@ -254,14 +254,17 @@ button {
 .fa-day-collapse-title__label {
   flex: 1;
   min-width: 0;
-  color: var(--fa-text-strong);
-  font-weight: 600;
+  color: var(--fa-highlight-text);
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .fa-day-collapse-title__count {
   flex-shrink: 0;
-  color: var(--fa-text-muted);
+  color: var(--fa-highlight-text);
+  opacity: 0.78;
   font-size: 12px;
+  font-weight: 600;
 }
 
 /* ---- Native scrollbars (single source; prefer n-scrollbar for major panes) ---- */

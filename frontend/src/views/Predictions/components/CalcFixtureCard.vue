@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
 import FavoriteButton from '@/components/FavoriteButton.vue'
+import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
@@ -74,21 +75,14 @@ function goDetail() {
         </n-ellipsis>
         <n-text depth="3" class="kickoff">{{ kickoffText }}</n-text>
       </div>
-      <div class="matchup">
-        <n-ellipsis class="team">{{ fixture.home_team_name || '—' }}</n-ellipsis>
-        <n-button
-          v-if="isPhone"
-          text
-          class="versus versus-link"
-          :class="{ opening: openingDetail }"
-          aria-label="查看详情"
-          @click="goDetail"
-        >
-          VS
-        </n-button>
-        <n-text v-else depth="3" class="versus">VS</n-text>
-        <n-ellipsis class="team">{{ fixture.away_team_name || '—' }}</n-ellipsis>
-      </div>
+      <FixtureMatchup
+        class="meta-matchup"
+        clickable
+        :opening="openingDetail"
+        :home-name="fixture.home_team_name || '—'"
+        :away-name="fixture.away_team_name || '—'"
+        @click="goDetail"
+      />
       <FavoriteButton
         v-if="isPhone"
         class="fav"
@@ -96,6 +90,7 @@ function goDetail() {
         :fixture="fixture"
         size="tiny"
       />
+      <span v-else class="meta-trail" aria-hidden="true" />
     </div>
 
     <div v-nested-scroll class="market-list">
@@ -203,23 +198,31 @@ function goDetail() {
   font-size: 12px;
 }
 
-/* League+date together on the left; matchup centered over the pick-button zone. */
+/* Same as prediction list: side chrome + compact matchup centered in the row. */
 .fixture-meta {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
 .calc-fixture.phone .fixture-meta {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
 
 .meta-left {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  justify-self: start;
+}
+
+.meta-matchup {
+  justify-self: center;
+  width: max-content;
+  max-width: 100%;
   min-width: 0;
 }
 
@@ -237,41 +240,15 @@ function goDetail() {
   white-space: nowrap;
 }
 
-.matchup {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  justify-items: center;
-  gap: 6px;
-  min-width: 0;
-  width: 100%;
-  font-size: 13px;
-}
-
-.team {
-  max-width: 100%;
-  min-width: 0;
-  font-weight: 600;
-}
-
-.versus {
-  white-space: nowrap;
-}
-
-.versus-link {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--fa-text-muted);
-}
-
-.versus-link:hover,
-.versus-link:focus-visible,
-.versus-link.opening {
-  color: var(--fa-highlight-text);
-}
-
-.fav {
+.fav,
+.meta-trail {
+  justify-self: end;
   flex-shrink: 0;
+}
+
+.meta-trail {
+  width: 1px;
+  height: 1px;
 }
 
 .market-list {

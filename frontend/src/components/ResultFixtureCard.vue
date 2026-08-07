@@ -7,6 +7,7 @@ import type { ResultFixture } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import FavoriteButton from '@/components/FavoriteButton.vue'
+import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import ResultPredictionSummary from '@/components/ResultPredictionSummary.vue'
 import ScoreDetailLink from '@/components/ScoreDetailLink.vue'
 import {
@@ -182,26 +183,30 @@ function onLeagueClick(e: Event) {
       </n-tag>
     </header>
 
-    <n-button
+    <FixtureMatchup
       v-if="isPrematch"
-      text
-      type="primary"
-      class="matchup matchup-link"
+      clickable
+      spread
+      inward
+      :home-name="homeName"
+      :away-name="awayName"
       @click="openStats"
+    />
+    <FixtureMatchup
+      v-else
+      spread
+      inward
+      :home-name="homeName"
+      :away-name="awayName"
     >
-      <n-ellipsis class="team home">{{ homeName }}</n-ellipsis>
-      <span class="versus">vs</span>
-      <n-ellipsis class="team away">{{ awayName }}</n-ellipsis>
-    </n-button>
-    <div v-else class="matchup">
-      <n-ellipsis class="team home">{{ homeName }}</n-ellipsis>
-      <ScoreDetailLink
-        class="score"
-        :label="scoreText"
-        @click="openDetail"
-      />
-      <n-ellipsis class="team away">{{ awayName }}</n-ellipsis>
-    </div>
+      <template #middle>
+        <ScoreDetailLink
+          class="score"
+          :label="scoreText"
+          @click="openDetail"
+        />
+      </template>
+    </FixtureMatchup>
     <p v-if="!isPrematch && extraScoreLine" class="score-extra">{{ extraScoreLine }}</p>
 
     <AlgorithmPredictionCard
@@ -310,54 +315,6 @@ function onLeagueClick(e: Event) {
 
 .card-head > :deep(.n-tag) {
   flex-shrink: 0;
-}
-
-.matchup {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  font-weight: 600;
-}
-
-.matchup-link {
-  display: flex;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  height: auto;
-  padding: 0;
-  white-space: normal;
-}
-
-:deep(.matchup-link .n-button__content) {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-}
-
-.versus {
-  flex-shrink: 0;
-  color: var(--fa-text-strong);
-}
-
-.team {
-  flex: 1 1 0;
-  min-width: 0;
-  font-size: 13px;
-}
-
-.team.home {
-  text-align: right;
-}
-
-.team.away {
-  text-align: left;
 }
 
 .score {

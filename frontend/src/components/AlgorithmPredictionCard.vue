@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
 import FavoriteButton from '@/components/FavoriteButton.vue'
+import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import {
@@ -83,7 +84,6 @@ const predictionReady = computed(() => {
 
 const homeName = computed(() => props.fixture?.home_team_name || '—')
 const awayName = computed(() => props.fixture?.away_team_name || '—')
-const matchupTitle = computed(() => `${homeName.value} vs ${awayName.value}`)
 const leagueName = computed(() => leagueLabel(props.fixture?.league_name))
 const leagueId = computed(() => props.fixture?.league_id ?? null)
 const leagueActive = computed(
@@ -202,15 +202,13 @@ function onOddsClick() {
       >
         <n-ellipsis style="max-width: 100%">{{ leagueName }}</n-ellipsis>
       </n-tag>
-      <n-button
-        text
-        type="primary"
-        size="small"
-        class="zone-matchup"
-        @click.stop="goStats"
-      >
-        <n-ellipsis style="max-width: 100%">{{ matchupTitle }}</n-ellipsis>
-      </n-button>
+      <FixtureMatchup
+        class="head-matchup"
+        clickable
+        :home-name="homeName"
+        :away-name="awayName"
+        @click="goStats"
+      />
       <FavoriteButton
         v-if="fixture"
         class="card-fav"
@@ -388,20 +386,9 @@ function onOddsClick() {
   max-width: 100%;
 }
 
-.zone-matchup {
-  width: 100%;
-  max-width: none;
+.head-matchup {
   min-width: 0;
-  height: auto;
-  line-height: 1.4;
-  padding: 0 2px;
   text-align: center;
-}
-
-.zone-matchup :deep(.n-button__content) {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
 }
 
 .card-fav {

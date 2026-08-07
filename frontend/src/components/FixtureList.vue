@@ -240,7 +240,7 @@ const defaultItemsStyle = computed(() => {
   padding: 8px 12px;
   box-sizing: border-box;
   border-radius: 8px;
-  background: var(--fa-bg-soft);
+  background: color-mix(in srgb, var(--fa-highlight-text) 12%, var(--fa-bg-soft));
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -253,7 +253,8 @@ const defaultItemsStyle = computed(() => {
 .virtual-day-chevron {
   flex-shrink: 0;
   margin-left: auto;
-  opacity: 0.65;
+  color: var(--fa-highlight-text);
+  opacity: 0.8;
   transition: transform 0.15s ease;
 }
 
