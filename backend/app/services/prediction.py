@@ -496,8 +496,14 @@ def _align_score_with_btts(
     probs: dict[str, float],
     total: int,
     recommendation: str = "",
+    ou_line: float | None = None,
+    ou_side: str | None = None,
 ) -> list[tuple[int, int]]:
-    """Keep score as display reference; nudge so it does not fight BTTS / 1X2 leans."""
+    """Keep score as display reference; nudge so it does not fight BTTS / 1X2 leans.
+
+    When O/U is provided, never leave a score that fights the size lean (O/U
+    outranks BTTS): e.g. 小 2.5 must not stay at 2-1 just to keep 双进:是.
+    """
     if not lines:
         return lines
     outcomes = recommendation_outcomes(recommendation) or {_primary_1x2_key(probs)}
@@ -508,27 +514,43 @@ def _align_score_with_btts(
             if single_outcome:
                 fixed = _btts_score_for_outcomes(outcomes, probs)
                 if fixed and (h == 0 or a == 0 or not _score_matches_outcomes(h, a, outcomes)):
-                    out.append(fixed)
-                    continue
-            if h == 0 and a == 0:
-                out.append((1, 1))
+                    pair = fixed
+                elif h == 0 and a == 0:
+                    pair = (1, 1)
+                elif h == 0:
+                    pair = (1, max(1, a))
+                elif a == 0:
+                    pair = (max(1, h), 1)
+                else:
+                    pair = (h, a)
+            elif h == 0 and a == 0:
+                pair = (1, 1)
             elif h == 0:
-                out.append((1, max(1, a)))
+                pair = (1, max(1, a))
             elif a == 0:
-                out.append((max(1, h), 1))
+                pair = (max(1, h), 1)
             else:
-                out.append((h, a))
+                pair = (h, a)
         elif not btts_yes and h > 0 and a > 0:
             key = _primary_1x2_key(probs)
             if key == "draw":
-                out.append((0, 0))
+                pair = (0, 0)
             elif key == "home":
                 # Keep winner's goals; drop opponent only (2-1 → 2-0, not 3-0).
-                out.append((max(h, 1), 0))
+                pair = (max(h, 1), 0)
             else:
-                out.append((0, max(a, 1)))
+                pair = (0, max(a, 1))
         else:
-            out.append((h, a))
+            pair = (h, a)
+        if ou_line is not None and ou_side in ("over", "under"):
+            pair = _nudge_score_for_ou(
+                pair[0],
+                pair[1],
+                line=ou_line,
+                side=ou_side,
+                btts_yes=btts_yes,
+            )
+        out.append(pair)
     seen: set[tuple[int, int]] = set()
     unique: list[tuple[int, int]] = []
     for pair in out:
@@ -539,19 +561,10 @@ def _align_score_with_btts(
 
 
 def _target_total(line: float, side: str) -> int:
-    """Map O/U line + side to a reference goal total for score hints.
-
-    Under 3.5 must not anchor at 3 goals — that collapses many「小+主胜+否」
-    fixtures to identical 3-0 after BTTS alignment.
-    """
+    """Map O/U line + side to a reference goal total for score hints."""
     if side == "under":
-        base = max(0, int(line // 1))
-        # Half-lines at 3.5+ (小 3.5 / 4.5 …): anchor one below the line cap.
-        if line > int(line) and line >= 3.0:
-            base = max(1, base - 1)
-        return base
-    return max(1, int(-(-line // 1)))  # ceil
-
+        return max(0, _max_goals_under(line))
+    return max(1, _min_goals_over(line))
 
 def _primary_1x2_key(probs: dict[str, float]) -> str:
     return max(("home", "draw", "away"), key=lambda k: probs[k])
@@ -633,9 +646,12 @@ def resolve_handicap_bundle(
     prefer_stored: bool = False,
 ) -> tuple[str, str]:
     """Resolve handicap lean; frozen exam snapshots must not be recomputed."""
+    from app.services.ah_features import display_handicap_lean, extract_main_ah_line
+
     text = (stored or "").strip()
     if prefer_stored and text:
-        return text, ""
+        line_f, _, _ = extract_main_ah_line(odds if isinstance(odds, dict) else None)
+        return display_handicap_lean(text, line_f) or text, ""
 
     ah = (odds or {}).get("asian_handicap") if isinstance(odds, dict) else None
     if isinstance(odds, dict) and odds.get("available") and isinstance(ah, dict):
@@ -646,16 +662,132 @@ def resolve_handicap_bundle(
             features=features,
             score_hint=score_hint,
         )
-    return (text if text else "缺少盘口数据分析"), ""
+    if text:
+        line_f, _, _ = extract_main_ah_line(odds if isinstance(odds, dict) else None)
+        return display_handicap_lean(text, line_f) or text, ""
+    return "缺少盘口数据分析", ""
 
 
-def _draw_scoreline(preferred_total: int) -> tuple[int, int]:
-    """Even scoreline closest to preferred total (0-0 / 1-1 / 2-2…)."""
-    total = max(0, int(preferred_total))
+def _score_settles_ou(home: int, away: int, line: float, side: str) -> bool:
+    goals = home + away
+    if side == "over":
+        return goals > line
+    return goals < line
+
+
+def _min_goals_over(line: float) -> int:
+    """Smallest integer total that settles over (2.5 → 3, 3.0 → 4)."""
+    return int(line) + 1
+
+
+def _max_goals_under(line: float) -> int:
+    """Largest integer total that settles under (2.5 → 2, 3.0 → 2)."""
+    whole = int(line)
+    if line > whole:
+        return whole
+    return max(0, whole - 1)
+
+
+def _draw_scoreline_for_ou(
+    preferred_total: int,
+    line: float,
+    side: str,
+) -> tuple[int, int]:
+    """Draw scoreline that settles the O/U lean (1-1 never with 大 2.5)."""
+    preferred = max(0, int(preferred_total))
+    if side == "over":
+        need = _min_goals_over(line)
+        if need % 2 == 1:
+            need += 1
+        total = max(preferred if preferred % 2 == 0 else preferred + 1, need)
+        if total % 2 == 1:
+            total += 1
+        while not _score_settles_ou(total // 2, total // 2, line, "over"):
+            total += 2
+        return total // 2, total // 2
+
+    cap = _max_goals_under(line)
+    if cap % 2 == 1:
+        cap -= 1
+    total = min(preferred if preferred % 2 == 0 else preferred - 1, cap)
+    total = max(0, total)
     if total % 2 == 1:
         total -= 1
-    half = total // 2
-    return half, half
+    while total > 0 and not _score_settles_ou(total // 2, total // 2, line, "under"):
+        total -= 2
+    return total // 2, total // 2
+
+
+def _nudge_score_for_ou(
+    home: int,
+    away: int,
+    *,
+    line: float,
+    side: str,
+    btts_yes: bool,
+) -> tuple[int, int]:
+    """Keep this scoreline's 1X2 result; bump/cut goals so O/U does not fight."""
+    h, a = int(home), int(away)
+    if _score_settles_ou(h, a, line, side):
+        return h, a
+    if h == a:
+        return _draw_scoreline_for_ou(h + a, line, side)
+
+    home_win = h > a
+    if side == "over":
+        need = _min_goals_over(line)
+        if btts_yes:
+            if home_win:
+                na = max(a, 1)
+                nh = max(h, na + 1, need - na)
+                if nh <= na:
+                    nh = na + 1
+                return nh, na
+            nh = max(h, 1)
+            na = max(a, nh + 1, need - nh)
+            if na <= nh:
+                na = nh + 1
+            return nh, na
+        if home_win:
+            return max(need, 1), 0
+        return 0, max(need, 1)
+
+    cap = _max_goals_under(line)
+    if cap <= 0:
+        return 0, 0
+    if btts_yes and cap >= 3:
+        # 2-1 / 1-2 is the leanest both-score win under a high line.
+        return (2, 1) if home_win else (1, 2)
+    # O/U outranks BTTS when under line cannot host both teams scoring.
+    if home_win:
+        return min(max(h, 1), cap), 0
+    return 0, min(max(a, 1), cap)
+
+
+def _align_score_with_ou(
+    lines: list[tuple[int, int]],
+    *,
+    line: float,
+    ou_side: str,
+    btts_yes: bool,
+) -> list[tuple[int, int]]:
+    """Nudge reference scores so none fight the O/U lean."""
+    if not lines:
+        return lines
+    out: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for home, away in lines:
+        fixed = _nudge_score_for_ou(
+            home,
+            away,
+            line=line,
+            side=ou_side,
+            btts_yes=btts_yes,
+        )
+        if fixed not in seen:
+            seen.add(fixed)
+            out.append(fixed)
+    return out
 
 
 def _score_hints_for_recommendation(
@@ -665,69 +797,68 @@ def _score_hints_for_recommendation(
     *,
     btts_yes: bool,
     ou_side: str,
+    ou_line: float,
 ) -> tuple[str, list[tuple[int, int]]]:
     """Build reference score(s) consistent with 胜平负推荐.
 
     双选时给多个比分（用 / 连接），避免「主胜/平却只给 2-0」这类打架。
-    平局：小球/双方否 → 0-0；大球/双方是 → 1-1、2-2 等对称比分。
+    平局参考分必须能结算大小球：大 2.5 → 2-2，不能再落到 1-1。
     """
     rec = (recommendation or "").strip()
     outcomes = recommendation_outcomes(rec) or {_primary_1x2_key(probs)}
     lines: list[tuple[int, int]] = []
 
     def _draw_ref() -> tuple[int, int]:
-        draw_total = total if total > 0 else 0
-        if ou_side == "over":
-            if draw_total < 2:
-                draw_total = 2
-            return _draw_scoreline(draw_total)
-        if not btts_yes:
-            return 0, 0
-        return _draw_scoreline(draw_total)
+        if ou_side == "under" and not btts_yes:
+            return _draw_scoreline_for_ou(0, ou_line, ou_side)
+        return _draw_scoreline_for_ou(total, ou_line, ou_side)
+
+    def _side_win_ref(winner: str) -> tuple[int, int]:
+        """Winner home|away; always settle O/U and keep that side winning."""
+        if winner == "home":
+            raw_h, raw_a = (2, 1) if btts_yes else (max(total, 1), 0)
+            if raw_h <= raw_a:
+                raw_h, raw_a = raw_a + 1, raw_a
+        else:
+            raw_h, raw_a = (1, 2) if btts_yes else (0, max(total, 1))
+            if raw_a <= raw_h:
+                raw_h, raw_a = raw_h, raw_h + 1
+        return _nudge_score_for_ou(
+            raw_h, raw_a, line=ou_line, side=ou_side, btts_yes=btts_yes
+        )
 
     if outcomes == {"draw"}:
         lines.append(_draw_ref())
     elif outcomes == {"home", "draw"}:
-        if total <= 2:
-            lines.append((1, 0))
-        elif btts_yes:
-            lines.append((2, 1))
-        else:
-            lines.append((2, 0))
-        if btts_yes:
-            draw_total = 2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1)
-            lines.append(_draw_scoreline(draw_total))
-        else:
-            lines.append((0, 0))
+        lines.append(_side_win_ref("home"))
+        lines.append(_draw_ref())
     elif outcomes == {"away", "draw"}:
-        if total <= 2:
-            lines.append((0, 1))
-        elif btts_yes:
-            lines.append((1, 2))
-        else:
-            lines.append((0, 2))
-        if btts_yes:
-            draw_total = 2 if total <= 2 else min(4, total if total % 2 == 0 else total - 1)
-            lines.append(_draw_scoreline(draw_total))
-        else:
-            lines.append((0, 0))
+        lines.append(_side_win_ref("away"))
+        lines.append(_draw_ref())
     elif outcomes == {"home", "away"}:
-        ht = max(1, total if total > 0 else 1)
-        if ht <= 2:
-            lines.append((1, 0))
-            lines.append((0, 1))
-        elif btts_yes:
-            lines.append((2, 1))
-            lines.append((1, 2))
-        else:
-            lines.append((2, 0))
-            lines.append((0, 2))
+        lines.append(_side_win_ref("home"))
+        lines.append(_side_win_ref("away"))
     elif outcomes == {"home"}:
-        lines.append(_split_score(max(1, total), probs))
+        split = _split_score(max(1, total), probs)
+        lines.append(
+            _nudge_score_for_ou(
+                split[0], split[1], line=ou_line, side=ou_side, btts_yes=btts_yes
+            )
+        )
     elif outcomes == {"away"}:
-        lines.append(_split_score(max(1, total), probs))
+        split = _split_score(max(1, total), probs)
+        lines.append(
+            _nudge_score_for_ou(
+                split[0], split[1], line=ou_line, side=ou_side, btts_yes=btts_yes
+            )
+        )
     else:
-        lines.append(_split_score(max(0, total), probs))
+        split = _split_score(max(0, total), probs)
+        lines.append(
+            _nudge_score_for_ou(
+                split[0], split[1], line=ou_line, side=ou_side, btts_yes=btts_yes
+            )
+        )
 
     # Deduplicate while preserving order.
     seen: set[tuple[int, int]] = set()
@@ -750,7 +881,7 @@ def derive_prediction_leans(
     """Derive O/U, BTTS, score and handicap leans from 1X2 + markets.
 
     Priority for product accuracy: 1X2 → O/U → BTTS. Reference scorelines are
-    reconciled with the BTTS lean so「1-1」never pairs with「双方进球：否」.
+    reconciled with O/U then BTTS so「1-1」never pairs with「大（2.5）」or「双进:否」.
 
     Flat prior with local odds → use odds-implied 1X2 (no API).
     Flat prior and no usable odds → 待分析.
@@ -837,6 +968,7 @@ def derive_prediction_leans(
             total,
             btts_yes=btts_yes,
             ou_side=side,
+            ou_line=line,
         )
     score_lines = _align_score_with_btts(
         score_lines,
@@ -844,6 +976,14 @@ def derive_prediction_leans(
         probs=normalized,
         total=total,
         recommendation=recommendation,
+        ou_line=line,
+        ou_side=side,
+    )
+    score_lines = _align_score_with_ou(
+        score_lines,
+        line=line,
+        ou_side=side,
+        btts_yes=btts_yes,
     )
     btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
     score_hint = (
