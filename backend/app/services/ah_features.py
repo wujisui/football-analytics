@@ -171,20 +171,44 @@ def settle_handicap_result(
     return pick_to_lean(label)
 
 
-def handicap_pick_from_lean(lean: str | None) -> str | None:
+def handicap_picks_from_lean(lean: str | None) -> set[str]:
+    """Parse one or two frozen AH picks from display text."""
     text = (lean or "").strip()
-    if text.startswith("让球胜"):
-        return "让球胜"
-    if text.startswith("让球平"):
-        return "让球平"
-    if text.startswith("让球负"):
-        return "让球负"
-    return None
+    pick_text = re.split(r"[（(]", text, maxsplit=1)[0]
+    picks: set[str] = set()
+    if "胜" in pick_text:
+        picks.add("让球胜")
+    if "平" in pick_text:
+        picks.add("让球平")
+    if "负" in pick_text:
+        picks.add("让球负")
+    return picks
+
+
+def handicap_pick_from_lean(lean: str | None) -> str | None:
+    """Backward-compatible single pick; dual picks have no single answer."""
+    picks = handicap_picks_from_lean(lean)
+    return next(iter(picks)) if len(picks) == 1 else None
 
 
 def handicap_line_from_lean(lean: str | None) -> float | None:
     """Fallback line parser for frozen rows whose odds package is unavailable."""
     text = (lean or "").strip()
+    home_give = re.search(r"[（(]\s*主让\s*(\d+(?:\.\d+)?)\s*[）)]", text)
+    if home_give:
+        try:
+            return -float(home_give.group(1))
+        except ValueError:
+            return None
+    away_give = re.search(r"[（(]\s*客让\s*(\d+(?:\.\d+)?)\s*[）)]", text)
+    if away_give:
+        try:
+            return float(away_give.group(1))
+        except ValueError:
+            return None
+    if re.search(r"[（(]\s*平手\s*[）)]", text):
+        return 0.0
+    # Legacy signed home-side line: 让球胜（-1） / 让球负（+0.5）
     match = re.search(r"[（(]\s*([+-]?\d+(?:\.\d+)?)\s*[）)]", text)
     if not match:
         return None
@@ -192,6 +216,52 @@ def handicap_line_from_lean(lean: str | None) -> float | None:
         return float(match.group(1))
     except ValueError:
         return None
+
+
+def _line_magnitude_text(line_f: float) -> str:
+    mag = abs(float(line_f))
+    if mag == int(mag):
+        return str(int(mag))
+    return str(mag)
+
+
+def format_ah_line(line_f: float) -> str:
+    """Signed home-side AH line: 主让为负、客让为正、平手为 0。"""
+    value = float(line_f)
+    if abs(value) < 1e-9:
+        return "0"
+    text = _line_magnitude_text(value)
+    return f"-{text}" if value < 0 else f"+{text}"
+
+
+def format_handicap_lean_text(pick: str, line_f: float | None) -> str:
+    """Canonical lean for storage/UI: 让球负（-1） / 让球胜（+0.5） / 让球平（0）."""
+    base = pick_to_lean(pick)
+    if line_f is None:
+        return base
+    return f"{base}（{format_ah_line(line_f)}）"
+
+
+def display_handicap_lean(lean: str | None, line_f: float | None = None) -> str | None:
+    """Normalize frozen lean for display; attach signed line when known."""
+    text = (lean or "").strip()
+    if not text:
+        return None
+    picks = handicap_picks_from_lean(text)
+    if not picks:
+        return text
+    resolved = handicap_line_from_lean(text)
+    if resolved is None:
+        resolved = line_f
+    if picks == {"让球胜", "让球负"}:
+        base = "胜/负"
+    elif picks == {"让球负", "让球平"}:
+        base = "负/平"
+    elif picks == {"让球胜", "让球平"}:
+        base = "胜/平"
+    else:
+        base = next(iter(picks)).removeprefix("让球")
+    return format_handicap_lean_text(f"让球{base}", resolved)
 
 
 def build_ah_features(
@@ -257,18 +327,15 @@ def build_ah_features(
     return {**base, **extra}, line_f, home_f, away_f
 
 
-def format_ah_line(line_f: float) -> str:
-    value = float(line_f)
-    if value.is_integer():
-        text = str(int(value))
-    else:
-        text = str(value)
-    # AH line is always from the home side: positive = home receives,
-    # negative = home gives. Show '+' explicitly to remove ambiguity.
-    return f"+{text}" if value > 0 else text
-
-
 def pick_to_lean(pick: str) -> str:
+    if pick == "cover/no_cover":
+        return "让球胜/负"
+    if pick == "cover/push":
+        return "让球胜/平"
+    if pick == "no_cover/push":
+        return "让球负/平"
+    if pick.startswith("让球"):
+        return pick
     if pick == "cover":
         return "让球胜"
     if pick == "push":

@@ -18,6 +18,7 @@ from app.services.ah_features import (
     build_ah_features,
     dumps_ah_features,
     extract_main_ah_line,
+    format_handicap_lean_text,
     loads_ah_features,
     parse_score_hint,
     pick_to_lean,
@@ -38,7 +39,7 @@ TRAIN_LABELS = frozenset(_LABEL_TO_IDX)
 @dataclass
 class HandicapPrediction:
     cover_prob: float
-    pick: str  # cover | no_cover | push
+    pick: str  # cover | no_cover | push | slash-separated dual pick
     source: str  # ml | multifactor | structural | score_hint
     line_f: float | None = None
     market_note: str = ""
@@ -158,6 +159,7 @@ def _structural_pick(
     half_receiving = 0.4 <= line_f <= 0.85
     home_undivided = rec == "胜/平" or "主队不败" in rec or rec.startswith("主胜/平")
     away_undivided = rec == "负/平" or "客队不败" in rec or rec.startswith("客胜/平")
+    integer_line = abs(line_f - round(line_f)) < 1e-9
 
     # Single 胜 + home gives up to one goal (-0.5 / -0.75 …): any 1-goal win covers.
     if rec in {"胜", "主胜"} and -1.0 < line_f < -0.05:
@@ -166,12 +168,17 @@ def _structural_pick(
     if rec in {"负", "客胜"} and 0.05 < line_f < 1.0:
         return HandicapPrediction(0.28, "no_cover", "structural", line_f)
 
-    if home_undivided and half_giving:
-        return HandicapPrediction(0.35, "no_cover", "structural", line_f)
+    # 胜/平 + 主让：平局必为让球负；胜局在非整数盘可穿/不穿，
+    # 整数盘按一球边界覆盖为让球负/平，避免错误压成单选让球负。
+    if home_undivided and line_f < -0.05:
+        pick = "no_cover/push" if integer_line else "cover/no_cover"
+        return HandicapPrediction(0.5, pick, "structural", line_f)
     if home_undivided and half_receiving:
         return HandicapPrediction(0.72, "cover", "structural", line_f)
-    if away_undivided and half_receiving:
-        return HandicapPrediction(0.68, "cover", "structural", line_f)
+    # 负/平 + 客让（主队受让）与上面镜像。
+    if away_undivided and line_f > 0.05:
+        pick = "cover/push" if integer_line else "cover/no_cover"
+        return HandicapPrediction(0.5, pick, "structural", line_f)
     if away_undivided and half_giving:
         return HandicapPrediction(0.32, "no_cover", "structural", line_f)
     if rec in {"负", "客胜"} and half_receiving:
@@ -279,8 +286,8 @@ def predict_handicap(
 
 
 def format_handicap_lean(pred: HandicapPrediction) -> str:
-    """Product default: pick only (line already shown in odds)."""
-    return pick_to_lean(pred.pick)
+    """Product lean with signed line: 让球负（-1） / 让球胜（+0.5） / 让球平（0）."""
+    return format_handicap_lean_text(pick_to_lean(pred.pick), pred.line_f)
 
 
 def handicap_bundle_from_markets(

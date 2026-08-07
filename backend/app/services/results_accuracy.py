@@ -12,9 +12,10 @@ from sqlalchemy.orm import selectinload
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.services.ah_features import (
+    display_handicap_lean,
     extract_main_ah_line,
     handicap_line_from_lean,
-    handicap_pick_from_lean,
+    handicap_picks_from_lean,
     settle_handicap_result,
 )
 from app.services.prematch_package import package_from_record
@@ -72,6 +73,12 @@ def evaluate_fixture_prediction(
         # Older rows may lack score_hint; still count 1X2 / O/U / BTTS if present.
         score_hint = ""
 
+    package = package_from_record(stored)
+    odds = package.get("odds") if isinstance(package, dict) else None
+    line_f, _, _ = extract_main_ah_line(odds if isinstance(odds, dict) else None)
+    if line_f is None:
+        line_f = handicap_line_from_lean(handicap_lean)
+
     payload.update(
         {
             "has_prediction": True,
@@ -79,26 +86,21 @@ def evaluate_fixture_prediction(
             "score_hint": canonical_score_hint(score_hint) or None,
             "goal_lean": canonical_goal_lean(goal_lean) or None,
             "both_score_lean": canonical_btts_lean(both_score_lean) or None,
-            "handicap_lean": handicap_lean or None,
+            "handicap_lean": display_handicap_lean(handicap_lean, line_f),
         }
     )
     if not payload["evaluable"]:
         return payload
 
-    package = package_from_record(stored)
-    odds = package.get("odds") if isinstance(package, dict) else None
-    line_f, _, _ = extract_main_ah_line(odds if isinstance(odds, dict) else None)
-    if line_f is None:
-        line_f = handicap_line_from_lean(handicap_lean)
     handicap_result = settle_handicap_result(
         fixture.home_goals,
         fixture.away_goals,
         line_f,
     )
-    predicted_handicap = handicap_pick_from_lean(handicap_lean)
+    predicted_handicaps = handicap_picks_from_lean(handicap_lean)
     payload["handicap_result"] = handicap_result
-    if handicap_result is not None and predicted_handicap is not None:
-        payload["handicap_hit"] = predicted_handicap == handicap_result
+    if handicap_result is not None and predicted_handicaps:
+        payload["handicap_hit"] = handicap_result in predicted_handicaps
 
     hits = evaluate_prediction_vs_score(
         home_goals=fixture.home_goals,

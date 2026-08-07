@@ -9,10 +9,17 @@ from app.services.ah_features import (
     build_ah_features,
     handicap_line_from_lean,
     handicap_pick_from_lean,
+    handicap_picks_from_lean,
     settle_ah_label,
     settle_handicap_result,
 )
-from app.services.ah_predictor import HandicapPrediction, _BinaryLogReg, format_handicap_lean, load_trained_model
+from app.services.ah_predictor import (
+    HandicapPrediction,
+    _BinaryLogReg,
+    _structural_pick,
+    format_handicap_lean,
+    load_trained_model,
+)
 from app.services.features import extract_features
 
 
@@ -23,11 +30,38 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(settle_ah_label(1, 1, 0.0), "push")
         self.assertIsNone(settle_ah_label(None, 1, -0.5))
 
-    def test_format_handicap_lean_omits_line(self) -> None:
+    def test_format_handicap_lean_includes_side(self) -> None:
         pred = HandicapPrediction(0.62, "cover", "multifactor", -0.25)
-        self.assertEqual(format_handicap_lean(pred), "让球胜")
+        self.assertEqual(format_handicap_lean(pred), "让球胜（-0.25）")
         pred_lose = HandicapPrediction(0.4, "no_cover", "multifactor", -0.25)
-        self.assertEqual(format_handicap_lean(pred_lose), "让球负")
+        self.assertEqual(format_handicap_lean(pred_lose), "让球负（-0.25）")
+        pred_recv = HandicapPrediction(0.55, "cover", "multifactor", 1.0)
+        self.assertEqual(format_handicap_lean(pred_recv), "让球胜（+1）")
+        pred_level = HandicapPrediction(0.5, "push", "multifactor", 0.0)
+        self.assertEqual(format_handicap_lean(pred_level), "让球平（0）")
+        pred_dual = HandicapPrediction(0.5, "cover/no_cover", "structural", -0.5)
+        self.assertEqual(format_handicap_lean(pred_dual), "让球胜/负（-0.5）")
+        pred_integer_dual = HandicapPrediction(0.5, "no_cover/push", "structural", -1.0)
+        self.assertEqual(format_handicap_lean(pred_integer_dual), "让球负/平（-1）")
+
+    def test_double_chance_maps_to_handicap_double_pick(self) -> None:
+        non_integer = _structural_pick(-0.5, "胜/平")
+        self.assertIsNotNone(non_integer)
+        self.assertEqual(non_integer.pick, "cover/no_cover")
+        self.assertEqual(format_handicap_lean(non_integer), "让球胜/负（-0.5）")
+
+        integer = _structural_pick(-1.0, "胜/平")
+        self.assertIsNotNone(integer)
+        self.assertEqual(integer.pick, "no_cover/push")
+        self.assertEqual(format_handicap_lean(integer), "让球负/平（-1）")
+
+        mirrored_non_integer = _structural_pick(0.5, "负/平")
+        self.assertIsNotNone(mirrored_non_integer)
+        self.assertEqual(mirrored_non_integer.pick, "cover/no_cover")
+
+        mirrored_integer = _structural_pick(1.0, "负/平")
+        self.assertIsNotNone(mirrored_integer)
+        self.assertEqual(mirrored_integer.pick, "cover/push")
 
     def test_settle_three_way_handicap_result(self) -> None:
         # Home gives one: 1-0 pushes, 2-0 wins, any level score loses.
@@ -42,8 +76,22 @@ class AhFeaturesTests(unittest.TestCase):
     def test_parse_frozen_handicap_lean(self) -> None:
         self.assertEqual(handicap_pick_from_lean("让球胜（-1）"), "让球胜")
         self.assertEqual(handicap_pick_from_lean("让球负"), "让球负")
+        self.assertEqual(handicap_pick_from_lean("让球负（主让1）"), "让球负")
+        self.assertIsNone(handicap_pick_from_lean("让球胜/负（-0.5）"))
+        self.assertEqual(
+            handicap_picks_from_lean("让球胜/负（-0.5）"),
+            {"让球胜", "让球负"},
+        )
+        self.assertEqual(
+            handicap_picks_from_lean("让球负/平（-1）"),
+            {"让球负", "让球平"},
+        )
         self.assertEqual(handicap_line_from_lean("让球胜（-1）"), -1.0)
         self.assertEqual(handicap_line_from_lean("让球负（+1）"), 1.0)
+        self.assertEqual(handicap_line_from_lean("让球负（主让1）"), -1.0)
+        self.assertEqual(handicap_line_from_lean("让球胜（客让0.5）"), 0.5)
+        self.assertEqual(handicap_line_from_lean("让球平（平手）"), 0.0)
+        self.assertEqual(handicap_line_from_lean("让球平（0）"), 0.0)
         self.assertIsNone(handicap_line_from_lean("让球平"))
 
     def test_mx_probs_follow_market(self) -> None:
