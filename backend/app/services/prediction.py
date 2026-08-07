@@ -65,8 +65,12 @@ def canonical_recommendation(text: str | None) -> str:
 
 def canonical_goal_lean(text: str | None) -> str:
     value = (text or "").strip()
-    return value.replace("倾向大球", "大").replace("倾向小球", "小").replace(
-        "大小球：", "大小："
+    return (
+        value.replace("倾向大球", "大")
+        .replace("倾向小球", "小")
+        .replace("大小球：", "大小：")
+        .replace("（", "(")
+        .replace("）", ")")
     )
 
 
@@ -934,7 +938,7 @@ def derive_prediction_leans(
     total = _target_total(line, side)
     line_label = _format_line(line)
     goal_lean = (
-        f"大（{line_label}）" if side == "over" else f"小（{line_label}）"
+        f"大({line_label})" if side == "over" else f"小({line_label})"
     )
 
     recommendation = get_recommendation(
@@ -1073,7 +1077,7 @@ def _parse_score_hint(score_hint: str) -> list[tuple[int, int]]:
 
 
 def _parse_goal_lean(goal_lean: str) -> tuple[str, float] | None:
-    """Parse current ``大（2.5）`` and historical ``倾向大球（2.5）``."""
+    """Parse current ``大(2.5)`` and historical ``倾向大球（2.5）`` / ``大（2.5）``."""
     text = (goal_lean or "").strip()
     match = re.search(r"(?:倾向)?(大球|小球|大|小)[（(](.+?)[）)]", text)
     if not match:

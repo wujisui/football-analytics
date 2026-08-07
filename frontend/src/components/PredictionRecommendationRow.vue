@@ -62,6 +62,7 @@ function open() {
     <span class="recommendation-label">推荐</span>
     <n-tag
       size="small"
+      :bordered="false"
       :type="recommendationTagColor ? undefined : 'default'"
       :color="recommendationTagColor"
     >
@@ -70,6 +71,7 @@ function open() {
     <n-tag
       size="small"
       class="handicap-tag"
+      :bordered="false"
       :type="handicapTagColor ? undefined : 'default'"
       :color="handicapTagColor"
     >

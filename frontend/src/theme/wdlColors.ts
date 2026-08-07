@@ -24,11 +24,15 @@ export function leanWdlTone(text: string | null | undefined): WdlTone | null {
   return null
 }
 
-/** Naive UI `n-tag` outline color aligned with WDL. */
+/** Borderless WDL tag with a soft business-color background. */
 export function wdlTagColor(tone: WdlTone | null):
   | { color: string; textColor: string; borderColor: string }
   | undefined {
   if (!tone) return undefined
   const c = WDL_COLORS[tone]
-  return { color: 'transparent', textColor: c, borderColor: c }
+  return {
+    color: `${c}29`,
+    textColor: c,
+    borderColor: 'transparent',
+  }
 }

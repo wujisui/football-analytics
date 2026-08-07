@@ -25,7 +25,7 @@ class PredictionCopyTests(unittest.TestCase):
     def test_historical_copy_is_canonicalized(self) -> None:
         self.assertEqual(canonical_recommendation("客胜"), "负")
         self.assertEqual(canonical_recommendation("主胜/平（主队不败）"), "胜/平")
-        self.assertEqual(canonical_goal_lean("倾向小球（2.5）"), "小（2.5）")
+        self.assertEqual(canonical_goal_lean("倾向小球（2.5）"), "小(2.5)")
         self.assertEqual(canonical_btts_lean("双方进球：是"), "双进:是")
         self.assertEqual(canonical_score_hint("2-1"), "比分:2-1")
         self.assertEqual(canonical_score_hint("比分：2-1"), "比分:2-1")
@@ -35,7 +35,7 @@ class PredictionCopyTests(unittest.TestCase):
             "home_goals": 2,
             "away_goals": 1,
             "score_hint": "比分:2-1",
-            "goal_lean": "大（2.5）",
+            "goal_lean": "大(2.5)",
             "both_score_lean": "双进:是",
         }
         compact = evaluate_prediction_vs_score(**common, recommendation="胜")
@@ -67,7 +67,8 @@ class PredictionCopyTests(unittest.TestCase):
             stored=frozen,
             prefer_stored=True,
         )
-        self.assertEqual(lean, frozen)
+        # Frozen pick kept; line paren normalized to half-width for display width.
+        self.assertEqual(lean, "让球负(-0.5)")
 
     def test_summary_includes_handicap_accuracy(self) -> None:
         summary = summarize_accuracy(

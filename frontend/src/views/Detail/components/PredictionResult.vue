@@ -61,6 +61,7 @@ const handicapTagColor = computed(() =>
               推荐
               <n-tag
                 size="small"
+                :bordered="false"
                 :type="recommendationTagColor ? undefined : 'default'"
                 :color="recommendationTagColor"
               >
@@ -69,6 +70,7 @@ const handicapTagColor = computed(() =>
               <n-tag
                 size="small"
                 class="rec-tag"
+                :bordered="false"
                 :type="handicapTagColor ? undefined : 'default'"
                 :color="handicapTagColor"
               >

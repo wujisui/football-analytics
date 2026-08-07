@@ -235,11 +235,14 @@ def format_ah_line(line_f: float) -> str:
 
 
 def format_handicap_lean_text(pick: str, line_f: float | None) -> str:
-    """Canonical lean for storage/UI: 让球负（-1） / 让球胜（+0.5） / 让球平（0）."""
+    """Canonical lean for storage/UI: 让球负(-1) / 让球胜(+0.5) / 让球平(0).
+
+    Half-width parentheses keep recommendation tags narrower on phone.
+    """
     base = pick_to_lean(pick)
     if line_f is None:
         return base
-    return f"{base}（{format_ah_line(line_f)}）"
+    return f"{base}({format_ah_line(line_f)})"
 
 
 def display_handicap_lean(lean: str | None, line_f: float | None = None) -> str | None:
