@@ -30,6 +30,7 @@ const rows = computed(() =>
   buildMarketRows(props.fixture, { combineOuBtts: isPhone.value }),
 )
 const prediction = computed(() => snapshotFromAnalysis(props.fixture.analysis))
+const marketGap = computed(() => (isPhone.value ? 8 : 6))
 
 const leagueName = computed(() => leagueLabel(props.fixture.league_name))
 const leagueColor = computed(() => leagueTagColor(props.fixture.league_id))
@@ -67,9 +68,12 @@ function goDetail() {
     :class="{ phone: isPhone }"
   >
     <div class="fixture-meta">
-      <n-text strong class="league" :style="{ color: leagueColor }">
-        {{ leagueName }}
-      </n-text>
+      <div class="meta-left">
+        <n-text strong class="league" :style="{ color: leagueColor }">
+          {{ leagueName }}
+        </n-text>
+        <n-text depth="3" class="kickoff">{{ kickoffText }}</n-text>
+      </div>
       <div class="matchup">
         <n-ellipsis class="team">{{ fixture.home_team_name || '—' }}</n-ellipsis>
         <n-button
@@ -85,7 +89,6 @@ function goDetail() {
         <n-text v-else depth="3" class="versus">VS</n-text>
         <n-ellipsis class="team">{{ fixture.away_team_name || '—' }}</n-ellipsis>
       </div>
-      <n-text depth="3" class="kickoff">{{ kickoffText }}</n-text>
       <FavoriteButton
         v-if="isPhone"
         class="fav"
@@ -96,19 +99,23 @@ function goDetail() {
     </div>
 
     <div v-nested-scroll class="market-list">
-      <n-flex vertical :size="8">
+      <div class="market-rows">
         <n-grid
           v-for="row in rows"
           :key="row.market"
           :cols="5"
-          :x-gap="6"
+          :x-gap="marketGap"
           class="market-row"
         >
           <n-gi>
             <n-text depth="2" class="play-label">{{ row.playLabel }}</n-text>
           </n-gi>
-          <n-gi :span="4">
-            <n-grid :cols="row.cells.length" :x-gap="6">
+          <n-gi :span="4" class="pick-cells">
+            <n-grid
+              :cols="row.cells.length"
+              :x-gap="marketGap"
+              class="pick-grid"
+            >
               <n-gi
                 v-for="cell in row.cells"
                 :key="`${cell.market}-${cell.outcome}`"
@@ -132,7 +139,7 @@ function goDetail() {
             </n-grid>
           </n-gi>
         </n-grid>
-      </n-flex>
+      </div>
     </div>
 
     <PredictionRecommendationRow
@@ -186,28 +193,48 @@ function goDetail() {
 
 .calc-fixture.phone :deep(.n-card-content) {
   grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 4px;
+  padding: 6px 8px;
 }
 
 .phone-recommendation {
-  max-height: 52px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  max-height: 40px;
+  overflow: hidden;
   font-size: 12px;
-  -webkit-overflow-scrolling: touch;
 }
 
+/* League+date together on the left; matchup centered over the pick-button zone. */
 .fixture-meta {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
+.calc-fixture.phone .fixture-meta {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.meta-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .league {
-  max-width: 90px;
+  flex-shrink: 0;
+  max-width: 4.5em;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kickoff {
+  flex-shrink: 1;
+  min-width: 0;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -218,6 +245,7 @@ function goDetail() {
   justify-items: center;
   gap: 6px;
   min-width: 0;
+  width: 100%;
   font-size: 13px;
 }
 
@@ -243,22 +271,54 @@ function goDetail() {
   color: var(--fa-highlight-text);
 }
 
-.kickoff {
-  font-size: 12px;
-  white-space: nowrap;
+.fav {
+  flex-shrink: 0;
 }
 
-.fav {
-  justify-self: end;
+.market-list {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.market-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  min-height: 0;
+}
+
+.calc-fixture.phone .market-rows {
+  gap: 4px;
 }
 
 .market-row {
   align-items: center;
 }
 
-.market-list {
+/* Fill leftover card height so pick targets grow without raising item-size. */
+.calc-fixture.phone .market-row {
+  flex: 1 1 0;
   min-height: 0;
-  overflow: auto;
+}
+
+.calc-fixture.phone .market-row :deep(.n-grid),
+.calc-fixture.phone .pick-grid {
+  height: 100%;
+  align-items: stretch;
+}
+
+.calc-fixture.phone .pick-cells,
+.calc-fixture.phone .pick-cells :deep(.n-grid-item) {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+}
+
+.calc-fixture.phone .pick-cells :deep(.n-grid-item) > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
 }
 
 .play-label {
@@ -279,30 +339,8 @@ function goDetail() {
   color: inherit;
 }
 
-@media (max-width: 767px) {
-  .fixture-meta {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 2px 8px;
-  }
-
-  .league {
-    grid-column: 1;
-    max-width: 100%;
-  }
-
-  .kickoff {
-    grid-column: 2;
-  }
-
-  .fav {
-    grid-column: 3;
-    grid-row: 1;
-  }
-
-  .matchup {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: 100%;
-  }
+.calc-fixture.phone .odd-button {
+  height: 100%;
+  min-height: 0;
 }
 </style>

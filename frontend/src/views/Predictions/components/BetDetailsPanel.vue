@@ -254,10 +254,6 @@ defineExpose({ openFormula, openDetails })
         </n-text>
         元
       </n-text>
-
-      <n-text depth="3" style="text-align: center;">
-        提示：计算器仅供赛前参考，不提供购彩服务
-      </n-text>
     </n-flex>
 
     <n-modal
@@ -510,7 +506,6 @@ defineExpose({ openFormula, openDetails })
 
 .footer-only .details-footer {
   border-top: none;
-  padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
 }
 
 .details-modal-body {

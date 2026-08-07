@@ -45,7 +45,7 @@ function confirm() {
       <template #trigger>
         <n-button
           size="small"
-          quaternary
+          secondary
           :circle="iconOnly"
           :type="filterActive ? 'primary' : 'default'"
           aria-label="筛选联赛"
@@ -92,7 +92,7 @@ function confirm() {
     <template #trigger>
       <n-button
         size="small"
-        quaternary
+        secondary
         :circle="iconOnly"
         :type="filterActive ? 'primary' : 'default'"
         aria-label="筛选联赛"

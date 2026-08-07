@@ -109,7 +109,7 @@ onActivated(() => {
           </FixtureList>
           <ListBackTop
             :shell="phoneCalcShellRef"
-            :bottom="matchCount ? 120 : 12"
+            :bottom="matchCount ? 100 : 12"
             :right="12"
           />
         </div>

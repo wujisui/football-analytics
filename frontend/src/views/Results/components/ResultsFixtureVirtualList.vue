@@ -72,7 +72,7 @@ function rowFixture(item: unknown): ResultFixture {
 }
 
 .results-virtual-empty {
-  padding: 32px 12px;
+  padding: 32px 0;
 }
 
 .list-loading-mask {

@@ -1,4 +1,4 @@
-/** Labels for accuracy metric cards (not a list filter). */
+/** Accuracy metric keys; day-stats hit counts can toggle list filter by key. */
 export type ResultsHitKey =
   | 'result'
   | 'single_result'

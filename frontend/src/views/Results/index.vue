@@ -126,13 +126,17 @@ const {
 const desktopListShellRef = ref<HTMLElement | null>(null)
 const phoneListShellRef = ref<HTMLElement | null>(null)
 
-/** Desktop sider list inset (toolbar already uses --fa-content-inline).
- *  Phone wrap already pads horizontally — don't double it on list items. */
-const resultsListItemsStyle = computed(() => ({
-  paddingLeft: isPhone.value ? '0' : '12px',
-  paddingRight: isPhone.value ? '0' : '12px',
-  boxSizing: 'border-box',
-}))
+/** Desktop sider keeps the original compact 12px list inset.
+ *  Phone: outer tabs wrap already pads — keep list flush to avoid double inset. */
+const resultsListItemsStyle = computed(() =>
+  isPhone.value
+    ? undefined
+    : {
+        paddingLeft: '12px',
+        paddingRight: '12px',
+        boxSizing: 'border-box',
+      },
+)
 
 const desktopListScroll = useScrollRestore('results-list-desktop', desktopListShellRef)
 const phoneListScroll = useScrollRestore('results-list-phone', phoneListShellRef)
@@ -528,6 +532,7 @@ onMounted(() => {
                   :filter-options="shellFilterOptions"
                   :tracked-ids="shellTrackedIds"
                   :filter-active="shellFilterActive"
+                  :list-count="listedFixtures.length"
                   show-day-stats
                   @confirm-filter="confirmFilter"
                   @open-day-stats="showDayStatsModal = true"
@@ -624,7 +629,12 @@ onMounted(() => {
           <n-text depth="3" style="font-size: 12px;">{{ dayAccuracyHeaderExtra }}</n-text>
         </template>
         <n-spin :show="contentLoading">
-          <AccuracyMetricsGrid :metrics="displayAccuracy" />
+          <AccuracyMetricsGrid
+            :metrics="displayAccuracy"
+            filterable
+            :active-hit-key="filterHitKey"
+            @filter-hit="onFilterHit"
+          />
         </n-spin>
       </n-modal>
     </div>
@@ -675,6 +685,7 @@ onMounted(() => {
               :filter-options="shellFilterOptions"
               :tracked-ids="shellTrackedIds"
               :filter-active="shellFilterActive"
+              :list-count="listedFixtures.length"
               @confirm-filter="confirmFilter"
           />
         </div>
@@ -732,7 +743,12 @@ onMounted(() => {
                 <n-text depth="3" style="font-size: 12px;">{{ dayAccuracyHeaderExtra }}</n-text>
               </template>
               <n-spin :show="contentLoading">
-                <AccuracyMetricsGrid :metrics="displayAccuracy" />
+                <AccuracyMetricsGrid
+                  :metrics="displayAccuracy"
+                  filterable
+                  :active-hit-key="filterHitKey"
+                  @filter-hit="onFilterHit"
+                />
               </n-spin>
             </n-card>
           </n-gi>
@@ -908,7 +924,7 @@ onMounted(() => {
   height: 100%;
   min-height: 100%;
   box-sizing: border-box;
-  padding: 0 2px 12px;
+  padding: 0 0 12px;
 }
 
 .phone-tab-pane :deep(.n-scrollbar-content) {
@@ -964,7 +980,12 @@ onMounted(() => {
 
 .phone-list-toolbar {
   flex-shrink: 0;
-  padding: 0 2px 8px;
+  padding: 0 0 8px;
+}
+
+.phone-list-alert {
+  flex-shrink: 0;
+  margin: 0 0 8px;
 }
 
 .schedule-alert {
@@ -988,22 +1009,18 @@ onMounted(() => {
   flex-direction: column;
 }
 
-.phone-list-alert {
-  flex-shrink: 0;
-  margin-bottom: 8px;
-}
-
 .phone-list-pane {
   min-height: 0;
 }
 
 .results-sider-head {
   flex-shrink: 0;
-  padding: 10px var(--fa-content-inline) 6px;
+  padding: 10px 12px 6px;
+  box-sizing: border-box;
 }
 
 .results-sider-alert {
-  margin: 0 var(--fa-content-inline) 8px;
+  margin: 0 12px 8px;
 }
 
 .list-shell {

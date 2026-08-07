@@ -3,7 +3,6 @@ import { computed } from 'vue'
 
 import {
   HANDICAP_MISSING_LABEL,
-  handicapLeanLabel,
   isHandicapPending,
 } from '@/utils/handicapDisplay'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
@@ -37,7 +36,7 @@ const recommendationTagColor = computed(() =>
     : wdlTagColor(leanWdlTone(props.recommendation)),
 )
 const handicapLabel = computed(
-  () => handicapLeanLabel(props.handicapLean) || HANDICAP_MISSING_LABEL,
+  () => (props.handicapLean || '').trim() || HANDICAP_MISSING_LABEL,
 )
 const handicapTagColor = computed(() =>
   isHandicapPending(props.handicapLean)

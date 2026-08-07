@@ -2,11 +2,18 @@
 import { computed } from 'vue'
 
 import type { AccuracyStat } from '@/api/fixtures'
+import type { ResultsHitKey } from '@/utils/resultsPageState'
 
 const props = defineProps<{
   label: string
   stat?: AccuracyStat
   color: string
+  filterKey?: ResultsHitKey
+  active?: boolean
+}>()
+
+const emit = defineEmits<{
+  filterHit: [key: ResultsHitKey]
 }>()
 
 const hasValue = computed(
@@ -23,7 +30,19 @@ const percent = computed(() =>
     <template v-if="hasValue">
       <span :style="{ color }">{{ percent }}</span>
       <span>（</span>
-      <span :style="{ color }">{{ stat!.hits }}</span>
+      <n-button
+        v-if="filterKey"
+        text
+        size="tiny"
+        class="hits-btn"
+        :class="{ active }"
+        :style="{ color }"
+        :aria-label="active ? '取消命中筛选' : '只看该维度命中场次'"
+        @click.stop="emit('filterHit', filterKey)"
+      >
+        {{ stat!.hits }}
+      </n-button>
+      <span v-else :style="{ color }">{{ stat!.hits }}</span>
       <span>/{{ stat!.total }}）</span>
     </template>
     <span v-else>{{ percent }}</span>
@@ -42,5 +61,19 @@ const percent = computed(() =>
   font-size: 20px;
   line-height: 1.15;
   white-space: nowrap;
+}
+
+.hits-btn {
+  vertical-align: baseline;
+  height: auto;
+  padding: 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.hits-btn.active {
+  font-weight: 700;
 }
 </style>

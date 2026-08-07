@@ -50,8 +50,13 @@ export interface CalcMarketRow {
 }
 
 const STAKE_PER_BET = 2
-/** 胜平负最多双选 */
-export const MAX_SPF_PICKS = 2
+/** 胜平负 / 让球胜平负最多双选（含胜平、负平、胜负） */
+export const MAX_WDL_PICKS = 2
+
+/** Markets that allow up to {@link MAX_WDL_PICKS} outcomes on one fixture. */
+export function allowsDualSelect(market: CalcMarket): boolean {
+  return market === 'spf' || market === 'ah'
+}
 
 function parseOddNumber(value: string | number | null | undefined): number | null {
   if (value == null || value === '') return null
@@ -289,7 +294,7 @@ export interface ParlayResult {
 
 /**
  * 竞彩风格：对已选场次按 M串1 枚举 C(N,M)，
- * 同场多选项（如胜平负双选）再做笛卡尔积拆注。
+ * 同场多选项（胜平负 / 让球双选）再做笛卡尔积拆注。
  */
 export function calculateParlay(
   selections: CalcSelection[],

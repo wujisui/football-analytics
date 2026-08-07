@@ -11,10 +11,12 @@ withDefaults(
     filterOptions: LeagueFilterOption[]
     trackedIds: number[]
     filterActive: boolean
+    /** Currently visible list size (after league / hit / search filters). */
+    listCount?: number | null
     /** Phone: open 当日统计 modal from the list toolbar. */
     showDayStats?: boolean
   }>(),
-  { showDayStats: false },
+  { listCount: null, showDayStats: false },
 )
 
 const teamSearch = defineModel<string>('teamSearch', { required: true })
@@ -32,6 +34,9 @@ const emit = defineEmits<{
       v-model="teamSearch"
       style="flex: 1; width: auto; min-width: 0; max-width: none;"
     />
+    <n-text v-if="listCount != null" depth="3" class="list-count">
+      {{ listCount }} 场
+    </n-text>
     <n-button
       v-if="showDayStats"
       size="small"
@@ -55,3 +60,12 @@ const emit = defineEmits<{
     />
   </n-flex>
 </template>
+
+<style scoped>
+.list-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+</style>

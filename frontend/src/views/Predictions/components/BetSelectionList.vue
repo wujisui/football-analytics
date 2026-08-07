@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { TrashOutline } from '@vicons/ionicons5'
 
+import {
+  outcomeTitle,
+  type CalcOutcome,
+  type CalcSelection,
+} from '@/utils/betCalculator'
 import { leagueTagColor } from '@/utils/format'
 import type { GroupedFixtureSelections } from '@/views/Predictions/composables/useBetCalculator'
 
@@ -12,6 +17,40 @@ defineProps<{
 const emit = defineEmits<{
   remove: [fixtureId: number]
 }>()
+
+const OUTCOME_ORDER: CalcOutcome[] = [
+  'home',
+  'draw',
+  'away',
+  'over',
+  'under',
+  'yes',
+  'no',
+]
+
+/** Same market dual-picks share one play tag + one combined pick tag. */
+function pickRows(picks: CalcSelection[]) {
+  const buckets = new Map<string, CalcSelection[]>()
+  for (const pick of picks) {
+    const key = `${pick.market}\0${pick.line ?? ''}\0${pick.playLabel}`
+    const list = buckets.get(key) ?? []
+    list.push(pick)
+    buckets.set(key, list)
+  }
+  return [...buckets.entries()].map(([key, list]) => {
+    const sorted = [...list].sort(
+      (a, b) =>
+        OUTCOME_ORDER.indexOf(a.outcome) - OUTCOME_ORDER.indexOf(b.outcome),
+    )
+    return {
+      key,
+      playLabel: sorted[0].playLabel,
+      pickLabel: sorted
+        .map((p) => `${outcomeTitle(p.market, p.outcome)}(${p.odd})`)
+        .join('，'),
+    }
+  })
+}
 </script>
 
 <template>
@@ -71,15 +110,15 @@ const emit = defineEmits<{
           <n-ellipsis>{{ group.awayName }}</n-ellipsis>
         </n-flex>
         <n-flex
-          v-for="pick in group.picks"
-          :key="`${pick.market}-${pick.outcome}`"
+          v-for="row in pickRows(group.picks)"
+          :key="row.key"
           :wrap="false"
           align="center"
           :size="8"
         >
-          <n-tag size="small" :bordered="false">{{ pick.playLabel }}</n-tag>
+          <n-tag size="small" :bordered="false">{{ row.playLabel }}</n-tag>
           <n-tag size="small" :bordered="false" type="warning">
-            {{ pick.pickLabel }}
+            {{ row.pickLabel }}
           </n-tag>
         </n-flex>
       </n-flex>

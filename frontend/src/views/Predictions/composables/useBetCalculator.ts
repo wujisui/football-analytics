@@ -5,8 +5,9 @@ import {
   availableFoldModes,
   calculateParlay,
   foldModeLabel,
+  allowsDualSelect,
   MAX_CALC_MATCHES,
-  MAX_SPF_PICKS,
+  MAX_WDL_PICKS,
   selectedFixtureIds,
   type CalcCell,
   type CalcMarket,
@@ -178,19 +179,19 @@ export function useBetCalculator() {
     let next = selections.value.filter((s) => {
       if (s.fixtureId !== fixtureId) return true
       if (s.market !== cell.market) return false
-      // 让球 / 大小 / 双进：同玩法只留新点的一项
-      if (cell.market !== 'spf') return false
+      // 大小 / 双进：同玩法只留新点的一项；胜平负 / 让球可双选
+      if (!allowsDualSelect(cell.market)) return false
       return true
     })
 
-    if (cell.market === 'spf') {
-      const spfPicks = next.filter(
-        (s) => s.fixtureId === fixtureId && s.market === 'spf',
+    if (allowsDualSelect(cell.market)) {
+      const wdlPicks = next.filter(
+        (s) => s.fixtureId === fixtureId && s.market === cell.market,
       )
-      // 已满双选时再点第三项：清掉本场胜平负，只保留当前点击
-      if (spfPicks.length >= MAX_SPF_PICKS) {
+      // 已满双选时再点第三项：清掉本场该玩法，只保留当前点击
+      if (wdlPicks.length >= MAX_WDL_PICKS) {
         next = next.filter(
-          (s) => !(s.fixtureId === fixtureId && s.market === 'spf'),
+          (s) => !(s.fixtureId === fixtureId && s.market === cell.market),
         )
       }
     }

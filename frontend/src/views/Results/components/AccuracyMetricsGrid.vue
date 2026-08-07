@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AccuracyStat } from '@/api/fixtures'
 import AccuracyStatistic from '@/views/Results/components/AccuracyStatistic.vue'
-import { ACCURACY_COLORS } from '@/utils/accuracyColors'
+import { ACCURACY_COLOR_BY_HIT_KEY } from '@/utils/accuracyColors'
 import {
   RESULTS_HIT_OPTIONS,
   type ResultsHitKey,
@@ -9,18 +9,21 @@ import {
 
 type AccuracyMetrics = Partial<Record<ResultsHitKey, AccuracyStat>>
 
-defineProps<{
-  metrics?: AccuracyMetrics | null
-}>()
+withDefaults(
+  defineProps<{
+    metrics?: AccuracyMetrics | null
+    filterable?: boolean
+    activeHitKey?: ResultsHitKey | null
+  }>(),
+  {
+    filterable: false,
+    activeHitKey: null,
+  },
+)
 
-const COLOR_BY_KEY: Record<ResultsHitKey, string> = {
-  result: ACCURACY_COLORS.result,
-  single_result: ACCURACY_COLORS.singleResult,
-  score: ACCURACY_COLORS.score,
-  ou: ACCURACY_COLORS.ou,
-  btts: ACCURACY_COLORS.btts,
-  handicap: ACCURACY_COLORS.handicap,
-}
+const emit = defineEmits<{
+  filterHit: [key: ResultsHitKey]
+}>()
 </script>
 
 <template>
@@ -29,7 +32,10 @@ const COLOR_BY_KEY: Record<ResultsHitKey, string> = {
       <AccuracyStatistic
         :label="opt.label"
         :stat="metrics?.[opt.key]"
-        :color="COLOR_BY_KEY[opt.key]"
+        :color="ACCURACY_COLOR_BY_HIT_KEY[opt.key]"
+        :filter-key="filterable ? opt.key : undefined"
+        :active="activeHitKey === opt.key"
+        @filter-hit="emit('filterHit', $event)"
       />
     </n-gi>
   </n-grid>
