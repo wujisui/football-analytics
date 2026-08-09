@@ -133,7 +133,11 @@ onMounted(() => {
 
 <template>
   <div class="fa-page-frame">
-    <div class="fa-page-shell favorites-panel">
+    <n-layout
+      :has-sider="!isPhone"
+      class="favorites-panel fa-page-shell"
+      content-style="height: 100%;"
+    >
       <n-layout-sider
         v-if="!isPhone"
         v-model:collapsed="siderCollapsed"
@@ -214,13 +218,13 @@ onMounted(() => {
           </div>
         </n-spin>
       </section>
-    </div>
+    </n-layout>
   </div>
 </template>
 
 <style scoped>
 .favorites-panel {
-  display: flex;
+  height: 100%;
   overflow: hidden;
   background: var(--fa-bg);
 }
