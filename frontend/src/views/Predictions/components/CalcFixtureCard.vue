@@ -114,7 +114,7 @@ function goDetail() {
               >
                 <n-button
                   block
-                  size="tiny"
+                  size="small"
                   :type="selected(cell) ? 'warning' : 'default'"
                   :secondary="!selected(cell)"
                   :disabled="cell.disabled || cell.odd == null"
@@ -244,13 +244,14 @@ function goDetail() {
 }
 
 .market-list {
-  min-height: 0;
+  min-height: 100%;
   overflow: hidden;
 }
 
 .market-rows {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 6px;
   height: 100%;
   min-height: 0;
@@ -305,6 +306,7 @@ function goDetail() {
 
 .odd-button :deep(.n-text) {
   color: inherit;
+  font-size: 12px;
 }
 
 .calc-fixture.phone .odd-button {
