@@ -8,19 +8,17 @@ withDefaults(
     opening?: boolean
     ariaLabel?: string
     /**
-     * Equal-width home | mid | away (results with score).
+     * Equal-width home | mid | away (results with score); each name centered
+     * in its own half so home and away sit symmetrically around the middle.
      * Default: compact「主 vs 客」group — same as prediction list title.
      */
     spread?: boolean
-    /** With spread: tuck names toward the middle (results score). */
-    inward?: boolean
   }>(),
   {
     clickable: false,
     opening: false,
     ariaLabel: '查看详情',
     spread: false,
-    inward: false,
   },
 )
 
@@ -35,7 +33,7 @@ const emit = defineEmits<{
     v-if="clickable"
     type="button"
     class="matchup matchup-link"
-    :class="{ opening, spread, inward }"
+    :class="{ opening, spread }"
     :aria-label="ariaLabel"
     @click.stop="emit('click')"
   >
@@ -43,7 +41,7 @@ const emit = defineEmits<{
     <span class="versus">vs</span>
     <n-ellipsis class="team away">{{ awayName }}</n-ellipsis>
   </button>
-  <div v-else class="matchup" :class="{ spread, inward }">
+  <div v-else class="matchup" :class="{ spread }">
     <n-ellipsis class="team home">{{ homeName }}</n-ellipsis>
     <slot name="middle">
       <span class="versus">vs</span>
@@ -101,13 +99,13 @@ const emit = defineEmits<{
   color: var(--fa-text-strong);
 }
 
-/* Results: equal columns; optional inward tuck toward score. */
+/* Results: equal columns, each name centered in its own half. */
 .matchup.spread {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-items: center;
-  gap: 6px;
+  justify-items: stretch;
+  gap: 8px;
 }
 
 .matchup.spread .team {
@@ -120,19 +118,5 @@ const emit = defineEmits<{
 
 .matchup.spread .versus {
   justify-self: center;
-}
-
-/* Results score: names tuck toward the middle. */
-.matchup.spread.inward {
-  justify-items: stretch;
-  gap: 8px;
-}
-
-.matchup.spread.inward .team.home {
-  text-align: right;
-}
-
-.matchup.spread.inward .team.away {
-  text-align: left;
 }
 </style>

@@ -187,7 +187,6 @@ function onLeagueClick(e: Event) {
       v-if="isPrematch"
       clickable
       spread
-      inward
       :home-name="homeName"
       :away-name="awayName"
       @click="openStats"
@@ -195,7 +194,6 @@ function onLeagueClick(e: Event) {
     <FixtureMatchup
       v-else
       spread
-      inward
       :home-name="homeName"
       :away-name="awayName"
     >
