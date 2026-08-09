@@ -1,4 +1,6 @@
 import type { FixtureResponse, LineOdds } from '@/api/types'
+import { parseApiDate, toScheduleDayKey } from '@/utils/format'
+import { scheduleTodayDate } from '@/utils/homeDateStrip'
 import { ahLinesOf, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 
 export type CalcMarket = 'spf' | 'ah' | 'ou' | 'btts'
@@ -29,6 +31,27 @@ export interface CalcSelection {
   pickLabel: string
   odd: number
   line?: string
+}
+
+/**
+ * Drop past-day / already-kicked-off picks from the live bet slip.
+ * Aligns with calculator list: only pending fixtures from schedule-today onward.
+ */
+export function pruneExpiredCalcSelections(
+  selections: CalcSelection[],
+  now: Date = new Date(),
+): CalcSelection[] {
+  if (!selections.length) return selections
+  const cutoffDay = scheduleTodayDate(now)
+  const nowMs = now.getTime()
+  return selections.filter((s) => {
+    if (!s.fixtureDate) return false
+    const day = toScheduleDayKey(s.fixtureDate)
+    if (!day || day < cutoffDay) return false
+    const kickoffMs = parseApiDate(s.fixtureDate).getTime()
+    if (Number.isNaN(kickoffMs) || kickoffMs <= nowMs) return false
+    return true
+  })
 }
 
 export interface CalcCell {

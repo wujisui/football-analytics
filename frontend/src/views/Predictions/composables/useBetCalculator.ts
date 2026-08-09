@@ -8,6 +8,7 @@ import {
   allowsDualSelect,
   MAX_CALC_MATCHES,
   MAX_WDL_PICKS,
+  pruneExpiredCalcSelections,
   selectedFixtureIds,
   type CalcCell,
   type CalcMarket,
@@ -64,7 +65,9 @@ function readStored(): StoredBetState | null {
     if (!raw) return null
     const data = JSON.parse(raw) as Partial<StoredBetState>
     if (!Array.isArray(data.selections)) return null
-    const selections = data.selections.filter(isCalcSelection)
+    const selections = pruneExpiredCalcSelections(
+      data.selections.filter(isCalcSelection),
+    )
     const multiplier =
       typeof data.multiplier === 'number' &&
       Number.isFinite(data.multiplier) &&
@@ -100,6 +103,19 @@ const selections = ref<CalcSelection[]>(stored?.selections ?? [])
 const multiplier = ref(stored?.multiplier ?? 1)
 const fold = ref<FoldMode>(stored?.fold ?? '2x1')
 
+function pruneExpiredSelections() {
+  const next = pruneExpiredCalcSelections(selections.value)
+  if (next.length === selections.value.length) return
+  selections.value = next
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') pruneExpiredSelections()
+  })
+  window.addEventListener('focus', pruneExpiredSelections)
+}
+
 const matchCount = computed(() => selectedFixtureIds(selections.value).length)
 
 // 选中场次变化后默认取最大过关方式（N 场 → N串1），用户仍可手动降档
@@ -132,6 +148,8 @@ export type GroupedFixtureSelections = {
 }
 
 export function useBetCalculator() {
+  pruneExpiredSelections()
+
   const foldOptions = computed(() =>
     availableFoldModes(matchCount.value).map((mode) => ({
       label: foldModeLabel(mode),
