@@ -5,7 +5,6 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import delete, select
 
 from app.core.config import get_settings
@@ -13,14 +12,12 @@ from app.core.database import AsyncSessionLocal
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.services.data_cleanup import prune_low_value_data
-from app.services.fetcher import FootballFetcher
 from app.services.fixtures_sync import scheduled_fixtures_sync
 
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 active_tasks: dict[str, dict[str, Any]] = {}
-active_fixtures: set[int] = set()
 _scheduler_started = False
 
 
@@ -53,13 +50,12 @@ def get_task_status() -> dict[str, Any]:
     return {
         "scheduler_running": _scheduler_started,
         "active_tasks": active_tasks,
-        "active_fixtures": sorted(active_fixtures),
         "jobs": jobs,
     }
 
 
 async def run_scheduled_fixtures_sync(task_name: str = "scheduled_fixtures_sync") -> None:
-    """Daily 06:00 / 12:00 / 18:00 — fixtures window + gap-fill odds."""
+    """Run one fixed daily fixtures/odds/results synchronization batch."""
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
     logger.info("Task %s started.", task_name)
     try:
@@ -74,103 +70,6 @@ async def run_scheduled_fixtures_sync(task_name: str = "scheduled_fixtures_sync"
             finished_at=_utc_now().isoformat(),
         )
         logger.error("Task %s failed: %s", task_name, exc, exc_info=True)
-
-
-async def final_odds_update() -> None:
-    """Refresh each fixture's final pre-kickoff odds once, then recompute predictions."""
-    settings = get_settings()
-    task_name = "final_odds_update"
-    _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
-    logger.info("Task final_odds_update started.")
-
-    now = _utc_now().replace(tzinfo=None)
-    window_minutes = max(1, int(settings.FINAL_ODDS_WINDOW_MINUTES))
-    window_end = now + timedelta(minutes=window_minutes)
-    attempted = 0
-    updated = 0
-    errors = 0
-
-    try:
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Fixture)
-                .outerjoin(PreMatchData, PreMatchData.fixture_id == Fixture.id)
-                .where(
-                    Fixture.status == "pending",
-                    Fixture.date >= now,
-                    Fixture.date <= window_end,
-                    PreMatchData.final_odds_sync_at.is_(None),
-                )
-            )
-            fixtures = result.scalars().all()
-
-        if not fixtures:
-            _set_task_status(
-                task_name,
-                "completed",
-                attempted=0,
-                updated=0,
-                message="No fixtures awaiting final odds refresh.",
-                finished_at=_utc_now().isoformat(),
-            )
-            logger.info("Task final_odds_update completed. No fixtures in window.")
-            return
-
-        async with FootballFetcher() as fetcher:
-            for fixture in fixtures:
-                if fixture.id in active_fixtures:
-                    logger.info("Skipping fixture %s, update already in progress.", fixture.id)
-                    continue
-
-                active_fixtures.add(fixture.id)
-                try:
-                    # Persist the attempt before the API call: each fixture consumes
-                    # at most one final-odds request, including empty/error responses.
-                    async with AsyncSessionLocal() as session:
-                        row = (
-                            await session.execute(
-                                select(PreMatchData).where(
-                                    PreMatchData.fixture_id == fixture.id
-                                )
-                            )
-                        ).scalar_one_or_none()
-                        if row is None:
-                            row = PreMatchData(fixture_id=fixture.id)
-                            session.add(row)
-                        row.final_odds_sync_at = now
-                        await session.commit()
-                    attempted += 1
-
-                    if await fetcher.refresh_odds_for_fixture(fixture.id):
-                        updated += 1
-                except Exception as exc:
-                    errors += 1
-                    logger.error(
-                        "final_odds_update failed for fixture %s: %s",
-                        fixture.id,
-                        exc,
-                        exc_info=True,
-                    )
-                finally:
-                    active_fixtures.discard(fixture.id)
-
-        _set_task_status(
-            task_name,
-            "completed",
-            attempted=attempted,
-            updated=updated,
-            errors=errors,
-            finished_at=_utc_now().isoformat(),
-        )
-        logger.info(
-            "Task final_odds_update completed. attempted=%s updated=%s errors=%s",
-            attempted,
-            updated,
-            errors,
-        )
-    except Exception as exc:
-        _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
-        logger.error("Task final_odds_update failed: %s", exc, exc_info=True)
 
 
 async def clean_old_data() -> None:
@@ -246,66 +145,6 @@ async def clean_old_data() -> None:
         logger.error("Task clean_old_data failed: %s", exc, exc_info=True)
 
 
-async def capture_results() -> None:
-    """Backfill FT scores for recently finished fixtures (by calendar date, not live)."""
-    task_name = "capture_results"
-    _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
-    logger.info("Task capture_results started.")
-
-    try:
-        async with FootballFetcher() as fetcher:
-            saved = await fetcher.capture_finished_results(lookback_days=3)
-
-        # After new FT labels land, try auto-train so inference can switch to ml.
-        train_info: dict[str, Any] = {}
-        ah_train_info: dict[str, Any] = {}
-        goal_train_info: dict[str, Any] = {}
-        try:
-            from app.services.ml_predictor import maybe_auto_train_model
-
-            train_info = await maybe_auto_train_model()
-        except Exception as train_exc:
-            logger.warning("ML auto-train after capture_results failed: %s", train_exc)
-            train_info = {"ok": False, "error": str(train_exc)}
-
-        try:
-            from app.services.ah_predictor import maybe_auto_train_model as maybe_auto_train_ah
-
-            ah_train_info = await maybe_auto_train_ah()
-        except Exception as train_exc:
-            logger.warning("AH ML auto-train after capture_results failed: %s", train_exc)
-            ah_train_info = {"ok": False, "error": str(train_exc)}
-
-        try:
-            from app.services.goal_predictor import (
-                maybe_auto_train_model as maybe_auto_train_goals,
-            )
-
-            goal_train_info = await maybe_auto_train_goals()
-        except Exception as train_exc:
-            logger.warning("Goal ML auto-train after capture_results failed: %s", train_exc)
-            goal_train_info = {"ok": False, "error": str(train_exc)}
-
-        _set_task_status(
-            task_name,
-            "completed",
-            fixtures_saved=saved,
-            ml_train=train_info,
-            ah_ml_train=ah_train_info,
-            goal_ml_train=goal_train_info,
-            finished_at=_utc_now().isoformat(),
-        )
-        logger.info(
-            "Task capture_results completed. fixtures_saved=%s ml_train=%s ah_ml_train=%s",
-            saved,
-            train_info.get("reason") or train_info.get("inference") or train_info.get("ok"),
-            ah_train_info.get("reason") or ah_train_info.get("inference") or ah_train_info.get("ok"),
-        )
-    except Exception as exc:
-        _set_task_status(task_name, "failed", error=str(exc), finished_at=_utc_now().isoformat())
-        logger.error("Task capture_results failed: %s", exc, exc_info=True)
-
-
 async def train_model() -> None:
     """Manual / scheduled: backfill features + train if enough labeled rows."""
     task_name = "train_model"
@@ -346,8 +185,6 @@ async def train_model() -> None:
 
 TASK_HANDLERS = {
     "scheduled_fixtures_sync": run_scheduled_fixtures_sync,
-    "final_odds_update": final_odds_update,
-    "capture_results": capture_results,
     "clean_old_data": clean_old_data,
     "train_model": train_model,
 }
@@ -367,7 +204,7 @@ def register_jobs() -> None:
     # Remove legacy 06:00 daily_init if still registered from an older process.
     if scheduler.get_job("daily_init") is not None:
         scheduler.remove_job("daily_init")
-    for hour in (6, 12, 18):
+    for hour in (0, 6, 11, 16, 19, 22):
         job_id = f"scheduled_fixtures_sync_{hour:02d}"
         if scheduler.get_job(job_id) is None:
             scheduler.add_job(
@@ -379,28 +216,6 @@ def register_jobs() -> None:
                 max_instances=1,
                 coalesce=True,
             )
-
-    if scheduler.get_job("final_odds_update") is None:
-        scheduler.add_job(
-            final_odds_update,
-            IntervalTrigger(minutes=5),
-            id="final_odds_update",
-            name="final_odds_update",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
-
-    if scheduler.get_job("capture_results") is None:
-        scheduler.add_job(
-            capture_results,
-            IntervalTrigger(minutes=30),
-            id="capture_results",
-            name="capture_results",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
 
     if scheduler.get_job("clean_old_data") is None:
         scheduler.add_job(

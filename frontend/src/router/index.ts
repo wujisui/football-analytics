@@ -75,6 +75,11 @@ const router = createRouter({
       component: Mine,
     },
     {
+      path: '/mine/admin',
+      name: 'mine-admin',
+      component: Mine,
+    },
+    {
       path: '/mine/about',
       name: 'mine-about',
       component: Mine,

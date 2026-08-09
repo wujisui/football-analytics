@@ -508,8 +508,6 @@ def main() -> None:
         required=True,
         choices=[
             "scheduled_fixtures_sync",
-            "final_odds_update",
-            "capture_results",
             "clean_old_data",
             "train_model",
         ],

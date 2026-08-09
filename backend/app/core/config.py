@@ -77,21 +77,22 @@ class Settings(BaseSettings):
     API_ENDPOINT_INJURIES: str = "/injuries"
     API_ENDPOINT_PREDICTIONS: str = "/predictions"
     HTTP_VERIFY_SSL: bool = True
+    # Max seconds the analysis endpoint may spend on official API enrichment.
+    ANALYSIS_API_BUDGET_SECONDS: float = 12.0
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/football.db"
     REDIS_URL: str = "redis://localhost:6379"
     # When false, skip Redis and use in-memory fakeredis (recommended for local without Redis).
     REDIS_ENABLED: bool = False
-    # Max seconds the analysis endpoint may spend on official API enrichment.
-    ANALYSIS_API_BUDGET_SECONDS: float = 12.0
     LOG_LEVEL: str = "INFO"
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
-    # One forced final odds refresh per fixture inside this pre-kickoff window.
-    FINAL_ODDS_WINDOW_MINUTES: int = 30
     CLEANUP_DAYS: int = 7
     ADMIN_API_KEY: str = ""
     LOG_DIR: str = "logs"
     # Prefer local DB / cache before calling API-Sports (saves quota).
     LOCAL_FIRST: bool = True
+    # Future / paid scale default (env). Runtime override via Mine admin UI
+    # persists in app_settings; scheduled batches read the effective value.
+    ENABLE_SCHEDULED_FULL_DETAIL: bool = False
     # History window for H2H / team form:
     # - full: paid plan — no artificial 2022–2024 cap (h2h all history; form via last=)
     # - free: API-Sports free tier season/date limits

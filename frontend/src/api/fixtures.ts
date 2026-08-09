@@ -1,4 +1,4 @@
-import { analysisClient, apiClient } from './client'
+import { apiClient } from './client'
 import type {
   FixtureResponse,
   TodayFixturesResponse,
@@ -15,50 +15,6 @@ export async function fetchTodayFixtures(options?: {
       date: options?.date,
       days: options?.days,
     },
-  })
-  return data
-}
-
-export interface SyncFixturesResult {
-  status: string
-  fixtures_saved: number
-  days: number
-  date?: string | null
-  message: string
-}
-
-export type SyncFixturesOptions = {
-  days?: number
-  date?: string
-  includeResults?: boolean
-  includeOdds?: boolean
-  oddsRefreshExisting?: boolean
-  oddsBudget?: number
-  leagueIds?: number[]
-  oddsOnly?: boolean
-}
-
-/**
- * Force re-fetch from official API into local DB. Resolves only once fixtures,
- * odds and results are stored, so callers can trust the next local read.
- * ``status: "running"`` means another sync owns the official calls.
- */
-export async function syncFixtures(
-  options?: SyncFixturesOptions,
-): Promise<SyncFixturesResult> {
-  const { data } = await apiClient.post<SyncFixturesResult>('/fixtures/sync', null, {
-    params: {
-      days: options?.days,
-      date: options?.date,
-      include_results: options?.includeResults ?? true,
-      include_odds: options?.includeOdds ?? true,
-      odds_refresh_existing: options?.oddsRefreshExisting ?? true,
-      odds_budget: options?.oddsBudget,
-      league_ids: options?.leagueIds,
-      odds_only: options?.oddsOnly ?? false,
-    },
-    // Waits out per-fixture odds pacing for a whole day of leagues.
-    timeout: 300_000,
   })
   return data
 }
@@ -208,14 +164,14 @@ function isRetryableAnalysisError(err: unknown): boolean {
 /** Detail analysis: auto-retry once on transient server/enrichment failures. */
 export async function fetchFixtureAnalysis(fixtureId: number): Promise<FixtureResponse> {
   try {
-    const { data } = await analysisClient.get<FixtureResponse>(
+    const { data } = await apiClient.get<FixtureResponse>(
       `/fixtures/${fixtureId}/analysis`,
     )
     return data
   } catch (err) {
     if (!isRetryableAnalysisError(err)) throw err
     await new Promise((r) => setTimeout(r, 400))
-    const { data } = await analysisClient.get<FixtureResponse>(
+    const { data } = await apiClient.get<FixtureResponse>(
       `/fixtures/${fixtureId}/analysis`,
     )
     return data

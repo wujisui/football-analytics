@@ -637,7 +637,13 @@ class AnalyzerService:
         fixture: Fixture,
         ttl: int,
     ) -> dict[str, Any]:
-        """Fetch package pieces sequentially (AsyncSession-safe). Odds first."""
+        """Fetch package pieces sequentially (AsyncSession-safe). Odds first.
+
+        Used by on-demand ``analyze_fixture`` (user opens detail). Scheduled
+        window-wide enrich is gated by runtime setting
+        ``enable_scheduled_full_detail`` (admin UI / env) and is not wired yet —
+        keep this method as the single enrich implementation.
+        """
         package = self._empty_prematch_package()
         league = fixture.league
         season = (
@@ -795,91 +801,6 @@ class AnalyzerService:
             ttl,
         )
         return None
-
-    async def analyze_fixture_local(self, fixture_id: int) -> AnalysisResult:
-        """List-page analysis: Redis/DB only — never call official API.
-
-        Used by /fixtures/today so a league with many matches does not block
-        on dozens of form/H2H/stats requests.
-        """
-        cache_key = analysis_cache_key(fixture_id)
-        cached = await self.cache.get(cache_key)
-        if cached is not None and "payload" in cached:
-            payload = cached["payload"]
-            return AnalysisResult(
-                fixture_id=payload["fixture_id"],
-                home_team_name=payload["home_team_name"],
-                away_team_name=payload["away_team_name"],
-                league_name=payload["league_name"],
-                fixture_date=datetime.fromisoformat(payload["fixture_date"]),
-                status=payload["status"],
-                home_win_prob=payload["home_win_prob"],
-                draw_prob=payload["draw_prob"],
-                away_win_prob=payload["away_win_prob"],
-                confidence=payload["confidence"],
-                recommendation=payload["recommendation"],
-                data_source="cache",
-                analyzed_at=datetime.fromisoformat(payload["analyzed_at"]),
-                cache_status="hit",
-                package=None,
-            )
-
-        fixture = await self._load_fixture(fixture_id)
-        if fixture is None:
-            raise ValueError(f"Fixture {fixture_id} not found in database.")
-
-        home_team = fixture.home_team or await self.session.get(Team, fixture.home_team_id)
-        away_team = fixture.away_team or await self.session.get(Team, fixture.away_team_id)
-        league = fixture.league or await self.session.get(League, fixture.league_id)
-        home_name = team_name_zh(
-            home_team.name if home_team else None, fixture.home_team_id
-        ) or f"Team {fixture.home_team_id}"
-        away_name = team_name_zh(
-            away_team.name if away_team else None, fixture.away_team_id
-        ) or f"Team {fixture.away_team_id}"
-        league_name = league.name if league else f"League {fixture.league_id}"
-
-        stored = await self._get_fresh_pre_match(fixture_id, fixture)
-        if stored is None:
-            # Any stored probs are fine for the list; ignore TTL freshness.
-            result = await self.session.execute(
-                select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
-            )
-            stored = result.scalar_one_or_none()
-            if stored is None or None in (
-                stored.home_win_prob,
-                stored.draw_prob,
-                stored.away_win_prob,
-            ):
-                # Placeholder until detail page runs full analysis.
-                probs = {
-                    "home": DEFAULT_PROB,
-                    "draw": DEFAULT_PROB,
-                    "away": DEFAULT_PROB,
-                }
-                return AnalysisResult(
-                    fixture_id=fixture.id,
-                    home_team_name=home_name,
-                    away_team_name=away_name,
-                    league_name=league_name,
-                    fixture_date=fixture.date,
-                    status=fixture.status,
-                    home_win_prob=probs["home"],
-                    draw_prob=probs["draw"],
-                    away_win_prob=probs["away"],
-                    confidence="低",
-                    recommendation=get_recommendation(probs),
-                    data_source="database",
-                    analyzed_at=datetime.now(timezone.utc),
-                    cache_status="miss",
-                    package=None,
-                )
-
-        result = self._result_from_pre_match(
-            fixture, home_name, away_name, league_name, stored, confidence="中"
-        )
-        result.package = None
-        return result
 
     async def analyze_fixture(
         self,

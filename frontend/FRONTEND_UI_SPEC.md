@@ -28,7 +28,7 @@
 | `/predictions`        | `predictions`    | 比赛（预测与投注计算器） |
 | `/results`            | `results`        | 赛果（按日期）  |
 | `/favorites`          | `favorites`      | 关注场次（手机底栏 / 桌面顶栏） |
-| `/mine/*`             | `mine-*`         | 我的（方案 / 偏好 / 关于） |
+| `/mine/*`             | `mine-*`         | 我的（方案 / 偏好 / 管理员设置 / 关于） |
 | `/fixture/:fixtureId` | `fixture-detail` | 比赛详情     |
 
 兼容重定向：
@@ -64,8 +64,9 @@
 2. 默认选中左侧 **「全部」**，右侧展示全部 `status === pending` 的比赛。
 3. 点击某个联赛时：**不再请求接口**，在已加载的全量列表上按 `league_id` **本地筛选**。
 4. 左侧数量角标：优先用本地 pending 场次统计（与右侧一致），避免「联赛有入库场次但右侧为空」的错觉。
-5. **每个浏览器会话首次打开**自动跑一次 `POST /api/v1/fixtures/sync`（绕过 Redis/SQLite 日缓存打官方）；杀页冷启动若会话仍在则不再自动打官方，只读本地库。列表期间照常展示本地内容，落库后自动重拉本地列表。需要更新时在计算器 / 赛程列表**下拉刷新**（列表顶提示文案）。
-6. 勾选到本次同步范围外的联赛时，按 `odds_only` 单独补拉该联赛盘口。
+5. 打开列表页、F5、下拉刷新都只重拉本地接口。定时批次每天 00:00、06:00、11:00、16:00、19:00、22:00 只写赛程/盘口/赛果；前端无公开 sync、SSE 或轮询。
+6. 勾选其他联赛只改变本地筛选，不触发盘口补拉。
+7. 进入详情请求 `/fixtures/{id}/analysis`：后端本地优先，缺展示包时可打官方并落库。
 
 ### 3.3 左侧联赛菜单
 
@@ -139,7 +140,7 @@ n-layout-content（全屏滚动）
 当前约定：
 
 1. 计算器：`/leagues` + `/fixtures/today` 只读本地库；模块级缓存约 5 分钟，详情返回不重复请求；切换联赛仅前端过滤
-2. 进入详情页请求一次：`GET /api/v1/fixtures/{fixture_id}/analysis`（此处才可能打官方 API）
+2. 进入详情页请求一次：`GET /api/v1/fixtures/{fixture_id}/analysis`（本地优先；缺包时后端按需打官方并落库）
 3. 响应中的 `analysis` + `analysis.package`（赔率 / 近况 / 交锋 / 阵容 / 伤病 / 官方简报等）供各 Tab 共用
 4. Tabs：**首次切换到某 Tab 再挂载内容**（懒渲染）；已访问过的 Tab 保留，不重复请求
 5. 「我的预测」左侧为算法结论，右侧为根据即时/初盘与倾向生成的解释文案（无主观因素融合）
@@ -177,27 +178,19 @@ n-layout-content（全屏滚动）
 
 只读本地库；列表项含简要 `analysis`（概率 / 推荐 / 置信度），**不含**完整 `package`。
 
-### 5.3 强制同步赛程
-
-`POST /api/v1/fixtures/sync?days=7`  
-可选：`date=YYYY-MM-DD`（单日）、`include_results=true`、`odds_only=true`（仅补盘口）。
-
-绕过 Redis/SQLite 日缓存拉取官方并写入本地，**赛程/盘口/赛果全部落库后才返回**。
-已有同步在跑时立即返回 `status="running"`，本次不打官方。
-
-### 5.4 赛果（按日）
+### 5.3 赛果（按日）
 
 `GET /api/v1/fixtures/results?date=YYYY-MM-DD`
 
 只读本地已结束场次（含 `home_goals` / `away_goals`）。
 
-### 5.5 单场分析（详情）
+### 5.4 单场分析（详情）
 
 `GET /api/v1/fixtures/{fixture_id}/analysis`
 
 含完整 `analysis.package`（有数据时）：`odds`、`home_form` / `away_form`、`head_to_head`、`lineups`、`injuries` 等。
 
-### 5.6 规划中（未实现，勿在前端写死依赖）
+### 5.5 规划中（未实现，勿在前端写死依赖）
 
 | 设想接口                                      | 用途           |
 |-------------------------------------------|--------------|
@@ -263,7 +256,7 @@ frontend/src/
 
 ## 7.1 登录 / VIP / 配额（规划，未落地）
 
-当前登录为前端 stub。后续用户档位、手动同步额度、PC「刷新官方」、用尽只读等，以根目录 **[docs/AUTH_VIP_QUOTA.md](../docs/AUTH_VIP_QUOTA.md)** 为准；落地时同步改「我的」页与顶栏入口，并回写本节。
+当前登录为前端 stub。后续用户档位与账号权益以根目录 **[docs/AUTH_VIP_QUOTA.md](../docs/AUTH_VIP_QUOTA.md)** 为准；列表不提供「手动刷官方」入口，详情补拉由后端按需完成。运维：`/mine/admin` 可在本机保存 `ADMIN_API_KEY` 后开关「定时全量获取详情」（写入后端 `app_settings`）。
 
 ---
 

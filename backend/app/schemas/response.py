@@ -187,7 +187,7 @@ class PrematchPackageResponse(BaseModel):
     )
     odds_opening: OddsPackageResponse = Field(
         default_factory=OddsPackageResponse,
-        description="初盘（中午定时任务首次落库，冻结）",
+        description="初盘（固定同步批次首次落库，冻结）",
     )
     lineups: LineupsPackageResponse = Field(default_factory=LineupsPackageResponse)
     injuries: InjuriesPackageResponse = Field(default_factory=InjuriesPackageResponse)
@@ -512,14 +512,6 @@ class FixtureScoreResponse(BaseModel):
 class FixtureScoresResponse(BaseModel):
     total: int = 0
     fixtures: list[FixtureScoreResponse] = Field(default_factory=list)
-
-
-class SyncFixturesResponse(BaseModel):
-    status: str = Field(..., description="ok=已落库；running=已有同步在跑，本次忽略")
-    fixtures_saved: int = Field(default=0, description="写入/更新的场次数")
-    days: int = Field(default=1, description="同步窗口天数")
-    date: str | None = Field(default=None, description="单日同步时的日期")
-    message: str = Field(default="")
 
 
 class LeagueCatalogItemResponse(BaseModel):

@@ -9,6 +9,7 @@ import {
   LogOutOutline,
   MoonOutline,
   PersonOutline,
+  SettingsOutline,
   SunnyOutline,
 } from '@vicons/ionicons5'
 import { NIcon, type MenuOption } from 'naive-ui'
@@ -18,12 +19,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthSession } from '@/composables/useAuthSession'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
+import AdminOpsPanel from '@/views/Mine/components/AdminOpsPanel.vue'
 import PlansView from '@/views/Plans/index.vue'
 import pkg from '../../../package.json'
 
 defineOptions({ name: 'Mine' })
 
-type MineSection = 'account' | 'plans' | 'theme' | 'session' | 'about'
+type MineSection = 'account' | 'plans' | 'theme' | 'session' | 'admin' | 'about'
 
 const sectionMeta: Record<
   MineSection,
@@ -52,6 +54,12 @@ const sectionMeta: Record<
     title: '登录与退出',
     description: '管理当前浏览器的登录状态',
     icon: LogOutOutline,
+  },
+  admin: {
+    routeName: 'mine-admin',
+    title: '管理员设置',
+    description: '运维开关（需 ADMIN_API_KEY）',
+    icon: SettingsOutline,
   },
   about: {
     routeName: 'mine-about',
@@ -119,6 +127,11 @@ const menuOptions = computed<MenuOption[]>(() => [
     label: '其他',
     children: [
       {
+        key: 'admin',
+        label: '管理员设置',
+        icon: renderIcon(sectionMeta.admin.icon),
+      },
+      {
         key: 'about',
         label: '关于',
         icon: renderIcon(sectionMeta.about.icon),
@@ -149,7 +162,7 @@ const profileDescription = computed(() =>
   isLoggedIn.value ? '已登录' : '暂未登录',
 )
 const mobileSections = computed(() =>
-  (['plans', 'theme', 'session', 'about'] as MineSection[]).map((key) => ({
+  (['plans', 'theme', 'session', 'admin', 'about'] as MineSection[]).map((key) => ({
     key,
     ...sectionMeta[key],
     title:
@@ -359,6 +372,10 @@ function onLogout() {
                   </n-list-item>
                 </n-list>
               </n-card>
+            </template>
+
+            <template v-else-if="activeSection === 'admin'">
+              <AdminOpsPanel />
             </template>
 
             <template v-else-if="activeSection === 'session'">

@@ -21,7 +21,6 @@ import ResultsListToolbar from '@/views/Results/components/ResultsListToolbar.vu
 import ResultsFixtureVirtualList from '@/views/Results/components/ResultsFixtureVirtualList.vue'
 import {
   hasSessionShellDay,
-  officialSyncing,
   useFixturesShell,
 } from '@/layouts/composables/useFixturesShell'
 import {useHorizontalSwipe} from '@/composables/useHorizontalSwipe'
@@ -43,7 +42,7 @@ import {
   endScheduleFilterOverride,
 } from '@/composables/useTrackedLeagues'
 import {fixtureDetailRoute} from '@/utils/detailNav'
-import {todayDate, yesterdayDate} from '@/utils/homeDateStrip'
+import {scheduleTodayDate, todayDate, yesterdayDate} from '@/utils/homeDateStrip'
 import {sortFixturesFavoritesFirst} from '@/utils/fixtureSort'
 import {filterByTeamQuery, teamSearchEmptyHint} from '@/utils/teamSearch'
 import {
@@ -75,6 +74,7 @@ const isPhone = useIsPhone()
 /** Phone results-day panes; default list so fixtures stay primary. */
 const phoneResultsTab = ref<ResultsPhoneTab>('list')
 const showDayStatsModal = ref(false)
+const localRefreshing = ref(false)
 
 function onPhoneResultsTabChange(name: string) {
   if ((RESULTS_PHONE_TABS as string[]).includes(name)) {
@@ -111,12 +111,11 @@ const {
   teamSearch,
   contentLoading: shellContentLoading,
   isScheduleFutureDay,
-  officialSyncRevision,
-  officialSyncedDay,
+  resultsFilterRevision,
+  resultsFilterRevisionDay,
   loadFilterOptions,
   syncFutureScheduleSelection,
   resultsDayFixtureCount,
-  refreshOfficial,
   shellFilterOptions,
   shellTrackedIds,
   shellFilterActive,
@@ -366,7 +365,8 @@ async function loadHistory(force = false) {
   if (!force && history.value) return
   historyLoading.value = true
   try {
-    const cutoff = todayDate()
+    // UTC schedule day — same clock as backend utc_today / series dates.
+    const cutoff = scheduleTodayDate()
     cacheResultsHistory(
         await fetchResultsHistory({days: 0, endDate: cutoff}),
     )
@@ -440,6 +440,17 @@ async function loadSelectedDay(force = false) {
   await loadDayResults()
 }
 
+async function refreshLocalResults() {
+  if (localRefreshing.value) return
+  localRefreshing.value = true
+  try {
+    await loadSelectedDay(true)
+    if (!isScheduleFutureDay.value) await loadHistory(true)
+  } finally {
+    localRefreshing.value = false
+  }
+}
+
 watch(isScheduleFutureDay, (future, wasFuture) => {
   if (wasFuture && !future) endScheduleFilterOverride()
 })
@@ -452,15 +463,15 @@ watch(selectedDay, () => {
   void loadSelectedDay()
 })
 
-watch(officialSyncRevision, () => {
+watch(resultsFilterRevision, () => {
   if (
       route.name !== 'results'
-      || officialSyncedDay.value !== selectedDay.value
+      || resultsFilterRevisionDay.value !== selectedDay.value
   ) {
     return
   }
+  // A confirmed league filter reloads the selected local day.
   void loadSelectedDay(true)
-  void loadHistory(true)
 })
 
 onActivated(() => {
@@ -552,8 +563,8 @@ onMounted(() => {
             <div ref="phoneListShellRef" class="list-shell phone">
               <PullToRefresh
                   :shell="phoneListShellRef"
-                  :refreshing="officialSyncing"
-                  @refresh="refreshOfficial"
+                  :refreshing="localRefreshing"
+                  @refresh="refreshLocalResults"
               />
               <ResultsFixtureVirtualList
                   :empty="!loading && !listedFixtures.length"

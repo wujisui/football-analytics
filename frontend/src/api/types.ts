@@ -159,7 +159,7 @@ export interface BriefingPackage {
 export interface PrematchPackage {
   /** 即时盘 */
   odds: OddsPackage
-  /** 初盘（中午定时首次落库后冻结） */
+  /** 初盘（固定同步批次首次落库后冻结） */
   odds_opening?: OddsPackage | null
   lineups: LineupsPackage
   injuries: InjuriesPackage

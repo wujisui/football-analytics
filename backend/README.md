@@ -20,7 +20,7 @@ Redis 热缓存 → SQLite api_snapshots / pre_match_data → API-Sports 官方
 ```
 
 **产品定位：赛前分析，不是实时比分。**  
-开赛后 / 结束后：**预测快照冻结**；详情展示缺数据时按需补拉官方（不轮询比分）。
+开赛后 / 结束后：**预测快照审计字段冻结**；详情展示包可在用户点开时按需补缺并落库。
 
 | 距开赛      | 分析刷新间隔       | 说明             |
 |----------|--------------|----------------|
@@ -28,7 +28,7 @@ Redis 热缓存 → SQLite api_snapshots / pre_match_data → API-Sports 官方
 | 24–72 小时 | 12 小时        | 中期准备           |
 | 6–24 小时  | 3 小时         | 赛前日，赔率开始变化     |
 | 0–6 小时   | 1 小时         | 临场阵容/伤病/赔率最后更新 |
-| 已开赛或已结束  | 预测快照不刷新；详情展示包缺则按需补拉 | 赛果按日一次性回写 |
+| 已开赛或已结束  | 预测快照不刷新；展示包仍可按点击补缺 | 赛果由固定批次回写 |
 
 赛前关心的数据（目标能力）：
 
@@ -40,8 +40,6 @@ Redis 热缓存 → SQLite api_snapshots / pre_match_data → API-Sports 官方
 | 赛前简报 | 官方 `/predictions` → `package.briefing`，详情页「赛前简报」Tab（与本地「我的预测」无关） |
 | 赛前赔率      | 已接 `/odds`（无开盘则为空） |
 | 实时比分 / 滚球 | **不做**               |
-
-可用 `ANALYSIS_REFRESH_TTL_SECONDS` 强制覆盖刷新间隔（`0` = 上表策略）。
 
 ## 技术栈
 
@@ -111,7 +109,6 @@ API_SPORTS_KEY=你的官方Key
 | `SCHEDULER_TIMEZONE`              | 调度器时区，默认 `Asia/Shanghai`                    |
 | `LOCAL_FIRST`                     | `true` 时优先读本地库/缓存，再打官方                      |
 | `API_HISTORY_MODE`                | `full`=付费历史（H2H 不限年份）；`free`=仅 2022–2024      |
-| `ANALYSIS_REFRESH_TTL_SECONDS`    | `0`=按开赛时间动态刷新；`>0` 则强制固定秒数                  |
 
 > 不要把真实 Key 写进 `.env.example` 或提交到 Git。本地运行时会先读 `.env`，再读 `secrets.local.env`（后者覆盖前者）。
 
@@ -171,7 +168,7 @@ python -m unittest discover -s tests -v
 
 已有本地数据库时，这些回填/训练命令不调用官方 API。完整的换机步骤、依赖检查及 pip SSL 故障处理见根目录 [`DEV_SETUP.md`](../DEV_SETUP.md)。
 
-可触发的任务名：`scheduled_fixtures_sync`、`final_odds_update`、`capture_results`、`clean_old_data`、`train_model`。
+可触发的任务名：`scheduled_fixtures_sync`、`clean_old_data`、`train_model`。
 
 ### 概率模型（时间验证 + 基线门禁）
 
@@ -192,14 +189,14 @@ python -m unittest discover -s tests -v
 2. 时间验证总 MAE 必须优于常数均值基线，模型才标记为 `deployable`
 3. 比分、大小球、BTTS 分别设门禁：对应验证指标必须胜过常见比分、盘口方向、类别多数基线
 4. 未过门禁时**保留**盘口/启发式 lean，不覆盖成「待分析」；只有无概率且无盘口时才显示待分析
-5. `capture_results` 有新增标签时自动重训；也可运行 `python manage.py upgrade-models`
+5. 固定同步批次回写新增赛果标签后自动重训；也可运行 `python manage.py upgrade-models`
 
 ### 让球模型（M-AH）
 
 与 1X2 独立：`ah_predictor.py` 预测主侧穿盘概率，标签 `cover` / `no_cover`（走盘不训练）。
 
 1. 赛前分析 / 赔率入库写入 `match_features` 的 AH 字段
-2. 赛果回写打 `ah_label`；`capture_results` 后样本 ≥ `ML_AH_MIN_TRAIN_SAMPLES`（默认 80）且有新增 → 自动训练
+2. 固定同步批次回写赛果并打 `ah_label`；样本 ≥ `ML_AH_MIN_TRAIN_SAMPLES`（默认 80）且有新增 → 自动训练
 3. 推断优先级：结构性双选 > ML > multifactor 启发式（相对水位 + 1X2 分歧）
 
 配置：`ML_AH_MIN_TRAIN_SAMPLES`、`ML_AH_AUTO_TRAIN`。
@@ -214,7 +211,6 @@ python -m unittest discover -s tests -v
 | GET | `/health`                         | 服务状态与缓存统计                    |
 | GET | `/leagues`                        | 已配置联赛列表；可选 `date`、`days`；含今日/近期场次数 |
 | GET | `/fixtures/today`                 | 赛程列表；可选 `league_id`、`date`、`days`（默认仅当天） |
-| POST | `/fixtures/sync`                 | 手动同步赛程/盘口/赛果（阻塞至完成）；可选 `days` / `date` |
 | GET | `/fixtures/results`               | 按日查赛果 + 当日预测命中；必填 `date=YYYY-MM-DD` |
 | GET | `/fixtures/results/history`       | 历史准确率汇总 + 按日序列；`days=0`（默认）全部本地样本，`>0` 为近 N 日 |
 | GET | `/fixtures/{fixture_id}/analysis` | 单场比赛详细分析                     |
@@ -232,16 +228,20 @@ GET /api/v1/fixtures/today?league_id=39
 | 方法   | 路径                     | 说明                                    |
 |------|------------------------|---------------------------------------|
 | GET  | `/admin/tasks`         | 调度器与任务状态                              |
-| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"final_odds_update"|"capture_results"|"clean_old_data"|"train_model"}` |
+| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"clean_old_data"|"train_model"}` |
+| GET  | `/admin/settings/scheduled-full-detail` | 读取「定时全量详情」开关（DB 覆盖优先，否则 env） |
+| PATCH | `/admin/settings/scheduled-full-detail` | 写入开关到 `app_settings`（body: `{"enabled": true\|false}`） |
+
+前端「我的 → 管理员设置」可保存本机 `ADMIN_API_KEY` 并切换上述开关；重启后仍生效。批量预拉逻辑就绪后即按该开关执行。
 
 ### 常用联赛 ID
 
 **默认目录**：`config/leagues.json`（也可设环境变量 `LEAGUES_JSON`）——各国顶级联赛与主要洲际赛事，**筛选默认勾选**，盘口补全默认覆盖此范围。  
-**非目录联赛**：赛程按日全量入库后，当日有赛但不在 `leagues.json` 的联赛自动出现在筛选勾选框（`extra`）；未勾选不参与盘口同步与默认列表。不再维护单独的次级目录文件。
+**非目录联赛**：赛程按日全量入库后，当日有赛但不在 `leagues.json` 的联赛自动出现在筛选勾选框（`extra`）；勾选只影响本地显示，不触发官方请求。不再维护单独的次级目录文件。
 
 API-Sports 没有跨国家统一可靠的“第几级联赛”字段，因此**默认勾选范围**由 `leagues.json` 按稳定 `league.id` 人工维护。条目字段：`name`（中文显示名）、`id`（API-Sports）、`country`；可选 `season`（如世界杯）、`region`（仅注释用，程序忽略）。修改后需**重启后端**。
 
-筛选只展示所选日期在本地已有赛程的联赛，并按默认目录 / 其他联赛分组。赛程同步按日**全量入库**；页面加载触发的同步按**默认勾选的一级联赛**批量补盘，勾选其他联赛后单独补盘（`odds_only`）。
+筛选只展示所选日期在本地已有赛程的联赛，并按默认目录 / 其他联赛分组。固定批次按日**全量入库赛程**，盘口范围固定为 `leagues.json`，不受前端筛选影响。
 
 | 联赛（当前 `leagues.json` 常用） | ID |
 |-----|------|
@@ -269,13 +269,11 @@ API-Sports 没有跨国家统一可靠的“第几级联赛”字段，因此**�
 
 | 任务                     | 触发规则      | 作用                                      |
 |------------------------|-----------|-----------------------------------------|
-| `scheduled_fixtures_sync` | 每天 06/12/18 点 | 强制拉取日期条未来窗口（默认今天起 8 天）全量赛程 + 一级联赛缺盘补全 |
-| `final_odds_update`    | 每 5 分钟    | 扫描开赛前 30 分钟窗口；每场仅强制刷新一次临场盘口并重算推荐 |
-| `capture_results`      | 每 30 分钟   | 回写近日终场比分                                  |
+| `scheduled_fixtures_sync` | 每天 00/06/11/16/19/22 点 | 刷新未来窗口全量赛程、一级联赛已有/缺失盘口，并回写窗口内赛果 |
 | `clean_old_data`       | 每周一 03:00 | 物理删除「完场且无盘口/推荐」的场次、空联赛行与孤立球队，并清理过期分析与日志 |
 
 时区由 `SCHEDULER_TIMEZONE` 控制（默认 `Asia/Shanghai`）。  
-官网文档：赛前 `/odds` 约每 3 小时更新；赛程类日更一次即可。本项目在赛程同步时**按日全量入库**，并把首次落库盘口冻为**初盘**；盘口缺省只补一级联赛。进入开赛前 30 分钟窗口后，每场只强制拉取一次临场盘口并重算本地推荐。用户**刷新页面**同样全量刷新赛程，盘口按勾选联赛补齐（免费套餐当前赛季无法用 `/odds?league=`，改为按场次拉取并按联赛轮询）。`POST /fixtures/sync` 等全部落库后才返回；同步进行中的重复请求返回 `status="running"` 并被忽略，不重复消耗配额。
+六个固定时点只更新赛程、一级联赛盘口与赛果（首次盘口仍冻为初盘）；**不做**窗口全量详情预拉（默认关，管理员可在「我的 → 管理员设置」开启并落库）。列表 / F5 / 筛选只读本地；用户打开详情时若展示包缺失，后端按需补拉并落库。无公开 sync、无 SSE、无轮询。
 手动：`python manage.py trigger-task --name scheduled_fixtures_sync`。
 
 ## 前端对接提示

@@ -25,7 +25,6 @@ from app.schemas.response import (
     ResultFixtureResponse,
     ResultsHistoryResponse,
     ResultsResponse,
-    SyncFixturesResponse,
     TodayFixturesResponse,
     analysis_to_response,
 )
@@ -34,8 +33,6 @@ from app.services.analyzer import (
     AnalyzerService,
 )
 from app.services.calendar_tz import utc_span_range, utc_today
-from app.services.fetcher import ApiKeyNotConfiguredError
-from app.services.fixtures_sync import build_sync_params, execute_fixtures_sync
 from app.services.prediction import (
     OPINION_FACTORS,
     adjust_probabilities_with_factors,
@@ -532,88 +529,14 @@ async def get_results_accuracy_history(
             parsed = date.fromisoformat(end_date_str)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="end_date 格式应为 YYYY-MM-DD") from exc
-        if parsed > today:
-            raise HTTPException(status_code=422, detail="end_date 不能晚于今天")
-        end_day = parsed
+        # Client may send local calendar "today" which can be ahead of UTC
+        # match-day; clamp instead of 422 so all-history charts stay available.
+        end_day = min(parsed, today)
     payload = await build_history_accuracy(
         db, days=days, league_ids=league_ids, end_day=end_day
     )
     set_no_store_headers(response)
     return ResultsHistoryResponse.model_validate(payload)
-
-
-@router.post("/sync", response_model=SyncFixturesResponse)
-async def sync_fixtures(
-    days: int | None = Query(
-        default=None,
-        ge=1,
-        le=14,
-        description="同步窗口天数；与 date 组合时表示从 date 起共 N 天",
-    ),
-    date_str: str | None = Query(
-        default=None,
-        alias="date",
-        description="同步起始日 YYYY-MM-DD；默认今天",
-    ),
-    include_results: bool = Query(
-        default=True,
-        description="同步时顺带回写近几日已结束比赛比分",
-    ),
-    include_odds: bool = Query(
-        default=True,
-        description="拉取赛前赔率：缺盘补全；强制刷新时覆盖已有盘口并重算胜平负",
-    ),
-    odds_refresh_existing: bool = Query(
-        default=True,
-        description="False 时仅补缺失盘口；True 时强制刷新已有盘",
-    ),
-    odds_budget: int = Query(
-        default=100,
-        ge=1,
-        le=300,
-        description=(
-            "刷新已有盘口的场次上限；单日/勾选联赛同步时，"
-            "缺失盘口会尽量按联赛全量补齐（不单靠此上限截断）"
-        ),
-    ),
-    league_ids: list[int] | None = Query(
-        default=None,
-        description=(
-            "盘口补全联赛范围；默认一级联赛目录。"
-            "赛程本身始终按日全量入库，不受此参数过滤"
-        ),
-    ),
-    odds_only: bool = Query(
-        default=False,
-        description="跳过赛程拉取，仅跑盘口/赛果 follow-up（本地已有赛程时省配额）",
-    ),
-) -> SyncFixturesResponse:
-    """从官方拉取赛程/盘口/赛果并写入本地库，全部落库后才返回。
-
-    前端在刷新页面时触发；已有同步在跑时返回 ``status="running"``，
-    不重复打官方接口。
-    """
-    try:
-        params = build_sync_params(
-            date_str=date_str,
-            days=days,
-            include_results=include_results,
-            include_odds=include_odds,
-            odds_refresh_existing=odds_refresh_existing,
-            odds_budget=odds_budget,
-            league_ids=league_ids,
-            odds_only=odds_only,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    try:
-        return await execute_fixtures_sync(params)
-    except ApiKeyNotConfiguredError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.error("sync_fixtures failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=503, detail=f"同步失败：{exc}") from exc
 
 
 @router.get("/opinion-factors", response_model=OpinionFactorsResponse)
@@ -684,11 +607,11 @@ async def get_fixture_analysis(
 
     analyzer = AnalyzerService(db)
     try:
-        analysis = await analyzer.analyze_fixture(fixture_id)
+        # On-demand: local-first, then official enrich for missing package pieces.
+        analysis = await analyzer.analyze_fixture(fixture_id, include_package=True)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        # Avoid opaque 500s on first-hit enrichment races; client can retry.
         raise HTTPException(
             status_code=503,
             detail=f"分析暂时失败，请重试：{exc}",

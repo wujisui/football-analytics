@@ -2,8 +2,6 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 
-import { syncFixtures } from '@/api/fixtures'
-import { resolveSyncLeagueIds } from '@/utils/leagueFilterSelection'
 import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 import {
   isPrematchListCacheFresh,
@@ -86,39 +84,10 @@ watch([selectedDay, teamSearch], () => {
 const siderCollapsed = ref(false)
 const leagueDrawerShow = ref(false)
 
-/** Official pull is page-load driven; these track the one run allowed at a time. */
-export const officialSyncing = ref(false)
-const officialSyncRevision = ref(0)
-const officialSyncedDay = ref('')
+const resultsFilterRevision = ref(0)
+const resultsFilterRevisionDay = ref('')
 
 let shellWatchersBound = false
-let pageLoadSyncStarted = false
-let officialSyncInflight: Promise<void> | null = null
-/** Leagues whose odds this page load already asked the official API for. */
-const syncedOddsLeagueIds = new Set<number>()
-
-/**
- * One auto official sync per browser session. Survives tab discard / cold reload;
- * cleared when the browser session ends (user kills the browser). Further updates
- * are pull-to-refresh only.
- */
-const SESSION_SYNCED_KEY = 'fa-official-session-synced'
-
-function hasSessionOfficialSync(): boolean {
-  try {
-    return sessionStorage.getItem(SESSION_SYNCED_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function markSessionOfficialSync() {
-  try {
-    sessionStorage.setItem(SESSION_SYNCED_KEY, '1')
-  } catch {
-    /* private mode / quota */
-  }
-}
 
 export function useFixturesShell() {
   const route = useRoute()
@@ -356,27 +325,9 @@ export function useFixturesShell() {
     }
   }
 
-  function leagueIdsForSync(): number[] | undefined {
-    // Odds follow-up scope only (fixtures sync is always full-day).
-    // Primary defaults + any explicitly checked secondary leagues.
-    const ids = resolveSyncLeagueIds(
-      prematchFilterOptions.value,
-      prematchTrackedIds.value,
-    )
-    return ids.length ? ids : undefined
-  }
-
   function syncFutureScheduleSelection() {
     if (!isScheduleFutureDayRef.value || !prematchTrackedIds.value.length) return
     setResultsTrackedIds(prematchTrackedIds.value)
-  }
-
-  function syncCalendarDay() {
-    return isResultsPage.value ? selectedDay.value : prematchFetchParams().date
-  }
-
-  function syncCalendarDays() {
-    return isResultsPage.value ? 1 : prematchFetchParams().days
   }
 
   /** Prematch list only — never write 赛程 selectedDay into shared allFixtures. */
@@ -393,103 +344,6 @@ export function useFixturesShell() {
     } catch {
       // error already set in composable
     }
-  }
-
-  /**
-   * Pull from the official API into the local DB, then refresh what is on screen.
-   * Lists stay on stored rows meanwhile — nothing is re-rendered until data lands,
-   * so a finished indicator always means the newest board.
-   */
-  async function runOfficialSync(options: {
-    day: string
-    days: number
-    includeResults: boolean
-    includeOdds: boolean
-    leagueIds?: number[]
-    oddsOnly?: boolean
-  }) {
-    if (officialSyncInflight) return officialSyncInflight
-    officialSyncing.value = true
-    officialSyncInflight = (async () => {
-      try {
-        const res = await syncFixtures({
-          date: options.day,
-          days: options.days,
-          includeResults: options.includeResults,
-          includeOdds: options.includeOdds,
-          // Existing boards are refreshed near kickoff by the scheduler / detail
-          // fetch; a page load only fills the gaps.
-          oddsRefreshExisting: false,
-          leagueIds: options.leagueIds,
-          oddsOnly: options.oddsOnly,
-        })
-        // "running": another sync owns the official calls; it will publish the data.
-        if (res.status !== 'ok') return
-
-        for (const id of options.leagueIds ?? []) syncedOddsLeagueIds.add(id)
-        officialSyncedDay.value = options.day
-        officialSyncRevision.value += 1
-        if (!options.oddsOnly) markSessionOfficialSync()
-        if (!isResultsPage.value) await reloadPrematchDay(true)
-      } catch (err) {
-        message.error(err instanceof Error ? err.message : '官方同步失败')
-      } finally {
-        officialSyncing.value = false
-        officialSyncInflight = null
-      }
-    })()
-    return officialSyncInflight
-  }
-
-  function currentOfficialSyncOptions() {
-    const futureResultsDay = isResultsPage.value && isScheduleFutureDayRef.value
-    return {
-      day: syncCalendarDay(),
-      days: syncCalendarDays(),
-      includeResults: !futureResultsDay,
-      includeOdds: !isResultsPage.value || futureResultsDay,
-      leagueIds: leagueIdsForSync(),
-    }
-  }
-
-  /**
-   * Auto official pull once per browser session. Skips after the session has
-   * already synced (tab discard / cold reload). Manual updates use refreshOfficial.
-   */
-  function startPageLoadSync() {
-    if (pageLoadSyncStarted) return
-    pageLoadSyncStarted = true
-    const options = currentOfficialSyncOptions()
-    if (hasSessionOfficialSync()) {
-      // Treat tracked leagues as already covered so filter confirm does not
-      // re-issue a full odds pull for every id after a discarded-tab reload.
-      for (const id of options.leagueIds ?? []) syncedOddsLeagueIds.add(id)
-      return
-    }
-    void runOfficialSync(options)
-  }
-
-  /** Pull-to-refresh / manual: always hit official for the current view scope. */
-  async function refreshOfficial() {
-    await runOfficialSync(currentOfficialSyncOptions())
-  }
-
-  /** Newly checked leagues were outside the page-load scope — fetch their odds. */
-  function syncNewlyTrackedLeagues(trackedIds: number[]) {
-    const missing = resolveSyncLeagueIds(
-      prematchFilterOptions.value,
-      trackedIds,
-    ).filter((id) => !syncedOddsLeagueIds.has(id))
-    if (!missing.length) return
-    void runOfficialSync({
-      day: prematchFetchParams().date,
-      days: prematchFetchParams().days,
-      includeResults: false,
-      includeOdds: true,
-      leagueIds: missing,
-      // Fixtures for the window are already stored by the page-load sync.
-      oddsOnly: true,
-    })
   }
 
   async function reloadPrematchDay(force = false) {
@@ -526,9 +380,8 @@ export function useFixturesShell() {
       ) {
         selectLeague(null)
       }
-      syncNewlyTrackedLeagues(allowed)
-      officialSyncedDay.value = selectedDay.value
-      officialSyncRevision.value += 1
+      resultsFilterRevisionDay.value = selectedDay.value
+      resultsFilterRevision.value += 1
       return
     }
     if (isResultsPage.value) {
@@ -543,8 +396,8 @@ export function useFixturesShell() {
       ) {
         selectLeague(null)
       }
-      officialSyncedDay.value = selectedDay.value
-      officialSyncRevision.value += 1
+      resultsFilterRevisionDay.value = selectedDay.value
+      resultsFilterRevision.value += 1
       return
     }
 
@@ -562,7 +415,6 @@ export function useFixturesShell() {
       selectLeague(null)
     }
     await loadDayLocal(true)
-    syncNewlyTrackedLeagues(allowed)
   }
 
   function selectLeague(leagueId: number | null) {
@@ -589,7 +441,6 @@ export function useFixturesShell() {
     )
 
     void ensureResultsConfiguredLeagueIds()
-    startPageLoadSync()
 
     watch(prematchTrackedIds, () => {
       syncFutureScheduleSelection()
@@ -686,10 +537,9 @@ export function useFixturesShell() {
     resultsDayFixtureCount,
     prematchDisplayedFixtures,
     predictionsEmptyText,
-    officialSyncRevision,
-    officialSyncedDay,
+    resultsFilterRevision,
+    resultsFilterRevisionDay,
     reloadPrematchDay,
-    refreshOfficial,
     loadFilterOptions,
     syncFutureScheduleSelection,
     confirmFilter,

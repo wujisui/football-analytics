@@ -13,7 +13,7 @@ import VChart from 'vue-echarts'
 
 import type { AccuracyDayPoint, AccuracyStat } from '@/api/fixtures'
 import { ACCURACY_COLORS } from '@/utils/accuracyColors'
-import { addCalendarDays, todayDate } from '@/utils/homeDateStrip'
+import { addCalendarDays, scheduleTodayDate } from '@/utils/homeDateStrip'
 
 use([
   CanvasRenderer,
@@ -56,7 +56,7 @@ const emit = defineEmits<{
 /** ``windowDays <= 0`` → full series（全部）; otherwise last N days ending today. */
 const viewSeries = computed(() => {
   if (props.windowDays <= 0) return props.series
-  const end = todayDate()
+  const end = scheduleTodayDate()
   const days = Math.max(1, props.windowDays)
   const start = addCalendarDays(end, -(days - 1))
   return props.series.filter((p) => p.date >= start && p.date <= end)

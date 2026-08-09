@@ -247,7 +247,7 @@ defineExpose({ openFormula, openDetails })
       </div>
 
       <n-text depth="3">
-        已选 {{ matchCount }} 场 · {{ foldModeLabel(fold) }} ·
+        {{ foldModeLabel(fold) }} ·
         {{ result.betCount }} 注 {{ result.stakeYuan }} 元 · 预计奖金
         <n-text type="error" strong>
           {{ result.estimatedPrize || '—' }}

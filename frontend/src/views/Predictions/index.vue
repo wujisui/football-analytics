@@ -8,10 +8,7 @@ import CalcFixtureCard from '@/views/Predictions/components/CalcFixtureCard.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import PullToRefresh from '@/components/PullToRefresh.vue'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
-import {
-  officialSyncing,
-  useFixturesShell,
-} from '@/layouts/composables/useFixturesShell'
+import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useScrollRestore } from '@/composables/useScrollRestore'
@@ -33,7 +30,6 @@ const {
   prematchDisplayedFixtures,
   predictionsEmptyText,
   reloadPrematchDay,
-  refreshOfficial,
   homeDay,
   shellTrackedIds,
 } = useFixturesShell()
@@ -72,8 +68,8 @@ onActivated(() => {
         <div ref="phoneCalcShellRef" class="scroll-shell">
           <PullToRefresh
             :shell="phoneCalcShellRef"
-            :refreshing="officialSyncing"
-            @refresh="refreshOfficial"
+            :refreshing="contentLoading"
+            @refresh="reloadPrematchDay(true)"
           />
           <FixtureList
             :fixtures="prematchDisplayedFixtures"
@@ -122,8 +118,8 @@ onActivated(() => {
             <div ref="listShellRef" class="scroll-shell">
               <PullToRefresh
                 :shell="listShellRef"
-                :refreshing="officialSyncing"
-                @refresh="refreshOfficial"
+                :refreshing="contentLoading"
+                @refresh="reloadPrematchDay(true)"
               />
               <FixtureList
                 :fixtures="prematchDisplayedFixtures"

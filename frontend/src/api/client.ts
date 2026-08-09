@@ -14,13 +14,6 @@ export const apiClient = axios.create({
   },
 })
 
-export const analysisClient = axios.create({
-  baseURL,
-  // Detail analysis may enrich from official API within a server-side budget.
-  timeout: 45000,
-  paramsSerializer: { indexes: null },
-})
-
 function toError(error: AxiosError<{ detail?: string | { msg?: string }[] }>): Error {
   const status = error.response?.status
   const rawDetail = error.response?.data?.detail
@@ -44,11 +37,6 @@ function toError(error: AxiosError<{ detail?: string | { msg?: string }[] }>): E
 }
 
 apiClient.interceptors.response.use(
-  (response) => response,
-  (error: AxiosError<{ detail?: string }>) => Promise.reject(toError(error)),
-)
-
-analysisClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ detail?: string }>) => Promise.reject(toError(error)),
 )
