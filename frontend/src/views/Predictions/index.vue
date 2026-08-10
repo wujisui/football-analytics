@@ -286,7 +286,7 @@ onActivated(() => {
   display: grid;
   grid-template-columns: minmax(0, 8fr) minmax(0, 9fr);
   gap: 10px;
-  height: 156px;
+  height: 174px;
   min-width: 0;
   overflow: hidden;
 }
