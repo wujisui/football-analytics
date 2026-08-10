@@ -1,4 +1,4 @@
-"""Fixed-schedule official fixtures, odds, and results synchronization."""
+"""Fixed-schedule official fixtures, odds, results, and league standings sync."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import get_settings
 from app.services.fetcher import FootballFetcher
+from app.services.league_standings import sync_league_standings_for_dates
 from app.services.runtime_settings import get_enable_scheduled_full_detail
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,9 @@ async def scheduled_fixtures_sync() -> None:
     days = [today + timedelta(days=offset) for offset in range(window)]
     result_days = [today - timedelta(days=offset) for offset in range(3, -1, -1)]
     primary_league_ids = list(settings.LEAGUE_IDS.values())
+    # Standings cover the same upcoming window plus recent result days so list
+    # ranks work for both pending and finished cards.
+    standings_days = sorted({*days, *result_days})
 
     async with _sync_lock:
         async with FootballFetcher() as fetcher:
@@ -46,10 +50,14 @@ async def scheduled_fixtures_sync() -> None:
                 set_opening=True,
             )
             results_saved = await fetcher.capture_finished_results(on_days=result_days)
+            standings_stats = await sync_league_standings_for_dates(
+                fetcher,
+                standings_days,
+            )
 
-        # Batch scope is fixtures + odds + results only. Full display packages
-        # stay on-demand via analyze_fixture until this flag is on *and* bulk
-        # enrich is wired. Toggle via admin UI (app_settings) or env default.
+        # Batch scope is fixtures + odds + results + league standings. Full
+        # display packages stay on-demand via analyze_fixture until this flag
+        # is on *and* bulk enrich is wired. Toggle via admin UI / env.
         full_detail_enabled, full_detail_source = await get_enable_scheduled_full_detail()
         if full_detail_enabled:
             logger.info(
@@ -74,7 +82,9 @@ async def scheduled_fixtures_sync() -> None:
                 )
 
     logger.info(
-        "scheduled_fixtures_sync done fixtures_saved=%s results_saved=%s",
+        "scheduled_fixtures_sync done fixtures_saved=%s results_saved=%s "
+        "standings=%s",
         fixtures_saved,
         results_saved,
+        standings_stats,
     )

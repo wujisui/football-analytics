@@ -17,6 +17,12 @@ from app.services.api_utils import extract_items, first_value
 from app.services.cache import TTL_ANALYSIS, analysis_cache_key, get_cache_service
 from app.services.fetcher import FootballFetcher
 from app.services.team_names import team_name_zh
+from app.services.league_standings import (
+    resolve_fixture_standings,
+    snippet_from_ranks,
+    standings_season_for_league,
+    upsert_league_standing,
+)
 from app.services.prematch_package import (
     dumps_json,
     loads_json,
@@ -25,7 +31,6 @@ from app.services.prematch_package import (
     parse_lineups_payload,
     parse_odds_payload,
     parse_predictions_payload,
-    parse_standings_for_teams,
     rehydrate_odds_markets,
     summarize_form_payload,
     summarize_h2h_payload,
@@ -160,6 +165,7 @@ def prematch_package_needs_refresh_from_stored(
     stored: PreMatchData,
     *,
     history_tag: str,
+    standings_overlay: dict[str, Any] | None = None,
 ) -> bool:
     if not any(
         (
@@ -172,7 +178,9 @@ def prematch_package_needs_refresh_from_stored(
             getattr(stored, "briefing_json", None),
         )
     ):
-        return True
+        # Shared league standings alone do not count as a full package.
+        if not (isinstance(standings_overlay, dict) and standings_overlay.get("fetched")):
+            return True
     package = {
         "head_to_head": loads_json(stored.h2h_json, {}) or {},
         "home_form": loads_json(stored.home_form_json, {}) or {},
@@ -183,6 +191,8 @@ def prematch_package_needs_refresh_from_stored(
         "lineups": loads_json(stored.lineups_json, {}) or {},
         "injuries": loads_json(getattr(stored, "injuries_json", None), {}) or {},
     }
+    if isinstance(standings_overlay, dict) and standings_overlay.get("fetched"):
+        package["standings"] = standings_overlay
     return prematch_package_needs_refresh(package, history_tag=history_tag)
 
 
@@ -432,7 +442,7 @@ class AnalyzerService:
 
         await self.session.commit()
 
-    def _result_from_pre_match(
+    async def _result_from_pre_match(
         self,
         fixture: Fixture,
         home_name: str,
@@ -453,6 +463,11 @@ class AnalyzerService:
         frozen_rec = (getattr(stored, "recommendation", None) or "").strip()
         has_frozen = bool(frozen_rec and frozen_rec != "待分析")
         pkg = package_from_record(stored)
+        pkg["standings"] = await resolve_fixture_standings(
+            self.session,
+            fixture,
+            stored_snippet=pkg.get("standings") if isinstance(pkg.get("standings"), dict) else None,
+        )
         odds = pkg.get("odds") if isinstance(pkg.get("odds"), dict) else None
         from app.services.prediction import resolve_handicap_bundle
 
@@ -619,7 +634,7 @@ class AnalyzerService:
         odds_state = package_from_record(stored_any).get("odds") or {}
         if not (odds_state.get("available") or odds_state.get("fetched")):
             return None
-        result = self._result_from_pre_match(
+        result = await self._result_from_pre_match(
             fixture,
             home_name,
             away_name,
@@ -651,15 +666,7 @@ class AnalyzerService:
             if league and league.season
             else str(datetime.now(timezone.utc).year)
         )
-        # Free plan: clamp standings to 2024 when current season is blocked.
-        standings_season = season
-        if not get_settings().uses_full_history:
-            try:
-                year = int(str(season)[:4])
-                if year > 2024:
-                    standings_season = "2024"
-            except ValueError:
-                standings_season = "2024"
+        standings_season = standings_season_for_league(season)
 
         async def _h2h() -> None:
             payload = await fetcher.fetch_headtohead(
@@ -710,10 +717,23 @@ class AnalyzerService:
                 raise
 
         async def _standings() -> None:
+            # Shared league snapshot first — avoids per-fixture /standings calls.
+            shared = await resolve_fixture_standings(self.session, fixture)
+            if shared.get("available") and shared.get("fetched"):
+                package["standings"] = shared
+                return
             try:
                 payload = await fetcher.fetch_standings(fixture.league_id, standings_season)
-                package["standings"] = parse_standings_for_teams(
-                    payload,
+                row = await upsert_league_standing(
+                    self.session,
+                    league_id=fixture.league_id,
+                    season=standings_season,
+                    payload=payload,
+                    league_name=league.name if league else None,
+                )
+                ranks = loads_json(row.ranks_json, {}) or {}
+                package["standings"] = snippet_from_ranks(
+                    ranks if isinstance(ranks, dict) else {},
                     fixture.home_team_id,
                     fixture.away_team_id,
                     league_id=fixture.league_id,
@@ -874,9 +894,13 @@ class AnalyzerService:
             )
             if early is not None:
                 stored_after_odds = await self._get_stored_pre_match_row(fixture_id)
+                standings_overlay = await resolve_fixture_standings(self.session, fixture)
+                if early.package is not None:
+                    early.package["standings"] = standings_overlay
                 if stored_after_odds is not None and not prematch_package_needs_refresh_from_stored(
                     stored_after_odds,
                     history_tag=settings.history_source_tag,
+                    standings_overlay=standings_overlay,
                 ):
                     return early
                 logger.info(
@@ -889,13 +913,15 @@ class AnalyzerService:
             stored = await self._get_fresh_pre_match(fixture_id, fixture)
             if stored is not None:
                 history_tag = settings.history_source_tag
+                standings_overlay = await resolve_fixture_standings(self.session, fixture)
                 if include_package and prematch_package_needs_refresh_from_stored(
                     stored,
                     history_tag=history_tag,
+                    standings_overlay=standings_overlay,
                 ):
                     pass  # fall through — same detail path for all match states
                 else:
-                    result = self._result_from_pre_match(
+                    result = await self._result_from_pre_match(
                         fixture, home_name, away_name, league_name, stored, confidence="中"
                     )
                     if not include_package:
@@ -1014,7 +1040,7 @@ class AnalyzerService:
                     stored.draw_prob,
                     stored.away_win_prob,
                 ):
-                    result = self._result_from_pre_match(
+                    result = await self._result_from_pre_match(
                         fixture, home_name, away_name, league_name, stored, confidence="低"
                     )
                     if include_package and not result.package:
@@ -1045,7 +1071,7 @@ class AnalyzerService:
                 stored.draw_prob,
                 stored.away_win_prob,
             ):
-                return self._result_from_pre_match(
+                return await self._result_from_pre_match(
                     fixture, home_name, away_name, league_name, stored, confidence="低"
                 )
 
@@ -1101,7 +1127,7 @@ class AnalyzerService:
                 )
             ).scalar_one_or_none()
             if refreshed is not None:
-                result = self._result_from_pre_match(
+                result = await self._result_from_pre_match(
                     fixture,
                     home_name,
                     away_name,

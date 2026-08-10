@@ -32,6 +32,8 @@ export interface FavoriteFixtureRecord {
   draw_prob?: number
   away_win_prob?: number
   odds_snippet?: FixtureOddsSnippet | null
+  home_rank?: number | null
+  away_rank?: number | null
 }
 
 export interface FavoriteFixturesResponse {

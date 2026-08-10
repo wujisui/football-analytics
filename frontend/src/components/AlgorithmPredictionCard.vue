@@ -216,6 +216,8 @@ function onOddsClick() {
         clickable
         :home-name="homeName"
         :away-name="awayName"
+        :home-rank="fixture?.home_rank"
+        :away-rank="fixture?.away_rank"
         @click="goStats"
       />
       <FavoriteButton

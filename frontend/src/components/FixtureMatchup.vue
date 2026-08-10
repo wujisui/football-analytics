@@ -1,8 +1,15 @@
 <script setup lang="ts">
-withDefaults(
+import { computed } from 'vue'
+
+import { rankBracket } from '@/utils/format'
+
+const props = withDefaults(
   defineProps<{
     homeName: string
     awayName: string
+    /** League table rank when known (detail / list after standings package). */
+    homeRank?: number | null
+    awayRank?: number | null
     /** Prematch / calculator: whole matchup is a text control. */
     clickable?: boolean
     opening?: boolean
@@ -15,6 +22,8 @@ withDefaults(
     spread?: boolean
   }>(),
   {
+    homeRank: null,
+    awayRank: null,
     clickable: false,
     opening: false,
     ariaLabel: '查看详情',
@@ -25,6 +34,9 @@ withDefaults(
 const emit = defineEmits<{
   click: []
 }>()
+
+const homeRankText = computed(() => rankBracket(props.homeRank))
+const awayRankText = computed(() => rankBracket(props.awayRank))
 </script>
 
 <template>
@@ -37,16 +49,28 @@ const emit = defineEmits<{
     :aria-label="ariaLabel"
     @click.stop="emit('click')"
   >
-    <n-ellipsis class="team home">{{ homeName }}</n-ellipsis>
+    <span class="side home">
+      <span v-if="homeRankText" class="rank">{{ homeRankText }}</span>
+      <n-ellipsis class="team">{{ homeName }}</n-ellipsis>
+    </span>
     <span class="versus">vs</span>
-    <n-ellipsis class="team away">{{ awayName }}</n-ellipsis>
+    <span class="side away">
+      <n-ellipsis class="team">{{ awayName }}</n-ellipsis>
+      <span v-if="awayRankText" class="rank">{{ awayRankText }}</span>
+    </span>
   </button>
   <div v-else class="matchup" :class="{ spread }">
-    <n-ellipsis class="team home">{{ homeName }}</n-ellipsis>
+    <span class="side home">
+      <span v-if="homeRankText" class="rank">{{ homeRankText }}</span>
+      <n-ellipsis class="team">{{ homeName }}</n-ellipsis>
+    </span>
     <slot name="middle">
       <span class="versus">vs</span>
     </slot>
-    <n-ellipsis class="team away">{{ awayName }}</n-ellipsis>
+    <span class="side away">
+      <n-ellipsis class="team">{{ awayName }}</n-ellipsis>
+      <span v-if="awayRankText" class="rank">{{ awayRankText }}</span>
+    </span>
   </div>
 </template>
 
@@ -85,14 +109,29 @@ const emit = defineEmits<{
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--fa-highlight-text) 35%, transparent);
 }
 
-/* n-ellipsis renders its root without our scope id (its own root is the tooltip
- * binder), so every team-name rule has to reach it through :deep. */
-.matchup :deep(.team) {
+/* Rank stays visible; only the name ellipsizes when space is tight. */
+.side {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex: 0 1 auto;
   min-width: 0;
   max-width: 42%;
   font-size: 13px;
   font-weight: 600;
+}
+
+.rank {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+/* n-ellipsis root has no parent scope id — reach it through :deep. */
+.side :deep(.team) {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .versus {
@@ -112,15 +151,22 @@ const emit = defineEmits<{
   gap: 8px;
 }
 
-.matchup.spread :deep(.team) {
+.matchup.spread .side {
   max-width: 100%;
+  width: 100%;
 }
 
-.matchup.spread :deep(.team.home) {
-  justify-self: end;
+/* Group hugs the score: shrink to content so justify-content can pull it in.
+ * (flex:1 here would fill the column and defeat the alignment.) */
+.matchup.spread .side :deep(.team) {
+  flex: 0 1 auto;
 }
 
-.matchup.spread :deep(.team.away) {
-  justify-self: start;
+.matchup.spread .side.home {
+  justify-content: flex-end;
+}
+
+.matchup.spread .side.away {
+  justify-content: flex-start;
 }
 </style>

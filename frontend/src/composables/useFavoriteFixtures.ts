@@ -47,6 +47,8 @@ function optimisticFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord 
     away_goals: fixture.away_goals,
     saved_at: new Date().toISOString(),
     odds_snippet: oddsSnippetFromFixture(fixture),
+    home_rank: fixture.home_rank ?? null,
+    away_rank: fixture.away_rank ?? null,
     ...predictionFieldsFromSnapshot(snapshot),
   }
 }
@@ -84,6 +86,8 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     btts_hit: fixture.btts_hit,
     result_hit: fixture.result_hit,
     single_result_hit: fixture.single_result_hit,
+    home_rank: fixture.home_rank ?? null,
+    away_rank: fixture.away_rank ?? null,
   }
 }
 

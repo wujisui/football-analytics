@@ -341,6 +341,8 @@ class ResultFixtureResponse(BaseModel):
     single_result_hit: bool | None = Field(
         default=None, description="最高概率胜平负单选是否命中"
     )
+    home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
+    away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
 
     @field_serializer("fixture_date")
     def serialize_fixture_date(self, value: datetime) -> str:
@@ -380,6 +382,8 @@ class FavoriteFixtureResponse(BaseModel):
     draw_prob: float | None = None
     away_win_prob: float | None = None
     odds_snippet: FixtureOddsSnippetResponse | None = None
+    home_rank: int | None = None
+    away_rank: int | None = None
 
     @field_serializer("fixture_date", "saved_at")
     def serialize_datetimes(self, value: datetime) -> str:

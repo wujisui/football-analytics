@@ -77,6 +77,8 @@ export interface ResultFixture {
   btts_hit?: boolean | null
   result_hit?: boolean | null
   single_result_hit?: boolean | null
+  home_rank?: number | null
+  away_rank?: number | null
 }
 
 export interface AccuracyStat {

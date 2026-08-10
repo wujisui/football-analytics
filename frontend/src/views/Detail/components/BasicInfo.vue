@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ChevronBackOutline } from '@vicons/ionicons5'
-import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import {ChevronBackOutline} from '@vicons/ionicons5'
+import {computed} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
 
 import {
   detailBackRoute,
@@ -9,10 +9,10 @@ import {
   parseDetailFrom,
   type DetailCrumbFixture,
 } from '@/utils/detailNav'
-import { useIsPhone } from '@/composables/useMediaQuery'
-import { writeFixturesLeagueFilter } from '@/utils/fixturesLeagueFilter'
-import { rankBracket } from '@/utils/format'
-import { leagueLabel } from '@/utils/leagueNames'
+import {useIsPhone} from '@/composables/useMediaQuery'
+import {writeFixturesLeagueFilter} from '@/utils/fixturesLeagueFilter'
+import {rankBracket} from '@/utils/format'
+import {leagueLabel} from '@/utils/leagueNames'
 
 const props = defineProps<{
   fixture: DetailCrumbFixture | null
@@ -24,11 +24,11 @@ const isPhone = useIsPhone()
 
 const from = computed(() => parseDetailFrom(route.query.from))
 const fromDate = computed(() =>
-  typeof route.query.date === 'string' ? route.query.date : null,
+    typeof route.query.date === 'string' ? route.query.date : null,
 )
 const rootLabel = computed(() => detailRootLabel(from.value))
 const leagueLabelText = computed(() =>
-  props.fixture?.league_name ? leagueLabel(props.fixture.league_name) : '',
+    props.fixture?.league_name ? leagueLabel(props.fixture.league_name) : '',
 )
 
 const scoreText = computed(() => {
@@ -54,9 +54,9 @@ const awayLabel = computed(() => {
 
 function goBack() {
   void router.push(
-    detailBackRoute(from.value, {
-      date: fromDate.value,
-    }),
+      detailBackRoute(from.value, {
+        date: fromDate.value,
+      }),
   )
 }
 
@@ -71,7 +71,7 @@ function goLeague() {
   }
   writeFixturesLeagueFilter(props.fixture.league_id, 'prematch')
   void router.push(
-    detailBackRoute('predictions', { leagueId: props.fixture.league_id }),
+      detailBackRoute('predictions', {leagueId: props.fixture.league_id}),
   )
 }
 </script>
@@ -80,15 +80,15 @@ function goLeague() {
   <div class="basic-info">
     <div class="header-row">
       <n-button
-        class="back-btn"
-        quaternary
-        circle
-        size="small"
-        aria-label="返回"
-        @click="goBack"
+          class="back-btn"
+          quaternary
+          circle
+          size="small"
+          aria-label="返回"
+          @click="goBack"
       >
         <template #icon>
-          <n-icon :component="ChevronBackOutline" />
+          <n-icon :component="ChevronBackOutline"/>
         </template>
       </n-button>
 
@@ -97,22 +97,17 @@ function goLeague() {
           {{ rootLabel }}
         </n-breadcrumb-item>
         <n-breadcrumb-item
-          v-if="!isPhone && leagueLabelText"
-          @click="goLeague"
+            v-if="!isPhone && leagueLabelText"
+            @click="goLeague"
         >
           {{ leagueLabelText }}
         </n-breadcrumb-item>
         <n-breadcrumb-item v-if="fixture">
-          <n-tooltip v-if="scoreText" placement="bottom">
-            <template #trigger>
-              <span class="match-title crumb-match">
+           <span v-if="scoreText" class="match-title crumb-match">
                 <span>{{ homeLabel }}</span>
                 <span class="score-value">{{ scoreText }}</span>
                 <span>{{ awayLabel }}</span>
               </span>
-            </template>
-            本地比分（非实时）
-          </n-tooltip>
           <span v-else class="match-title crumb-match">
             <span>{{ homeLabel }}</span>
             <span>VS</span>

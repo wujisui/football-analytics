@@ -80,6 +80,8 @@ function goDetail() {
         :opening="openingDetail"
         :home-name="fixture.home_team_name || '—'"
         :away-name="fixture.away_team_name || '—'"
+        :home-rank="fixture.home_rank"
+        :away-rank="fixture.away_rank"
         @click="goDetail"
       />
       <FavoriteButton

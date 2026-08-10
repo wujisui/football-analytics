@@ -70,6 +70,12 @@ const settledFixture = computed(() =>
 )
 const homeName = computed(() => props.fixture.home_team_name || '—')
 const awayName = computed(() => props.fixture.away_team_name || '—')
+const homeRank = computed(() =>
+  'home_rank' in props.fixture ? props.fixture.home_rank ?? null : null,
+)
+const awayRank = computed(() =>
+  'away_rank' in props.fixture ? props.fixture.away_rank ?? null : null,
+)
 const leagueName = computed(() => leagueLabel(props.fixture.league_name))
 const kickoffText = computed(() => {
   const time = formatTime(props.fixture.fixture_date)
@@ -189,6 +195,8 @@ function onLeagueClick(e: Event) {
       spread
       :home-name="homeName"
       :away-name="awayName"
+      :home-rank="homeRank"
+      :away-rank="awayRank"
       @click="openStats"
     />
     <FixtureMatchup
@@ -196,6 +204,8 @@ function onLeagueClick(e: Event) {
       spread
       :home-name="homeName"
       :away-name="awayName"
+      :home-rank="homeRank"
+      :away-rank="awayRank"
     >
       <template #middle>
         <ScoreDetailLink

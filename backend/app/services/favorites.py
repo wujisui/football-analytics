@@ -23,19 +23,23 @@ def _to_favorite_response(
     fav: FavoriteFixture,
     fixture: Fixture,
     stored: PreMatchData | None,
+    *,
+    standings_maps: dict[tuple[int, str], dict] | None = None,
 ) -> FavoriteFixtureResponse:
     # Import list mappers lazily to avoid circular imports at module load.
     from app.api.v1.endpoints.fixtures import (
         _league_country,
         _league_name,
         _list_analysis_from_fixture,
-        _list_extras_from_stored,
+        _odds_snippet_from_stored,
+        _ranks_from_maps,
         _team_display_name,
     )
     from app.services.results_accuracy import evaluate_fixture_prediction
 
     analysis = _list_analysis_from_fixture(fixture, stored)
-    _, _, odds_snippet = _list_extras_from_stored(stored)
+    odds_snippet = _odds_snippet_from_stored(stored)
+    home_rank, away_rank = _ranks_from_maps(fixture, standings_maps or {}, stored)
     probs = analysis.probabilities
     ready = bool(probs.available)
     rec = (analysis.recommendation or "").strip()
@@ -107,6 +111,8 @@ def _to_favorite_response(
         draw_prob=probs.draw_prob if ready else None,
         away_win_prob=probs.away_win_prob if ready else None,
         odds_snippet=odds_snippet,
+        home_rank=home_rank,
+        away_rank=away_rank,
     )
 
 
@@ -161,13 +167,28 @@ async def list_favorite_responses(
     ids = [row.fixture_id for row in fav_rows]
     fixtures = await _load_fixtures_map(db, ids)
     stored = await _load_prematch_map(db, ids)
+    from app.services.league_standings import fixture_standing_key, load_standings_maps
+
+    standings_keys = {
+        key
+        for fixture in fixtures.values()
+        if (key := fixture_standing_key(fixture)) is not None
+    }
+    standings_maps = await load_standings_maps(db, standings_keys)
 
     out: list[FavoriteFixtureResponse] = []
     for fav in fav_rows:
         fixture = fixtures.get(fav.fixture_id)
         if fixture is None:
             continue
-        out.append(_to_favorite_response(fav, fixture, stored.get(fav.fixture_id)))
+        out.append(
+            _to_favorite_response(
+                fav,
+                fixture,
+                stored.get(fav.fixture_id),
+                standings_maps=standings_maps,
+            )
+        )
     return out
 
 
@@ -192,7 +213,16 @@ async def get_favorite_response(
     if fixture is None:
         return None
     stored = await _load_prematch_map(db, [fixture_id])
-    return _to_favorite_response(fav, fixture, stored.get(fixture_id))
+    from app.services.league_standings import fixture_standing_key, load_standings_maps
+
+    key = fixture_standing_key(fixture)
+    standings_maps = await load_standings_maps(db, {key} if key else set())
+    return _to_favorite_response(
+        fav,
+        fixture,
+        stored.get(fixture_id),
+        standings_maps=standings_maps,
+    )
 
 
 async def add_favorite(

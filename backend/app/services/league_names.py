@@ -19,6 +19,11 @@ _NEEDS_COUNTRY = frozenset(
         "Premier League",
         "Pro League",
         "Serie A",
+        # Germany + Austria both call their top flight "Bundesliga".
+        "Bundesliga",
+        "2. Liga",
+        # England and Scotland both have a competition named "Championship".
+        "Championship",
         "Super League",
         "FA Cup",
         "League One",
@@ -29,9 +34,9 @@ _NEEDS_COUNTRY = frozenset(
     }
 )
 
-# Unambiguous English API names.
-_BY_NAME: dict[str, str] = {
-    "Championship": "英冠",
+# Only globally unambiguous English API names belong here. Domestic/generic
+# competition names must use ``_BY_NAME_COUNTRY`` or ``_BY_ID``.
+_BY_UNAMBIGUOUS_NAME: dict[str, str] = {
     "EFL Cup": "英联杯",
     "La Liga": "西甲",
     "Copa Del Rey": "国王杯",
@@ -73,7 +78,6 @@ _BY_NAME: dict[str, str] = {
     "Australia Cup": "澳大利亚杯",
     "Premier League - Summer Series": "英超夏季系列赛",
     "Coppa Italia": "意大利杯",
-    "Bundesliga": "德甲",
     "2. Bundesliga": "德乙",
     "DFB Pokal": "德国杯",
     "Ligue 1": "法甲",
@@ -112,7 +116,6 @@ _BY_NAME: dict[str, str] = {
     "A-League": "澳超",
     "J1 League": "日职联",
     "K League 1": "韩K联",
-    "Korea Cup": "韩国杯",
     "Chinese Super League": "中超",
     "China League One": "中甲",
     "China League Two": "中乙",
@@ -123,11 +126,15 @@ _BY_NAME: dict[str, str] = {
     "Calcutta Premier A Division": "加尔各答超A组",
     "Calcutta Premier Division": "加尔各答超",
     "I-League": "印度I联赛",
-    "Division Profesional": "玻利甲",
 }
 
 # ``name|country`` as returned by API-Sports.
 _BY_NAME_COUNTRY: dict[str, str] = {
+    "Bundesliga|Germany": "德甲",
+    "Bundesliga|Austria": "奥超",
+    "2. Liga|Austria": "奥乙",
+    "Championship|England": "英冠",
+    "Championship|Scotland": "苏冠",
     "Premier League|England": "英超",
     "Premier League|Malta": "马耳他超",
     "Premier League|Israel": "以超",
@@ -193,6 +200,7 @@ _BY_NAME_COUNTRY: dict[str, str] = {
     "Copa Colombia|Colombia": "哥伦杯",
     "Liga Pro Serie B|Ecuador": "厄乙",
     "Second League|Bulgaria": "保乙",
+    "First League|Bulgaria": "保超",
     "First League|Russia": "俄甲",
     "Youth Championship|Russia": "俄青联",
     "League Cup|Scotland": "苏格兰联赛杯",
@@ -220,6 +228,19 @@ _BY_NAME_COUNTRY: dict[str, str] = {
     "Primeira Divisão|Macao": "澳门甲",
 }
 
+# Any name with a country-specific translation is country-scoped by default.
+# This turns disambiguation into the safe default: without a stable league ID
+# or matching country, preserve the official name instead of guessing.
+_COUNTRY_SCOPED_NAMES = frozenset(
+    {
+        *_NEEDS_COUNTRY,
+        *(key.rsplit("|", 1)[0] for key in _BY_NAME_COUNTRY),
+    }
+)
+assert _COUNTRY_SCOPED_NAMES.isdisjoint(_BY_UNAMBIGUOUS_NAME), (
+    "Country-scoped league names must not appear in the pure-name translation map"
+)
+
 # Observed in local DB / API discovery — id wins over stale or wrong stored labels.
 _BY_ID: dict[int, str] = {
     24: "东南亚锦标赛",
@@ -229,6 +250,7 @@ _BY_ID: dict[int, str] = {
     74: "巴女甲",
     75: "巴丙",
     76: "巴丁",
+    78: "德甲",
     79: "德乙",
     83: "德地区拜仁",
     85: "德地区东北",
@@ -253,8 +275,10 @@ _BY_ID: dict[int, str] = {
     167: "冰岛杯",
     170: "中甲",
     171: "中协杯",
+    172: "保超",
     173: "保乙",
     179: "苏超",
+    180: "苏冠",
     185: "苏格兰联赛杯",
     189: "澳首都NPL",
     192: "新南威尔士NPL",
@@ -263,6 +287,8 @@ _BY_ID: dict[int, str] = {
     196: "西澳NPL",
     201: "摩洛乙",
     208: "瑞士挑战联",
+    218: "奥超",
+    219: "奥乙",
     220: "奥地利杯",
     236: "俄甲",
     238: "俄青联",
@@ -531,17 +557,19 @@ def league_name_zh(
             allowed = _id_countries(cfg, league_id)
             if not allowed or not country_n or _country_matches(country_n, allowed):
                 if not (
-                    trimmed in _NEEDS_COUNTRY
+                    trimmed in _COUNTRY_SCOPED_NAMES
                     and allowed
                     and country_n
                     and not _country_matches(country_n, allowed)
                 ):
                     return catalog
 
-    if trimmed in _BY_NAME:
-        return _BY_NAME[trimmed]
+    # Pure-name translation is reserved for globally unambiguous competition
+    # names. Country-scoped names must never fall through to a popular league.
+    if trimmed in _BY_UNAMBIGUOUS_NAME:
+        return _BY_UNAMBIGUOUS_NAME[trimmed]
 
-    if trimmed in _NEEDS_COUNTRY and country_n:
+    if trimmed in _COUNTRY_SCOPED_NAMES and country_n:
         generic = _generic_league_name(trimmed, country_n)
         if generic:
             return generic

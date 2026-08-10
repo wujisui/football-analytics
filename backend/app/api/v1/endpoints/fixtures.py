@@ -49,6 +49,11 @@ from app.services.results_accuracy import (
 )
 from app.services.results_capture import results_list_clause
 from app.services.league_names import league_name_zh
+from app.services.league_standings import (
+    fixture_standing_key,
+    load_standings_maps,
+    snippet_from_ranks,
+)
 from app.services.team_names import team_name_zh
 
 router = APIRouter(prefix="/fixtures", tags=["fixtures"])
@@ -198,28 +203,43 @@ def _list_analysis_from_fixture(
     )
 
 
-def _list_extras_from_stored(stored: PreMatchData | None) -> tuple[
-    int | None,
-    int | None,
-    FixtureOddsSnippetResponse | None,
-]:
-    """Ranks + odds snippet for list cards — local JSON only."""
+def _odds_snippet_from_stored(
+    stored: PreMatchData | None,
+) -> FixtureOddsSnippetResponse | None:
     if stored is None:
-        return None, None, None
-    standings = loads_json(getattr(stored, "standings_json", None), {}) or {}
-    home_rank = standings.get("home_rank")
-    away_rank = standings.get("away_rank")
+        return None
     odds = rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
-    snippet = None
-    if isinstance(odds, dict) and odds.get("available"):
-        snippet = FixtureOddsSnippetResponse(
-            available=True,
-            match_winner=odds.get("match_winner"),
-            asian_handicap=odds.get("asian_handicap"),
-            goals_ou=odds.get("goals_ou"),
-            both_teams_score=odds.get("both_teams_score"),
+    if not isinstance(odds, dict) or not odds.get("available"):
+        return None
+    return FixtureOddsSnippetResponse(
+        available=True,
+        match_winner=odds.get("match_winner"),
+        asian_handicap=odds.get("asian_handicap"),
+        goals_ou=odds.get("goals_ou"),
+        both_teams_score=odds.get("both_teams_score"),
+    )
+
+
+def _ranks_from_maps(
+    fixture: Fixture,
+    standings_maps: dict[tuple[int, str], dict],
+    stored: PreMatchData | None,
+) -> tuple[int | None, int | None]:
+    """Prefer shared league standings; fall back to per-fixture standings_json."""
+    key = fixture_standing_key(fixture)
+    if key is not None and key in standings_maps:
+        snippet = snippet_from_ranks(
+            standings_maps[key],
+            fixture.home_team_id,
+            fixture.away_team_id,
+            league_id=fixture.league_id,
+            league_name=fixture.league.name if fixture.league else None,
         )
-    return home_rank, away_rank, snippet
+        return snippet.get("home_rank"), snippet.get("away_rank")
+    if stored is None:
+        return None, None
+    standings = loads_json(getattr(stored, "standings_json", None), {}) or {}
+    return standings.get("home_rank"), standings.get("away_rank")
 
 
 @router.get("/today", response_model=TodayFixturesResponse)
@@ -296,10 +316,18 @@ async def get_today_fixtures(
         pre_rows = (await db.execute(pre_stmt)).scalars().all()
         stored_by_id = {row.fixture_id: row for row in pre_rows}
 
+    standings_keys = {
+        key
+        for fixture in fixtures
+        if (key := fixture_standing_key(fixture)) is not None
+    }
+    standings_maps = await load_standings_maps(db, standings_keys)
+
     fixture_responses: list[FixtureResponse] = []
     for fixture in fixtures:
         stored = stored_by_id.get(fixture.id)
-        home_rank, away_rank, odds_snippet = _list_extras_from_stored(stored)
+        home_rank, away_rank = _ranks_from_maps(fixture, standings_maps, stored)
+        odds_snippet = _odds_snippet_from_stored(stored)
         fixture_responses.append(
             FixtureResponse(
                 fixture_id=fixture.id,
@@ -447,10 +475,17 @@ async def get_fixture_results(
     result = await db.execute(stmt)
     fixtures = list(result.scalars().all())
     stored_by_id = await load_stored_by_fixture_ids(db, [f.id for f in fixtures])
+    standings_keys = {
+        key
+        for fixture in fixtures
+        if (key := fixture_standing_key(fixture)) is not None
+    }
+    standings_maps = await load_standings_maps(db, standings_keys)
 
     items: list[ResultFixtureResponse] = []
     for fx in fixtures:
         evaluated = evaluate_fixture_prediction(fx, stored_by_id.get(fx.id))
+        home_rank, away_rank = _ranks_from_maps(fx, standings_maps, stored_by_id.get(fx.id))
         items.append(
             ResultFixtureResponse(
                 fixture_id=fx.id,
@@ -489,6 +524,8 @@ async def get_fixture_results(
                 score_hit=evaluated["score_hit"],
                 ou_hit=evaluated["ou_hit"],
                 btts_hit=evaluated["btts_hit"],
+                home_rank=home_rank,
+                away_rank=away_rank,
             )
         )
 

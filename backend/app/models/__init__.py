@@ -4,6 +4,7 @@ from app.models.bet_plan import BetPlan
 from app.models.favorite_fixture import FavoriteFixture
 from app.models.fixture import Fixture
 from app.models.league import League
+from app.models.league_standing import LeagueStanding
 from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
 from app.models.team import Team
@@ -14,6 +15,7 @@ __all__ = [
     "BetPlan",
     "FavoriteFixture",
     "League",
+    "LeagueStanding",
     "Team",
     "Fixture",
     "PreMatchData",
