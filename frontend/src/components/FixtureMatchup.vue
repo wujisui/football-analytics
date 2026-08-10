@@ -99,24 +99,21 @@ const emit = defineEmits<{
   color: var(--fa-text-strong);
 }
 
-/* Results: equal columns, each name centered in its own half. */
+/**
+ * Results: equal side columns, each name centered in its own half. Grid
+ * alignment centers the whole n-ellipsis box — `text-align` would depend on
+ * its inner span, which naive renders as inline-block.
+ */
 .matchup.spread {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-items: stretch;
+  justify-items: center;
   gap: 8px;
 }
 
 .matchup.spread .team {
-  flex: unset;
-  max-width: 100%;
-  width: 100%;
   min-width: 0;
-  text-align: center;
-}
-
-.matchup.spread .versus {
-  justify-self: center;
+  max-width: 100%;
 }
 </style>
