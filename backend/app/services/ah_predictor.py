@@ -168,8 +168,8 @@ def _structural_pick(
     if rec in {"负", "客胜"} and 0.05 < line_f < 1.0:
         return HandicapPrediction(0.28, "no_cover", "structural", line_f)
 
-    # 胜/平 + 主让：平局必为让球负；胜局在非整数盘可穿/不穿，
-    # 整数盘按一球边界覆盖为让球负/平，避免错误压成单选让球负。
+    # 胜/平 + 主让：平局必为让负；胜局在非整数盘可穿/不穿，
+    # 整数盘按一球边界覆盖为让负/平，避免错误压成单选让负。
     if home_undivided and line_f < -0.05:
         pick = "no_cover/push" if integer_line else "cover/no_cover"
         return HandicapPrediction(0.5, pick, "structural", line_f)
@@ -286,7 +286,7 @@ def predict_handicap(
 
 
 def format_handicap_lean(pred: HandicapPrediction) -> str:
-    """Product lean with signed line: 让球负（-1） / 让球胜（+0.5） / 让球平（0）."""
+    """Product lean with signed line: 让负(-1) / 让胜(+0.5) / 让平(0)."""
     return format_handicap_lean_text(pick_to_lean(pred.pick), pred.line_f)
 
 

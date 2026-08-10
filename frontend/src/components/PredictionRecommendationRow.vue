@@ -59,7 +59,6 @@ function open() {
     @keydown.enter.prevent="open"
     @keydown.space.prevent="open"
   >
-    <span class="recommendation-label">推荐</span>
     <n-tag
       size="small"
       :bordered="false"
@@ -97,15 +96,6 @@ function open() {
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-
-.recommendation-label {
-  flex-shrink: 0;
-  padding: 0 2px;
-  color: var(--fa-highlight-text);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.4;
 }
 
 .recommendation-row :deep(.n-tag) {

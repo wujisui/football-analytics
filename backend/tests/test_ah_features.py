@@ -32,28 +32,28 @@ class AhFeaturesTests(unittest.TestCase):
 
     def test_format_handicap_lean_includes_side(self) -> None:
         pred = HandicapPrediction(0.62, "cover", "multifactor", -0.25)
-        self.assertEqual(format_handicap_lean(pred), "让球胜(-0.25)")
+        self.assertEqual(format_handicap_lean(pred), "让胜(-0.25)")
         pred_lose = HandicapPrediction(0.4, "no_cover", "multifactor", -0.25)
-        self.assertEqual(format_handicap_lean(pred_lose), "让球负(-0.25)")
+        self.assertEqual(format_handicap_lean(pred_lose), "让负(-0.25)")
         pred_recv = HandicapPrediction(0.55, "cover", "multifactor", 1.0)
-        self.assertEqual(format_handicap_lean(pred_recv), "让球胜(+1)")
+        self.assertEqual(format_handicap_lean(pred_recv), "让胜(+1)")
         pred_level = HandicapPrediction(0.5, "push", "multifactor", 0.0)
-        self.assertEqual(format_handicap_lean(pred_level), "让球平(0)")
+        self.assertEqual(format_handicap_lean(pred_level), "让平(0)")
         pred_dual = HandicapPrediction(0.5, "cover/no_cover", "structural", -0.5)
-        self.assertEqual(format_handicap_lean(pred_dual), "让球胜/负(-0.5)")
+        self.assertEqual(format_handicap_lean(pred_dual), "让胜/负(-0.5)")
         pred_integer_dual = HandicapPrediction(0.5, "no_cover/push", "structural", -1.0)
-        self.assertEqual(format_handicap_lean(pred_integer_dual), "让球负/平(-1)")
+        self.assertEqual(format_handicap_lean(pred_integer_dual), "让负/平(-1)")
 
     def test_double_chance_maps_to_handicap_double_pick(self) -> None:
         non_integer = _structural_pick(-0.5, "胜/平")
         self.assertIsNotNone(non_integer)
         self.assertEqual(non_integer.pick, "cover/no_cover")
-        self.assertEqual(format_handicap_lean(non_integer), "让球胜/负(-0.5)")
+        self.assertEqual(format_handicap_lean(non_integer), "让胜/负(-0.5)")
 
         integer = _structural_pick(-1.0, "胜/平")
         self.assertIsNotNone(integer)
         self.assertEqual(integer.pick, "no_cover/push")
-        self.assertEqual(format_handicap_lean(integer), "让球负/平(-1)")
+        self.assertEqual(format_handicap_lean(integer), "让负/平(-1)")
 
         mirrored_non_integer = _structural_pick(0.5, "负/平")
         self.assertIsNotNone(mirrored_non_integer)
@@ -65,26 +65,27 @@ class AhFeaturesTests(unittest.TestCase):
 
     def test_settle_three_way_handicap_result(self) -> None:
         # Home gives one: 1-0 pushes, 2-0 wins, any level score loses.
-        self.assertEqual(settle_handicap_result(1, 0, -1.0), "让球平")
-        self.assertEqual(settle_handicap_result(2, 0, -1.0), "让球胜")
-        self.assertEqual(settle_handicap_result(1, 1, -1.0), "让球负")
+        self.assertEqual(settle_handicap_result(1, 0, -1.0), "让平")
+        self.assertEqual(settle_handicap_result(2, 0, -1.0), "让胜")
+        self.assertEqual(settle_handicap_result(1, 1, -1.0), "让负")
         # Away gives one (home receives +1): 0-1 pushes; 1-1 wins.
-        self.assertEqual(settle_handicap_result(0, 1, 1.0), "让球平")
-        self.assertEqual(settle_handicap_result(1, 1, 1.0), "让球胜")
-        self.assertEqual(settle_handicap_result(0, 2, 1.0), "让球负")
+        self.assertEqual(settle_handicap_result(0, 1, 1.0), "让平")
+        self.assertEqual(settle_handicap_result(1, 1, 1.0), "让胜")
+        self.assertEqual(settle_handicap_result(0, 2, 1.0), "让负")
 
     def test_parse_frozen_handicap_lean(self) -> None:
-        self.assertEqual(handicap_pick_from_lean("让球胜（-1）"), "让球胜")
-        self.assertEqual(handicap_pick_from_lean("让球负"), "让球负")
-        self.assertEqual(handicap_pick_from_lean("让球负（主让1）"), "让球负")
-        self.assertIsNone(handicap_pick_from_lean("让球胜/负（-0.5）"))
+        # Legacy 「让球X」 snapshots must still resolve to the current tokens.
+        self.assertEqual(handicap_pick_from_lean("让球胜（-1）"), "让胜")
+        self.assertEqual(handicap_pick_from_lean("让负"), "让负")
+        self.assertEqual(handicap_pick_from_lean("让负（主让1）"), "让负")
+        self.assertIsNone(handicap_pick_from_lean("让胜/负（-0.5）"))
         self.assertEqual(
-            handicap_picks_from_lean("让球胜/负（-0.5）"),
-            {"让球胜", "让球负"},
+            handicap_picks_from_lean("让胜/负（-0.5）"),
+            {"让胜", "让负"},
         )
         self.assertEqual(
             handicap_picks_from_lean("让球负/平（-1）"),
-            {"让球负", "让球平"},
+            {"让负", "让平"},
         )
         self.assertEqual(handicap_line_from_lean("让球胜（-1）"), -1.0)
         self.assertEqual(handicap_line_from_lean("让球负（+1）"), 1.0)

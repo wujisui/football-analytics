@@ -469,10 +469,10 @@ class AnalyzerService:
             stored_snippet=pkg.get("standings") if isinstance(pkg.get("standings"), dict) else None,
         )
         odds = pkg.get("odds") if isinstance(pkg.get("odds"), dict) else None
-        from app.services.prediction import resolve_handicap_bundle
+        from app.services.prediction import canonical_score_hint, resolve_handicap_bundle
 
         rec = frozen_rec if has_frozen else get_recommendation(probs)
-        score_hint = getattr(stored, "score_hint", None) or ""
+        score_hint = canonical_score_hint(getattr(stored, "score_hint", None))
         handicap_lean, handicap_market_note = resolve_handicap_bundle(
             odds,
             rec,
@@ -500,7 +500,7 @@ class AnalyzerService:
             package=pkg,
             goal_lean=getattr(stored, "goal_lean", None),
             both_score_lean=getattr(stored, "both_score_lean", None),
-            score_hint=getattr(stored, "score_hint", None),
+            score_hint=score_hint or None,
             handicap_lean=handicap_lean,
             handicap_market_note=handicap_market_note or None,
             leans_frozen=has_frozen,

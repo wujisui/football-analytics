@@ -6,7 +6,7 @@ export function isPredictionPending(text: string | null | undefined): boolean {
 }
 
 /**
- * Short pick for compact hit tags: 让球负（-1）→ 让球负.
+ * Short pick for compact hit tags: 让负(-1) → 让负.
  * Also strips brief 主让/客让/平手 suffixes if any remain.
  */
 export function handicapLeanLabel(text: string | null | undefined): string {

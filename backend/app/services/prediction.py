@@ -81,9 +81,12 @@ def canonical_btts_lean(text: str | None) -> str:
 
 
 def canonical_score_hint(text: str | None) -> str:
+    """Normalize prefix and separator so frozen rows match today's display form."""
     value = (text or "").strip()
     if not value:
         return ""
+    # Older snapshots stored「1-0 / 2-0」; drop the padding to keep tags one line.
+    value = re.sub(r"\s*/\s*", "/", value)
     if value.startswith("比分:"):
         return value
     if value.startswith("比分："):
@@ -871,7 +874,8 @@ def _score_hints_for_recommendation(
         if pair not in seen:
             seen.add(pair)
             unique.append(pair)
-    text = " / ".join(f"{h}-{a}" for h, a in unique)
+    # No spaces around「/」so multi-score tags stay on one list row.
+    text = "/".join(f"{h}-{a}" for h, a in unique)
     return text, unique
 
 
@@ -991,7 +995,7 @@ def derive_prediction_leans(
     )
     btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
     score_hint = (
-        f"比分:{' / '.join(f'{h}-{a}' for h, a in score_lines)}"
+        f"比分:{'/'.join(f'{h}-{a}' for h, a in score_lines)}"
         if score_lines
         else "比分:待分析"
     )

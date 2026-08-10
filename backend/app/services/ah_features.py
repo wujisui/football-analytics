@@ -164,7 +164,7 @@ def settle_handicap_result(
     away_goals: int | None,
     line_f: float | None,
 ) -> str | None:
-    """Settle the home-side handicap as 让球胜 / 让球平 / 让球负."""
+    """Settle the home-side handicap as 让胜 / 让平 / 让负."""
     label = settle_ah_label(home_goals, away_goals, line_f)
     if label is None:
         return None
@@ -172,16 +172,19 @@ def settle_handicap_result(
 
 
 def handicap_picks_from_lean(lean: str | None) -> set[str]:
-    """Parse one or two frozen AH picks from display text."""
+    """Parse one or two frozen AH picks from display text.
+
+    Tolerates both the current 「让胜」 labels and legacy 「让球胜」 snapshots.
+    """
     text = (lean or "").strip()
     pick_text = re.split(r"[（(]", text, maxsplit=1)[0]
     picks: set[str] = set()
     if "胜" in pick_text:
-        picks.add("让球胜")
+        picks.add("让胜")
     if "平" in pick_text:
-        picks.add("让球平")
+        picks.add("让平")
     if "负" in pick_text:
-        picks.add("让球负")
+        picks.add("让负")
     return picks
 
 
@@ -208,7 +211,7 @@ def handicap_line_from_lean(lean: str | None) -> float | None:
             return None
     if re.search(r"[（(]\s*平手\s*[）)]", text):
         return 0.0
-    # Legacy signed home-side line: 让球胜（-1） / 让球负（+0.5）
+    # Legacy signed home-side line: 让胜（-1） / 让负（+0.5）
     match = re.search(r"[（(]\s*([+-]?\d+(?:\.\d+)?)\s*[）)]", text)
     if not match:
         return None
@@ -235,7 +238,7 @@ def format_ah_line(line_f: float) -> str:
 
 
 def format_handicap_lean_text(pick: str, line_f: float | None) -> str:
-    """Canonical lean for storage/UI: 让球负(-1) / 让球胜(+0.5) / 让球平(0).
+    """Canonical lean for storage/UI: 让负(-1) / 让胜(+0.5) / 让平(0).
 
     Half-width parentheses keep recommendation tags narrower on phone.
     """
@@ -256,15 +259,15 @@ def display_handicap_lean(lean: str | None, line_f: float | None = None) -> str 
     resolved = handicap_line_from_lean(text)
     if resolved is None:
         resolved = line_f
-    if picks == {"让球胜", "让球负"}:
+    if picks == {"让胜", "让负"}:
         base = "胜/负"
-    elif picks == {"让球负", "让球平"}:
+    elif picks == {"让负", "让平"}:
         base = "负/平"
-    elif picks == {"让球胜", "让球平"}:
+    elif picks == {"让胜", "让平"}:
         base = "胜/平"
     else:
-        base = next(iter(picks)).removeprefix("让球")
-    return format_handicap_lean_text(f"让球{base}", resolved)
+        base = next(iter(picks)).removeprefix("让")
+    return format_handicap_lean_text(f"让{base}", resolved)
 
 
 def build_ah_features(
@@ -331,19 +334,23 @@ def build_ah_features(
 
 
 def pick_to_lean(pick: str) -> str:
+    """Canonical pick token. Display drops 「球」 to keep list tags on one line."""
     if pick == "cover/no_cover":
-        return "让球胜/负"
+        return "让胜/负"
     if pick == "cover/push":
-        return "让球胜/平"
+        return "让胜/平"
     if pick == "no_cover/push":
-        return "让球负/平"
+        return "让负/平"
     if pick.startswith("让球"):
+        # Frozen snapshots written before the shorter labels.
+        return f"让{pick.removeprefix('让球')}"
+    if pick.startswith("让"):
         return pick
     if pick == "cover":
-        return "让球胜"
+        return "让胜"
     if pick == "push":
-        return "让球平"
-    return "让球负"
+        return "让平"
+    return "让负"
 
 
 def parse_score_hint(score_hint: str | None) -> list[tuple[int, int]]:

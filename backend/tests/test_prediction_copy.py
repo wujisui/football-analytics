@@ -67,8 +67,8 @@ class PredictionCopyTests(unittest.TestCase):
             stored=frozen,
             prefer_stored=True,
         )
-        # Frozen pick kept; line paren normalized to half-width for display width.
-        self.assertEqual(lean, "让球负(-0.5)")
+        # Frozen pick kept; label/paren normalized to the compact display form.
+        self.assertEqual(lean, "让负(-0.5)")
 
     def test_summary_includes_handicap_accuracy(self) -> None:
         summary = summarize_accuracy(
@@ -200,7 +200,7 @@ class PredictionCopyTests(unittest.TestCase):
         self.assertIn("2.5", leans["goal_lean"])
         self.assertNotIn("1-1", leans["score_hint"])
         self.assertRegex(leans["score_hint"], r"比分:.*\d+-\d+")
-        for part in leans["score_hint"].removeprefix("比分:").split(" / "):
+        for part in leans["score_hint"].removeprefix("比分:").split("/"):
             h, a = part.split("-")
             self.assertGreater(int(h) + int(a), 2.5)
 

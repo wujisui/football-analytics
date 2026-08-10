@@ -218,7 +218,7 @@ class AnalysisResponse(BaseModel):
     score_hint: str = Field(default="", description="参考比分")
     handicap_lean: str = Field(
         default="",
-        description="让球推荐（主盘）：让球胜/让球平/让球负",
+        description="让球推荐（主盘）：让胜/让平/让负",
     )
     handicap_market_note: str = Field(
         default="",
@@ -331,7 +331,7 @@ class ResultFixtureResponse(BaseModel):
     both_score_lean: str | None = None
     handicap_lean: str | None = Field(default=None, description="冻结的赛前让球推荐")
     handicap_result: str | None = Field(
-        default=None, description="按常规时间比分及赛前盘口结算的让球胜/平/负"
+        default=None, description="按常规时间比分及赛前盘口结算的让胜/平/负"
     )
     handicap_hit: bool | None = Field(default=None, description="让球推荐是否命中")
     score_hit: bool | None = None
