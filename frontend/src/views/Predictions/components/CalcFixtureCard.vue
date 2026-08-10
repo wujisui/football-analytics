@@ -65,7 +65,9 @@ function goDetail() {
     class="calc-fixture"
     :class="{ phone: isPhone }"
   >
-    <div class="fixture-meta">
+    <!-- Desktop pairs this card with AlgorithmPredictionCard, which already
+         carries league / kickoff / matchup / favorite. -->
+    <div v-if="isPhone" class="fixture-meta">
       <div class="meta-left">
         <n-ellipsis class="league" :style="{ color: leagueColor }">
           {{ leagueName }}
@@ -81,13 +83,11 @@ function goDetail() {
         @click="goDetail"
       />
       <FavoriteButton
-        v-if="isPhone"
         class="fav"
         :fixture-id="fixture.fixture_id"
         :fixture="fixture"
         size="tiny"
       />
-      <span v-else class="meta-trail" aria-hidden="true" />
     </div>
 
     <div class="market-list">
@@ -174,7 +174,7 @@ function goDetail() {
 
 .calc-fixture :deep(.n-card-content) {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 6px;
   height: 100%;
   min-height: 0;
@@ -235,12 +235,6 @@ function goDetail() {
 
 .fav {
   flex-shrink: 0;
-}
-
-.meta-trail {
-  width: 0;
-  height: 0;
-  overflow: hidden;
 }
 
 .market-list {

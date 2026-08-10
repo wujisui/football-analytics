@@ -10,6 +10,7 @@ import PredictionRecommendationRow from '@/components/PredictionRecommendationRo
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import {
   formatOdd,
+  formatTime,
   hasRealProbabilities,
   leagueTagColor,
   toPercent,
@@ -91,6 +92,9 @@ const leagueActive = computed(
 )
 const leagueColor = computed(() =>
   leagueId.value != null ? leagueTagColor(leagueId.value) : undefined,
+)
+const kickoffText = computed(() =>
+  props.fixture ? formatTime(props.fixture.fixture_date) : '',
 )
 
 const ahLines = computed(() => {
@@ -181,27 +185,32 @@ function onOddsClick() {
     :bordered="standalone ? false : undefined"
   >
     <header v-if="showMatchupTitle" class="card-head">
-      <n-tag
-        v-if="leagueId != null"
-        class="league-tag"
-        :class="{ active: leagueActive }"
-        size="small"
-        :bordered="false"
-        role="button"
-        tabindex="0"
-        :aria-label="`筛选联赛 ${leagueName}`"
-        :aria-pressed="leagueActive"
-        :color="
-          leagueColor
-            ? { color: `${leagueColor}18`, textColor: leagueColor }
-            : undefined
-        "
-        @click="onLeagueClick"
-        @keydown.enter.prevent="onLeagueClick"
-        @keydown.space.prevent="onLeagueClick"
-      >
-        <n-ellipsis style="max-width: 100%">{{ leagueName }}</n-ellipsis>
-      </n-tag>
+      <div class="head-meta">
+        <n-tag
+          v-if="leagueId != null"
+          class="league-tag"
+          :class="{ active: leagueActive }"
+          size="small"
+          :bordered="false"
+          role="button"
+          tabindex="0"
+          :aria-label="`筛选联赛 ${leagueName}`"
+          :aria-pressed="leagueActive"
+          :color="
+            leagueColor
+              ? { color: `${leagueColor}18`, textColor: leagueColor }
+              : undefined
+          "
+          @click="onLeagueClick"
+          @keydown.enter.prevent="onLeagueClick"
+          @keydown.space.prevent="onLeagueClick"
+        >
+          <n-ellipsis style="max-width: 100%">{{ leagueName }}</n-ellipsis>
+        </n-tag>
+        <n-text v-if="kickoffText" depth="3" class="kickoff">
+          {{ kickoffText }}
+        </n-text>
+      </div>
       <FixtureMatchup
         class="head-matchup"
         clickable
@@ -373,11 +382,24 @@ function onOddsClick() {
   min-height: 28px;
 }
 
+.head-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .league-tag {
   position: relative;
   z-index: 1;
   max-width: 88px;
   cursor: pointer;
+}
+
+.kickoff {
+  flex-shrink: 0;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .league-tag.active {

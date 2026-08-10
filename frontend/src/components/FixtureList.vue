@@ -211,11 +211,22 @@ function rowFixture(item: unknown): FixtureResponse {
   display: none;
 }
 
+/* Date row pins to the top of the body scroller while its day scrolls past;
+ * the td background is opaque, so cards pass behind it. */
 .day-table :deep(.day-row) {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   cursor: pointer;
 }
 
-/* Only the expanded area is flush; the date row keeps default row styling. */
+/* Only the expanded area is flush; the date row keeps default row styling.
+ * Expanded content is not a hoverable row — kill naive's tr:hover wash. */
+.day-table :deep(.n-data-table-tr--expanded:not(.day-row):hover),
+.day-table :deep(.n-data-table-tr--expanded:not(.day-row):hover > .n-data-table-td) {
+  background-color: var(--n-merged-td-color);
+}
+
 .day-table :deep(.n-data-table-tr--expanded:not(.day-row) > .n-data-table-td) {
   padding: 0;
 }

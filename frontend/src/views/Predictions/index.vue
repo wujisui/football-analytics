@@ -7,6 +7,7 @@ import BetDetailsPanel from '@/views/Predictions/components/BetDetailsPanel.vue'
 import CalcFixtureCard from '@/views/Predictions/components/CalcFixtureCard.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import PullToRefresh from '@/components/PullToRefresh.vue'
+import { MAX_CALC_MATCHES } from '@/utils/betCalculator'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
@@ -93,17 +94,6 @@ onActivated(() => {
             class="pred-col"
             :content-style="colContentStyle"
           >
-            <template #header>
-              <n-flex :wrap="false" align="baseline" :size="8">
-                <n-text strong>比赛</n-text>
-                <n-text depth="3" class="match-count">
-                  {{ prematchDisplayedFixtures.length }} 场
-                </n-text>
-              </n-flex>
-            </template>
-            <template #header-extra>
-              <n-text depth="3">已选 {{ matchCount }} / 10</n-text>
-            </template>
             <div ref="listShellRef" class="scroll-shell">
               <PullToRefresh
                 :shell="listShellRef"
@@ -142,7 +132,12 @@ onActivated(() => {
             :content-style="colContentStyle"
           >
             <template #header>
-              <n-text strong>投注详情</n-text>
+              <n-flex :wrap="false" align="baseline" :size="8">
+                <n-text strong>投注详情</n-text>
+                <n-text depth="3" class="select-count">
+                  已选 {{ matchCount }} / {{ MAX_CALC_MATCHES }}
+                </n-text>
+              </n-flex>
             </template>
             <template #header-extra>
               <n-button
@@ -248,7 +243,7 @@ onActivated(() => {
   flex-shrink: 0;
 }
 
-.match-count {
+.select-count {
   font-size: 12px;
 }
 
@@ -269,7 +264,7 @@ onActivated(() => {
 
 .fixture-row {
   display: grid;
-  grid-template-columns: minmax(0, 8fr) minmax(0, 9fr);
+  grid-template-columns: minmax(0, 5.5fr) minmax(0, 4.5fr);
   gap: 10px;
   height: 174px;
   min-width: 0;
