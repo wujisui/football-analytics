@@ -125,7 +125,7 @@ function pickRows(picks: CalcSelection[]) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding:1px 10px 12px;
+  padding:10px 10px 12px;
 }
 
 .selection-card {
