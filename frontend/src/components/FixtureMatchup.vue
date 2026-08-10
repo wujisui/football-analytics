@@ -8,8 +8,8 @@ withDefaults(
     opening?: boolean
     ariaLabel?: string
     /**
-     * Equal-width home | mid | away (results with score); each name centered
-     * in its own half so home and away sit symmetrically around the middle.
+     * Equal-width home | mid | away (results with score); home right-aligned,
+     * away left-aligned so both names hug the middle score/vs.
      * Default: compact「主 vs 客」group — same as prediction list title.
      */
     spread?: boolean
@@ -85,7 +85,9 @@ const emit = defineEmits<{
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--fa-highlight-text) 35%, transparent);
 }
 
-.team {
+/* n-ellipsis renders its root without our scope id (its own root is the tooltip
+ * binder), so every team-name rule has to reach it through :deep. */
+.matchup :deep(.team) {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 42%;
@@ -100,20 +102,25 @@ const emit = defineEmits<{
 }
 
 /**
- * Results: equal side columns, each name centered in its own half. Grid
- * alignment centers the whole n-ellipsis box — `text-align` would depend on
- * its inner span, which naive renders as inline-block.
+ * Results: equal side columns. Home hugs the score from the left half, away
+ * from the right half, so the pair reads as centered on the score.
  */
 .matchup.spread {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-items: center;
   gap: 8px;
 }
 
-.matchup.spread .team {
-  min-width: 0;
+.matchup.spread :deep(.team) {
   max-width: 100%;
+}
+
+.matchup.spread :deep(.team.home) {
+  justify-self: end;
+}
+
+.matchup.spread :deep(.team.away) {
+  justify-self: start;
 }
 </style>
