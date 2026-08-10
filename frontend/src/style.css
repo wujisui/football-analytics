@@ -212,33 +212,6 @@ button {
   flex-direction: column;
 }
 
-/* Day section title shared by FixtureList sticky headers. */
-.fa-day-collapse-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  min-width: 0;
-  font-size: 14px;
-}
-
-.fa-day-collapse-title__label {
-  flex: 1;
-  min-width: 0;
-  color: var(--fa-highlight-text);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.fa-day-collapse-title__count {
-  flex-shrink: 0;
-  color: var(--fa-highlight-text);
-  opacity: 0.78;
-  font-size: 12px;
-  font-weight: 600;
-}
-
 /* ---- Native scrollbars (single source; prefer n-scrollbar for major panes) ---- */
 :root {
   --fa-scrollbar-size: 6px;

@@ -22,14 +22,6 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{
-  scroll: [event: Event]
-}>()
-
-/** Naive VirtualList takes `onScroll` as a prop; @scroll maps to it. */
-function onScroll(event: Event) {
-  emit('scroll', event)
-}
 </script>
 
 <template>
@@ -43,7 +35,6 @@ function onScroll(event: Event) {
     :padding-bottom="paddingBottom"
     :items-style="itemsStyle"
     :show-scrollbar="showScrollbar"
-    @scroll="onScroll"
   >
     <template #default="slotProps">
       <slot v-bind="slotProps" />

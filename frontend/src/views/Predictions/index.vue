@@ -15,8 +15,6 @@ import { useScrollRestore } from '@/composables/useScrollRestore'
 
 defineOptions({ name: 'Predictions' })
 
-const DESKTOP_ITEM_SIZE = 166
-
 const isPhone = useIsPhone()
 const listShellRef = ref<HTMLElement | null>(null)
 const phoneCalcShellRef = ref<HTMLElement | null>(null)
@@ -39,12 +37,6 @@ const { matchCount } = useBetCalculator()
 
 const colContentStyle =
   'position: relative; min-height: 0; overflow: hidden; padding: 0;'
-
-const desktopListItemsStyle = {
-  paddingLeft: '10px',
-  paddingRight: '10px',
-  boxSizing: 'border-box',
-}
 
 onActivated(() => {
   syncHomeListAfterDetail(homeDay.value, shellTrackedIds.value)
@@ -74,9 +66,6 @@ onActivated(() => {
           <FixtureList
             :fixtures="prematchDisplayedFixtures"
             :empty-description="predictionsEmptyText"
-            :item-size="200"
-            :padding-top="12"
-            :padding-bottom="matchCount ? 16 : 20"
           >
             <template #card="{ fixture }">
               <div class="fixture-slot">
@@ -124,10 +113,6 @@ onActivated(() => {
               <FixtureList
                 :fixtures="prematchDisplayedFixtures"
                 :empty-description="predictionsEmptyText"
-                :item-size="DESKTOP_ITEM_SIZE"
-                :padding-top="10"
-                :padding-bottom="12"
-                :items-style="desktopListItemsStyle"
               >
                 <template #card="{ fixture }">
                   <div class="fixture-row">

@@ -1,25 +1,29 @@
 <script setup lang="ts">
-import { computed, useSlots } from 'vue'
+import type { DataTableColumns } from 'naive-ui'
+import { computed, h, ref, useSlots, watch } from 'vue'
 
 import type { FixtureResponse } from '@/api/types'
 import FixtureCard from '@/components/FixtureCard.vue'
 import VirtualCardList from '@/components/VirtualCardList.vue'
 import type { DetailFrom } from '@/utils/detailNav'
-import { groupFixturesByScheduleDay } from '@/utils/fixtureDayGroups'
+import {
+  groupFixturesByScheduleDay,
+  type ScheduleDayGroup,
+} from '@/utils/fixtureDayGroups'
 
 const props = withDefaults(
   defineProps<{
     fixtures: FixtureResponse[]
     emptyDescription?: string
-    /** Native sticky day sections (default). Flat virtual list when false. */
+    /** Day rows expand into their fixtures (default). Flat virtual list when false. */
     groupByDay?: boolean
     from?: DetailFrom
     date?: string | null
     /** Flat virtual-list row estimate (groupByDay=false only). */
     itemSize?: number
+    /** Flat virtual-list padding (groupByDay=false only). */
     paddingTop?: number | string
     paddingBottom?: number | string
-    itemsStyle?: string | Record<string, string>
   }>(),
   {
     groupByDay: true,
@@ -31,15 +35,26 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{
-  scroll: [event: Event]
-}>()
-
 const slots = useSlots()
 const hasCardSlot = computed(() => !!slots.card)
 
 const dayGroups = computed(() =>
   props.groupByDay ? groupFixturesByScheduleDay(props.fixtures) : [],
+)
+
+const expandedKeys = ref<string[]>([])
+
+/** New days open on arrival; a day the user collapsed stays collapsed. */
+watch(
+  dayGroups,
+  (groups, previous) => {
+    const known = new Set((previous ?? []).map((g) => g.key))
+    const open = new Set(expandedKeys.value)
+    expandedKeys.value = groups
+      .filter((g) => !known.has(g.key) || open.has(g.key))
+      .map((g) => g.key)
+  },
+  { immediate: true },
 )
 
 const flatVirtualItems = computed(() =>
@@ -49,37 +64,74 @@ const flatVirtualItems = computed(() =>
   })),
 )
 
-const defaultItemsStyle = computed((): Record<string, string> => {
-  if (props.itemsStyle && typeof props.itemsStyle === 'object') {
-    return props.itemsStyle
-  }
+const flatItemsStyle: Record<string, string> = {
+  paddingLeft: 'var(--fa-content-inline)',
+  paddingRight: 'var(--fa-content-inline)',
+  boxSizing: 'border-box',
+}
+
+function renderFixture(fixture: FixtureResponse) {
+  if (hasCardSlot.value) return slots.card?.({ fixture }) ?? []
+  return h(FixtureCard, { fixture, from: props.from, date: props.date })
+}
+
+const dayColumns = computed<DataTableColumns<ScheduleDayGroup>>(() => [
+  {
+    type: 'expand',
+    // flexHeight forces table-layout: fixed — without a width both columns
+    // would split the row in half.
+    width: 36,
+    renderExpand: (group) =>
+      h(
+        'div',
+        { class: 'day-expand' },
+        group.fixtures.map((fixture) =>
+          h(
+            'div',
+            { class: 'day-fixture-row', key: fixture.fixture_id },
+            renderFixture(fixture),
+          ),
+        ),
+      ),
+  },
+  {
+    key: 'label',
+    render: (group) =>
+      h('div', { class: 'day-title' }, [
+        h('span', { class: 'day-title__label' }, group.label),
+        h(
+          'span',
+          { class: 'day-title__count' },
+          `共 ${group.fixtures.length} 场比赛`,
+        ),
+      ]),
+  },
+])
+
+function dayRowKey(group: ScheduleDayGroup) {
+  return group.key
+}
+
+function toggleDay(key: string) {
+  const open = new Set(expandedKeys.value)
+  if (!open.delete(key)) open.add(key)
+  expandedKeys.value = [...open]
+}
+
+/** Whole date row toggles; the built-in trigger already handles its own click. */
+function dayRowProps(group: ScheduleDayGroup) {
   return {
-    paddingLeft: 'var(--fa-content-inline)',
-    paddingRight: 'var(--fa-content-inline)',
-    boxSizing: 'border-box',
+    class: 'day-row',
+    onClick: (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.n-data-table-expand-trigger')) return
+      toggleDay(group.key)
+    },
   }
-})
+}
 
-const dayScrollStyle = computed(() => {
-  const padTop =
-    typeof props.paddingTop === 'number'
-      ? `${props.paddingTop}px`
-      : String(props.paddingTop)
-  const padBottom =
-    typeof props.paddingBottom === 'number'
-      ? `${props.paddingBottom}px`
-      : String(props.paddingBottom)
-  return {
-    ...defaultItemsStyle.value,
-    paddingTop: padTop,
-    paddingBottom: padBottom,
-  }
-})
-
-const flatItemsStyle = computed(() => props.itemsStyle ?? defaultItemsStyle.value)
-
-function onDayScroll(event: Event) {
-  emit('scroll', event)
+function onExpandedKeys(keys: Array<string | number>) {
+  expandedKeys.value = keys.map(String)
 }
 
 function rowFixture(item: unknown): FixtureResponse {
@@ -95,43 +147,22 @@ function rowFixture(item: unknown): FixtureResponse {
       class="empty"
     />
 
-    <!-- Day sections: native scroll + CSS sticky (no virtual list). -->
-    <div
+    <!-- Day rows are the date separators; fixtures live in the expanded area. -->
+    <n-data-table
       v-else-if="groupByDay"
-      class="fixture-list-scroll fa-scrollbar-hidden"
-      :style="dayScrollStyle"
-      @scroll.passive="onDayScroll"
-    >
-      <section
-        v-for="group in dayGroups"
-        :key="group.key"
-        class="day-section"
-      >
-        <header class="day-sticky">
-          <div class="fa-day-collapse-title">
-            <n-ellipsis class="fa-day-collapse-title__label">
-              {{ group.label }}
-            </n-ellipsis>
-            <span class="fa-day-collapse-title__count">
-              {{ group.fixtures.length }} 场
-            </span>
-          </div>
-        </header>
-        <div
-          v-for="fixture in group.fixtures"
-          :key="fixture.fixture_id"
-          class="day-fixture-row"
-        >
-          <slot v-if="hasCardSlot" name="card" :fixture="fixture" />
-          <FixtureCard
-            v-else
-            :fixture="fixture"
-            :from="from"
-            :date="date"
-          />
-        </div>
-      </section>
-    </div>
+      class="day-table"
+      :columns="dayColumns"
+      :data="dayGroups"
+      :row-key="dayRowKey"
+      :row-props="dayRowProps"
+      :expanded-row-keys="expandedKeys"
+      :show-header="false"
+      :bordered="false"
+      :bottom-bordered="false"
+      size="small"
+      flex-height
+      @update:expanded-row-keys="onExpandedKeys"
+    />
 
     <!-- Flat schedule only: keep virtual list. -->
     <VirtualCardList
@@ -142,7 +173,6 @@ function rowFixture(item: unknown): FixtureResponse {
       :padding-top="paddingTop"
       :padding-bottom="paddingBottom"
       :items-style="flatItemsStyle"
-      @scroll="emit('scroll', $event)"
     >
       <template #default="{ item }">
         <div class="day-fixture-row">
@@ -171,33 +201,51 @@ function rowFixture(item: unknown): FixtureResponse {
   flex-direction: column;
 }
 
-.fixture-list-scroll {
+.day-table {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
 }
 
-.day-section {
+/* flexHeight renders a discrete header element even with show-header=false. */
+.day-table :deep(.n-data-table-base-table-header) {
+  display: none;
+}
+
+.day-table :deep(.day-row) {
+  cursor: pointer;
+}
+
+/* Only the expanded area is flush; the date row keeps default row styling. */
+.day-table :deep(.n-data-table-tr--expanded:not(.day-row) > .n-data-table-td) {
+  padding: 0;
+}
+
+.day-table :deep(.day-title) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
-.day-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-  margin: 0 0 8px;
-  padding: 8px 12px;
-  box-sizing: border-box;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--fa-highlight-text) 12%, var(--fa-bg-soft));
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--fa-highlight-text) 10%, transparent);
+.day-table :deep(.day-title__label) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.day-fixture-row {
+.day-table :deep(.day-title__count) {
+  flex-shrink: 0;
+  opacity: 0.6;
+  font-size: 12px;
+}
+
+.day-table :deep(.day-expand) {
+  padding: 10px 10px 0;
+}
+
+.day-fixture-row,
+.day-table :deep(.day-fixture-row) {
   width: 100%;
   max-width: 100%;
   min-width: 0;

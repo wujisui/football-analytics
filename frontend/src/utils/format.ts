@@ -147,6 +147,18 @@ export function formatScheduleDay(dayKey: string): string {
   return formatDate(`${dayKey}T12:00:00`)
 }
 
+/** Schedule-day key with year: 2026年07月09日 星期四 */
+export function formatScheduleDayFull(dayKey: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return dayKey
+  const iso = `${dayKey}T12:00:00`
+  const date = formatLocaleDate(iso, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  return `${date} ${formatLocaleDate(iso, { weekday: 'long' })}`
+}
+
 /** Local time: 22:00 */
 export function formatTime(dateStr: string): string {
   return formatLocaleTime(dateStr, {

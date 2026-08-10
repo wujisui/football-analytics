@@ -1,5 +1,5 @@
 import type { FixtureResponse } from '@/api/types'
-import { formatScheduleDay, toScheduleDayKey } from '@/utils/format'
+import { formatScheduleDayFull, toScheduleDayKey } from '@/utils/format'
 import { addCalendarDays, scheduleTodayDate } from '@/utils/homeDateStrip'
 
 export type ScheduleDayGroup<T extends { fixture_date: string } = FixtureResponse> = {
@@ -10,7 +10,7 @@ export type ScheduleDayGroup<T extends { fixture_date: string } = FixtureRespons
 
 export function scheduleDayLabel(dayKey: string): string {
   const scheduleToday = scheduleTodayDate()
-  const base = formatScheduleDay(dayKey)
+  const base = formatScheduleDayFull(dayKey)
   if (dayKey === scheduleToday) return `今天 · ${base}`
   if (dayKey === addCalendarDays(scheduleToday, 1)) return `明天 · ${base}`
   return base
