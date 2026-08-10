@@ -98,7 +98,7 @@ function pickRows(picks: CalcSelection[]) {
         </n-button>
       </template>
 
-      <n-flex vertical :size="8">
+      <n-flex vertical :size="4">
         <FixtureMatchup
           :home-name="group.homeName"
           :away-name="group.awayName"
@@ -108,7 +108,7 @@ function pickRows(picks: CalcSelection[]) {
           :key="row.key"
           :wrap="false"
           align="center"
-          :size="8"
+          :size="6"
         >
           <n-tag size="small" :bordered="false">{{ row.playLabel }}</n-tag>
           <n-tag size="small" :bordered="false" type="warning">
@@ -124,20 +124,34 @@ function pickRows(picks: CalcSelection[]) {
 .selection-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 20px;
+  gap: 6px;
+  padding:1px 10px 12px;
 }
 
 .selection-card {
   background: var(--fa-bg-soft);
 }
 
-.selection-card :deep(.n-card-header),
+/* Compact rows: fit one more fixture per viewport in the details list. */
+.selection-card :deep(.n-card-header) {
+  padding: 5px 8px 0;
+  line-height: 1.3;
+}
+
 .selection-card :deep(.n-card__content) {
-  padding: 8px;
+  padding: 4px 8px 6px;
 }
 
 .selection-card :deep(.n-card-header__main) {
   min-width: 0;
+  font-size: 12px;
+}
+
+.selection-card :deep(.n-card-header__extra) {
+  margin-left: 6px;
+}
+
+.selection-card :deep(.n-tag) {
+  --n-height: 20px;
 }
 </style>

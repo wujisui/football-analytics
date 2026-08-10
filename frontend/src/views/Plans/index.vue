@@ -177,7 +177,7 @@ onMounted(() => {
       preset="card"
       :title="detailTitle"
       :bordered="false"
-      :style="{ width: 'min(720px, calc(100vw - 32px))' }"
+      :style="{ width: 'min(420px, calc(100vw - 32px))' }"
       :segmented="{ content: true }"
       display-directive="if"
       @after-leave="detailPlanId = null"

@@ -4,18 +4,21 @@ import { useMessage } from 'naive-ui'
 
 import { fetchFixtureScores } from '@/api/fixtures'
 import { useBetPlans } from '@/composables/useBetPlans'
+import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import {
   foldModeLabel,
   outcomeTitle,
   selectedFixtureIds,
-  type CalcSelection,
+  type CalcOutcome,
 } from '@/utils/betCalculator'
+import { leagueTagColor } from '@/utils/format'
 import {
   planStatusLabel,
   settleBetPlan,
   type FixtureScoreSnap,
   type LegVerdict,
   type PlanSettlement,
+  type SettledLeg,
 } from '@/utils/betPlanSettle'
 
 defineOptions({ name: 'BetPlanDetail' })
@@ -57,9 +60,79 @@ function verdictType(v: LegVerdict): 'success' | 'error' | 'warning' | 'default'
   return 'default'
 }
 
-function pickLine(pick: CalcSelection): string {
-  return `${pick.homeName} vs ${pick.awayName} · ${pick.playLabel}${outcomeTitle(pick.market, pick.outcome)} @${pick.odd}`
+const OUTCOME_ORDER: CalcOutcome[] = [
+  'home',
+  'draw',
+  'away',
+  'over',
+  'under',
+  'yes',
+  'no',
+]
+
+type FixtureLegGroup = {
+  fixtureId: number
+  leagueId: number
+  leagueName: string
+  homeName: string
+  awayName: string
+  kickoff: string
+  scoreText: string | null
+  rows: {
+    key: string
+    playLabel: string
+    picks: { key: string; label: string; verdict: LegVerdict }[]
+  }[]
 }
+
+/** Group legs by fixture (matchup shown once); combine same-market dual picks. */
+const legGroups = computed((): FixtureLegGroup[] => {
+  const legs = settlement.value?.legs ?? []
+  const byFixture = new Map<number, SettledLeg[]>()
+  for (const leg of legs) {
+    const list = byFixture.get(leg.pick.fixtureId) ?? []
+    list.push(leg)
+    byFixture.set(leg.pick.fixtureId, list)
+  }
+  return [...byFixture.values()].map((fixtureLegs) => {
+    const first = fixtureLegs[0].pick
+    const scoreText = fixtureLegs.find((l) => l.scoreText)?.scoreText ?? null
+    const buckets = new Map<string, SettledLeg[]>()
+    for (const leg of fixtureLegs) {
+      const { market, line, playLabel } = leg.pick
+      const key = `${market}\0${line ?? ''}\0${playLabel}`
+      const list = buckets.get(key) ?? []
+      list.push(leg)
+      buckets.set(key, list)
+    }
+    const rows = [...buckets.entries()].map(([key, list]) => {
+      const sorted = [...list].sort(
+        (a, b) =>
+          OUTCOME_ORDER.indexOf(a.pick.outcome) -
+          OUTCOME_ORDER.indexOf(b.pick.outcome),
+      )
+      return {
+        key,
+        playLabel: sorted[0].pick.playLabel,
+        picks: sorted.map((l) => ({
+          key: `${l.pick.market}-${l.pick.outcome}`,
+          label: `${outcomeTitle(l.pick.market, l.pick.outcome)}(${l.pick.odd})`,
+          verdict: l.verdict,
+        })),
+      }
+    })
+    return {
+      fixtureId: first.fixtureId,
+      leagueId: first.leagueId,
+      leagueName: first.leagueName,
+      homeName: first.homeName,
+      awayName: first.awayName,
+      kickoff: first.kickoff,
+      scoreText,
+      rows,
+    }
+  })
+})
 
 async function loadScores() {
   const current = plan.value
@@ -105,7 +178,7 @@ watch(
   <n-empty v-if="!plan" description="方案不存在或已删除" />
 
   <n-spin v-else :show="loadingScores">
-    <n-space vertical :size="12">
+    <n-space vertical :size="0">
       <n-card size="small" :bordered="false">
         <n-descriptions label-placement="left" :column="1" size="small">
           <n-descriptions-item label="过关">
@@ -151,28 +224,67 @@ watch(
           </n-descriptions-item>
         </n-descriptions>
         <n-text depth="3" class="plan-detail-hint">
-          走水场次作废（赔率按 1 计），用剩余场次结算；取消/延期场次同样作废。
+          走水场次赔率按1计，取消/延期场次作废。
         </n-text>
       </n-card>
 
-      <n-card size="small" title="各场选项" :bordered="false">
-        <n-list>
-          <n-list-item v-for="(leg, idx) in settlement?.legs || []" :key="idx">
-            <n-thing :title="pickLine(leg.pick)">
-              <template #description>
-                <n-text depth="3">
-                  {{ leg.pick.kickoff }}
-                  <template v-if="leg.scoreText"> · 比分 {{ leg.scoreText }}</template>
+      <n-card size="small"  :bordered="false">
+        <n-flex vertical :size="0">
+          <n-card
+            v-for="group in legGroups"
+            :key="group.fixtureId"
+            size="small"
+            :bordered="false"
+            class="leg-card"
+          >
+            <template #header>
+              <n-flex :wrap="false" align="center" :size="8" style="min-width: 0;">
+                <n-ellipsis style="flex: 0 1 auto; min-width: 0;">
+                  <n-text :style="{ color: leagueTagColor(group.leagueId) }">
+                    {{ group.leagueName }}
+                  </n-text>
+                </n-ellipsis>
+                <n-text depth="3" style="flex-shrink: 0; font-size: 12px;">
+                  {{ group.kickoff }}
                 </n-text>
-              </template>
-              <template #header-extra>
-                <n-tag size="small" :type="verdictType(leg.verdict)" :bordered="false">
-                  {{ verdictLabel(leg.verdict) }}
-                </n-tag>
-              </template>
-            </n-thing>
-          </n-list-item>
-        </n-list>
+                <n-text
+                  v-if="group.scoreText"
+                  strong
+                  style="flex-shrink: 0; font-size: 12px;"
+                >
+                  比分 {{ group.scoreText }}
+                </n-text>
+              </n-flex>
+            </template>
+
+            <n-flex vertical :size="4">
+              <FixtureMatchup
+                :home-name="group.homeName"
+                :away-name="group.awayName"
+              />
+              <n-flex
+                v-for="row in group.rows"
+                :key="row.key"
+                :wrap="false"
+                align="center"
+                :size="6"
+              >
+                <n-tag size="small" :bordered="false">{{ row.playLabel }}</n-tag>
+                <n-flex :size="6" align="center" style="flex-wrap: wrap;">
+                  <n-tag
+                    v-for="pick in row.picks"
+                    :key="pick.key"
+                    size="small"
+                    :bordered="false"
+                    :type="verdictType(pick.verdict)"
+                  >
+                    {{ pick.label }} · {{ verdictLabel(pick.verdict) }}
+                  </n-tag>
+                </n-flex>
+              </n-flex>
+            </n-flex>
+          </n-card>
+        </n-flex>
       </n-card>
     </n-space>
   </n-spin>
@@ -183,5 +295,28 @@ watch(
   display: block;
   margin-top: 8px;
   font-size: 12px;
+}
+
+.leg-card {
+  background: var(--fa-bg-soft);
+}
+
+/* Match the compact metrics used by 投注详情 (BetSelectionList). */
+.leg-card :deep(.n-card-header) {
+  padding: 5px 8px 0;
+  line-height: 1.3;
+}
+
+.leg-card :deep(.n-card__content) {
+  padding: 4px 8px 6px;
+}
+
+.leg-card :deep(.n-card-header__main) {
+  min-width: 0;
+  font-size: 12px;
+}
+
+.leg-card :deep(.n-tag) {
+  --n-height: 20px;
 }
 </style>

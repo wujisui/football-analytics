@@ -239,7 +239,7 @@ onActivated(() => {
 }
 
 .pred-col :deep(.n-card-header) {
-  padding: 10px 12px;
+  padding: 10px 12px 0;
   flex-shrink: 0;
 }
 
@@ -266,7 +266,7 @@ onActivated(() => {
   display: grid;
   grid-template-columns: minmax(0, 5.5fr) minmax(0, 4.5fr);
   gap: 10px;
-  height: 146px;
+  height: 147px;
   min-width: 0;
   overflow: hidden;
 }
