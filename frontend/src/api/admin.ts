@@ -5,6 +5,20 @@ export type ScheduledFullDetailSetting = {
   source: 'db' | 'env' | string
 }
 
+export type TriggerTaskResult = {
+  status: string
+  message: string
+  task_status: {
+    active_tasks: Record<
+      string,
+      {
+        status: string
+        error?: string
+      }
+    >
+  }
+}
+
 function adminHeaders(adminKey: string) {
   return { 'X-Admin-Key': adminKey }
 }
@@ -27,6 +41,20 @@ export async function updateScheduledFullDetailSetting(
     '/admin/settings/scheduled-full-detail',
     { enabled },
     { headers: adminHeaders(adminKey) },
+  )
+  return data
+}
+
+export async function triggerScheduledFixturesSync(
+  adminKey: string,
+): Promise<TriggerTaskResult> {
+  const { data } = await apiClient.post<TriggerTaskResult>(
+    '/admin/tasks/trigger',
+    { name: 'scheduled_fixtures_sync' },
+    {
+      headers: adminHeaders(adminKey),
+      timeout: 5 * 60_000,
+    },
   )
   return data
 }

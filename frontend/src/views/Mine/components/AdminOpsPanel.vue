@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { KeyOutline, SettingsOutline } from '@vicons/ionicons5'
+import { KeyOutline, RefreshOutline, SettingsOutline } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
 import { onMounted, ref, watch } from 'vue'
 
@@ -8,11 +8,13 @@ import {
   updateScheduledFullDetailSetting,
 } from '@/api/admin'
 import { useAdminSession } from '@/composables/useAdminSession'
+import { useAdminSync } from '@/views/Mine/composables/useAdminSync'
 
 defineOptions({ name: 'AdminOpsPanel' })
 
 const message = useMessage()
 const { adminKey, hasAdminKey, setAdminKey, clearAdminKey } = useAdminSession()
+const { syncing, statusText, runSync } = useAdminSync()
 
 const keyDraft = ref(adminKey.value)
 const enabled = ref(false)
@@ -68,6 +70,14 @@ async function onToggle(next: boolean) {
   }
 }
 
+function syncOfficialData() {
+  if (!adminKey.value) {
+    message.warning('请先验证管理员密钥')
+    return
+  }
+  void runSync(adminKey.value)
+}
+
 watch(adminKey, (value) => {
   keyDraft.value = value
 })
@@ -112,6 +122,30 @@ onMounted(() => {
               清除
             </n-button>
           </div>
+        </template>
+      </n-list-item>
+
+      <n-list-item>
+        <template #prefix>
+          <n-icon :component="RefreshOutline" :size="20" />
+        </template>
+        <n-thing
+          title="同步官方 API 数据"
+          :description="
+            statusText ||
+            '立即执行一次赛程、盘口与赛果同步，开发服务中断后可用来补齐最新数据'
+          "
+        />
+        <template #suffix>
+          <n-button
+            size="small"
+            type="primary"
+            :disabled="!hasAdminKey || syncing"
+            :loading="syncing"
+            @click="syncOfficialData"
+          >
+            {{ syncing ? '同步中' : '立即同步' }}
+          </n-button>
         </template>
       </n-list-item>
 
