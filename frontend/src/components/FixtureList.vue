@@ -256,7 +256,10 @@ function rowFixture(item: unknown): FixtureResponse {
 }
 
 .day-table :deep(.day-expand) {
-  padding: 10px 10px 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .day-fixture-row,
@@ -264,7 +267,6 @@ function rowFixture(item: unknown): FixtureResponse {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  padding-bottom: 10px;
   box-sizing: border-box;
 }
 

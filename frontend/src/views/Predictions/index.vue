@@ -265,7 +265,7 @@ onActivated(() => {
 .fixture-row {
   display: grid;
   grid-template-columns: minmax(0, 5.5fr) minmax(0, 4.5fr);
-  gap: 10px;
+  gap: 5px;
   height: 147px;
   min-width: 0;
   overflow: hidden;
