@@ -221,14 +221,18 @@ function rowFixture(item: unknown): FixtureResponse {
 }
 
 /* Only the expanded area is flush; the date row keeps default row styling.
- * Expanded content is not a hoverable row — kill naive's tr:hover wash. */
-.day-table :deep(.n-data-table-tr--expanded:not(.day-row):hover),
-.day-table :deep(.n-data-table-tr--expanded:not(.day-row):hover > .n-data-table-td) {
-  background-color: var(--n-merged-td-color);
+ * Expanded content is not a hoverable row — kill naive's tr:hover wash
+ * without leaning on naive's private --n-merged-* tokens. Cards supply
+ * their own opaque background. */
+.day-table :deep(.n-data-table-tr--expanded:not(.day-row)),
+.day-table :deep(.n-data-table-tr--expanded:not(.day-row):hover) {
+  background-color: transparent;
 }
 
-.day-table :deep(.n-data-table-tr--expanded:not(.day-row) > .n-data-table-td) {
+.day-table :deep(.n-data-table-tr--expanded:not(.day-row) > .n-data-table-td),
+.day-table :deep(.n-data-table-tr--expanded:not(.day-row):hover > .n-data-table-td) {
   padding: 0;
+  background-color: transparent;
 }
 
 .day-table :deep(.day-title) {

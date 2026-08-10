@@ -62,7 +62,7 @@ html[data-theme='dark'] {
   text-rendering: optimizeSpeed;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --fa-page-max-width: 1520px;
+  --fa-page-max-width: 1280px;
   --fa-content-inline: 12px;
   --fa-content-block-start: 12px;
   --fa-content-block-end: 20px;
