@@ -247,13 +247,10 @@ watch(
                 <n-text depth="3" style="flex-shrink: 0; font-size: 12px;">
                   {{ group.kickoff }}
                 </n-text>
-                <n-text
-                  v-if="group.scoreText"
-                  strong
-                  style="flex-shrink: 0; font-size: 12px;"
-                >
-                  比分 {{ group.scoreText }}
-                </n-text>
+                <span v-if="group.scoreText" class="leg-score">
+                  比分
+                  <span class="leg-score-value">{{ group.scoreText }}</span>
+                </span>
               </n-flex>
             </template>
 
@@ -299,6 +296,20 @@ watch(
 
 .leg-card {
   background: var(--fa-bg-soft);
+}
+
+/* 比分与赛果页同一套高亮色，避免混在联赛/时间里看不见。 */
+.leg-score {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--fa-text-secondary);
+}
+
+.leg-score-value {
+  margin-left: 2px;
+  color: var(--fa-highlight-text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Match the compact metrics used by 投注详情 (BetSelectionList). */
