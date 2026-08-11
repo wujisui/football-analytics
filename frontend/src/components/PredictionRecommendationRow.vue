@@ -77,7 +77,7 @@ function open() {
     >
       <n-ellipsis style="max-width: 100%">{{ handicapLabel }}</n-ellipsis>
     </n-tag>
-    <n-tag v-if="showGoal" size="small" :bordered="false">
+    <n-tag v-if="showGoal" size="small" type="warning" :bordered="false">
       {{ goalLean }}
     </n-tag>
     <n-tag v-if="showBothScore" size="small" :bordered="false">
