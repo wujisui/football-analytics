@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import {
   createBetPlan as apiCreate,
@@ -15,10 +15,63 @@ import {
   readBetPlans,
   type SavedBetPlan,
 } from '@/utils/betPlans'
+import { todayDate } from '@/utils/homeDateStrip'
 
 const plans = ref<SavedBetPlan[]>([])
 const loaded = ref(false)
 const MIGRATED_KEY = 'fa-bet-plans-migrated-v1'
+const CACHE_KEY = 'fa-bet-plans-cache-v1'
+const FILTER_DATE_KEY = 'fa-bet-plans-filter-date'
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function readSavedFilterDate(): string {
+  try {
+    const raw = localStorage.getItem(FILTER_DATE_KEY)
+    if (raw && DATE_RE.test(raw)) return raw
+  } catch {
+    /* ignore */
+  }
+  return todayDate()
+}
+
+function writeSavedFilterDate(date: string) {
+  try {
+    localStorage.setItem(FILTER_DATE_KEY, date)
+  } catch {
+    /* ignore */
+  }
+}
+
+const filterDate = ref(readSavedFilterDate())
+watch(filterDate, writeSavedFilterDate)
+
+const pageWasDiscarded =
+  typeof document !== 'undefined' &&
+  Boolean((document as Document & { wasDiscarded?: boolean }).wasDiscarded)
+
+function hydrateFromSession() {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as { plans?: SavedBetPlan[] }
+    if (!Array.isArray(parsed.plans)) return
+    plans.value = parsed.plans
+    // Browser-discard recovery should not refetch; an explicit F5 still should.
+    loaded.value = pageWasDiscarded
+  } catch {
+    /* ignore */
+  }
+}
+
+function persistSession() {
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ plans: plans.value }))
+  } catch {
+    /* ignore */
+  }
+}
+
+hydrateFromSession()
 
 function dtoToPlan(row: BetPlanDto): SavedBetPlan {
   return {
@@ -70,6 +123,13 @@ export function useBetPlans() {
     const data = await fetchBetPlans()
     plans.value = data.plans.map(dtoToPlan)
     loaded.value = true
+    persistSession()
+  }
+
+  /** Skip network when session already has plans (e.g. phone unlock cold start). */
+  async function ensureLoaded() {
+    if (loaded.value) return
+    await reload()
   }
 
   async function savePlan(input: {
@@ -89,6 +149,7 @@ export function useBetPlans() {
       })
       const plan = dtoToPlan(row)
       plans.value = [plan, ...plans.value.filter((p) => p.id !== plan.id)]
+      persistSession()
       return plan
     } catch {
       return null
@@ -102,6 +163,7 @@ export function useBetPlans() {
       const row = await apiRename(id, next)
       const plan = dtoToPlan(row)
       plans.value = plans.value.map((p) => (p.id === id ? plan : p))
+      persistSession()
       return true
     } catch {
       return false
@@ -111,6 +173,7 @@ export function useBetPlans() {
   async function removePlan(id: string) {
     await apiDelete(id)
     plans.value = plans.value.filter((p) => p.id !== id)
+    persistSession()
   }
 
   function getPlan(id: string): SavedBetPlan | null {
@@ -131,8 +194,10 @@ export function useBetPlans() {
   return {
     plans,
     planDays,
+    filterDate,
     loaded,
     reload,
+    ensureLoaded,
     savePlan,
     renamePlan,
     removePlan,

@@ -28,7 +28,7 @@ const props = defineProps<{
 }>()
 
 const message = useMessage()
-const { getPlan, reload } = useBetPlans()
+const { getPlan, ensureLoaded } = useBetPlans()
 
 const loadingScores = ref(false)
 const scores = ref<Map<number, FixtureScoreSnap>>(new Map())
@@ -46,12 +46,40 @@ const settlement = computed((): PlanSettlement | null => {
   )
 })
 
+/** 同场多选属于覆盖玩法；任一选项命中即计为该场命中。 */
+const hitFixtureCount = computed(() => {
+  const hitIds = new Set<number>()
+  for (const leg of settlement.value?.legs ?? []) {
+    if (leg.verdict === 'hit') hitIds.add(leg.pick.fixtureId)
+  }
+  return hitIds.size
+})
+
 function verdictLabel(v: LegVerdict): string {
   if (v === 'hit') return '中'
   if (v === 'miss') return '未中'
   if (v === 'void') return '走水'
   return '待定'
 }
+
+const settlementStatusTagType = computed(() => {
+  const status = settlement.value?.status
+  if (status === 'won') return 'success'
+  if (status === 'lost') return 'error'
+  if (status === 'void') return 'warning'
+  return 'default'
+})
+
+const actualPrizeText = computed(() => {
+  const s = settlement.value
+  if (!s) return '—'
+  if (s.status === 'pending') return '待结算'
+  return `${s.actualPrize ?? 0} 元`
+})
+
+const actualPrizeTextType = computed(() =>
+  settlement.value?.status === 'won' ? 'error' : undefined,
+)
 
 function verdictType(v: LegVerdict): 'success' | 'error' | 'warning' | 'default' {
   if (v === 'hit') return 'success'
@@ -167,7 +195,7 @@ watch(
       scores.value = new Map()
       return
     }
-    await reload()
+    await ensureLoaded()
     await loadScores()
   },
   { immediate: true },
@@ -178,124 +206,116 @@ watch(
   <n-empty v-if="!plan" description="方案不存在或已删除" />
 
   <n-spin v-else :show="loadingScores">
-    <n-space vertical :size="0">
-      <n-card size="small" :bordered="false">
-        <n-descriptions label-placement="left" :column="1" size="small">
-          <n-descriptions-item label="过关">
-            {{ foldModeLabel(plan.fold) }} · {{ plan.multiplier }} 倍
-          </n-descriptions-item>
-          <n-descriptions-item label="场次">
-            {{ selectedFixtureIds(plan.selections).length }} 场
-          </n-descriptions-item>
-          <n-descriptions-item label="状态">
-            <n-tag
-              size="small"
-              :type="
-                settlement?.status === 'won'
-                  ? 'success'
-                  : settlement?.status === 'lost'
-                    ? 'error'
-                    : settlement?.status === 'void'
-                      ? 'warning'
-                      : 'default'
-              "
-              :bordered="false"
-            >
-              {{ settlement ? planStatusLabel(settlement.status) : '—' }}
-            </n-tag>
-          </n-descriptions-item>
-          <n-descriptions-item label="投入">
-            {{ settlement?.stakeYuan ?? '—' }} 元
-          </n-descriptions-item>
-          <n-descriptions-item label="预计奖金">
-            {{ settlement?.estimatedPrize ?? '—' }} 元
-          </n-descriptions-item>
-          <n-descriptions-item label="实际奖金">
-            <n-text
-              :type="settlement?.status === 'won' ? 'error' : undefined"
-              strong
-            >
-              {{
-                settlement?.status === 'pending'
-                  ? '待结算'
-                  : `${settlement?.actualPrize ?? 0} 元`
-              }}
+    <n-flex vertical :size="6">
+      <n-descriptions
+        class="plan-detail-summary"
+        label-placement="left"
+        :column="2"
+        size="small"
+        :label-style="{ width: '56px' }"
+      >
+        <n-descriptions-item label="过关">
+          {{ foldModeLabel(plan.fold) }} · {{ plan.multiplier }} 倍
+        </n-descriptions-item>
+        <n-descriptions-item label="场次">
+          <n-text type="success" strong>命中 {{ hitFixtureCount }}</n-text>
+          / {{ selectedFixtureIds(plan.selections).length }} 场
+        </n-descriptions-item>
+        <n-descriptions-item label="状态">
+          <n-tag size="small" :type="settlementStatusTagType" :bordered="false">
+            {{ settlement ? planStatusLabel(settlement.status) : '—' }}
+          </n-tag>
+        </n-descriptions-item>
+        <n-descriptions-item label="投入">
+          {{ settlement?.stakeYuan ?? '—' }} 元
+        </n-descriptions-item>
+        <n-descriptions-item label="预计奖金">
+          {{ settlement?.estimatedPrize ?? '—' }} 元
+        </n-descriptions-item>
+        <n-descriptions-item label="实际奖金">
+          <n-text :type="actualPrizeTextType" strong>
+            {{ actualPrizeText }}
+          </n-text>
+        </n-descriptions-item>
+      </n-descriptions>
+
+      <section
+        v-for="group in legGroups"
+        :key="group.fixtureId"
+        class="leg-card"
+      >
+        <n-flex
+          class="leg-card-header"
+          :wrap="false"
+          align="center"
+          :size="8"
+        >
+          <n-ellipsis style="flex: 0 1 auto; min-width: 0;">
+            <n-text :style="{ color: leagueTagColor(group.leagueId) }">
+              {{ group.leagueName }}
             </n-text>
-          </n-descriptions-item>
-        </n-descriptions>
-        <n-text depth="3" class="plan-detail-hint">
-          走水场次赔率按1计，取消/延期场次作废。
-        </n-text>
-      </n-card>
-
-      <n-card size="small"  :bordered="false">
-        <n-flex vertical :size="0">
-          <n-card
-            v-for="group in legGroups"
-            :key="group.fixtureId"
-            size="small"
-            :bordered="false"
-            class="leg-card"
-          >
-            <template #header>
-              <n-flex :wrap="false" align="center" :size="8" style="min-width: 0;">
-                <n-ellipsis style="flex: 0 1 auto; min-width: 0;">
-                  <n-text :style="{ color: leagueTagColor(group.leagueId) }">
-                    {{ group.leagueName }}
-                  </n-text>
-                </n-ellipsis>
-                <n-text depth="3" style="flex-shrink: 0; font-size: 12px;">
-                  {{ group.kickoff }}
-                </n-text>
-                <span v-if="group.scoreText" class="leg-score">
-                  比分
-                  <span class="leg-score-value">{{ group.scoreText }}</span>
-                </span>
-              </n-flex>
-            </template>
-
-            <n-flex vertical :size="4">
-              <FixtureMatchup
-                :home-name="group.homeName"
-                :away-name="group.awayName"
-              />
-              <n-flex
-                v-for="row in group.rows"
-                :key="row.key"
-                :wrap="false"
-                align="center"
-                :size="6"
-              >
-                <n-tag size="small" :bordered="false">{{ row.playLabel }}</n-tag>
-                <n-flex :size="6" align="center" style="flex-wrap: wrap;">
-                  <n-tag
-                    v-for="pick in row.picks"
-                    :key="pick.key"
-                    size="small"
-                    :bordered="false"
-                    :type="verdictType(pick.verdict)"
-                  >
-                    {{ pick.label }} · {{ verdictLabel(pick.verdict) }}
-                  </n-tag>
-                </n-flex>
-              </n-flex>
-            </n-flex>
-          </n-card>
+          </n-ellipsis>
+          <n-text depth="3" style="flex-shrink: 0; font-size: 12px;">
+            {{ group.kickoff }}
+          </n-text>
+          <span v-if="group.scoreText" class="leg-score">
+            比分
+            <span class="leg-score-value">{{ group.scoreText }}</span>
+          </span>
         </n-flex>
-      </n-card>
-    </n-space>
+
+        <n-flex vertical :size="4">
+          <FixtureMatchup
+            :home-name="group.homeName"
+            :away-name="group.awayName"
+          />
+          <n-flex
+            v-for="row in group.rows"
+            :key="row.key"
+            :wrap="false"
+            align="center"
+            :size="6"
+          >
+            <n-tag size="small" :bordered="false">{{ row.playLabel }}</n-tag>
+            <n-flex :size="6" align="center" style="flex-wrap: wrap;">
+              <n-tag
+                v-for="pick in row.picks"
+                :key="pick.key"
+                size="small"
+                :bordered="false"
+                :type="verdictType(pick.verdict)"
+              >
+                {{ pick.label }} · {{ verdictLabel(pick.verdict) }}
+              </n-tag>
+            </n-flex>
+          </n-flex>
+        </n-flex>
+      </section>
+    </n-flex>
   </n-spin>
 </template>
 
 <style scoped>
-.plan-detail-hint {
-  display: block;
-  margin-top: 8px;
-  font-size: 12px;
+.plan-detail-summary :deep(.n-descriptions-table-content__label) {
+  color: var(--fa-text-secondary);
+}
+
+.plan-detail-summary :deep(.n-descriptions-table-content__content) {
+  font-variant-numeric: tabular-nums;
 }
 
 .leg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
   background: var(--fa-bg-soft);
+}
+
+.leg-card-header {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.3;
 }
 
 /* 比分与赛果页同一套高亮色，避免混在联赛/时间里看不见。 */
@@ -310,21 +330,6 @@ watch(
   color: var(--fa-highlight-text);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-}
-
-/* Match the compact metrics used by 投注详情 (BetSelectionList). */
-.leg-card :deep(.n-card-header) {
-  padding: 5px 8px 0;
-  line-height: 1.3;
-}
-
-.leg-card :deep(.n-card__content) {
-  padding: 4px 8px 6px;
-}
-
-.leg-card :deep(.n-card-header__main) {
-  min-width: 0;
-  font-size: 12px;
 }
 
 .leg-card :deep(.n-tag) {
