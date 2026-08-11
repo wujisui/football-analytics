@@ -8,12 +8,14 @@ export async function fetchTodayFixtures(options?: {
   leagueIds?: number[]
   date?: string
   days?: number
+  scope?: 'schedule' | 'prematch'
 }): Promise<TodayFixturesResponse> {
   const { data } = await apiClient.get<TodayFixturesResponse>('/fixtures/today', {
     params: {
       league_ids: options?.leagueIds,
       date: options?.date,
       days: options?.days,
+      scope: options?.scope,
     },
   })
   return data

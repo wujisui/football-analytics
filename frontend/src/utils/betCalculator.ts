@@ -1,5 +1,5 @@
 import type { FixtureResponse, LineOdds } from '@/api/types'
-import { parseApiDate, toScheduleDayKey } from '@/utils/format'
+import { hasKickedOff, parseApiDate, toScheduleDayKey } from '@/utils/format'
 import { scheduleTodayDate } from '@/utils/homeDateStrip'
 import { ahLinesOf, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 
@@ -48,9 +48,8 @@ export function pruneExpiredCalcSelections(
     if (!s.fixtureDate) return false
     const day = toScheduleDayKey(s.fixtureDate)
     if (!day || day < cutoffDay) return false
-    const kickoffMs = parseApiDate(s.fixtureDate).getTime()
-    if (Number.isNaN(kickoffMs) || kickoffMs <= nowMs) return false
-    return true
+    if (Number.isNaN(parseApiDate(s.fixtureDate).getTime())) return false
+    return !hasKickedOff(s.fixtureDate, nowMs)
   })
 }
 

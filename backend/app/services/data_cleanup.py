@@ -17,7 +17,7 @@ from app.models.pre_match_data import PreMatchData
 from app.models.team import Team
 from app.services.cache import (
     analysis_cache_key,
-    fixture_cache_key,
+    fixture_score_cache_key,
     fixtures_cache_key,
     fixtures_day_leagues_cache_key,
     get_cache_service,
@@ -235,7 +235,7 @@ async def prune_low_value_data(
         key_builder(fixture_id)
         for fixture_id in removed_fixture_ids
         for key_builder in (
-            fixture_cache_key,
+            fixture_score_cache_key,
             analysis_cache_key,
             odds_cache_key,
             lineups_cache_key,

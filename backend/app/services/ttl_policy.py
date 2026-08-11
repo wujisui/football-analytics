@@ -32,9 +32,8 @@ TTL_SNAPSHOT_NEAR = 60 * 3600
 # Short Redis hot layer; durable truth is SQLite
 TTL_ANALYSIS_REDIS = 10 * 60
 
-TTL_FIXTURE_DETAIL_NEAR = 30 * 60
-TTL_FIXTURE_DETAIL_MATCHDAY = 2 * 3600
-TTL_FIXTURE_DETAIL_FAR = 12 * 3600
+# Single fixture score refresh on detail click (kicked off, not finished yet).
+TTL_FIXTURE_LIVE_SCORE = 60
 
 FINISHED_STATUSES = {
     "finished",
@@ -161,23 +160,13 @@ def refresh_ttl_seconds(
     return near
 
 
-def fixture_detail_ttl(fixture_date: datetime | None, status: str | None = None) -> int:
-    ttl = refresh_ttl_seconds(fixture_date, status=status, kind="snapshot")
-    if ttl is None:
-        # Kickoff passed: keep a long local TTL so Redis/DB still serve without API
-        return TTL_FIXTURE_DETAIL_FAR
-    hours = hours_until_kickoff(fixture_date)
-    if hours is not None and 0 <= hours <= 6:
-        return TTL_FIXTURE_DETAIL_NEAR
-    if hours is not None and hours <= 24:
-        return TTL_FIXTURE_DETAIL_MATCHDAY
-    return min(ttl, TTL_FIXTURE_DETAIL_FAR)
-
-
 def describe_ttl_policy() -> dict[str, str]:
     return {
-        "product": "pre-match analysis only (not live scores)",
-        "after_kickoff": "prediction snapshot frozen; detail display package fetched on demand if missing",
+        "product": "pre-match analysis only (no live polling)",
+        "after_kickoff": (
+            "prediction snapshot frozen; detail display package fetched on demand "
+            f"if missing; score refreshed per detail click ({TTL_FIXTURE_LIVE_SCORE}s cache)"
+        ),
         "far_>72h": f"analysis refresh every {TTL_ANALYSIS_FAR // 3600}h",
         "mid_24_72h": f"analysis refresh every {TTL_ANALYSIS_MID // 3600}h",
         "matchday_6_24h": f"analysis refresh every {TTL_ANALYSIS_MATCHDAY // 3600}h",

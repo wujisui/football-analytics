@@ -1,4 +1,4 @@
-"""Shared helpers for unfinished fixtures that should already have FT scores."""
+"""Kickoff-time boundary between 未开赛 lists and 赛果, plus FT score backfill."""
 
 from __future__ import annotations
 
@@ -14,6 +14,9 @@ STALE_RESULT_HOURS = 2
 STUCK_LIVE_HOURS = 4
 # Feed codes reached only after the 90 minutes are over, so ``fulltime`` is final.
 POST_REGULATION_SHORT = frozenset({"ET", "BT", "P"})
+# 用户点开详情时补拉比分的时间上限；更早的场次交给定时批次回写。
+LIVE_SCORE_REFRESH_HOURS = 12
+UNFINISHED_STATUSES = frozenset({"pending", "live"})
 
 
 def results_capture_cutoff(now: datetime | None = None) -> datetime:
@@ -31,9 +34,36 @@ def stuck_live_clause(now: datetime | None = None) -> ColumnElement[bool]:
     return and_(Fixture.status == "live", Fixture.date <= cutoff)
 
 
-def results_list_clause() -> ColumnElement[bool]:
-    """赛果日列表：完场 / 取消 / 延期 / 进行中（开赛后不再出现在即时与计算器）。"""
-    return Fixture.status.in_(["finished", "cancelled", "postponed", "live"])
+def as_naive_utc(value: datetime) -> datetime:
+    """Fixtures are stored naive UTC; feed payloads carry offsets."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def prematch_list_clause(now: datetime | None = None) -> ColumnElement[bool]:
+    """【比赛】：开赛时刻仍在未来；不依赖可能滞后的本地状态。"""
+    return Fixture.date > (now or datetime.utcnow())
+
+
+def results_list_clause(now: datetime | None = None) -> ColumnElement[bool]:
+    """【赛果】：开赛时刻已到；不依赖可能仍是 pending 的本地状态。"""
+    return Fixture.date <= (now or datetime.utcnow())
+
+
+def needs_live_score_refresh(
+    status: str | None,
+    fixture_date: datetime,
+    now: datetime | None = None,
+) -> bool:
+    """已开赛未完场：用户打开详情时值得为它补一次官方比分。"""
+    if (status or "").strip().lower() not in UNFINISHED_STATUSES:
+        return False
+    current = now or datetime.utcnow()
+    kickoff = as_naive_utc(fixture_date)
+    if kickoff > current:
+        return False
+    return current - kickoff <= timedelta(hours=LIVE_SCORE_REFRESH_HOURS)
 
 
 def settled_by_full_time(
@@ -54,10 +84,7 @@ def settled_by_full_time(
         return status
     if (status_short or "").upper() not in POST_REGULATION_SHORT:
         return status
-    kickoff = fixture_date
-    if kickoff.tzinfo is not None:
-        # Feed payloads carry UTC offsets; fixtures are stored naive UTC.
-        kickoff = kickoff.astimezone(timezone.utc).replace(tzinfo=None)
+    kickoff = as_naive_utc(fixture_date)
     cutoff = (now or datetime.utcnow()) - timedelta(hours=STUCK_LIVE_HOURS)
     return "finished" if kickoff <= cutoff else status
 

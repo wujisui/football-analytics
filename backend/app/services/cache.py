@@ -6,10 +6,10 @@ from typing import Any
 from app.core.config import get_settings
 from app.services.ttl_policy import (
     TTL_ANALYSIS_REDIS,
+    TTL_FIXTURE_LIVE_SCORE,
     TTL_FIXTURES_TODAY,
     TTL_LEAGUES,
     TTL_TEAMS,
-    fixture_detail_ttl,
     refresh_ttl_seconds,
 )
 
@@ -21,8 +21,6 @@ TTL_HEADTOHEAD = 24 * 3600
 TTL_TEAM_FORM = 24 * 3600
 TTL_TEAM_STATISTICS = 24 * 3600
 TTL_STANDINGS = 12 * 3600
-TTL_FIXTURE_DETAIL_NEAR = 120
-TTL_FIXTURE_DETAIL_FAR = 3600
 
 _cache_service: "CacheService | None" = None
 
@@ -49,8 +47,9 @@ def fixtures_league_range_cache_key(
     )
 
 
-def fixture_cache_key(fixture_id: int) -> str:
-    return f"api:football:fixture:{fixture_id}"
+def fixture_score_cache_key(fixture_id: int) -> str:
+    """Short-lived official fixture payload used only by detail score refresh."""
+    return f"api:football:fixture-score:{fixture_id}"
 
 
 def leagues_cache_key(league_ids: list[int]) -> str:
@@ -279,6 +278,7 @@ def get_cache_service() -> CacheService | None:
 
 __all__ = [
     "TTL_ANALYSIS",
+    "TTL_FIXTURE_LIVE_SCORE",
     "TTL_FIXTURES_TODAY",
     "TTL_HEADTOHEAD",
     "TTL_LEAGUES",
@@ -288,8 +288,7 @@ __all__ = [
     "TTL_TEAMS",
     "CacheService",
     "analysis_cache_key",
-    "fixture_cache_key",
-    "fixture_detail_ttl",
+    "fixture_score_cache_key",
     "fixtures_cache_key",
     "fixtures_day_leagues_cache_key",
     "fixtures_league_date_cache_key",

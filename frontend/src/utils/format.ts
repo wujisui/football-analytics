@@ -271,11 +271,23 @@ export function hasRealProbabilities(
   return !flat
 }
 
-/** Official feeds keep replaying in-play codes after a match ends. */
-function feedIsStuck(status: string, kickoff?: string | null): boolean {
-  if (status.toLowerCase() !== 'live' || !kickoff) return false
-  const started = new Date(kickoff).getTime()
-  return Number.isFinite(started) && Date.now() - started > STUCK_LIVE_MS
+/** 开赛时刻已过——本地状态由定时批次回写，可能还停在 pending。 */
+export function hasKickedOff(
+  kickoff?: string | null,
+  now: number = Date.now(),
+): boolean {
+  if (!kickoff) return false
+  const started = parseApiDate(kickoff).getTime()
+  return Number.isFinite(started) && started <= now
+}
+
+/** 状态牌已经跟不上现实：pending 却已开赛，或 live 挂了太久。 */
+function statusBoardIsStale(status: string, kickoff?: string | null): boolean {
+  if (!hasKickedOff(kickoff)) return false
+  const key = status.toLowerCase()
+  if (key === 'pending') return true
+  if (key !== 'live') return false
+  return Date.now() - parseApiDate(kickoff as string).getTime() > STUCK_LIVE_MS
 }
 
 export function statusLabel(
@@ -285,7 +297,7 @@ export function statusLabel(
 ): string {
   const short = (statusShort || '').toUpperCase()
   if (short && STATUS_SHORT_LABEL[short]) return STATUS_SHORT_LABEL[short]
-  if (feedIsStuck(status, kickoff)) return STUCK_LIVE_LABEL
+  if (statusBoardIsStale(status, kickoff)) return STUCK_LIVE_LABEL
   return STATUS_META[status.toLowerCase()]?.label || status
 }
 
@@ -298,7 +310,7 @@ export function statusTagType(
   if (short && STATUS_SHORT_LABEL[short]) {
     return STATUS_META.finished?.tag ?? 'default'
   }
-  if (feedIsStuck(status, kickoff)) return 'default'
+  if (statusBoardIsStale(status, kickoff)) return 'default'
   return STATUS_META[status.toLowerCase()]?.tag ?? 'default'
 }
 

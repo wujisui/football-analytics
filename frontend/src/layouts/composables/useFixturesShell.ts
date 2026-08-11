@@ -26,7 +26,6 @@ import {
   type FixturesRouteName,
 } from '@/utils/fixturesLeagueFilter'
 import {
-  isPrematchFixtureVisible,
   isPrematchMatchDay,
   isScheduleFutureDay,
   predictionsDayCountLabel,
@@ -160,9 +159,7 @@ export function useFixturesShell() {
     const tracked = prematchTrackedIdSet.value
     const scheduleToday = scheduleTodayDate()
     return allFixtures.value.filter((f) => {
-      if (!tracked.has(f.league_id) || !isPrematchFixtureVisible(f.status)) {
-        return false
-      }
+      if (!tracked.has(f.league_id)) return false
       return isPrematchMatchDay(toScheduleDayKey(f.fixture_date), scheduleToday)
     })
   })

@@ -156,7 +156,12 @@ async function loadHomeFixtures(options?: {
   inflightKey = key
   inflight = (async () => {
     try {
-      const fixturesData = await fetchTodayFixtures({ date, days, leagueIds })
+      const fixturesData = await fetchTodayFixtures({
+        date,
+        days,
+        leagueIds,
+        scope: 'prematch',
+      })
       if (seq !== loadSeq) return
       allFixtures.value = fixturesData.fixtures
       loadedAt.value = Date.now()

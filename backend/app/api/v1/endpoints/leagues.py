@@ -18,6 +18,7 @@ from app.schemas.response import (
     LeagueSummaryResponse,
 )
 from app.services.league_names import league_name_zh
+from app.services.results_capture import prematch_list_clause, results_list_clause
 
 router = APIRouter(prefix="/leagues", tags=["leagues"])
 
@@ -70,13 +71,10 @@ async def get_league_filter_options(
 
     # Keep schedule-visible even before bookmakers open 1X2 — pruning only
     # applies after a fixture is finished and still has no odds/recommendation.
-    if scope_key == "results":
-        from app.services.results_capture import results_list_clause
-
-        status_clause = results_list_clause()
-    else:
-        # Live fixtures belong on 赛果 (no longer bettable).
-        status_clause = Fixture.status.in_(["pending", "postponed"])
+    # 已开赛（含本地状态还没跟上的 pending）归赛果，不再计入未开赛筛选。
+    status_clause = (
+        results_list_clause() if scope_key == "results" else prematch_list_clause()
+    )
 
     local_counts: dict[int, int] = {}
     local_stmt = (

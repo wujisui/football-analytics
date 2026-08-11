@@ -22,6 +22,7 @@ from app.services.results_capture import (
 )
 from app.services.team_names import backfill_team_names, team_name_zh
 from app.services.cache import (
+    TTL_FIXTURE_LIVE_SCORE,
     TTL_FIXTURES_TODAY,
     TTL_HEADTOHEAD,
     TTL_LEAGUES,
@@ -30,8 +31,7 @@ from app.services.cache import (
     TTL_TEAM_STATISTICS,
     TTL_TEAMS,
     CacheService,
-    fixture_cache_key,
-    fixture_detail_ttl,
+    fixture_score_cache_key,
     fixtures_cache_key,
     fixtures_league_date_cache_key,
     fixtures_league_range_cache_key,
@@ -416,7 +416,6 @@ class FootballFetcher:
             fixture.pen_away = pen_away
 
         if previous_status is not None and previous_status != status:
-            await self.cache.delete(fixture_cache_key(fixture_id))
             today = fixture_date.strftime("%Y-%m-%d")
             await self.cache.delete(fixtures_cache_key(today))
             logger.info(
@@ -1357,23 +1356,28 @@ class FootballFetcher:
             lambda client: self.provider.fetch_predictions_payload(client, fixture_id),
         )
 
-    async def fetch_fixture_details(self, fixture_id: int) -> dict[str, Any]:
-        fixture_date: datetime | None = None
-        status: str | None = None
-        if self.session is not None:
-            fixture = await self.session.get(Fixture, fixture_id)
-            if fixture is not None:
-                fixture_date = fixture.date
-                status = fixture.status
+    async def refresh_fixture_score(self, fixture_id: int) -> bool:
+        """One official detail call → write status / score back to the local DB.
 
-        cache_key = fixture_cache_key(fixture_id)
-        ttl = fixture_detail_ttl(fixture_date, status)
-        return await self._get_or_fetch(
-            cache_key,
-            ttl,
-            "fetch_fixture_details",
+        只由未完场详情点击触发；短 TTL 让连续点击复用缓存，不做轮询。
+        """
+        assert self.session is not None
+        payload = await self._get_or_fetch(
+            fixture_score_cache_key(fixture_id),
+            TTL_FIXTURE_LIVE_SCORE,
+            "refresh_fixture_score",
             lambda client: self.provider.fetch_fixture_detail_payload(client, fixture_id),
         )
+        if _api_payload_unusable(payload):
+            logger.warning(
+                "Live score refresh blocked for fixture %s: %s",
+                fixture_id,
+                _api_payload_errors(payload),
+            )
+            return False
+        fixtures = self.provider.parse_fixtures(payload)
+        saved = await self._persist_fixtures(fixtures, fetch_teams=False)
+        return saved > 0
 
     async def check_quota(self) -> int | None:
         await self._run_with_retry(

@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
@@ -33,6 +34,7 @@ from app.services.analyzer import (
     AnalyzerService,
 )
 from app.services.calendar_tz import utc_span_range, utc_today
+from app.services.fetcher import FootballFetcher
 from app.services.prediction import (
     OPINION_FACTORS,
     adjust_probabilities_with_factors,
@@ -47,7 +49,11 @@ from app.services.results_accuracy import (
     evaluate_fixture_prediction,
     load_stored_by_fixture_ids,
 )
-from app.services.results_capture import results_list_clause
+from app.services.results_capture import (
+    needs_live_score_refresh,
+    prematch_list_clause,
+    results_list_clause,
+)
 from app.services.league_names import league_name_zh
 from app.services.league_standings import (
     fixture_standing_key,
@@ -245,6 +251,10 @@ def _ranks_from_maps(
 @router.get("/today", response_model=TodayFixturesResponse)
 async def get_today_fixtures(
     response: Response,
+    scope: Literal["schedule", "prematch"] = Query(
+        default="schedule",
+        description="schedule=指定日期全部赛程；prematch=仅服务器当前时刻尚未开赛",
+    ),
     league_id: int | None = Query(default=None, description="按单个联赛 ID 过滤"),
     league_ids: list[int] | None = Query(
         default=None,
@@ -263,7 +273,7 @@ async def get_today_fixtures(
     ),
     db: AsyncSession = Depends(get_db),
 ) -> TodayFixturesResponse:
-    """赛程列表（只读本地库，不对每场打官方 API）。"""
+    """指定日期赛程；prematch 由服务器当前时间过滤未开赛（只读本地库）。"""
     settings = get_settings()
     if date_str:
         try:
@@ -297,6 +307,8 @@ async def get_today_fixtures(
         )
         .order_by(Fixture.date)
     )
+    if scope == "prematch":
+        stmt = stmt.where(prematch_list_clause())
     if allowed is not None:
         stmt = stmt.where(Fixture.league_id.in_(list(allowed)))
     if league_id is not None:
@@ -641,6 +653,19 @@ async def get_fixture_analysis(
     fixture = fixture_result.scalar_one_or_none()
     if fixture is None:
         raise HTTPException(status_code=404, detail=f"Fixture {fixture_id} not found.")
+
+    # 已开赛未完场：这一次点击补拉官方比分（预测快照仍冻结）。
+    if needs_live_score_refresh(fixture.status, fixture.date):
+        try:
+            async with FootballFetcher(session=db) as fetcher:
+                await fetcher.refresh_fixture_score(fixture.id)
+        except Exception as exc:
+            # 比分补拉失败不应挡住已经落库的赛前详情。
+            logger.warning(
+                "Live score refresh failed for fixture %s: %s",
+                fixture.id,
+                exc,
+            )
 
     analyzer = AnalyzerService(db)
     try:

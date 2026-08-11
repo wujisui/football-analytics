@@ -6,9 +6,6 @@ export const HOME_DATE_RADIUS = 7
 export const PREMATCH_MATCH_DAY_SPAN = 2
 
 const WEEKDAY_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-/** 计算器只展示未开赛；进行中已无法投注，归赛果列表。 */
-const PREMATCH_STATUSES = new Set(['pending'])
-
 function parseIso(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y, m - 1, d)
@@ -79,11 +76,6 @@ export function buildHomeDateTabs(
     })
   }
   return tabs
-}
-
-/** Calculator prematch list: pending only. Live + finished belong on 赛果. */
-export function isPrematchFixtureVisible(status: string): boolean {
-  return PREMATCH_STATUSES.has(status.toLowerCase())
 }
 
 export function predictionsDayCountLabel(count: number): string {
