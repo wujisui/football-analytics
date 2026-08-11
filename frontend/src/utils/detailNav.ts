@@ -24,9 +24,6 @@ export type DetailCrumbFixture = {
   away_goals?: number | null
 }
 
-/** Tooltip / aria-label when opening fixture detail from list score or VS. */
-export const FIXTURE_DETAIL_TOOLTIP = '查看详细分析（统计）'
-
 export function parseDetailFrom(raw: unknown): DetailFrom {
   if (raw === 'results' || raw === 'predictions' || raw === 'favorites') return raw
   return 'predictions'

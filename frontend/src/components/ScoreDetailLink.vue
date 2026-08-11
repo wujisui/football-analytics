@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { FIXTURE_DETAIL_TOOLTIP } from '@/utils/detailNav'
-
 defineOptions({ inheritAttrs: false })
 
 const props = defineProps<{
@@ -17,21 +15,16 @@ const hasScore = computed(() => /\d+\s*[:：-]\s*\d+/.test(props.label))
 </script>
 
 <template>
-  <n-tooltip placement="top">
-    <template #trigger>
-      <n-button
-        v-bind="$attrs"
-        text
-        class="score-detail-link"
-        :class="{ 'has-score': hasScore }"
-        :aria-label="FIXTURE_DETAIL_TOOLTIP"
-        @click="$emit('click')"
-      >
-        {{ label }}
-      </n-button>
-    </template>
-    {{ FIXTURE_DETAIL_TOOLTIP }}
-  </n-tooltip>
+  <n-button
+    v-bind="$attrs"
+    text
+    class="score-detail-link"
+    :class="{ 'has-score': hasScore }"
+    aria-label="查看详细分析"
+    @click="$emit('click')"
+  >
+    {{ label }}
+  </n-button>
 </template>
 
 <style scoped>
