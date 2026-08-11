@@ -37,15 +37,15 @@ const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
 const { isLoggedIn, openLogin } = useAuthSession()
 
-const PHONE_STANDALONE_ROUTES = new Set([
-  'fixture-detail',
-  'mine-plans',
-  'mine-theme',
-  'mine-session',
-  'mine-about',
-])
+/** 详情页、以及【我的】二级页（不含个人主页）自动隐藏底栏。 */
+function hidesPhoneBottomNav(name: unknown): boolean {
+  const n = String(name ?? '')
+  if (n === 'fixture-detail') return true
+  return n.startsWith('mine-') && n !== 'mine-account'
+}
+
 const showBottomNav = computed(
-  () => isPhone.value && !PHONE_STANDALONE_ROUTES.has(String(route.name)),
+  () => isPhone.value && !hidesPhoneBottomNav(route.name),
 )
 
 /** Desktop: 「我的」 only after login; otherwise show 登录. Mobile always has Mine. */
@@ -200,7 +200,11 @@ const bottomItems: {
           class="app-body"
           content-style="height: 100%; overflow: hidden; position: relative;"
         >
-          <router-view />
+          <router-view v-slot="{ Component }">
+            <keep-alive :include="['FixturesShellLayout', 'Favorites', 'Mine']">
+              <component :is="Component" />
+            </keep-alive>
+          </router-view>
         </n-layout-content>
 
         <nav
