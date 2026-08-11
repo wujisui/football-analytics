@@ -206,15 +206,6 @@ async function toggleResultFixture(fixture: ResultFixture): Promise<boolean> {
   }
 }
 
-/** Reload hydrated favorites from the backend. */
-async function reloadFavorites(): Promise<void> {
-  try {
-    await loadFavorites()
-  } catch {
-    /* keep current cache */
-  }
-}
-
 /** Instant detail crumb while /analysis is still in flight. */
 export function findFavoriteListFixture(
   fixtureId: number,
@@ -230,6 +221,6 @@ export function useFavoriteFixtures() {
     toggleFixture,
     toggleResultFixture,
     remove,
-    reloadFavorites,
+    ensureLoaded,
   }
 }

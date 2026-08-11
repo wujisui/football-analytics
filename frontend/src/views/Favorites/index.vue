@@ -43,25 +43,14 @@ function writeSavedFilterDate(date: string) {
 
 const router = useRouter()
 const isPhone = useIsPhone()
-const { favorites, reloadFavorites } = useFavoriteFixtures()
+const { favorites, ensureLoaded } = useFavoriteFixtures()
 
 const filterDate = ref<string>(readSavedFilterDate())
 const selectedLeagueId = ref<number | null>(null)
 const siderCollapsed = ref(false)
-const refreshing = ref(false)
 const favoritesShellRef = ref<HTMLElement | null>(null)
 
 watch(filterDate, writeSavedFilterDate)
-
-async function refreshList() {
-  if (refreshing.value) return
-  refreshing.value = true
-  try {
-    await reloadFavorites()
-  } finally {
-    refreshing.value = false
-  }
-}
 
 const favoriteDays = computed(() => favoriteFixtureDays(favorites.value))
 
@@ -127,7 +116,7 @@ function goDetail(fixtureId: number) {
 }
 
 onMounted(() => {
-  void refreshList()
+  void ensureLoaded()
 })
 </script>
 
@@ -154,7 +143,6 @@ onMounted(() => {
           :selected-league-id="selectedLeagueId"
           :count-by-league="favoriteCountByLeague"
           :total-count="dayFavorites.length"
-          :loading="refreshing"
           :collapsed="siderCollapsed"
           @select="selectedLeagueId = $event"
         />
@@ -195,7 +183,7 @@ onMounted(() => {
           </template>
         </div>
 
-        <n-spin :show="refreshing" class="favorites-body">
+        <div class="favorites-body">
           <div ref="favoritesShellRef" class="favorites-list-shell">
             <n-scrollbar class="favorites-scroll" trigger="hover">
               <div class="fa-page-content-padding favorites-scroll-pad">
@@ -216,7 +204,7 @@ onMounted(() => {
             </n-scrollbar>
             <ListBackTop :shell="favoritesShellRef" :right="12" :bottom="12" />
           </div>
-        </n-spin>
+        </div>
       </section>
     </n-layout>
   </div>

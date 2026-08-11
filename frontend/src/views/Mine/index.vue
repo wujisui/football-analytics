@@ -17,9 +17,11 @@ import { computed, h, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthSession } from '@/composables/useAuthSession'
+import { useBetPlans } from '@/composables/useBetPlans'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
 import AdminOpsPanel from '@/views/Mine/components/AdminOpsPanel.vue'
+import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import PlansView from '@/views/Plans/index.vue'
 import pkg from '../../../package.json'
 
@@ -74,6 +76,7 @@ const router = useRouter()
 const isPhone = useIsPhone()
 const { isDark, toggleTheme } = useTheme()
 const { isLoggedIn, username, openLogin, logout } = useAuthSession()
+const { filterDate, planDays } = useBetPlans()
 
 function renderIcon(icon: Component) {
   return () => h(NIcon, null, { default: () => h(icon) })
@@ -148,11 +151,10 @@ const activeSection = computed<MineSection>(() => {
 })
 const activeMeta = computed(() => sectionMeta[activeSection.value])
 const isPlansSection = computed(() => activeSection.value === 'plans')
-/** PC 非嵌入区 / 手机二级页：共用同一顶栏，手机多一个返回 */
+/** PC 二级页 / 手机二级页：共用同一顶栏，手机多一个返回 */
 const showSectionHeader = computed(
   () =>
-    (isPhone.value && activeSection.value !== 'account') ||
-    (!isPhone.value && !isPlansSection.value),
+    (isPhone.value && activeSection.value !== 'account') || !isPhone.value,
 )
 
 const profileTitle = computed(() =>
@@ -301,6 +303,13 @@ function onLogout() {
           <div class="mine-header__copy">
             <h1>{{ activeMeta.title }}</h1>
             <p v-if="!isPhone">{{ activeMeta.description }}</p>
+          </div>
+          <div v-if="isPlansSection" class="mine-header__end">
+            <FavoriteDatesPicker
+              v-model="filterDate"
+              :marked-days="planDays"
+              legend="当天有方案（赛程日）"
+            />
           </div>
         </header>
 
@@ -534,6 +543,10 @@ function onLogout() {
   flex: 1;
 }
 
+.mine-header__end {
+  flex-shrink: 0;
+}
+
 .mine-header h1 {
   margin: 0;
   color: var(--fa-text-strong);
@@ -679,7 +692,7 @@ function onLogout() {
     position: relative;
     justify-content: center;
     min-height: 48px;
-    padding: 8px 48px;
+    padding: 8px 56px;
   }
 
   .mine-header > :deep(.n-button) {
@@ -691,6 +704,11 @@ function onLogout() {
     flex: none;
     max-width: 100%;
     text-align: center;
+  }
+
+  .mine-header__end {
+    position: absolute;
+    right: 10px;
   }
 
   .mine-header h1 {

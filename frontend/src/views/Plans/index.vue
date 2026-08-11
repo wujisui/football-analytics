@@ -1,55 +1,30 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { ChevronForwardOutline } from '@vicons/ionicons5'
-import { useRoute } from 'vue-router'
 
-import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import PlanDetail from '@/views/Plans/PlanDetail.vue'
 import { useBetPlans } from '@/composables/useBetPlans'
 import { formatScheduleDay } from '@/utils/format'
-import { todayDate } from '@/utils/homeDateStrip'
 import type { SavedBetPlan } from '@/utils/betPlans'
 
 defineOptions({ name: 'BetPlans' })
 
-const FILTER_DATE_KEY = 'fa-bet-plans-filter-date'
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-
-function readSavedFilterDate(): string {
-  try {
-    const raw = localStorage.getItem(FILTER_DATE_KEY)
-    if (raw && DATE_RE.test(raw)) return raw
-  } catch {
-    /* ignore */
-  }
-  return todayDate()
-}
-
-function writeSavedFilterDate(date: string) {
-  try {
-    localStorage.setItem(FILTER_DATE_KEY, date)
-  } catch {
-    /* ignore */
-  }
-}
-
-const route = useRoute()
 const message = useMessage()
-const { planDays, plansForDay, reload, renamePlan, removePlan, getPlan } =
-  useBetPlans()
+const {
+  filterDate,
+  plansForDay,
+  ensureLoaded,
+  renamePlan,
+  removePlan,
+  getPlan,
+} = useBetPlans()
 
-/** 「我的」二级入口由外层顶栏承载标题，避免双标题 */
-const showTitle = computed(() => route.name !== 'mine-plans')
-
-const filterDate = ref<string>(readSavedFilterDate())
 const editingPlan = ref<SavedBetPlan | null>(null)
 const renameDraft = ref('')
 const showRename = ref(false)
 const detailPlanId = ref<string | null>(null)
 const showDetail = ref(false)
-
-watch(filterDate, writeSavedFilterDate)
 
 const dayPlans = computed(() => plansForDay(filterDate.value))
 const detailTitle = computed(
@@ -96,25 +71,12 @@ async function confirmDelete(plan: SavedBetPlan) {
 }
 
 onMounted(() => {
-  void reload()
+  void ensureLoaded()
 })
 </script>
 
 <template>
   <div class="plans-panel">
-    <div class="plans-header fa-page-toolbar">
-      <div class="fa-toolbar-top">
-        <span v-if="showTitle" class="plans-title">我的方案</span>
-        <div class="fa-toolbar-end">
-          <FavoriteDatesPicker
-            v-model="filterDate"
-            :marked-days="planDays"
-            legend="当天有方案（赛程日）"
-          />
-        </div>
-      </div>
-    </div>
-
     <n-scrollbar class="plans-scroll" trigger="hover">
       <div class="fa-page-content-padding plans-scroll-pad">
         <n-empty
@@ -182,14 +144,19 @@ onMounted(() => {
       display-directive="if"
       @after-leave="detailPlanId = null"
     >
-      <n-scrollbar style="max-height: min(70vh, 640px)">
+      <div class="plan-detail-scroll fa-scrollbar-hidden">
         <PlanDetail :plan-id="detailPlanId" />
-      </n-scrollbar>
+      </div>
     </n-modal>
   </div>
 </template>
 
 <style scoped>
+.plan-detail-scroll {
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+}
+
 .plans-panel {
   height: 100%;
   min-height: 0;
@@ -197,18 +164,6 @@ onMounted(() => {
   flex-direction: column;
   overflow: hidden;
   background: var(--fa-bg);
-}
-
-.plans-header {
-  flex-shrink: 0;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.plans-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--fa-text-strong);
 }
 
 .plans-scroll {

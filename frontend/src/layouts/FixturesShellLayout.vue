@@ -173,10 +173,9 @@ onActivated(() => {
 
         <div class="shell-content">
           <router-view v-slot="{ Component }">
-            <keep-alive v-if="!isPhone" :include="['Predictions', 'Results']">
+            <keep-alive :include="['Predictions', 'Results']">
               <component :is="Component" />
             </keep-alive>
-            <component v-else :is="Component" />
           </router-view>
         </div>
       </n-layout>
