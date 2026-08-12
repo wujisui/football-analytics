@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -26,7 +25,6 @@ from app.services.data_cleanup import record_has_algorithm_recommendation
 from app.services.prediction import (
     _odd_float,
     _parse_goal_lean,
-    _parse_score_hint,
     is_flat_prior,
     recommendation_outcomes,
     resolve_match_probabilities,
@@ -178,46 +176,6 @@ def _score_btts(stored: PreMatchData, odds: dict[str, Any] | None) -> tuple[floa
     return max(yes_p, no_p), lean
 
 
-def _score_exact(
-    stored: PreMatchData,
-    odds: dict[str, Any] | None,
-) -> tuple[float, str]:
-    lean = (stored.score_hint or "").strip()
-    scores = _parse_score_hint(lean)
-    # Single exact score only; skip multi-score hints like 2-1 / 1-1.
-    if len(scores) != 1:
-        return 0.0, ""
-    target = scores[0]
-    if not isinstance(odds, dict):
-        return 0.0, ""
-    bookmakers = odds.get("bookmakers")
-    if not isinstance(bookmakers, list):
-        return 0.0, ""
-    for book in bookmakers:
-        if not isinstance(book, dict):
-            continue
-        if str(book.get("bet") or "") not in {"Exact Score", "Correct Score"}:
-            continue
-        values = book.get("values")
-        if not isinstance(values, list):
-            continue
-        for row in values:
-            if not isinstance(row, dict):
-                continue
-            label = str(row.get("label") or "")
-            match = re.match(r"^\s*(\d+)\s*[-:]\s*(\d+)\s*$", label)
-            if not match:
-                continue
-            if (int(match.group(1)), int(match.group(2))) != target:
-                continue
-            odd = _odd_float(row.get("odd"))
-            if odd is None or odd <= 1:
-                return 0.0, ""
-            # Convert long odds into a soft confidence: 1/odd, capped.
-            return min(1.0 / odd, 0.45), lean
-    return 0.0, ""
-
-
 def _market_decimal_odd(
     market: str,
     lean: str,
@@ -263,22 +221,6 @@ def _market_decimal_odd(
             return _odd_float(both.get("away"))
         return None
 
-    if market == "score":
-        scores = _parse_score_hint(lean)
-        if len(scores) != 1:
-            return None
-        target = scores[0]
-        for book in odds.get("bookmakers") or []:
-            if not isinstance(book, dict):
-                continue
-            if str(book.get("bet") or "") not in {"Exact Score", "Correct Score"}:
-                continue
-            for row in book.get("values") or []:
-                if not isinstance(row, dict):
-                    continue
-                match = re.match(r"^\s*(\d+)\s*[-:]\s*(\d+)\s*$", str(row.get("label") or ""))
-                if match and (int(match.group(1)), int(match.group(2))) == target:
-                    return _odd_float(row.get("odd"))
     return None
 
 
@@ -293,7 +235,6 @@ def _market_candidates(
         ("ah", _score_handicap(stored, odds, feature)),
         ("ou", _score_ou(stored, odds)),
         ("btts", _score_btts(stored, odds)),
-        ("score", _score_exact(stored, odds)),
     )
     candidates: list[MarketCandidate] = []
     for market, (confidence, lean) in scored:
@@ -311,6 +252,11 @@ def _market_candidates(
             )
         )
     return candidates
+
+
+def _schedule_day_key(kickoff: datetime) -> str:
+    """UTC match day — same calendar key as frontend ``toScheduleDayKey``."""
+    return kickoff.strftime("%Y-%m-%d")
 
 
 def _best_market(candidates: list[MarketCandidate]) -> MarketCandidate | None:
@@ -335,18 +281,12 @@ def score_fixture_confidence(
     return best.ranking_score, best.market, best.lean
 
 
-def rank_auto_pick_candidates(
+def score_auto_pick_candidates(
     rows: list[tuple[Fixture, PreMatchData, MatchFeature | None]],
     *,
-    limit: int = AUTO_PICK_LIMIT,
     min_confidence: float = MIN_CONFIDENCE,
 ) -> list[AutoPickCandidate]:
-    """Rank single-lean picks and always fill up to ``limit`` when possible.
-
-    Odds/EV are used only for relative ordering (prefer better value). Hard
-    gates that emptied the slate are intentionally not applied — product needs
-    four daily tips whenever enough catalog prematch fixtures exist.
-    """
+    """Score every scorable single-lean fixture (no day / count cap)."""
     ranked: list[AutoPickCandidate] = []
     for fixture, stored, feature in rows:
         if not record_has_algorithm_recommendation(stored, feature):
@@ -384,7 +324,44 @@ def rank_auto_pick_candidates(
             )
         )
     ranked.sort(key=lambda item: (-item.score, item.kickoff, item.fixture_id))
-    return ranked[: max(0, limit)]
+    return ranked
+
+
+def rank_auto_pick_candidates(
+    rows: list[tuple[Fixture, PreMatchData, MatchFeature | None]],
+    *,
+    limit: int = AUTO_PICK_LIMIT,
+    min_confidence: float = MIN_CONFIDENCE,
+) -> list[AutoPickCandidate]:
+    """Rank one pool and keep top ``limit`` (single-day helper / tests)."""
+    return score_auto_pick_candidates(rows, min_confidence=min_confidence)[
+        : max(0, limit)
+    ]
+
+
+def select_auto_picks_by_match_day(
+    candidates: list[AutoPickCandidate],
+    *,
+    limit_per_day: int = AUTO_PICK_LIMIT,
+    skip_fixture_ids: set[int] | None = None,
+) -> list[AutoPickCandidate]:
+    """Pick up to ``limit_per_day`` per UTC match day — not one slate for the whole window."""
+    skip = skip_fixture_ids or set()
+    by_day: dict[str, list[AutoPickCandidate]] = {}
+    for candidate in candidates:
+        by_day.setdefault(_schedule_day_key(candidate.kickoff), []).append(candidate)
+
+    selected: list[AutoPickCandidate] = []
+    for day in sorted(by_day):
+        day_picks: list[AutoPickCandidate] = []
+        for candidate in by_day[day]:
+            if candidate.fixture_id in skip:
+                continue
+            day_picks.append(candidate)
+            if len(day_picks) >= limit_per_day:
+                break
+        selected.extend(day_picks)
+    return selected
 
 
 async def sync_daily_auto_favorites(
@@ -394,10 +371,11 @@ async def sync_daily_auto_favorites(
     limit: int = AUTO_PICK_LIMIT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Replace ``source=auto`` favorites with top single-lean catalog picks.
+    """Replace ``source=auto`` favorites with per-match-day single-lean picks.
 
-    Always targets ``limit`` picks (default 4). Odds/EV only reorder candidates;
-    empty slate is allowed only when fewer than ``limit`` scorable fixtures exist.
+    Each UTC match day in the synced prematch window gets up to ``limit`` tips
+    (default 4). A 7-day window with many fixtures therefore yields many more
+    than four auto favorites — never one global cherry-pick across the week.
     Manual favorites are never touched.
     """
     settings = get_settings()
@@ -424,10 +402,7 @@ async def sync_daily_auto_favorites(
         if prev is None or (feature is not None and prev[2] is None):
             by_fixture[fixture.id] = (fixture, stored, feature)
 
-    candidates = rank_auto_pick_candidates(
-        list(by_fixture.values()),
-        limit=max(limit * 3, limit),
-    )
+    candidates = score_auto_pick_candidates(list(by_fixture.values()))
 
     manual_ids = {
         int(row[0])
@@ -441,13 +416,11 @@ async def sync_daily_auto_favorites(
         ).all()
     }
 
-    selected: list[AutoPickCandidate] = []
-    for candidate in candidates:
-        if candidate.fixture_id in manual_ids:
-            continue
-        selected.append(candidate)
-        if len(selected) >= limit:
-            break
+    selected = select_auto_picks_by_match_day(
+        candidates,
+        limit_per_day=limit,
+        skip_fixture_ids=manual_ids,
+    )
 
     await db.execute(
         delete(FavoriteFixture).where(
@@ -476,12 +449,20 @@ async def sync_daily_auto_favorites(
     except Exception:
         local_day = saved_at.date().isoformat()
 
+    by_day_counts: dict[str, int] = {}
+    for item in selected:
+        key = _schedule_day_key(item.kickoff)
+        by_day_counts[key] = by_day_counts.get(key, 0) + 1
+
     result = {
         "day": local_day,
         "candidates": len(candidates),
+        "selected_count": len(selected),
+        "by_day": by_day_counts,
         "selected": [
             {
                 "fixture_id": item.fixture_id,
+                "match_day": _schedule_day_key(item.kickoff),
                 "score": round(item.score, 4),
                 "market": item.market,
                 "lean": item.lean,
@@ -494,15 +475,16 @@ async def sync_daily_auto_favorites(
         "skipped_manual": sorted(
             {
                 item.fixture_id
-                for item in candidates[:limit]
+                for item in candidates
                 if item.fixture_id in manual_ids
             }
         ),
     }
     logger.info(
-        "Auto-favorites day=%s selected=%s candidates=%s",
+        "Auto-favorites day=%s selected=%s candidates=%s by_day=%s",
         local_day,
         len(selected),
         len(candidates),
+        by_day_counts,
     )
     return result

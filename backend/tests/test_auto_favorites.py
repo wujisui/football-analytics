@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 from app.services.auto_favorites import (
     rank_auto_pick_candidates,
+    score_auto_pick_candidates,
     score_fixture_confidence,
+    select_auto_picks_by_match_day,
 )
 
 
@@ -66,6 +68,28 @@ def test_double_chance_is_rejected() -> None:
     assert market in {"ou", "btts", ""}
     assert "胜/平" not in lean
     assert "让胜/负" not in lean
+
+
+def test_exact_score_is_never_an_auto_pick_market() -> None:
+    """比分提示 remains display-only; 9%-type hit rates cannot be a main pick."""
+    odds = {
+        "match_winner": {"home": "2.10", "draw": "3.20", "away": "3.40"},
+        "asian_handicap": {"home": "1.90", "away": "1.90", "line": "0"},
+        "goals_ou": {"home": "1.95", "away": "1.85", "line": "2.5"},
+        "both_teams_score": {"home": "1.90", "away": "1.90"},
+        "bookmakers": [
+            {
+                "bet": "Exact Score",
+                "values": [{"label": "1-0", "odd": "8.00"}],
+            }
+        ],
+    }
+    _score, market, _lean = score_fixture_confidence(
+        _stored(score_hint="比分:1-0"),
+        odds=odds,
+    )
+    assert market in {"1x2", "ah", "ou", "btts"}
+    assert market != "score"
 
 
 def test_prefers_better_value_market_over_tiny_1x2() -> None:
@@ -231,3 +255,48 @@ def test_rank_keeps_top_unique_fixtures() -> None:
     assert [item.fixture_id for item in picked] == [1, 2, 3, 4]
     assert all(item.market == "1x2" for item in picked)
     assert all("/" not in item.lean for item in picked)
+
+
+def test_selects_four_per_match_day_not_four_for_whole_window() -> None:
+    odds = {
+        "match_winner": {"home": "1.80", "draw": "4.00", "away": "6.00"},
+        "asian_handicap": {"home": "1.80", "away": "2.00", "line": "-0.5"},
+        "goals_ou": {"home": "2.20", "away": "1.65", "line": "2.5"},
+        "both_teams_score": {"home": "2.10", "away": "1.70"},
+    }
+
+    def row(fid: int, home_p: float, kickoff: str):
+        fixture = SimpleNamespace(id=fid, date=datetime.fromisoformat(kickoff))
+        stored = _stored(
+            recommendation="胜",
+            home_win_prob=home_p,
+            draw_prob=(1 - home_p) * 0.55,
+            away_win_prob=(1 - home_p) * 0.45,
+        )
+        return fixture, stored, None
+
+    rows = [
+        row(1, 0.70, "2026-08-12T12:00:00"),
+        row(2, 0.66, "2026-08-12T13:00:00"),
+        row(3, 0.63, "2026-08-12T14:00:00"),
+        row(4, 0.61, "2026-08-12T15:00:00"),
+        row(5, 0.59, "2026-08-12T16:00:00"),
+        row(11, 0.71, "2026-08-13T12:00:00"),
+        row(12, 0.67, "2026-08-13T13:00:00"),
+        row(13, 0.64, "2026-08-13T14:00:00"),
+        row(14, 0.62, "2026-08-13T15:00:00"),
+        row(15, 0.60, "2026-08-13T16:00:00"),
+    ]
+
+    import app.services.auto_favorites as mod
+
+    original = _patch_odds(mod, odds)
+    try:
+        scored = score_auto_pick_candidates(rows)
+        picked = select_auto_picks_by_match_day(scored, limit_per_day=4)
+    finally:
+        mod.package_from_record, mod.rehydrate_odds_markets = original
+
+    assert [item.fixture_id for item in picked] == [1, 2, 3, 4, 11, 12, 13, 14]
+    assert len(picked) == 8
+

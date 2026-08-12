@@ -117,11 +117,9 @@ function open() {
       v-if="showScore"
       size="small"
       class="score-tag rec-tag"
-      :class="{ 'rec-pick': isPick('score') }"
       :bordered="false"
-      :type="isPick('score') ? undefined : 'info'"
+      type="info"
     >
-      <span v-if="isPick('score')" class="rec-pick-mark">[荐]</span>
       <n-ellipsis style="max-width: 100%">{{ scoreHint }}</n-ellipsis>
     </n-tag>
   </div>

@@ -2,7 +2,7 @@ import { apiClient } from './client'
 import type { FixtureOddsSnippet } from './types'
 
 /** Market key written by backend auto-favorites ranking. */
-export type AutoFavoriteMarket = '1x2' | 'ah' | 'ou' | 'btts' | 'score'
+export type AutoFavoriteMarket = '1x2' | 'ah' | 'ou' | 'btts'
 
 export interface FavoriteFixtureRecord {
   fixture_id: number

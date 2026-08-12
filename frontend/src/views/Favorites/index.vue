@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
@@ -10,12 +10,13 @@ import ShellBreadcrumb from '@/layouts/components/ShellBreadcrumb.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import {
   favoriteFixtureDays,
+  nearestFavoriteDay,
   useFavoriteFixtures,
 } from '@/composables/useFavoriteFixtures'
 import type { LeagueSummaryResponse } from '@/api/types'
 import { parseApiDate, toScheduleDayKey } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'
-import { todayDate } from '@/utils/homeDateStrip'
+import { scheduleTodayDate, todayDate } from '@/utils/homeDateStrip'
 import { leagueLabel } from '@/utils/leagueNames'
 
 defineOptions({ name: 'Favorites' })
@@ -43,7 +44,7 @@ function writeSavedFilterDate(date: string) {
 
 const router = useRouter()
 const isPhone = useIsPhone()
-const { favorites, ensureLoaded } = useFavoriteFixtures()
+const { favorites, refresh } = useFavoriteFixtures()
 
 const filterDate = ref<string>(readSavedFilterDate())
 const selectedLeagueId = ref<number | null>(null)
@@ -115,8 +116,26 @@ function goDetail(fixtureId: number) {
   void router.push(fixtureDetailRoute(fixtureId, { from: 'favorites' }))
 }
 
+/** Avoid empty "today" while auto picks sit on later match days. */
+function snapFilterToAvailableDay() {
+  if (dayFavorites.value.length > 0) return
+  const next = nearestFavoriteDay(favoriteDays.value, scheduleTodayDate())
+  if (next && next !== filterDate.value) {
+    filterDate.value = next
+  }
+}
+
+async function reloadFavorites() {
+  await refresh()
+  snapFilterToAvailableDay()
+}
+
 onMounted(() => {
-  void ensureLoaded()
+  void reloadFavorites()
+})
+
+onActivated(() => {
+  void reloadFavorites()
 })
 </script>
 

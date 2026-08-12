@@ -135,6 +135,21 @@ export function favoriteFixtureDays(
   return new Set(favoritesList.map((item) => toScheduleDayKey(item.fixture_date)))
 }
 
+/**
+ * Prefer ``preferred`` when it has favorites; otherwise the next upcoming day,
+ * else the latest past day. Used so 关注 does not land on an empty "today"
+ * while auto picks sit on later match days.
+ */
+export function nearestFavoriteDay(
+  days: Iterable<string>,
+  preferred: string,
+): string | null {
+  const sorted = [...new Set(days)].filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)).sort()
+  if (!sorted.length) return null
+  if (sorted.includes(preferred)) return preferred
+  return sorted.find((day) => day >= preferred) ?? sorted[sorted.length - 1]
+}
+
 export function favoriteHasPredictSnapshot(item: FavoriteFixtureRecord): boolean {
   return !!(
     item.has_prediction ||
