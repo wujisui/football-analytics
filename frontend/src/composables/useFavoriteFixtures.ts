@@ -114,6 +114,11 @@ async function ensureLoaded(): Promise<void> {
   return loadPromise
 }
 
+async function refreshFavorites(): Promise<void> {
+  loadPromise = null
+  await ensureLoaded()
+}
+
 void ensureLoaded()
 
 const favoriteIds = computed(() => new Set(favorites.value.map((f) => f.fixture_id)))
@@ -239,5 +244,6 @@ export function useFavoriteFixtures() {
     toggleResultFixture,
     remove,
     ensureLoaded,
+    refresh: refreshFavorites,
   }
 }

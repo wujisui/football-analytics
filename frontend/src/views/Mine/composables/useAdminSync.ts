@@ -1,6 +1,7 @@
 import { computed, readonly, ref } from 'vue'
 
 import { triggerScheduledFixturesSync } from '@/api/admin'
+import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 import { notifyError, notifySuccess } from '@/utils/globalNotify'
 
 type SyncOutcome = { ok: boolean; at: number; detail: string }
@@ -18,6 +19,8 @@ function formatTime(at: number) {
 }
 
 export function useAdminSync() {
+  const { refresh: refreshFavorites } = useFavoriteFixtures()
+
   const statusText = computed(() => {
     if (syncing.value) return '同步进行中，完成后会全局提示'
     const outcome = lastOutcome.value
@@ -40,7 +43,8 @@ export function useAdminSync() {
         return
       }
       lastOutcome.value = { ok: true, at: Date.now(), detail: '' }
-      notifySuccess('同步官方 API 数据完成', '赛程、盘口与赛果已更新，刷新列表即可看到')
+      await refreshFavorites()
+      notifySuccess('同步官方 API 数据完成', '赛程、盘口、赛果与自动关注已更新')
     } catch (err) {
       const detail = err instanceof Error ? err.message : '请求失败'
       lastOutcome.value = { ok: false, at: Date.now(), detail }

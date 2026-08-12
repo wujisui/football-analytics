@@ -38,8 +38,8 @@ from app.services.user_scope import owner_is
 logger = logging.getLogger(__name__)
 
 AUTO_PICK_LIMIT = 4
-# Below this, a pick is too contested to force into 关注.
-MIN_CONFIDENCE = 0.58
+# Soft floor only — always fill up to AUTO_PICK_LIMIT when enough fixtures exist.
+MIN_CONFIDENCE = 0.01
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,27 @@ class AutoPickCandidate:
     score: float
     market: str
     lean: str
+    confidence: float
+    decimal_odd: float
+    expected_return: float
+
+
+@dataclass(frozen=True)
+class MarketCandidate:
+    market: str
+    lean: str
+    confidence: float
+    decimal_odd: float
+
+    @property
+    def expected_return(self) -> float:
+        """Expected net return per unit stake."""
+        return self.confidence * self.decimal_odd - 1.0
+
+    @property
+    def ranking_score(self) -> float:
+        """「矮子里拔高个」: prefer better payout edge, never hard-reject short odds."""
+        return self.expected_return
 
 
 def _utc_now() -> datetime:
@@ -197,29 +218,121 @@ def _score_exact(
     return 0.0, ""
 
 
-def score_fixture_confidence(
+def _market_decimal_odd(
+    market: str,
+    lean: str,
+    odds: dict[str, Any] | None,
+) -> float | None:
+    if not isinstance(odds, dict):
+        return None
+
+    if market == "1x2":
+        outcomes = recommendation_outcomes(lean)
+        if not outcomes or len(outcomes) != 1:
+            return None
+        key = next(iter(outcomes))
+        winner = odds.get("match_winner")
+        return _odd_float(winner.get(key)) if isinstance(winner, dict) else None
+
+    if market == "ah":
+        pick = handicap_pick_from_lean(lean)
+        handicap = odds.get("asian_handicap")
+        if not isinstance(handicap, dict):
+            return None
+        if pick == "让胜":
+            return _odd_float(handicap.get("home"))
+        if pick == "让负":
+            return _odd_float(handicap.get("away"))
+        return None
+
+    if market == "ou":
+        parsed = _parse_goal_lean(lean)
+        total = odds.get("goals_ou")
+        if parsed is None or not isinstance(total, dict):
+            return None
+        side, _line = parsed
+        return _odd_float(total.get("home" if side == "over" else "away"))
+
+    if market == "btts":
+        both = odds.get("both_teams_score")
+        if not isinstance(both, dict):
+            return None
+        if lean.endswith(("：是", ":是", "是")):
+            return _odd_float(both.get("home"))
+        if lean.endswith(("：否", ":否", "否")):
+            return _odd_float(both.get("away"))
+        return None
+
+    if market == "score":
+        scores = _parse_score_hint(lean)
+        if len(scores) != 1:
+            return None
+        target = scores[0]
+        for book in odds.get("bookmakers") or []:
+            if not isinstance(book, dict):
+                continue
+            if str(book.get("bet") or "") not in {"Exact Score", "Correct Score"}:
+                continue
+            for row in book.get("values") or []:
+                if not isinstance(row, dict):
+                    continue
+                match = re.match(r"^\s*(\d+)\s*[-:]\s*(\d+)\s*$", str(row.get("label") or ""))
+                if match and (int(match.group(1)), int(match.group(2))) == target:
+                    return _odd_float(row.get("odd"))
+    return None
+
+
+def _market_candidates(
     stored: PreMatchData,
     *,
     odds: dict[str, Any] | None,
     feature: MatchFeature | None = None,
-) -> tuple[float, str, str]:
-    """Return (best_score, market, lean) across 1X2 / AH / OU / BTTS / score."""
-    markets = (
+) -> list[MarketCandidate]:
+    scored = (
         ("1x2", _score_1x2(stored, odds)),
         ("ah", _score_handicap(stored, odds, feature)),
         ("ou", _score_ou(stored, odds)),
         ("btts", _score_btts(stored, odds)),
         ("score", _score_exact(stored, odds)),
     )
-    best_market = ""
-    best_lean = ""
-    best_score = 0.0
-    for market, (score, lean) in markets:
-        if score > best_score:
-            best_score = score
-            best_market = market
-            best_lean = lean
-    return best_score, best_market, best_lean
+    candidates: list[MarketCandidate] = []
+    for market, (confidence, lean) in scored:
+        if not lean:
+            continue
+        decimal_odd = _market_decimal_odd(market, lean, odds)
+        if decimal_odd is None:
+            continue
+        candidates.append(
+            MarketCandidate(
+                market=market,
+                lean=lean,
+                confidence=confidence,
+                decimal_odd=decimal_odd,
+            )
+        )
+    return candidates
+
+
+def _best_market(candidates: list[MarketCandidate]) -> MarketCandidate | None:
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda item: (item.ranking_score, item.confidence, -abs(item.decimal_odd - 2.0)),
+    )
+
+
+def score_fixture_confidence(
+    stored: PreMatchData,
+    *,
+    odds: dict[str, Any] | None,
+    feature: MatchFeature | None = None,
+) -> tuple[float, str, str]:
+    """Return (ranking_score, market, lean) for the best single-lean market."""
+    best = _best_market(_market_candidates(stored, odds=odds, feature=feature))
+    if best is None:
+        return 0.0, "", ""
+    return best.ranking_score, best.market, best.lean
 
 
 def rank_auto_pick_candidates(
@@ -228,7 +341,12 @@ def rank_auto_pick_candidates(
     limit: int = AUTO_PICK_LIMIT,
     min_confidence: float = MIN_CONFIDENCE,
 ) -> list[AutoPickCandidate]:
-    """Rank catalog prematch fixtures; keep top ``limit`` by confidence."""
+    """Rank single-lean picks and always fill up to ``limit`` when possible.
+
+    Odds/EV are used only for relative ordering (prefer better value). Hard
+    gates that emptied the slate are intentionally not applied — product needs
+    four daily tips whenever enough catalog prematch fixtures exist.
+    """
     ranked: list[AutoPickCandidate] = []
     for fixture, stored, feature in rows:
         if not record_has_algorithm_recommendation(stored, feature):
@@ -240,20 +358,29 @@ def rank_auto_pick_candidates(
             if isinstance(odds_raw, dict)
             else None
         )
-        score, market, lean = score_fixture_confidence(
-            stored,
-            odds=odds if isinstance(odds, dict) else None,
-            feature=feature,
+        best = _best_market(
+            [
+                item
+                for item in _market_candidates(
+                    stored,
+                    odds=odds if isinstance(odds, dict) else None,
+                    feature=feature,
+                )
+                if item.confidence >= min_confidence
+            ]
         )
-        if score < min_confidence or not market:
+        if best is None:
             continue
         ranked.append(
             AutoPickCandidate(
                 fixture_id=fixture.id,
                 kickoff=fixture.date,
-                score=score,
-                market=market,
-                lean=lean,
+                score=best.ranking_score,
+                market=best.market,
+                lean=best.lean,
+                confidence=best.confidence,
+                decimal_odd=best.decimal_odd,
+                expected_return=best.expected_return,
             )
         )
     ranked.sort(key=lambda item: (-item.score, item.kickoff, item.fixture_id))
@@ -269,8 +396,9 @@ async def sync_daily_auto_favorites(
 ) -> dict[str, Any]:
     """Replace ``source=auto`` favorites with top single-lean catalog picks.
 
-    Intended to run after each scheduled fixtures/odds sync so recommendations
-    track moving lines. Manual favorites are never touched.
+    Always targets ``limit`` picks (default 4). Odds/EV only reorder candidates;
+    empty slate is allowed only when fewer than ``limit`` scorable fixtures exist.
+    Manual favorites are never touched.
     """
     settings = get_settings()
     catalog_ids = list(settings.LEAGUE_IDS.values())
@@ -357,6 +485,9 @@ async def sync_daily_auto_favorites(
                 "score": round(item.score, 4),
                 "market": item.market,
                 "lean": item.lean,
+                "confidence": round(item.confidence, 4),
+                "decimal_odd": round(item.decimal_odd, 3),
+                "expected_return": round(item.expected_return, 4),
             }
             for item in selected
         ],

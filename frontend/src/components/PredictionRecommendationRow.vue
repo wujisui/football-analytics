@@ -77,7 +77,7 @@ function open() {
       :type="recommendationTagColor ? undefined : 'default'"
       :color="isPick('1x2') ? undefined : recommendationTagColor"
     >
-      <span v-if="isPick('1x2')" class="rec-pick-mark">荐</span>
+      <span v-if="isPick('1x2')" class="rec-pick-mark">[荐]</span>
       {{ recommendationLabel }}
     </n-tag>
     <n-tag
@@ -89,7 +89,7 @@ function open() {
       :type="handicapTagColor ? undefined : 'default'"
       :color="isPick('ah') ? undefined : handicapTagColor"
     >
-      <span v-if="isPick('ah')" class="rec-pick-mark">荐</span>
+      <span v-if="isPick('ah')" class="rec-pick-mark">[荐]</span>
       <n-ellipsis style="max-width: 100%">{{ handicapLabel }}</n-ellipsis>
     </n-tag>
     <n-tag
@@ -100,7 +100,7 @@ function open() {
       :type="isPick('ou') ? undefined : 'warning'"
       :bordered="false"
     >
-      <span v-if="isPick('ou')" class="rec-pick-mark">荐</span>
+      <span v-if="isPick('ou')" class="rec-pick-mark">[荐]</span>
       {{ goalLean }}
     </n-tag>
     <n-tag
@@ -110,7 +110,7 @@ function open() {
       :class="{ 'rec-pick': isPick('btts') }"
       :bordered="false"
     >
-      <span v-if="isPick('btts')" class="rec-pick-mark">荐</span>
+      <span v-if="isPick('btts')" class="rec-pick-mark">[荐]</span>
       {{ bothScore }}
     </n-tag>
     <n-tag
@@ -121,7 +121,7 @@ function open() {
       :bordered="false"
       :type="isPick('score') ? undefined : 'info'"
     >
-      <span v-if="isPick('score')" class="rec-pick-mark">荐</span>
+      <span v-if="isPick('score')" class="rec-pick-mark">[荐]</span>
       <n-ellipsis style="max-width: 100%">{{ scoreHint }}</n-ellipsis>
     </n-tag>
   </div>
