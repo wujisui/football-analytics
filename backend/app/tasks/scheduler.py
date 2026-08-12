@@ -183,10 +183,42 @@ async def train_model() -> None:
         logger.error("Task train_model failed: %s", exc, exc_info=True)
 
 
+async def run_daily_auto_favorites() -> None:
+    """Manual/admin trigger: refresh auto favorites (also runs after each sync)."""
+    task_name = "daily_auto_favorites"
+    _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
+    logger.info("Task %s started.", task_name)
+    try:
+        from app.services.auto_favorites import sync_daily_auto_favorites
+
+        async with AsyncSessionLocal() as session:
+            result = await sync_daily_auto_favorites(session)
+        _set_task_status(
+            task_name,
+            "completed",
+            result=result,
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.info(
+            "Task %s completed. selected=%s",
+            task_name,
+            len(result.get("selected") or []),
+        )
+    except Exception as exc:
+        _set_task_status(
+            task_name,
+            "failed",
+            error=str(exc),
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.error("Task %s failed: %s", task_name, exc, exc_info=True)
+
+
 TASK_HANDLERS = {
     "scheduled_fixtures_sync": run_scheduled_fixtures_sync,
     "clean_old_data": clean_old_data,
     "train_model": train_model,
+    "daily_auto_favorites": run_daily_auto_favorites,
 }
 
 
@@ -216,6 +248,10 @@ def register_jobs() -> None:
                 max_instances=1,
                 coalesce=True,
             )
+
+    # Auto favorites refresh inside scheduled_fixtures_sync after odds update.
+    if scheduler.get_job("daily_auto_favorites") is not None:
+        scheduler.remove_job("daily_auto_favorites")
 
     if scheduler.get_job("clean_old_data") is None:
         scheduler.add_job(

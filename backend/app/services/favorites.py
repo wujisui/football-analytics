@@ -8,7 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.favorite_fixture import FavoriteFixture
+from app.models.favorite_fixture import (
+    FAVORITE_SOURCE_MANUAL,
+    FavoriteFixture,
+)
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.schemas.response import FavoriteFixtureResponse
@@ -113,6 +116,9 @@ def _to_favorite_response(
         odds_snippet=odds_snippet,
         home_rank=home_rank,
         away_rank=away_rank,
+        source=fav.source,
+        auto_market=fav.auto_market,
+        auto_lean=fav.auto_lean,
     )
 
 
@@ -245,10 +251,21 @@ async def add_favorite(
     ).scalar_one_or_none()
     now = _utc_now()
     if fav is None:
-        fav = FavoriteFixture(fixture_id=fixture_id, user_id=user_id, saved_at=now)
+        fav = FavoriteFixture(
+            fixture_id=fixture_id,
+            user_id=user_id,
+            source=FAVORITE_SOURCE_MANUAL,
+            auto_market=None,
+            auto_lean=None,
+            saved_at=now,
+        )
         db.add(fav)
     else:
         fav.saved_at = now
+        # Manual click upgrades auto picks into user-owned favorites.
+        fav.source = FAVORITE_SOURCE_MANUAL
+        fav.auto_market = None
+        fav.auto_lean = None
     await db.commit()
 
     response = await get_favorite_response(db, fixture_id, user_id=user_id)

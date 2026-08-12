@@ -110,6 +110,9 @@ async def _ensure_sqlite_columns(conn) -> None:
         {
             # Pre-auth single-tenant; real login fills this (AUTH_VIP_QUOTA §4.3).
             "user_id": "TEXT",
+            "source": "TEXT DEFAULT 'manual'",
+            "auto_market": "TEXT",
+            "auto_lean": "TEXT",
         },
     )
 

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import {
   applyShellCssVars,
+  DEFAULT_THEME,
   getPreset,
   normalizePresetId,
   type ThemePresetId,
@@ -14,7 +15,7 @@ function readStored(): ThemePresetId {
   try {
     return normalizePresetId(localStorage.getItem(STORAGE_KEY))
   } catch {
-    return 'light'
+    return DEFAULT_THEME
   }
 }
 

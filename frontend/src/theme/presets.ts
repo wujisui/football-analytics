@@ -3,6 +3,28 @@ import type { GlobalThemeOverrides } from 'naive-ui'
 /** Only Naive built-in light / dark (no color variants). */
 export type ThemePresetId = 'light' | 'dark'
 
+export const DEFAULT_THEME: ThemePresetId = 'dark'
+
+const SHELL_CSS_KEYS = [
+  'bg',
+  'bgElevated',
+  'bgSoft',
+  'border',
+  'borderSoft',
+  'text',
+  'textStrong',
+  'textSecondary',
+  'textMuted',
+  'textFaint',
+  'hoverBorder',
+  'hoverShadow',
+  'highlightBg',
+  'highlightBorder',
+  'highlightText',
+] as const
+
+type ShellToken = (typeof SHELL_CSS_KEYS)[number]
+
 export interface ThemePreset {
   id: ThemePresetId
   label: string
@@ -11,26 +33,28 @@ export interface ThemePreset {
   /** Naive theme-overrides (empty for stock themes) */
   overrides: GlobalThemeOverrides
   /** Page shell tokens for custom (non-Naive) surfaces */
-  shell: {
-    bg: string
-    bgElevated: string
-    bgSoft: string
-    border: string
-    borderSoft: string
-    text: string
-    textStrong: string
-    textSecondary: string
-    textMuted: string
-    textFaint: string
-    hoverBorder: string
-    hoverShadow: string
-    highlightBg: string
-    highlightBorder: string
-    highlightText: string
-  }
+  shell: Record<ShellToken, string>
 }
 
-const lightShell = {
+const SHELL_CSS_VARS: Record<ShellToken, string> = {
+  bg: '--fa-bg',
+  bgElevated: '--fa-bg-elevated',
+  bgSoft: '--fa-bg-soft',
+  border: '--fa-border',
+  borderSoft: '--fa-border-soft',
+  text: '--fa-text',
+  textStrong: '--fa-text-strong',
+  textSecondary: '--fa-text-secondary',
+  textMuted: '--fa-text-muted',
+  textFaint: '--fa-text-faint',
+  hoverBorder: '--fa-hover-border',
+  hoverShadow: '--fa-hover-shadow',
+  highlightBg: '--fa-highlight-bg',
+  highlightBorder: '--fa-highlight-border',
+  highlightText: '--fa-highlight-text',
+}
+
+const lightShell: ThemePreset['shell'] = {
   bg: '#f5f6f8',
   bgElevated: '#ffffff',
   bgSoft: '#fafafa',
@@ -46,9 +70,9 @@ const lightShell = {
   highlightBg: '#fff7e6',
   highlightBorder: '#f0c78a',
   highlightText: '#c2410c',
-} as const
+}
 
-const darkShell = {
+const darkShell: ThemePreset['shell'] = {
   bg: '#101014',
   bgElevated: '#18181c',
   bgSoft: '#1f1f24',
@@ -64,21 +88,10 @@ const darkShell = {
   highlightBg: 'rgba(240, 160, 32, 0.12)',
   highlightBorder: '#8a6a2b',
   highlightText: '#f0c78a',
-} as const
+}
 
-/**
- * Official themes only:
- * - `light`: Naive default (theme=null)
- * - `dark`: Naive `darkTheme`
- */
+/** Official themes only: `light` (Naive default) / `dark` (Naive `darkTheme`). */
 export const THEME_PRESETS: ThemePreset[] = [
-  {
-    id: 'light',
-    label: '浅色',
-    dark: false,
-    overrides: {},
-    shell: lightShell,
-  },
   {
     id: 'dark',
     label: '深色',
@@ -86,19 +99,21 @@ export const THEME_PRESETS: ThemePreset[] = [
     overrides: {},
     shell: darkShell,
   },
+  {
+    id: 'light',
+    label: '浅色',
+    dark: false,
+    overrides: {},
+    shell: lightShell,
+  },
 ]
 
-export const THEME_OPTIONS = THEME_PRESETS.map((p) => ({
-  label: p.label,
-  value: p.id,
-}))
-
-/** Map legacy color-variant ids → light/dark. */
+/** Map legacy color-variant ids → light/dark. Missing → dark default. */
 export function normalizePresetId(id: string | null | undefined): ThemePresetId {
-  if (!id) return 'light'
+  if (!id) return DEFAULT_THEME
   if (id === 'dark' || id.startsWith('dark-')) return 'dark'
   if (id === 'light' || id.startsWith('light-')) return 'light'
-  return 'light'
+  return DEFAULT_THEME
 }
 
 export function getPreset(id: string | null | undefined): ThemePreset {
@@ -108,21 +123,8 @@ export function getPreset(id: string | null | undefined): ThemePreset {
 
 export function applyShellCssVars(preset: ThemePreset) {
   const root = document.documentElement
-  const s = preset.shell
   root.dataset.theme = preset.dark ? 'dark' : 'light'
-  root.style.setProperty('--fa-bg', s.bg)
-  root.style.setProperty('--fa-bg-elevated', s.bgElevated)
-  root.style.setProperty('--fa-bg-soft', s.bgSoft)
-  root.style.setProperty('--fa-border', s.border)
-  root.style.setProperty('--fa-border-soft', s.borderSoft)
-  root.style.setProperty('--fa-text', s.text)
-  root.style.setProperty('--fa-text-strong', s.textStrong)
-  root.style.setProperty('--fa-text-secondary', s.textSecondary)
-  root.style.setProperty('--fa-text-muted', s.textMuted)
-  root.style.setProperty('--fa-text-faint', s.textFaint)
-  root.style.setProperty('--fa-hover-border', s.hoverBorder)
-  root.style.setProperty('--fa-hover-shadow', s.hoverShadow)
-  root.style.setProperty('--fa-highlight-bg', s.highlightBg)
-  root.style.setProperty('--fa-highlight-border', s.highlightBorder)
-  root.style.setProperty('--fa-highlight-text', s.highlightText)
+  for (const key of SHELL_CSS_KEYS) {
+    root.style.setProperty(SHELL_CSS_VARS[key], preset.shell[key])
+  }
 }

@@ -384,6 +384,10 @@ class FavoriteFixtureResponse(BaseModel):
     odds_snippet: FixtureOddsSnippetResponse | None = None
     home_rank: int | None = None
     away_rank: int | None = None
+    # auto = algorithm pick after scheduled sync; manual = user star.
+    source: str = "manual"
+    auto_market: str | None = None
+    auto_lean: str | None = None
 
     @field_serializer("fixture_date", "saved_at")
     def serialize_datetimes(self, value: datetime) -> str:

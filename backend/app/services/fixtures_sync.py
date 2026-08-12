@@ -81,6 +81,23 @@ async def scheduled_fixtures_sync() -> None:
                     exc,
                 )
 
+        # Odds just refreshed — recompute auto favorites so picks track lines.
+        try:
+            from app.core.database import AsyncSessionLocal
+            from app.services.auto_favorites import sync_daily_auto_favorites
+
+            async with AsyncSessionLocal() as session:
+                auto_result = await sync_daily_auto_favorites(session)
+            logger.info(
+                "scheduled_fixtures_sync auto-favorites selected=%s",
+                len(auto_result.get("selected") or []),
+            )
+        except Exception as exc:
+            logger.warning(
+                "scheduled_fixtures_sync auto-favorites skipped: %s",
+                exc,
+            )
+
     logger.info(
         "scheduled_fixtures_sync done fixtures_saved=%s results_saved=%s "
         "standings=%s",

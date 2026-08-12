@@ -35,6 +35,8 @@ const props = withDefaults(defineProps<{
   oddsClickable?: boolean
   showProbabilities?: boolean
   showDate?: boolean
+  /** Auto-favorite market to highlight in the prediction tag row. */
+  highlightMarket?: string | null
   from?: DetailFrom
   date?: string | null
   hitFilterable?: boolean
@@ -44,6 +46,7 @@ const props = withDefaults(defineProps<{
   oddsClickable: false,
   showProbabilities: false,
   showDate: true,
+  highlightMarket: null,
   from: 'results',
   date: null,
   hitFilterable: false,
@@ -221,10 +224,12 @@ function onLeagueClick(e: Event) {
       v-if="isPrematch"
       class="predict-body"
       :fixture="prematchFixture"
+      :fixture-id="fixture.fixture_id"
       :snapshot="predictionSnapshot"
       :show-matchup-title="false"
       flush
       :odds-clickable="oddsClickable"
+      :highlight-market="highlightMarket"
       :from="from"
       :date="date"
       @open-odds="emit('openOdds')"

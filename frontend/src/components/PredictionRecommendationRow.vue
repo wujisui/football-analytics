@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import type { AutoFavoriteMarket } from '@/api/favorites'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
 import { isPredictionPending } from '@/utils/handicapDisplay'
 
@@ -12,6 +13,8 @@ const props = withDefaults(
     bothScore?: string
     scoreHint?: string
     clickable?: boolean
+    /** When set (auto favorite), mark that market with the recommend color. */
+    highlightMarket?: AutoFavoriteMarket | string | null
   }>(),
   {
     recommendation: '待分析',
@@ -20,6 +23,7 @@ const props = withDefaults(
     bothScore: '',
     scoreHint: '',
     clickable: false,
+    highlightMarket: null,
   },
 )
 
@@ -44,6 +48,12 @@ const showGoal = computed(() => !isPredictionPending(props.goalLean))
 const showBothScore = computed(() => !isPredictionPending(props.bothScore))
 const showScore = computed(() => !isPredictionPending(props.scoreHint))
 
+const pickMarket = computed(() => (props.highlightMarket || '').trim())
+
+function isPick(market: AutoFavoriteMarket): boolean {
+  return pickMarket.value === market
+}
+
 function open() {
   if (props.clickable) emit('open')
 }
@@ -61,29 +71,57 @@ function open() {
   >
     <n-tag
       size="small"
+      class="rec-tag"
+      :class="{ 'rec-pick': isPick('1x2') }"
       :bordered="false"
       :type="recommendationTagColor ? undefined : 'default'"
-      :color="recommendationTagColor"
+      :color="isPick('1x2') ? undefined : recommendationTagColor"
     >
+      <span v-if="isPick('1x2')" class="rec-pick-mark">荐</span>
       {{ recommendationLabel }}
     </n-tag>
     <n-tag
       v-if="showHandicap"
       size="small"
-      class="handicap-tag"
+      class="handicap-tag rec-tag"
+      :class="{ 'rec-pick': isPick('ah') }"
       :bordered="false"
       :type="handicapTagColor ? undefined : 'default'"
-      :color="handicapTagColor"
+      :color="isPick('ah') ? undefined : handicapTagColor"
     >
+      <span v-if="isPick('ah')" class="rec-pick-mark">荐</span>
       <n-ellipsis style="max-width: 100%">{{ handicapLabel }}</n-ellipsis>
     </n-tag>
-    <n-tag v-if="showGoal" size="small" type="warning" :bordered="false">
+    <n-tag
+      v-if="showGoal"
+      size="small"
+      class="rec-tag"
+      :class="{ 'rec-pick': isPick('ou') }"
+      :type="isPick('ou') ? undefined : 'warning'"
+      :bordered="false"
+    >
+      <span v-if="isPick('ou')" class="rec-pick-mark">荐</span>
       {{ goalLean }}
     </n-tag>
-    <n-tag v-if="showBothScore" size="small" :bordered="false">
+    <n-tag
+      v-if="showBothScore"
+      size="small"
+      class="rec-tag"
+      :class="{ 'rec-pick': isPick('btts') }"
+      :bordered="false"
+    >
+      <span v-if="isPick('btts')" class="rec-pick-mark">荐</span>
       {{ bothScore }}
     </n-tag>
-    <n-tag v-if="showScore" size="small" class="score-tag" :bordered="false" type="info">
+    <n-tag
+      v-if="showScore"
+      size="small"
+      class="score-tag rec-tag"
+      :class="{ 'rec-pick': isPick('score') }"
+      :bordered="false"
+      :type="isPick('score') ? undefined : 'info'"
+    >
+      <span v-if="isPick('score')" class="rec-pick-mark">荐</span>
       <n-ellipsis style="max-width: 100%">{{ scoreHint }}</n-ellipsis>
     </n-tag>
   </div>
@@ -116,6 +154,19 @@ function open() {
   display: block;
   min-width: 0;
   max-width: 100%;
+}
+
+.rec-tag.rec-pick {
+  color: var(--fa-highlight-text) !important;
+  background: var(--fa-highlight-bg) !important;
+  box-shadow: inset 0 0 0 1px var(--fa-highlight-border);
+  font-weight: 600;
+}
+
+.rec-pick-mark {
+  margin-right: 3px;
+  font-size: 11px;
+  opacity: 0.95;
 }
 
 .clickable {

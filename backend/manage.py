@@ -510,6 +510,7 @@ def main() -> None:
             "scheduled_fixtures_sync",
             "clean_old_data",
             "train_model",
+            "daily_auto_favorites",
         ],
         help="Task name to trigger",
     )

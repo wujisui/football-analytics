@@ -1,6 +1,9 @@
 import { apiClient } from './client'
 import type { FixtureOddsSnippet } from './types'
 
+/** Market key written by backend auto-favorites ranking. */
+export type AutoFavoriteMarket = '1x2' | 'ah' | 'ou' | 'btts' | 'score'
+
 export interface FavoriteFixtureRecord {
   fixture_id: number
   home_team_name: string
@@ -34,6 +37,10 @@ export interface FavoriteFixtureRecord {
   odds_snippet?: FixtureOddsSnippet | null
   home_rank?: number | null
   away_rank?: number | null
+  /** auto = scheduled algorithm pick; manual = user star. */
+  source?: 'manual' | 'auto' | string
+  auto_market?: AutoFavoriteMarket | string | null
+  auto_lean?: string | null
 }
 
 export interface FavoriteFixturesResponse {

@@ -46,6 +46,9 @@ function optimisticFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord 
     home_goals: fixture.home_goals,
     away_goals: fixture.away_goals,
     saved_at: new Date().toISOString(),
+    source: 'manual',
+    auto_market: null,
+    auto_lean: null,
     odds_snippet: oddsSnippetFromFixture(fixture),
     home_rank: fixture.home_rank ?? null,
     away_rank: fixture.away_rank ?? null,
@@ -73,6 +76,9 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     home_goals: fixture.home_goals,
     away_goals: fixture.away_goals,
     saved_at: new Date().toISOString(),
+    source: 'manual',
+    auto_market: null,
+    auto_lean: null,
     has_prediction: hasPrediction,
     recommendation: fixture.recommendation ?? undefined,
     handicap_lean: fixture.handicap_lean ?? undefined,
@@ -211,6 +217,17 @@ export function findFavoriteListFixture(
   fixtureId: number,
 ): FavoriteFixtureRecord | null {
   return favorites.value.find((f) => f.fixture_id === fixtureId) ?? null
+}
+
+/** Auto-pick market for highlight, or null when not an algorithm favorite. */
+export function autoFavoriteMarket(
+  fixtureId: number | null | undefined,
+): string | null {
+  if (fixtureId == null) return null
+  const item = findFavoriteListFixture(fixtureId)
+  if (!item || item.source !== 'auto') return null
+  const market = (item.auto_market || '').trim()
+  return market || null
 }
 
 export function useFavoriteFixtures() {

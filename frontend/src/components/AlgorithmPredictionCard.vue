@@ -7,6 +7,7 @@ import type { FixtureResponse } from '@/api/types'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
+import { autoFavoriteMarket } from '@/composables/useFavoriteFixtures'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import {
   formatOdd,
@@ -33,6 +34,8 @@ const props = withDefaults(
     flush?: boolean
     /** Click win/draw/away bars to open pre-match odds (e.g. phone list). */
     oddsClickable?: boolean
+    /** Override auto-favorite market highlight (favorites page passes row field). */
+    highlightMarket?: string | null
     from?: DetailFrom
     date?: string | null
   }>(),
@@ -41,6 +44,7 @@ const props = withDefaults(
     showMatchupTitle: true,
     flush: false,
     oddsClickable: false,
+    highlightMarket: null,
     from: 'predictions',
     date: null,
   },
@@ -56,6 +60,10 @@ const { selectedLeagueId, selectLeague } = useFixturesShell()
 
 const resolvedFixtureId = computed(
   () => props.fixture?.fixture_id ?? props.fixtureId ?? null,
+)
+
+const pickMarket = computed(
+  () => props.highlightMarket ?? autoFavoriteMarket(resolvedFixtureId.value),
 )
 
 const prediction = computed((): PredictionSnapshot => {
@@ -330,6 +338,7 @@ function onOddsClick() {
       :goal-lean="prediction.goal_lean"
       :both-score="prediction.both_score_lean"
       :score-hint="prediction.score_hint"
+      :highlight-market="pickMarket"
       clickable
       @open="goBriefing"
     />
