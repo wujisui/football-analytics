@@ -5,7 +5,7 @@ import { ChevronForwardOutline } from '@vicons/ionicons5'
 
 import PlanDetail from '@/views/Plans/PlanDetail.vue'
 import { useBetPlans } from '@/composables/useBetPlans'
-import { formatScheduleDay } from '@/utils/format'
+import { formatScheduleDay, parseApiDate } from '@/utils/format'
 import type { SavedBetPlan } from '@/utils/betPlans'
 
 defineOptions({ name: 'BetPlans' })
@@ -30,6 +30,14 @@ const dayPlans = computed(() => plansForDay(filterDate.value))
 const detailTitle = computed(
   () => (detailPlanId.value && getPlan(detailPlanId.value)?.name) || '方案详情',
 )
+
+/** yyyy-MM-dd HH:mm in local timezone. */
+function formatPlanSavedAt(savedAt: string): string {
+  const d = parseApiDate(savedAt)
+  if (Number.isNaN(d.getTime())) return savedAt
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 function openPlan(id: string) {
   detailPlanId.value = id
@@ -93,6 +101,7 @@ onMounted(() => {
             <n-thing :title="plan.name">
               <template #header-extra>
                 <n-flex :size="10" align="center">
+                  <span class="plan-saved-at">{{ formatPlanSavedAt(plan.savedAt) }}</span>
                   <n-flex :size="8" align="center" @click.stop>
                     <n-button size="tiny" tertiary @click="openRename(plan)">
                       编辑
@@ -180,5 +189,17 @@ onMounted(() => {
 
 .plans-empty {
   padding: 48px 0;
+}
+
+.plans-panel :deep(.n-thing-header) {
+  margin-bottom: 0;
+}
+
+.plan-saved-at {
+  flex-shrink: 0;
+  color: var(--fa-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
 }
 </style>
