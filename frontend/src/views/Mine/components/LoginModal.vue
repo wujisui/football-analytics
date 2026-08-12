@@ -10,8 +10,8 @@ const message = useMessage()
 const formRef = ref<FormInst | null>(null)
 const submitting = ref(false)
 const model = ref({
-  username: '',
-  password: '',
+  username: 'admin',
+  password: 'admin',
 })
 
 const rules: FormRules = {
