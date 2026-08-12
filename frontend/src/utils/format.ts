@@ -24,7 +24,6 @@ const STATUS_SHORT_LABEL: Record<string, string> = {
 }
 
 const STUCK_LIVE_MS = 4 * 60 * 60 * 1000
-const STUCK_LIVE_LABEL = '待更新'
 
 const STATUS_META: Record<string, { label: string; tag: NaiveTagType }> = {
   pending: { label: '未开始', tag: 'info' },
@@ -297,7 +296,8 @@ export function statusLabel(
 ): string {
   const short = (statusShort || '').toUpperCase()
   if (short && STATUS_SHORT_LABEL[short]) return STATUS_SHORT_LABEL[short]
-  if (statusBoardIsStale(status, kickoff)) return STUCK_LIVE_LABEL
+  // 已开赛但本地尚未回写：按进行中展示；比分由赛果接口占位 0:0。
+  if (statusBoardIsStale(status, kickoff)) return STATUS_META.live.label
   return STATUS_META[status.toLowerCase()]?.label || status
 }
 
@@ -310,7 +310,7 @@ export function statusTagType(
   if (short && STATUS_SHORT_LABEL[short]) {
     return STATUS_META.finished?.tag ?? 'default'
   }
-  if (statusBoardIsStale(status, kickoff)) return 'default'
+  if (statusBoardIsStale(status, kickoff)) return STATUS_META.live.tag
   return STATUS_META[status.toLowerCase()]?.tag ?? 'default'
 }
 

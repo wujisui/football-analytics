@@ -53,6 +53,7 @@ from app.services.results_capture import (
     needs_live_score_refresh,
     prematch_list_clause,
     results_list_clause,
+    results_list_score,
 )
 from app.services.league_names import league_name_zh
 from app.services.league_standings import (
@@ -498,6 +499,11 @@ async def get_fixture_results(
     for fx in fixtures:
         evaluated = evaluate_fixture_prediction(fx, stored_by_id.get(fx.id))
         home_rank, away_rank = _ranks_from_maps(fx, standings_maps, stored_by_id.get(fx.id))
+        home_goals, away_goals = results_list_score(
+            fx.status,
+            fx.home_goals,
+            fx.away_goals,
+        )
         items.append(
             ResultFixtureResponse(
                 fixture_id=fx.id,
@@ -517,8 +523,8 @@ async def get_fixture_results(
                 fixture_date=fx.date,
                 status=fx.status,
                 status_short=getattr(fx, "status_short", None),
-                home_goals=fx.home_goals,
-                away_goals=fx.away_goals,
+                home_goals=home_goals,
+                away_goals=away_goals,
                 et_home_goals=getattr(fx, "et_home_goals", None),
                 et_away_goals=getattr(fx, "et_away_goals", None),
                 pen_home=getattr(fx, "pen_home", None),
@@ -658,7 +664,9 @@ async def get_fixture_analysis(
     if needs_live_score_refresh(fixture.status, fixture.date):
         try:
             async with FootballFetcher(session=db) as fetcher:
-                await fetcher.refresh_fixture_score(fixture.id)
+                refreshed = await fetcher.refresh_fixture_score(fixture.id)
+            if refreshed:
+                await db.refresh(fixture)
         except Exception as exc:
             # 比分补拉失败不应挡住已经落库的赛前详情。
             logger.warning(

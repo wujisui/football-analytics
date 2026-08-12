@@ -10,6 +10,7 @@ from app.services.results_capture import (
     needs_live_score_refresh,
     prematch_list_clause,
     results_list_clause,
+    results_list_score,
 )
 
 NOW = datetime(2026, 8, 11, 1, 53)  # 北京时间 09:53
@@ -40,6 +41,13 @@ def test_live_score_refresh_only_for_started_unfinished_fixtures() -> None:
     assert needs_live_score_refresh("postponed", KICKED_OFF, NOW) is False
     stale = NOW - timedelta(hours=LIVE_SCORE_REFRESH_HOURS + 1)
     assert needs_live_score_refresh("pending", stale, NOW) is False
+
+
+def test_unfinished_result_list_uses_zero_score_placeholder() -> None:
+    assert results_list_score("pending", None, None) == (0, 0)
+    assert results_list_score("live", None, 1) == (0, 0)
+    assert results_list_score("live", 1, 2) == (1, 2)
+    assert results_list_score("finished", None, None) == (None, None)
 
 
 def test_kickoff_with_offset_is_compared_in_utc() -> None:

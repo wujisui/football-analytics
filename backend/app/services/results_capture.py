@@ -51,6 +51,19 @@ def results_list_clause(now: datetime | None = None) -> ColumnElement[bool]:
     return Fixture.date <= (now or datetime.utcnow())
 
 
+def results_list_score(
+    status: str | None,
+    home_goals: int | None,
+    away_goals: int | None,
+) -> tuple[int | None, int | None]:
+    """进行中但尚无官方比分时，赛果列表统一展示 0:0 占位。"""
+    if (status or "").strip().lower() in UNFINISHED_STATUSES and (
+        home_goals is None or away_goals is None
+    ):
+        return 0, 0
+    return home_goals, away_goals
+
+
 def needs_live_score_refresh(
     status: str | None,
     fixture_date: datetime,

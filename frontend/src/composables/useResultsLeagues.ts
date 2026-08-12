@@ -175,12 +175,50 @@ export function invalidateCachedResultsDay(day: string, schedule: boolean) {
   else resultsByDay.delete(day)
 }
 
+function mergeDetailScoreIntoResult(
+  prev: ResultFixture,
+  detail: FixtureResponse,
+): ResultFixture {
+  return {
+    ...prev,
+    status: detail.status,
+    home_goals: detail.home_goals ?? prev.home_goals,
+    away_goals: detail.away_goals ?? prev.away_goals,
+    home_rank: detail.home_rank ?? prev.home_rank,
+    away_rank: detail.away_rank ?? prev.away_rank,
+  }
+}
+
 /**
- * After detail pulls odds/analysis, merge into schedule day caches so
- * returning to 赛程 future days shows the snippet (same as calculator list).
+ * Detail click may pull the latest official score. Patch both results and
+ * future-schedule caches immediately; do not refetch the whole list.
  */
-export function patchScheduleFixtureFromDetail(detail: FixtureResponse): void {
-  let touchedLive = false
+export function patchResultsFixtureFromDetail(detail: FixtureResponse): void {
+  let touchedResults = false
+  for (const [day, rows] of resultsByDay) {
+    const idx = rows.findIndex((f) => f.fixture_id === detail.fixture_id)
+    if (idx < 0) continue
+    const next = rows.map((row, i) =>
+      i === idx ? mergeDetailScoreIntoResult(row, detail) : row,
+    )
+    resultsByDay.set(day, next)
+    if (!scheduleMode.value && resultsLoadedDay.value === day) {
+      resultsFixtures.value = next
+      touchedResults = true
+    }
+  }
+  if (!touchedResults) {
+    const idx = resultsFixtures.value.findIndex(
+      (f) => f.fixture_id === detail.fixture_id,
+    )
+    if (idx >= 0) {
+      resultsFixtures.value = resultsFixtures.value.map((row, i) =>
+        i === idx ? mergeDetailScoreIntoResult(row, detail) : row,
+      )
+    }
+  }
+
+  let touchedSchedule = false
   for (const [day, rows] of scheduleByDay) {
     const idx = rows.findIndex((f) => f.fixture_id === detail.fixture_id)
     if (idx < 0) continue
@@ -190,10 +228,10 @@ export function patchScheduleFixtureFromDetail(detail: FixtureResponse): void {
     scheduleByDay.set(day, next)
     if (scheduleMode.value && resultsLoadedDay.value === day) {
       scheduleFixtures.value = next
-      touchedLive = true
+      touchedSchedule = true
     }
   }
-  if (touchedLive) return
+  if (touchedSchedule) return
   const idx = scheduleFixtures.value.findIndex(
     (f) => f.fixture_id === detail.fixture_id,
   )

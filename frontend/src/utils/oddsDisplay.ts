@@ -86,7 +86,7 @@ export function oddsSnippetFromFixture(
   )
 }
 
-/** Merge detail analysis/odds into a list-row fixture (home or schedule). */
+/** Merge detail response into a list row, including score refreshed on detail click. */
 export function mergeDetailIntoListFixture(
   prev: FixtureResponse,
   detail: FixtureResponse,
@@ -94,6 +94,9 @@ export function mergeDetailIntoListFixture(
   const snippet = oddsSnippetFromFixture(detail) ?? prev.odds_snippet
   return {
     ...prev,
+    status: detail.status,
+    home_goals: detail.home_goals ?? prev.home_goals,
+    away_goals: detail.away_goals ?? prev.away_goals,
     home_rank: detail.home_rank ?? prev.home_rank,
     away_rank: detail.away_rank ?? prev.away_rank,
     odds_snippet: snippet,
