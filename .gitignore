@@ -1,6 +1,9 @@
 # Local IDE
 .idea/
 
+# Local Python virtualenv (never commit)
+.venv/
+
 # Runtime logs (backend writes under backend/logs/; ignore any repo-root logs too)
 logs/
 
