@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import type { AutoFavoriteMarket } from '@/api/favorites'
+import { autoFavoriteMarket } from '@/composables/useFavoriteFixtures'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
 import { isPredictionPending } from '@/utils/handicapDisplay'
 
@@ -13,7 +14,9 @@ const props = withDefaults(
     bothScore?: string
     scoreHint?: string
     clickable?: boolean
-    /** When set (auto favorite), mark that market with the recommend color. */
+    /** Resolves the auto-favorite market when no explicit override is given. */
+    fixtureId?: number | null
+    /** Override auto-favorite market (favorites page passes the row field). */
     highlightMarket?: AutoFavoriteMarket | string | null
   }>(),
   {
@@ -23,6 +26,7 @@ const props = withDefaults(
     bothScore: '',
     scoreHint: '',
     clickable: false,
+    fixtureId: null,
     highlightMarket: null,
   },
 )
@@ -48,7 +52,9 @@ const showGoal = computed(() => !isPredictionPending(props.goalLean))
 const showBothScore = computed(() => !isPredictionPending(props.bothScore))
 const showScore = computed(() => !isPredictionPending(props.scoreHint))
 
-const pickMarket = computed(() => (props.highlightMarket || '').trim())
+const pickMarket = computed(() =>
+  (props.highlightMarket ?? autoFavoriteMarket(props.fixtureId) ?? '').trim(),
+)
 
 function isPick(market: AutoFavoriteMarket): boolean {
   return pickMarket.value === market

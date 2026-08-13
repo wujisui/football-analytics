@@ -144,6 +144,7 @@ function goDetail() {
       :goal-lean="prediction.goal_lean"
       :both-score="prediction.both_score_lean"
       :score-hint="prediction.score_hint"
+      :fixture-id="fixture.fixture_id"
       clickable
       @open="showOddsModal = true"
     />
