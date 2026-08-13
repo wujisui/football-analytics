@@ -19,8 +19,11 @@ secrets.local.env
 *.local.env
 !secrets.local.env.example
 
-# Database files
+# Database files (incl. SQLite journal / WAL side files)
 data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
 
 # Logs
 logs/
