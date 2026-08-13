@@ -1,5 +1,6 @@
 from app.models.api_snapshot import ApiSnapshot
 from app.models.app_setting import AppSetting
+from app.models.auto_pick_snapshot import AutoPickSnapshot
 from app.models.bet_plan import BetPlan
 from app.models.favorite_fixture import FavoriteFixture
 from app.models.fixture import Fixture
@@ -12,6 +13,7 @@ from app.models.team import Team
 __all__ = [
     "ApiSnapshot",
     "AppSetting",
+    "AutoPickSnapshot",
     "BetPlan",
     "FavoriteFixture",
     "League",

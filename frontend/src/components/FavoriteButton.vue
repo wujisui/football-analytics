@@ -4,7 +4,10 @@ import { computed } from 'vue'
 
 import type { FixtureResponse } from '@/api/types'
 import type { ResultFixture } from '@/api/fixtures'
-import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
+import {
+  favoriteQualityLow,
+  useFavoriteFixtures,
+} from '@/composables/useFavoriteFixtures'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +24,9 @@ const props = withDefaults(
 const { isFavorite, toggleFixture, toggleResultFixture, remove } = useFavoriteFixtures()
 
 const active = computed(() => isFavorite(props.fixtureId))
+const qualityLow = computed(
+  () => active.value && favoriteQualityLow(props.fixtureId),
+)
 
 function onClick(event: MouseEvent) {
   if (props.stopPropagation) event.stopPropagation()
@@ -43,8 +49,15 @@ function onClick(event: MouseEvent) {
     quaternary
     circle
     :size="size"
-    :type="active ? 'warning' : 'default'"
-    :aria-label="active ? '取消关注' : '关注'"
+    :type="active && !qualityLow ? 'warning' : 'default'"
+    :class="{ 'favorite-btn--quality-low': qualityLow }"
+    :aria-label="
+      active
+        ? qualityLow
+          ? '取消关注（质量偏低）'
+          : '取消关注'
+        : '关注'
+    "
     @click="onClick"
   >
     <template #icon>
@@ -52,3 +65,10 @@ function onClick(event: MouseEvent) {
     </template>
   </n-button>
 </template>
+
+<style scoped>
+/* Second-tier star: filled but muted via shell tokens (normal stays warning gold). */
+.favorite-btn--quality-low :deep(.n-icon) {
+  color: var(--fa-text-muted);
+}
+</style>

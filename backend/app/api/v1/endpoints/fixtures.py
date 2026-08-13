@@ -47,6 +47,7 @@ from app.services.prematch_package import loads_json, rehydrate_odds_markets
 from app.services.results_accuracy import (
     build_history_accuracy,
     evaluate_fixture_prediction,
+    load_auto_picks_by_fixture_ids,
     load_stored_by_fixture_ids,
 )
 from app.services.results_capture import (
@@ -488,6 +489,7 @@ async def get_fixture_results(
     result = await db.execute(stmt)
     fixtures = list(result.scalars().all())
     stored_by_id = await load_stored_by_fixture_ids(db, [f.id for f in fixtures])
+    auto_by_id = await load_auto_picks_by_fixture_ids(db, [f.id for f in fixtures])
     standings_keys = {
         key
         for fixture in fixtures
@@ -497,7 +499,11 @@ async def get_fixture_results(
 
     items: list[ResultFixtureResponse] = []
     for fx in fixtures:
-        evaluated = evaluate_fixture_prediction(fx, stored_by_id.get(fx.id))
+        evaluated = evaluate_fixture_prediction(
+            fx,
+            stored_by_id.get(fx.id),
+            auto_pick=auto_by_id.get(fx.id),
+        )
         home_rank, away_rank = _ranks_from_maps(fx, standings_maps, stored_by_id.get(fx.id))
         home_goals, away_goals = results_list_score(
             fx.status,
@@ -538,7 +544,9 @@ async def get_fixture_results(
                 handicap_result=evaluated["handicap_result"],
                 handicap_hit=evaluated["handicap_hit"],
                 result_hit=evaluated["result_hit"],
-                single_result_hit=evaluated["single_result_hit"],
+                auto_pick_hit=evaluated["auto_pick_hit"],
+                auto_pick_market=evaluated["auto_pick_market"],
+                auto_pick_lean=evaluated["auto_pick_lean"],
                 score_hit=evaluated["score_hit"],
                 ou_hit=evaluated["ou_hit"],
                 btts_hit=evaluated["btts_hit"],

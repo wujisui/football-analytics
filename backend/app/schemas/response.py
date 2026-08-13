@@ -338,8 +338,14 @@ class ResultFixtureResponse(BaseModel):
     ou_hit: bool | None = None
     btts_hit: bool | None = None
     result_hit: bool | None = None
-    single_result_hit: bool | None = Field(
-        default=None, description="最高概率胜平负单选是否命中"
+    auto_pick_hit: bool | None = Field(
+        default=None, description="每日自动推荐玩法是否命中"
+    )
+    auto_pick_market: str | None = Field(
+        default=None, description="每日自动推荐玩法：1x2/ah/ou/btts"
+    )
+    auto_pick_lean: str | None = Field(
+        default=None, description="每日自动推荐文案"
     )
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
@@ -376,7 +382,7 @@ class FavoriteFixtureResponse(BaseModel):
     ou_hit: bool | None = None
     btts_hit: bool | None = None
     result_hit: bool | None = None
-    single_result_hit: bool | None = None
+    auto_pick_hit: bool | None = None
     probabilities_available: bool = False
     home_win_prob: float | None = None
     draw_prob: float | None = None
@@ -388,6 +394,7 @@ class FavoriteFixtureResponse(BaseModel):
     source: str = "manual"
     auto_market: str | None = None
     auto_lean: str | None = None
+    quality_low: bool = False
 
     @field_serializer("fixture_date", "saved_at")
     def serialize_datetimes(self, value: datetime) -> str:
@@ -469,8 +476,9 @@ class ResultsAccuracyResponse(BaseModel):
     result: AccuracyStatResponse = Field(
         default_factory=AccuracyStatResponse, description="胜平负命中（含双选）"
     )
-    single_result: AccuracyStatResponse = Field(
-        default_factory=AccuracyStatResponse, description="最高概率胜平负单选命中"
+    auto_pick: AccuracyStatResponse = Field(
+        default_factory=AccuracyStatResponse,
+        description="每日自动推荐命中（按冻结玩法结算）",
     )
     score: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse, description="比分命中")
     ou: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse, description="大小球命中")
@@ -487,6 +495,7 @@ class ResultsAccuracyResponse(BaseModel):
 class AccuracyDayPointResponse(BaseModel):
     date: str
     result: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
+    auto_pick: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     score: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     ou: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)
     btts: AccuracyStatResponse = Field(default_factory=AccuracyStatResponse)

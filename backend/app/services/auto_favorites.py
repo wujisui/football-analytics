@@ -12,6 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.auto_pick_snapshot import AutoPickSnapshot
 from app.models.favorite_fixture import (
     FAVORITE_SOURCE_AUTO,
     FAVORITE_SOURCE_MANUAL,
@@ -21,6 +22,12 @@ from app.models.fixture import Fixture
 from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
 from app.services.ah_features import handicap_pick_from_lean
+from app.services.auto_pick_incentive import (
+    adjust_pick_score,
+    effective_quality_threshold,
+    ensure_incentives_for_picks,
+    is_quality_low,
+)
 from app.services.data_cleanup import record_has_algorithm_recommendation
 from app.services.prediction import (
     _odd_float,
@@ -43,6 +50,7 @@ MIN_CONFIDENCE = 0.01
 @dataclass(frozen=True)
 class AutoPickCandidate:
     fixture_id: int
+    league_id: int
     kickoff: datetime
     score: float
     market: str
@@ -50,6 +58,7 @@ class AutoPickCandidate:
     confidence: float
     decimal_odd: float
     expected_return: float
+    quality_low: bool = False
 
 
 @dataclass(frozen=True)
@@ -285,9 +294,13 @@ def score_auto_pick_candidates(
     rows: list[tuple[Fixture, PreMatchData, MatchFeature | None]],
     *,
     min_confidence: float = MIN_CONFIDENCE,
+    incentive_state: Any | None = None,
 ) -> list[AutoPickCandidate]:
     """Score every scorable single-lean fixture (no day / count cap)."""
     ranked: list[AutoPickCandidate] = []
+    threshold = (
+        effective_quality_threshold(incentive_state) if incentive_state is not None else None
+    )
     for fixture, stored, feature in rows:
         if not record_has_algorithm_recommendation(stored, feature):
             continue
@@ -311,16 +324,28 @@ def score_auto_pick_candidates(
         )
         if best is None:
             continue
+        base_score = best.ranking_score
+        if incentive_state is not None:
+            final_score = adjust_pick_score(
+                base_score,
+                league_id=int(fixture.league_id),
+                market=best.market,
+                state=incentive_state,
+            )
+        else:
+            final_score = base_score
         ranked.append(
             AutoPickCandidate(
                 fixture_id=fixture.id,
+                league_id=int(fixture.league_id),
                 kickoff=fixture.date,
-                score=best.ranking_score,
+                score=final_score,
                 market=best.market,
                 lean=best.lean,
                 confidence=best.confidence,
                 decimal_odd=best.decimal_odd,
                 expected_return=best.expected_return,
+                quality_low=is_quality_low(final_score, threshold),
             )
         )
     ranked.sort(key=lambda item: (-item.score, item.kickoff, item.fixture_id))
@@ -332,11 +357,14 @@ def rank_auto_pick_candidates(
     *,
     limit: int = AUTO_PICK_LIMIT,
     min_confidence: float = MIN_CONFIDENCE,
+    incentive_state: Any | None = None,
 ) -> list[AutoPickCandidate]:
     """Rank one pool and keep top ``limit`` (single-day helper / tests)."""
-    return score_auto_pick_candidates(rows, min_confidence=min_confidence)[
-        : max(0, limit)
-    ]
+    return score_auto_pick_candidates(
+        rows,
+        min_confidence=min_confidence,
+        incentive_state=incentive_state,
+    )[: max(0, limit)]
 
 
 def select_auto_picks_by_match_day(
@@ -382,6 +410,9 @@ async def sync_daily_auto_favorites(
     catalog_ids = list(settings.LEAGUE_IDS.values())
     current = now or _utc_now()
 
+    # Once per scheduler-local day: refresh EMA + soft weights before ranking.
+    incentive_state = await ensure_incentives_for_picks(db, now=current)
+
     rows = (
         await db.execute(
             select(Fixture, PreMatchData, MatchFeature)
@@ -402,7 +433,10 @@ async def sync_daily_auto_favorites(
         if prev is None or (feature is not None and prev[2] is None):
             by_fixture[fixture.id] = (fixture, stored, feature)
 
-    candidates = score_auto_pick_candidates(list(by_fixture.values()))
+    candidates = score_auto_pick_candidates(
+        list(by_fixture.values()),
+        incentive_state=incentive_state,
+    )
 
     manual_ids = {
         int(row[0])
@@ -438,9 +472,43 @@ async def sync_daily_auto_favorites(
                 source=FAVORITE_SOURCE_AUTO,
                 auto_market=candidate.market,
                 auto_lean=candidate.lean,
+                quality_low=candidate.quality_low,
                 saved_at=saved_at,
             )
         )
+
+    # Persist learning snapshots: only rewrite still-prematch fixtures so
+    # kicked-off / finished daily tips remain auditable.
+    prematch_ids = set(by_fixture.keys())
+    selected_ids = {item.fixture_id for item in selected}
+    if prematch_ids - selected_ids:
+        await db.execute(
+            delete(AutoPickSnapshot).where(
+                AutoPickSnapshot.fixture_id.in_(prematch_ids - selected_ids)
+            )
+        )
+    if selected_ids:
+        await db.execute(
+            delete(AutoPickSnapshot).where(
+                AutoPickSnapshot.fixture_id.in_(selected_ids)
+            )
+        )
+    for candidate in selected:
+        db.add(
+            AutoPickSnapshot(
+                fixture_id=candidate.fixture_id,
+                match_day=_schedule_day_key(candidate.kickoff),
+                market=candidate.market,
+                lean=candidate.lean,
+                confidence=candidate.confidence,
+                decimal_odd=candidate.decimal_odd,
+                expected_return=candidate.expected_return,
+                score=candidate.score,
+                quality_low=candidate.quality_low,
+                picked_at=saved_at,
+            )
+        )
+
     await db.commit()
 
     tz_name = settings.SCHEDULER_TIMEZONE
@@ -469,6 +537,7 @@ async def sync_daily_auto_favorites(
                 "confidence": round(item.confidence, 4),
                 "decimal_odd": round(item.decimal_odd, 3),
                 "expected_return": round(item.expected_return, 4),
+                "quality_low": item.quality_low,
             }
             for item in selected
         ],

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,7 @@ def _to_favorite_response(
     stored: PreMatchData | None,
     *,
     standings_maps: dict[tuple[int, str], dict] | None = None,
+    auto_pick: object | None = None,
 ) -> FavoriteFixtureResponse:
     # Import list mappers lazily to avoid circular imports at module load.
     from app.api.v1.endpoints.fixtures import (
@@ -59,10 +61,13 @@ def _to_favorite_response(
     ou_hit = None
     btts_hit = None
     result_hit = None
-    single_result_hit = None
+    auto_pick_hit = None
 
-    # Finished rows: settle vs frozen snapshot (same path as results list).
-    evaluated = evaluate_fixture_prediction(fixture, stored)
+    # Prefer frozen snapshot; fall back to live auto-favorite columns.
+    pick = auto_pick
+    if pick is None and fav.auto_market and fav.auto_lean:
+        pick = SimpleNamespace(market=fav.auto_market, lean=fav.auto_lean)
+    evaluated = evaluate_fixture_prediction(fixture, stored, auto_pick=pick)
     if evaluated["evaluable"] and evaluated["has_prediction"]:
         has_prediction = True
         recommendation = evaluated["recommendation"]
@@ -76,7 +81,8 @@ def _to_favorite_response(
         ou_hit = evaluated["ou_hit"]
         btts_hit = evaluated["btts_hit"]
         result_hit = evaluated["result_hit"]
-        single_result_hit = evaluated["single_result_hit"]
+    if evaluated["evaluable"]:
+        auto_pick_hit = evaluated["auto_pick_hit"]
 
     return FavoriteFixtureResponse(
         fixture_id=fixture.id,
@@ -108,7 +114,7 @@ def _to_favorite_response(
         ou_hit=ou_hit,
         btts_hit=btts_hit,
         result_hit=result_hit,
-        single_result_hit=single_result_hit,
+        auto_pick_hit=auto_pick_hit,
         probabilities_available=ready,
         home_win_prob=probs.home_win_prob if ready else None,
         draw_prob=probs.draw_prob if ready else None,
@@ -119,6 +125,7 @@ def _to_favorite_response(
         source=fav.source,
         auto_market=fav.auto_market,
         auto_lean=fav.auto_lean,
+        quality_low=bool(getattr(fav, "quality_low", False)),
     )
 
 
@@ -174,7 +181,9 @@ async def list_favorite_responses(
     fixtures = await _load_fixtures_map(db, ids)
     stored = await _load_prematch_map(db, ids)
     from app.services.league_standings import fixture_standing_key, load_standings_maps
+    from app.services.results_accuracy import load_auto_picks_by_fixture_ids
 
+    auto_by_id = await load_auto_picks_by_fixture_ids(db, ids)
     standings_keys = {
         key
         for fixture in fixtures.values()
@@ -193,6 +202,7 @@ async def list_favorite_responses(
                 fixture,
                 stored.get(fav.fixture_id),
                 standings_maps=standings_maps,
+                auto_pick=auto_by_id.get(fav.fixture_id),
             )
         )
     return out
@@ -220,7 +230,9 @@ async def get_favorite_response(
         return None
     stored = await _load_prematch_map(db, [fixture_id])
     from app.services.league_standings import fixture_standing_key, load_standings_maps
+    from app.services.results_accuracy import load_auto_picks_by_fixture_ids
 
+    auto_by_id = await load_auto_picks_by_fixture_ids(db, [fixture_id])
     key = fixture_standing_key(fixture)
     standings_maps = await load_standings_maps(db, {key} if key else set())
     return _to_favorite_response(
@@ -228,6 +240,7 @@ async def get_favorite_response(
         fixture,
         stored.get(fixture_id),
         standings_maps=standings_maps,
+        auto_pick=auto_by_id.get(fixture_id),
     )
 
 

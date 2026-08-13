@@ -29,7 +29,7 @@ export interface FavoriteFixtureRecord {
   ou_hit?: boolean | null
   btts_hit?: boolean | null
   result_hit?: boolean | null
-  single_result_hit?: boolean | null
+  auto_pick_hit?: boolean | null
   probabilities_available?: boolean
   home_win_prob?: number
   draw_prob?: number
@@ -41,6 +41,8 @@ export interface FavoriteFixtureRecord {
   source?: 'manual' | 'auto' | string
   auto_market?: AutoFavoriteMarket | string | null
   auto_lean?: string | null
+  /** Auto tip below quality threshold — muted star in FavoriteButton. */
+  quality_low?: boolean
 }
 
 export interface FavoriteFixturesResponse {

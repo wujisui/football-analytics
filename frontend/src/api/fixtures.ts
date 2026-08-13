@@ -78,7 +78,9 @@ export interface ResultFixture {
   ou_hit?: boolean | null
   btts_hit?: boolean | null
   result_hit?: boolean | null
-  single_result_hit?: boolean | null
+  auto_pick_hit?: boolean | null
+  auto_pick_market?: string | null
+  auto_pick_lean?: string | null
   home_rank?: number | null
   away_rank?: number | null
 }
@@ -91,7 +93,7 @@ export interface AccuracyStat {
 
 export interface ResultsAccuracy {
   result: AccuracyStat
-  single_result: AccuracyStat
+  auto_pick: AccuracyStat
   score: AccuracyStat
   ou: AccuracyStat
   btts: AccuracyStat
@@ -103,6 +105,7 @@ export interface ResultsAccuracy {
 export interface AccuracyDayPoint {
   date: string
   result: AccuracyStat
+  auto_pick: AccuracyStat
   score: AccuracyStat
   ou: AccuracyStat
   btts: AccuracyStat

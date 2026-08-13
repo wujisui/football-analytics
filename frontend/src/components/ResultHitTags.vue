@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import { hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
 import { handicapLeanLabel } from '@/utils/handicapDisplay'
@@ -20,6 +22,12 @@ const emit = defineEmits<{
   filterHit: [key: ResultsHitKey]
 }>()
 
+const showTags = computed(
+  () =>
+    !!props.fixture.has_prediction ||
+    props.fixture.auto_pick_hit != null,
+)
+
 function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
   if (!props.filterable || hit == null) return
   emit('filterHit', key)
@@ -27,8 +35,9 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
 </script>
 
 <template>
-  <n-flex v-if="fixture.has_prediction" :size="6" class="hit-tags">
+  <n-flex v-if="showTags" :size="6" class="hit-tags">
     <n-tag
+      v-if="fixture.has_prediction"
       class="hit-tag"
       :class="{
         clickable: filterable && fixture.result_hit != null,
@@ -42,6 +51,21 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       胜平负
     </n-tag>
     <n-tag
+      v-if="fixture.auto_pick_hit != null"
+      class="hit-tag"
+      :class="{
+        clickable: filterable,
+        active: activeHitKey === 'auto_pick',
+      }"
+      size="small"
+      :type="hitTagType(fixture.auto_pick_hit)"
+      :bordered="false"
+      @click.stop="onTagClick('auto_pick', fixture.auto_pick_hit)"
+    >
+      每日推荐
+    </n-tag>
+    <n-tag
+      v-if="fixture.has_prediction"
       class="hit-tag"
       :class="{
         clickable: filterable && fixture.score_hit != null,
@@ -55,6 +79,7 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       比分
     </n-tag>
     <n-tag
+      v-if="fixture.has_prediction"
       class="hit-tag"
       :class="{
         clickable: filterable && fixture.ou_hit != null,
@@ -68,6 +93,7 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       大小
     </n-tag>
     <n-tag
+      v-if="fixture.has_prediction"
       class="hit-tag"
       :class="{
         clickable: filterable && fixture.btts_hit != null,

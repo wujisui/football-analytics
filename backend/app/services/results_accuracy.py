@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.auto_pick_snapshot import AutoPickSnapshot
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.services.ah_features import (
@@ -26,13 +27,79 @@ from app.services.prediction import (
     canonical_recommendation,
     canonical_score_hint,
     evaluate_prediction_vs_score,
+    recommendation_outcomes,
     summarize_accuracy,
 )
+
+
+def settle_auto_pick_hit(
+    *,
+    market: str,
+    lean: str,
+    home_goals: int | None,
+    away_goals: int | None,
+    handicap_line: float | None = None,
+) -> bool | None:
+    """Grade one frozen daily auto pick against full-time score."""
+    if home_goals is None or away_goals is None:
+        return None
+    market_key = (market or "").strip()
+    lean_text = (lean or "").strip()
+    if not market_key or not lean_text:
+        return None
+
+    if market_key == "1x2":
+        outcomes = recommendation_outcomes(lean_text)
+        if not outcomes or len(outcomes) != 1:
+            return None
+        if home_goals > away_goals:
+            actual = "home"
+        elif home_goals < away_goals:
+            actual = "away"
+        else:
+            actual = "draw"
+        return actual in outcomes
+
+    if market_key == "ah":
+        picks = handicap_picks_from_lean(lean_text)
+        if len(picks) != 1:
+            return None
+        line = handicap_line if handicap_line is not None else handicap_line_from_lean(lean_text)
+        settled = settle_handicap_result(home_goals, away_goals, line)
+        if settled is None:
+            return None
+        return settled in picks
+
+    if market_key == "ou":
+        hits = evaluate_prediction_vs_score(
+            home_goals=home_goals,
+            away_goals=away_goals,
+            score_hint="",
+            goal_lean=lean_text,
+            both_score_lean="",
+            recommendation="",
+        )
+        return hits.get("ou_hit")
+
+    if market_key == "btts":
+        hits = evaluate_prediction_vs_score(
+            home_goals=home_goals,
+            away_goals=away_goals,
+            score_hint="",
+            goal_lean="",
+            both_score_lean=lean_text,
+            recommendation="",
+        )
+        return hits.get("btts_hit")
+
+    return None
 
 
 def evaluate_fixture_prediction(
     fixture: Fixture,
     stored: PreMatchData | None,
+    *,
+    auto_pick: Any | None = None,
 ) -> dict[str, Any]:
     """Build prediction snapshot + hit flags for one fixture."""
     payload: dict[str, Any] = {
@@ -48,17 +115,38 @@ def evaluate_fixture_prediction(
         "ou_hit": None,
         "btts_hit": None,
         "result_hit": None,
-        "single_result_hit": None,
+        "auto_pick_hit": None,
+        "auto_pick_market": None,
+        "auto_pick_lean": None,
         # Unsettled rows (feed still live) carry provisional scores — show, never grade.
         "evaluable": is_finished_status(fixture.status)
         and fixture.home_goals is not None
         and fixture.away_goals is not None,
     }
 
+    def _attach_auto_pick(*, grade: bool) -> None:
+        if auto_pick is None:
+            return
+        payload["auto_pick_market"] = auto_pick.market
+        payload["auto_pick_lean"] = auto_pick.lean
+        if not grade:
+            return
+        ah_line = None
+        if auto_pick.market == "ah":
+            ah_line = handicap_line_from_lean(auto_pick.lean)
+        payload["auto_pick_hit"] = settle_auto_pick_hit(
+            market=auto_pick.market,
+            lean=auto_pick.lean,
+            home_goals=fixture.home_goals,
+            away_goals=fixture.away_goals,
+            handicap_line=ah_line,
+        )
+
     if (
         stored is None
         or None in (stored.home_win_prob, stored.draw_prob, stored.away_win_prob)
     ):
+        _attach_auto_pick(grade=payload["evaluable"])
         return payload
 
     # Audit uses only the frozen exam snapshot — never recompute with today's algorithm.
@@ -68,6 +156,7 @@ def evaluate_fixture_prediction(
     both_score_lean = (getattr(stored, "both_score_lean", None) or "").strip()
     handicap_lean = (getattr(stored, "handicap_lean", None) or "").strip()
     if not recommendation or recommendation == "待分析":
+        _attach_auto_pick(grade=payload["evaluable"])
         return payload
     if not score_hint or score_hint == "待分析":
         # Older rows may lack score_hint; still count 1X2 / O/U / BTTS if present.
@@ -90,6 +179,7 @@ def evaluate_fixture_prediction(
         }
     )
     if not payload["evaluable"]:
+        _attach_auto_pick(grade=False)
         return payload
 
     handicap_result = settle_handicap_result(
@@ -111,25 +201,23 @@ def evaluate_fixture_prediction(
         recommendation=recommendation or "",
     )
     payload["result_hit"] = hits["result_hit"]
-    predicted = max(
-        ("home", "draw", "away"),
-        key=lambda key: {
-            "home": float(stored.home_win_prob or 0.0),
-            "draw": float(stored.draw_prob or 0.0),
-            "away": float(stored.away_win_prob or 0.0),
-        }[key],
-    )
-    actual = (
-        "home"
-        if fixture.home_goals > fixture.away_goals
-        else "away"
-        if fixture.home_goals < fixture.away_goals
-        else "draw"
-    )
-    payload["single_result_hit"] = predicted == actual
     payload["score_hit"] = hits["score_hit"]
     payload["ou_hit"] = hits["ou_hit"]
     payload["btts_hit"] = hits["btts_hit"]
+
+    if auto_pick is not None:
+        payload["auto_pick_market"] = auto_pick.market
+        payload["auto_pick_lean"] = auto_pick.lean
+        ah_line = line_f
+        if auto_pick.market == "ah":
+            ah_line = handicap_line_from_lean(auto_pick.lean) or line_f
+        payload["auto_pick_hit"] = settle_auto_pick_hit(
+            market=auto_pick.market,
+            lean=auto_pick.lean,
+            home_goals=fixture.home_goals,
+            away_goals=fixture.away_goals,
+            handicap_line=ah_line,
+        )
     return payload
 
 
@@ -142,6 +230,20 @@ async def load_stored_by_fixture_ids(
     rows = (
         await db.execute(
             select(PreMatchData).where(PreMatchData.fixture_id.in_(fixture_ids))
+        )
+    ).scalars().all()
+    return {row.fixture_id: row for row in rows}
+
+
+async def load_auto_picks_by_fixture_ids(
+    db: AsyncSession,
+    fixture_ids: list[int],
+) -> dict[int, AutoPickSnapshot]:
+    if not fixture_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(AutoPickSnapshot).where(AutoPickSnapshot.fixture_id.in_(fixture_ids))
         )
     ).scalars().all()
     return {row.fixture_id: row for row in rows}
@@ -207,20 +309,24 @@ async def build_history_accuracy(
     fixtures = await fetch_finished_fixtures(
         db, start=start, end=end, league_ids=league_ids
     )
-    stored_by_id = await load_stored_by_fixture_ids(db, [f.id for f in fixtures])
+    fixture_ids = [f.id for f in fixtures]
+    stored_by_id = await load_stored_by_fixture_ids(db, fixture_ids)
+    auto_by_id = await load_auto_picks_by_fixture_ids(db, fixture_ids)
 
     overall_rows: list[dict[str, Any]] = []
     by_day: dict[str, list[dict[str, Any]]] = {}
 
     for fx in fixtures:
-        evaluated = evaluate_fixture_prediction(fx, stored_by_id.get(fx.id))
+        evaluated = evaluate_fixture_prediction(
+            fx,
+            stored_by_id.get(fx.id),
+            auto_pick=auto_by_id.get(fx.id),
+        )
         row = {
             "has_prediction": evaluated["has_prediction"],
             "evaluable": evaluated["evaluable"],
             "result_hit": evaluated["result_hit"] if evaluated["has_prediction"] else None,
-            "single_result_hit": (
-                evaluated["single_result_hit"] if evaluated["has_prediction"] else None
-            ),
+            "auto_pick_hit": evaluated["auto_pick_hit"],
             "score_hit": evaluated["score_hit"] if evaluated["has_prediction"] else None,
             "ou_hit": evaluated["ou_hit"] if evaluated["has_prediction"] else None,
             "btts_hit": evaluated["btts_hit"] if evaluated["has_prediction"] else None,
@@ -232,17 +338,21 @@ async def build_history_accuracy(
         day = _day_key(fx.date)
         by_day.setdefault(day, []).append(row)
 
-    # Chart series: only days that actually have prediction samples.
+    # Chart series: only days that actually have prediction / auto-pick samples.
     # Do not pad empty calendar days back to the lookback window start.
     series: list[dict[str, Any]] = []
     for key in sorted(by_day.keys()):
         day_summary = summarize_accuracy(by_day[key])
-        if day_summary["fixtures_with_prediction"] <= 0:
+        if (
+            day_summary["fixtures_with_prediction"] <= 0
+            and day_summary["auto_pick"]["total"] <= 0
+        ):
             continue
         series.append(
             {
                 "date": key,
                 "result": day_summary["result"],
+                "auto_pick": day_summary["auto_pick"],
                 "score": day_summary["score"],
                 "ou": day_summary["ou"],
                 "btts": day_summary["btts"],

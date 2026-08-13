@@ -121,7 +121,11 @@ def test_rank_still_fills_four_when_only_short_odds_exist() -> None:
     }
 
     def row(fid: int, home_p: float, kickoff: str):
-        fixture = SimpleNamespace(id=fid, date=datetime.fromisoformat(kickoff))
+        fixture = SimpleNamespace(
+            id=fid,
+            league_id=39,
+            date=datetime.fromisoformat(kickoff),
+        )
         stored = _stored(
             recommendation="胜",
             home_win_prob=home_p,
@@ -167,7 +171,11 @@ def test_rank_prefers_value_fixture_over_tiny_odds() -> None:
     import app.services.auto_favorites as mod
 
     def make_row(fid: int, kickoff: str, home_p: float):
-        fixture = SimpleNamespace(id=fid, date=datetime.fromisoformat(kickoff))
+        fixture = SimpleNamespace(
+            id=fid,
+            league_id=39,
+            date=datetime.fromisoformat(kickoff),
+        )
         stored = _stored(
             recommendation="胜",
             home_win_prob=home_p,
@@ -227,7 +235,11 @@ def test_rank_keeps_top_unique_fixtures() -> None:
     }
 
     def row(fid: int, home_p: float, kickoff: str):
-        fixture = SimpleNamespace(id=fid, date=datetime.fromisoformat(kickoff))
+        fixture = SimpleNamespace(
+            id=fid,
+            league_id=39,
+            date=datetime.fromisoformat(kickoff),
+        )
         stored = _stored(
             recommendation="胜",
             home_win_prob=home_p,
@@ -266,7 +278,11 @@ def test_selects_four_per_match_day_not_four_for_whole_window() -> None:
     }
 
     def row(fid: int, home_p: float, kickoff: str):
-        fixture = SimpleNamespace(id=fid, date=datetime.fromisoformat(kickoff))
+        fixture = SimpleNamespace(
+            id=fid,
+            league_id=39,
+            date=datetime.fromisoformat(kickoff),
+        )
         stored = _stored(
             recommendation="胜",
             home_win_prob=home_p,

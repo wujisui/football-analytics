@@ -1174,7 +1174,7 @@ def summarize_accuracy(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     return {
         "result": _rate("result_hit"),
-        "single_result": _rate("single_result_hit"),
+        "auto_pick": _rate("auto_pick_hit"),
         "score": _rate("score_hit"),
         "ou": _rate("ou_hit"),
         "btts": _rate("btts_hit"),

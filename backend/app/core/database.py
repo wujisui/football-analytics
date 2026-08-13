@@ -113,6 +113,15 @@ async def _ensure_sqlite_columns(conn) -> None:
             "source": "TEXT DEFAULT 'manual'",
             "auto_market": "TEXT",
             "auto_lean": "TEXT",
+            "quality_low": "INTEGER DEFAULT 0",
+        },
+    )
+    await _ensure_table_columns(
+        conn,
+        "auto_pick_snapshots",
+        {
+            "score": "REAL",
+            "quality_low": "INTEGER DEFAULT 0",
         },
     )
 

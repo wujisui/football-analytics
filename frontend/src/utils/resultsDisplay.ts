@@ -16,6 +16,9 @@ export interface HitTagFixture {
   /** Frozen handicap prediction copy (handicap tag label). */
   handicap_lean?: string | null
   result_hit?: boolean | null
+  /** Daily auto-pick settlement (catalog tips). */
+  auto_pick_hit?: boolean | null
+  auto_pick_lean?: string | null
   score_hit?: boolean | null
   ou_hit?: boolean | null
   btts_hit?: boolean | null

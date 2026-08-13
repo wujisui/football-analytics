@@ -1,7 +1,7 @@
 /** Accuracy metric keys; day-stats hit counts can toggle list filter by key. */
 export type ResultsHitKey =
   | 'result'
-  | 'single_result'
+  | 'auto_pick'
   | 'score'
   | 'ou'
   | 'btts'
@@ -9,7 +9,7 @@ export type ResultsHitKey =
 
 export const RESULTS_HIT_OPTIONS: { key: ResultsHitKey; label: string }[] = [
   { key: 'result', label: '推荐结果' },
-  { key: 'single_result', label: '胜平负单选' },
+  { key: 'auto_pick', label: '每日推荐' },
   { key: 'score', label: '比分' },
   { key: 'ou', label: '大小球' },
   { key: 'btts', label: '双方进球' },

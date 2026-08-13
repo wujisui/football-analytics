@@ -49,6 +49,7 @@ function optimisticFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord 
     source: 'manual',
     auto_market: null,
     auto_lean: null,
+    quality_low: false,
     odds_snippet: oddsSnippetFromFixture(fixture),
     home_rank: fixture.home_rank ?? null,
     away_rank: fixture.away_rank ?? null,
@@ -79,6 +80,7 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     source: 'manual',
     auto_market: null,
     auto_lean: null,
+    quality_low: false,
     has_prediction: hasPrediction,
     recommendation: fixture.recommendation ?? undefined,
     handicap_lean: fixture.handicap_lean ?? undefined,
@@ -91,7 +93,7 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     ou_hit: fixture.ou_hit,
     btts_hit: fixture.btts_hit,
     result_hit: fixture.result_hit,
-    single_result_hit: fixture.single_result_hit,
+    auto_pick_hit: fixture.auto_pick_hit,
     home_rank: fixture.home_rank ?? null,
     away_rank: fixture.away_rank ?? null,
   }
@@ -248,6 +250,15 @@ export function autoFavoriteMarket(
   if (!item || item.source !== 'auto') return null
   const market = (item.auto_market || '').trim()
   return market || null
+}
+
+/** True when this fixture is an auto tip marked below quality threshold. */
+export function favoriteQualityLow(
+  fixtureId: number | null | undefined,
+): boolean {
+  if (fixtureId == null) return false
+  const item = findFavoriteListFixture(fixtureId)
+  return !!item?.quality_low
 }
 
 export function useFavoriteFixtures() {

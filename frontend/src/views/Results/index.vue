@@ -62,7 +62,7 @@ const AccuracyHistoryChart = defineAsyncComponent(
 
 const HIT_FIELD: Record<ResultsHitKey, keyof ResultFixture> = {
   result: 'result_hit',
-  single_result: 'single_result_hit',
+  auto_pick: 'auto_pick_hit',
   score: 'score_hit',
   ou: 'ou_hit',
   btts: 'btts_hit',
@@ -201,7 +201,7 @@ function onFilterHit(key: ResultsHitKey) {
   filterHitKey.value = filterHitKey.value === key ? null : key
 }
 
-/** Mirrors backend ``summarize_accuracy``; only counts rows with ``has_prediction``. */
+/** Mirrors backend ``summarize_accuracy``; grades any non-null hit flag. */
 function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
   const rows = list.map((fx) => ({
     has_prediction: !!fx.has_prediction,
@@ -211,7 +211,7 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
         fx.home_goals != null &&
         fx.away_goals != null,
     result_hit: fx.result_hit ?? null,
-    single_result_hit: fx.single_result_hit ?? null,
+    auto_pick_hit: fx.auto_pick_hit ?? null,
     score_hit: fx.score_hit ?? null,
     ou_hit: fx.ou_hit ?? null,
     btts_hit: fx.btts_hit ?? null,
@@ -220,13 +220,13 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
   const rate = (
       key:
           | 'result_hit'
-          | 'single_result_hit'
+          | 'auto_pick_hit'
           | 'score_hit'
           | 'ou_hit'
           | 'btts_hit'
           | 'handicap_hit',
   ) => {
-    const evalRows = rows.filter((r) => r.has_prediction && r[key] !== null && r[key] !== undefined)
+    const evalRows = rows.filter((r) => r[key] !== null && r[key] !== undefined)
     const hits = evalRows.filter((r) => r[key] === true).length
     const total = evalRows.length
     return {
@@ -237,7 +237,7 @@ function summarizeFiltered(list: ResultFixture[]): ResultsAccuracy {
   }
   return {
     result: rate('result_hit'),
-    single_result: rate('single_result_hit'),
+    auto_pick: rate('auto_pick_hit'),
     score: rate('score_hit'),
     ou: rate('ou_hit'),
     btts: rate('btts_hit'),
