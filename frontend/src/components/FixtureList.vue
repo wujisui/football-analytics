@@ -1,10 +1,22 @@
 <script setup lang="ts">
 import type { DataTableColumns } from 'naive-ui'
-import { computed, h, ref, useSlots, watch } from 'vue'
+import {
+  computed,
+  h,
+  onBeforeUnmount,
+  onMounted,
+  provide,
+  ref,
+  useSlots,
+  watch,
+  type VNodeChild,
+} from 'vue'
 
 import type { FixtureResponse } from '@/api/types'
+import DayExpandFixtures from '@/components/DayExpandFixtures.vue'
 import FixtureCard from '@/components/FixtureCard.vue'
 import VirtualCardList from '@/components/VirtualCardList.vue'
+import { useIsPhone } from '@/composables/useMediaQuery'
 import type { DetailFrom } from '@/utils/detailNav'
 import {
   groupFixturesByScheduleDay,
@@ -19,7 +31,10 @@ const props = withDefaults(
     groupByDay?: boolean
     from?: DetailFrom
     date?: string | null
-    /** Flat virtual-list row estimate (groupByDay=false only). */
+    /**
+     * Flat virtual-list row estimate (groupByDay=false), and min row height for
+     * the expanded day's virtual data-table (groupByDay=true).
+     */
     itemSize?: number
     /** Flat virtual-list padding (groupByDay=false only). */
     paddingTop?: number | string
@@ -36,26 +51,73 @@ const props = withDefaults(
 )
 
 const slots = useSlots()
+const isPhone = useIsPhone()
 const hasCardSlot = computed(() => !!slots.card)
+
+const listEl = ref<HTMLElement | null>(null)
+/** Viewport for the expanded day's virtual table (list height − date row). */
+const expandMaxHeight = ref(360)
+
+const DAY_ROW_RESERVE_PX = 44
+const CARD_GAP_PX = 10
 
 const dayGroups = computed(() =>
   props.groupByDay ? groupFixturesByScheduleDay(props.fixtures) : [],
 )
 
+/** Accordion: at most one schedule day open. */
 const expandedKeys = ref<string[]>([])
 
-/** New days open on arrival; a day the user collapsed stays collapsed. */
+/** Predictions phone/desktop cards are fixed-height; fall back to itemSize. */
+const fixtureMinRowHeight = computed(() => {
+  if (props.itemSize !== 168) return props.itemSize
+  // phone .fixture-slot 184 / desktop .fixture-row 147 + gap between cards
+  return (isPhone.value ? 184 : 147) + CARD_GAP_PX
+})
+
+function renderFixture(fixture: FixtureResponse): VNodeChild {
+  const body = hasCardSlot.value
+    ? (slots.card?.({ fixture }) ?? [])
+    : h(FixtureCard, { fixture, from: props.from, date: props.date })
+  return h('div', { class: 'day-fixture-row' }, body)
+}
+
+provide('fixtureListExpandMaxHeight', expandMaxHeight)
+provide('fixtureListRenderFixture', renderFixture)
+
 watch(
   dayGroups,
-  (groups, previous) => {
-    const known = new Set((previous ?? []).map((g) => g.key))
-    const open = new Set(expandedKeys.value)
-    expandedKeys.value = groups
-      .filter((g) => !known.has(g.key) || open.has(g.key))
-      .map((g) => g.key)
+  (groups) => {
+    if (!groups.length) {
+      expandedKeys.value = []
+      return
+    }
+    const current = expandedKeys.value[0]
+    if (current && groups.some((g) => g.key === current)) return
+    // Default: nearest / first day with fixtures.
+    expandedKeys.value = [groups[0].key]
   },
   { immediate: true },
 )
+
+let listResizeObserver: ResizeObserver | null = null
+
+function syncExpandMaxHeight() {
+  const height = listEl.value?.clientHeight ?? 0
+  expandMaxHeight.value = Math.max(200, Math.floor(height - DAY_ROW_RESERVE_PX))
+}
+
+onMounted(() => {
+  syncExpandMaxHeight()
+  if (!listEl.value || typeof ResizeObserver === 'undefined') return
+  listResizeObserver = new ResizeObserver(() => syncExpandMaxHeight())
+  listResizeObserver.observe(listEl.value)
+})
+
+onBeforeUnmount(() => {
+  listResizeObserver?.disconnect()
+  listResizeObserver = null
+})
 
 const flatVirtualItems = computed(() =>
   props.fixtures.map((fixture) => ({
@@ -70,52 +132,41 @@ const flatItemsStyle: Record<string, string> = {
   boxSizing: 'border-box',
 }
 
-function renderFixture(fixture: FixtureResponse) {
-  if (hasCardSlot.value) return slots.card?.({ fixture }) ?? []
-  return h(FixtureCard, { fixture, from: props.from, date: props.date })
-}
-
-const dayColumns = computed<DataTableColumns<ScheduleDayGroup>>(() => [
-  {
-    type: 'expand',
-    // flexHeight forces table-layout: fixed — without a width both columns
-    // would split the row in half.
-    width: 36,
-    renderExpand: (group) =>
-      h(
-        'div',
-        { class: 'day-expand' },
-        group.fixtures.map((fixture) =>
+const dayColumns = computed<DataTableColumns<ScheduleDayGroup>>(() => {
+  const minRowHeight = fixtureMinRowHeight.value
+  return [
+    {
+      type: 'expand',
+      // flexHeight forces table-layout: fixed — without a width both columns
+      // would split the row in half.
+      width: 36,
+      renderExpand: (group) =>
+        h(DayExpandFixtures, {
+          fixtures: group.fixtures,
+          minRowHeight,
+        }),
+    },
+    {
+      key: 'label',
+      render: (group) =>
+        h('div', { class: 'day-title' }, [
+          h('span', { class: 'day-title__label' }, group.label),
           h(
-            'div',
-            { class: 'day-fixture-row', key: fixture.fixture_id },
-            renderFixture(fixture),
+            'span',
+            { class: 'day-title__count' },
+            `共 ${group.fixtures.length} 场比赛`,
           ),
-        ),
-      ),
-  },
-  {
-    key: 'label',
-    render: (group) =>
-      h('div', { class: 'day-title' }, [
-        h('span', { class: 'day-title__label' }, group.label),
-        h(
-          'span',
-          { class: 'day-title__count' },
-          `共 ${group.fixtures.length} 场比赛`,
-        ),
-      ]),
-  },
-])
+        ]),
+    },
+  ]
+})
 
 function dayRowKey(group: ScheduleDayGroup) {
   return group.key
 }
 
 function toggleDay(key: string) {
-  const open = new Set(expandedKeys.value)
-  if (!open.delete(key)) open.add(key)
-  expandedKeys.value = [...open]
+  expandedKeys.value = expandedKeys.value[0] === key ? [] : [key]
 }
 
 /** Whole date row toggles; the built-in trigger already handles its own click. */
@@ -131,7 +182,15 @@ function dayRowProps(group: ScheduleDayGroup) {
 }
 
 function onExpandedKeys(keys: Array<string | number>) {
-  expandedKeys.value = keys.map(String)
+  const next = keys.map(String)
+  if (next.length <= 1) {
+    expandedKeys.value = next
+    return
+  }
+  // Accordion: keep the newly opened day only.
+  const prev = new Set(expandedKeys.value)
+  const added = next.find((k) => !prev.has(k))
+  expandedKeys.value = [added ?? next[next.length - 1]]
 }
 
 function rowFixture(item: unknown): FixtureResponse {
@@ -140,7 +199,7 @@ function rowFixture(item: unknown): FixtureResponse {
 </script>
 
 <template>
-  <div class="fixture-list">
+  <div ref="listEl" class="fixture-list">
     <n-empty
       v-if="fixtures.length === 0"
       :description="emptyDescription || '近期暂无该联赛赛事'"
@@ -211,6 +270,17 @@ function rowFixture(item: unknown): FixtureResponse {
   display: none;
 }
 
+/* The expanded day owns the visible scrollbar; the outer day scroller would
+ * paint a second rail over the cards. Child chain keeps the inner table's
+ * own rail. Wheel / touch scrolling is unaffected. */
+.day-table
+  > :deep(.n-data-table-wrapper)
+  > .n-data-table-base-table
+  > .n-data-table-base-table-body
+  > .n-scrollbar-rail {
+  display: none;
+}
+
 /* Date row pins to the top of the body scroller while its day scrolls past;
  * the td background is opaque, so cards pass behind it. */
 .day-table :deep(.day-row) {
@@ -253,13 +323,6 @@ function rowFixture(item: unknown): FixtureResponse {
   flex-shrink: 0;
   opacity: 0.6;
   font-size: 12px;
-}
-
-.day-table :deep(.day-expand) {
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
 .day-fixture-row,

@@ -8,6 +8,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AlgorithmPredictionCard: typeof import('./src/components/AlgorithmPredictionCard.vue')['default']
+    DayExpandFixtures: typeof import('./src/components/DayExpandFixtures.vue')['default']
     FavoriteButton: typeof import('./src/components/FavoriteButton.vue')['default']
     FixtureCard: typeof import('./src/components/FixtureCard.vue')['default']
     FixtureList: typeof import('./src/components/FixtureList.vue')['default']
