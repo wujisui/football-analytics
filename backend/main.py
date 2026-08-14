@@ -41,7 +41,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # Explicit allowlist: the session cookie is credentialed, so a wildcard
+    # would let any page call the API as the logged-in user.
+    allow_origins=settings.cors_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

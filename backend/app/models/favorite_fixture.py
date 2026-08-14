@@ -20,20 +20,23 @@ AUTO_MARKET_SCORE = "score"
 class FavoriteFixture(Base):
     """User-private favorite list.
 
-    Pre-auth: ``user_id`` is NULL (single-tenant per install).
-    Post-auth: set ``user_id``; PK will need to become ``(user_id, fixture_id)``
-    or a surrogate id — see docs/AUTH_VIP_QUOTA.md §4.3.
+    Composite PK ``(user_id, fixture_id)``. Guest / system auto tips use
+    ``user_id=""`` (anonymous owner bucket).
     """
 
     __tablename__ = "favorite_fixtures"
 
+    user_id: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+        default="",
+        server_default="",
+    )
     fixture_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("fixtures.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    # Nullable owner hook — NULL = local single-tenant until login ships.
-    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     source: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
@@ -58,7 +61,7 @@ class FavoriteFixture(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<FavoriteFixture(fixture_id={self.fixture_id}, "
-            f"user_id={self.user_id!r}, source={self.source!r}, "
+            f"<FavoriteFixture(user_id={self.user_id!r}, "
+            f"fixture_id={self.fixture_id}, source={self.source!r}, "
             f"auto_market={self.auto_market!r})>"
         )

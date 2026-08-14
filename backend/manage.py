@@ -416,6 +416,24 @@ async def run_train_goals_model() -> None:
     print(f"Model status: {model_status()}")
 
 
+async def run_set_admin(account: str, *, revoke: bool = False) -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services import auth as auth_service
+
+    await init_db()
+    async with AsyncSessionLocal() as db:
+        try:
+            user = await auth_service.set_user_admin(
+                db, account, is_admin=not revoke
+            )
+            await db.commit()
+        except LookupError as exc:
+            print(f"Failed: {exc}")
+            sys.exit(1)
+    flag = "revoked" if revoke else "granted"
+    print(f"Admin {flag} for {user.username} (id={user.id})")
+
+
 def main() -> None:
     _setup_cli_logging()
 
@@ -515,10 +533,36 @@ def main() -> None:
         help="Task name to trigger",
     )
 
+    set_admin_parser = subparsers.add_parser(
+        "set-admin",
+        help="Grant is_admin on an existing account",
+    )
+    set_admin_parser.add_argument(
+        "account",
+        help="Username or email (must already be registered)",
+    )
+
+    unset_admin_parser = subparsers.add_parser(
+        "unset-admin",
+        help="Revoke is_admin on an existing account",
+    )
+    unset_admin_parser.add_argument(
+        "account",
+        help="Username or email",
+    )
+
     args = parser.parse_args()
 
     if args.command == "trigger-task":
         asyncio.run(run_trigger_task(args.name))
+        return
+
+    if args.command == "set-admin":
+        asyncio.run(run_set_admin(args.account, revoke=False))
+        return
+
+    if args.command == "unset-admin":
+        asyncio.run(run_set_admin(args.account, revoke=True))
         return
 
     if args.command == "fetch-upcoming":

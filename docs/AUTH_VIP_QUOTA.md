@@ -1,6 +1,6 @@
 # 用户鉴权 · VIP · API 配额方案（设计稿）
 
-> 状态：**设计已定方向，代码未落地**（前端登录仍为本地 stub）  
+> 状态：**真登录已落地（账号/邮箱 + 密码，httpOnly cookie 会话）**；VIP / 支付 / 平台配额账本仍为设计稿
 > 更新日期：2026-08-05  
 > 关联：[PROJECT_PLAN.md](../PROJECT_PLAN.md) §1.3 / 里程碑 M6+；产品边界见 `.cursor/rules/project-scope.mdc`  
 > 目的：官方 API 配额有成本；定时公共池拉赛程/盘口/赛果，详情按点击补缺落库后多人复用；列表路径不放大官方请求。
@@ -79,32 +79,48 @@
 
 ### 4.1 现状
 
-- 前端：`LoginModal` 等为**本地会话 stub**，无后端 `/auth`。  
+- 前端：`LoginModal` 对接 `/auth/register`、`/auth/login`；不持有 token，只缓存用户名用于首屏渲染，`api/client.ts` 开 `withCredentials`。  
+- 账号：用户名或**邮箱**（含 `@` 时归一为小写后入库与比对，真源 `auth.normalize_account`）。  
+- 后端：`users` + `user_sessions`（30 天 opaque token）；token 只走 **httpOnly cookie**（`fa_session`）；收藏/方案按 `user_id` 隔离；游客桶 `user_id=""`。  
+- 运维：`users.is_admin`（非 VIP）；「我的 → 管理员设置」仅管理员可见；`/admin/*` 认会话 `is_admin`，兼容 `X-Admin-Key` 给脚本。授予：`python manage.py set-admin <账号>`；取消：`python manage.py unset-admin <账号>`。  
+- 首登认领：登录/注册时把游客桶**手动收藏**与**方案**迁到账号；`source=auto` 每日推荐留在游客桶，登录后列表合并可见。  
 - 官方 Key：仅后端 `secrets.local.env`。
 
-### 4.2 目标形态（尚未实现）
-
-- 后端：注册 / 登录 / 刷新令牌（或 session cookie）；`users`、`sessions`（或 JWT + refresh）。  
-- VIP：`user_entitlements` 或 `subscriptions`（`plan`、`expires_at`）。  
-- 不提供用户官方同步路由；列表和已落库详情可继续匿名只读。
-
-密码与密钥规范遵循现有 secrets 规则；生产再定 OAuth（可选，非必须首版）。
-
-### 4.3 用户私有数据（留坑 · 无痛衔接）
-
-收藏、计算器方案等**按用户隔离**的数据，在真登录落地前也要按「以后有 user_id」来写，避免全民共用一张表。
+### 4.2 密码与传输（已定，勿再改方案）
 
 | 约定 | 说明 |
 |------|------|
-| `user_id` 可空 | `NULL` = 登录前的本机单租户桶（当前行为）；登录后写入真实用户 id |
-| 查询必带作用域 | `owner_is(column, user_id)`（`app/services/user_scope.py`）；禁止无过滤全表扫私有数据 |
-| 鉴权依赖 | `CurrentUserId`（`app/api/deps_auth.py`）现恒为 `None`；接 JWT/session 时只改这一处 |
-| 首登迁移 | 可选：把该设备上 `user_id IS NULL` 的收藏/方案认领到当前账号一次，再禁止匿名写 |
-| 收藏 PK | 现为 `fixture_id`（单租户够用）；多用户时改为 `(user_id, fixture_id)` 或代理主键 |
+| 落库 | 只存 `users.password_hash`：PBKDF2-SHA256、120000 轮、每用户随机盐，格式 `salt$hex`（真源 `auth.hash_password`） |
+| 传输 | 请求体明文 + **TLS**；生产必须走 HTTPS（反代终止 TLS，建议加 HSTS），公网禁止 http |
+| 前端预哈希 | **禁止**（含 MD5/SHA 等）。MD5 不可逆、无「后端解密」可言；把哈希值当密码比对等于换个名字的明文，抓包即可重放，还削平口令熵、焊死算法升级路径 |
+| 会话载体 | **httpOnly + SameSite=Lax cookie**（`fa_session`）；生产置 `SESSION_COOKIE_SECURE=true`。不存 `localStorage`，页面脚本读不到 → XSS 偷不走会话 |
+| CORS | `CORS_ALLOW_ORIGINS` 显式白名单 + `allow_credentials`；cookie 鉴权下**不得**用 `*` |
+| 日志 / 响应 | 原始密码不进日志；token 不进任何响应体；`/auth/*` 只回 `id`、`username`、`claimed` |
 
-已挂钩的表/接口：`favorite_fixtures.user_id`、`bet_plans.user_id`，以及 `/favorites`、`/bet-plans`。
+DevTools 的 Network 面板挂在 TLS 之上，展示的是加密**之前**的请求体 —— HTTPS 站点在面板里同样是明文，这不是缺陷，勿据此改成前端加密。本地 dev 走 `http://localhost`（回环、不出本机）。
 
-**原则**：未登录时**不假装**做云同步或跨设备私有；新功能可以先落地业务，但私有数据路径必须过 `CurrentUserId` + `owner_is`，登录完善后只接身份、不改业务语义。
+### 4.3 目标形态（VIP 尚未实现）
+
+- VIP：`user_entitlements` 或 `subscriptions`（`plan`、`expires_at`）。  
+- 不提供用户官方同步路由；列表和已落库详情可继续匿名只读。
+
+密钥规范遵循现有 secrets 规则；生产再定 OAuth（可选，非必须首版）。
+
+### 4.4 用户私有数据
+
+收藏、计算器方案等**按用户隔离**；游客与登录共用本地库时靠 `user_id` 分桶。
+
+| 约定 | 说明 |
+|------|------|
+| 游客桶 | `user_id=""`（空串，非 SQL NULL），兼容 SQLite 复合主键 |
+| 查询必带作用域 | `owner_is` / `normalize_owner_id`；登录用户收藏列表额外合并游客桶 `source=auto` |
+| 鉴权依赖 | `CurrentUserId` 解析 `fa_session` cookie；无效/缺失 → 游客 |
+| 首登迁移 | 注册/登录时 `claim_anonymous_private_data`：手动收藏 + 方案；auto 不认领 |
+| 收藏 PK | `(user_id, fixture_id)` |
+
+已挂钩的表/接口：`favorite_fixtures.user_id`、`bet_plans.user_id`，以及 `/favorites`、`/bet-plans`、`/auth/*`。
+
+**原则**：未登录时**不假装**做云同步或跨设备私有；私有数据路径必须过 `CurrentUserId` + owner 过滤。
 
 ---
 
@@ -135,10 +151,10 @@ UI 细则后续写入 [frontend/FRONTEND_UI_SPEC.md](../frontend/FRONTEND_UI_SPE
 
 ## 7. 后端落地顺序（实施清单）
 
-代码按此顺序迭代，**当前仓库尚未开始**：
+代码按此顺序迭代：
 
-1. **用户表 + 真登录 API**（替换前端 stub；填充 `CurrentUserId`）  
-2. **私有数据认领**：`favorite_fixtures` / `bet_plans` 的 `NULL → user_id` 一次性迁移；收藏 PK 升级为复合键  
+1. ~~**用户表 + 真登录 API**（替换前端 stub；填充 `CurrentUserId`）~~ **已完成**
+2. ~~**私有数据认领**：`favorite_fixtures` / `bet_plans`；收藏 PK 复合键~~ **已完成**
 3. **平台配额日志**：只记录六个固定同步批次的消耗与剩余量
 4. **VIP 权益配置**：仅接非官方调用能力
 5. **支付 / 订阅**（最后）：发卡或第三方支付写 `entitlements`

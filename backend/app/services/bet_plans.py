@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bet_plan import BetPlan
-from app.services.user_scope import owner_is
+from app.services.user_scope import normalize_owner_id, owner_is
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -103,7 +103,7 @@ async def create_plan(
     now = _utc_now()
     row = BetPlan(
         id=(plan_id or _new_id())[:64],
-        user_id=user_id,
+        user_id=normalize_owner_id(user_id),
         name=name[:80],
         plan_day=plan_day,
         fold=str(fold)[:16],

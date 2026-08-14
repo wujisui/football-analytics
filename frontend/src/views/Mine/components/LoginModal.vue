@@ -5,16 +5,18 @@ import { useMessage } from 'naive-ui'
 
 import { useAuthSession } from '@/composables/useAuthSession'
 
-const { loginModalShow, closeLogin, login } = useAuthSession()
+const { loginModalShow, closeLogin, login, register } = useAuthSession()
 const message = useMessage()
 const formRef = ref<FormInst | null>(null)
 const submitting = ref(false)
+const mode = ref<'login' | 'register'>('login')
 const model = ref({
-  username: 'admin',
-  password: 'admin',
+  username: '',
+  password: '',
+  password2: '',
 })
 
-const rules: FormRules = {
+const rules = ref<FormRules>({
   username: {
     required: true,
     message: '请输入账号',
@@ -25,16 +27,49 @@ const rules: FormRules = {
     message: '请输入密码',
     trigger: ['blur', 'input'],
   },
-}
+  password2: [
+    {
+      required: true,
+      message: '请再次输入密码',
+      trigger: ['blur', 'input'],
+    },
+    {
+      validator: (_rule, value: string) => {
+        if (mode.value !== 'register') return true
+        return value === model.value.password
+      },
+      message: '两次密码不一致',
+      trigger: ['blur', 'input'],
+    },
+  ],
+})
 
 function resetForm() {
-  model.value = { username: '', password: '' }
+  model.value = { username: '', password: '', password2: '' }
   formRef.value?.restoreValidation()
 }
 
 function onAfterLeave() {
   resetForm()
   submitting.value = false
+  mode.value = 'login'
+}
+
+function switchMode(next: 'login' | 'register') {
+  mode.value = next
+  model.value.password2 = ''
+  formRef.value?.restoreValidation()
+}
+
+function claimedHint(claimed: {
+  favorites: number
+  plans: number
+}): string {
+  const parts: string[] = []
+  if (claimed.favorites > 0) parts.push(`${claimed.favorites} 场收藏`)
+  if (claimed.plans > 0) parts.push(`${claimed.plans} 个方案`)
+  if (!parts.length) return ''
+  return `，已迁入本机游客数据（${parts.join('、')}）`
 }
 
 async function onSubmit(e?: Event) {
@@ -46,12 +81,16 @@ async function onSubmit(e?: Event) {
   }
   submitting.value = true
   try {
-    // Local session stub until backend /auth is available.
-    if (!login(model.value.username)) {
-      message.error('登录失败')
+    const result =
+      mode.value === 'register'
+        ? await register(model.value.username, model.value.password)
+        : await login(model.value.username, model.value.password)
+    if (!result.ok) {
+      message.error(result.error)
       return
     }
-    message.success('登录成功')
+    const verb = mode.value === 'register' ? '注册并登录成功' : '登录成功'
+    message.success(`${verb}${claimedHint(result.claimed)}`)
   } finally {
     submitting.value = false
   }
@@ -62,33 +101,30 @@ async function onSubmit(e?: Event) {
   <n-modal
     v-model:show="loginModalShow"
     preset="card"
-    title="登录"
+    :title="mode === 'register' ? '注册' : '登录'"
     to="body"
     :mask-closable="true"
     :closable="true"
     :auto-focus="false"
-    :style="{ width: 'min(400px, calc(100vw - 32px))' }"
+    :style="{ width: 'min(440px, calc(100vw - 32px))' }"
     :segmented="{ content: true, footer: true }"
     @after-leave="onAfterLeave"
     @update:show="(open) => !open && closeLogin()"
   >
-    <n-alert type="info" :bordered="false" style="margin-bottom: 12px;">
-      账号体系尚未对接后端，当前为浏览器本地会话（演示登录）。
-    </n-alert>
     <n-form
       ref="formRef"
       :model="model"
       :rules="rules"
       label-placement="left"
-      label-width="56"
+      label-width="80"
       size="medium"
       @submit.prevent="onSubmit"
     >
       <n-form-item path="username" label="账号">
         <n-input
           v-model:value="model.username"
-          placeholder="账号"
-          maxlength="64"
+          placeholder="用户名或邮箱"
+          maxlength="128"
           clearable
           autocomplete="username"
         />
@@ -98,19 +134,39 @@ async function onSubmit(e?: Event) {
           v-model:value="model.password"
           type="password"
           show-password-on="click"
-          placeholder="密码"
+          placeholder="至少 6 位"
           maxlength="64"
           autocomplete="current-password"
           @keydown.enter="onSubmit"
         />
       </n-form-item>
+      <n-form-item v-if="mode === 'register'" path="password2" label="确认密码">
+        <n-input
+          v-model:value="model.password2"
+          type="password"
+          show-password-on="click"
+          placeholder="再次输入密码"
+          maxlength="64"
+          autocomplete="new-password"
+          @keydown.enter="onSubmit"
+        />
+      </n-form-item>
     </n-form>
     <template #footer>
-      <n-space justify="end">
-        <n-button @click="closeLogin">取消</n-button>
-        <n-button type="primary" :loading="submitting" @click="onSubmit">
-          登录
+      <n-space justify="space-between" style="width: 100%;">
+        <n-button
+          quaternary
+          type="primary"
+          @click="switchMode(mode === 'login' ? 'register' : 'login')"
+        >
+          {{ mode === 'login' ? '没有账号？注册' : '已有账号？登录' }}
         </n-button>
+        <n-space>
+          <n-button @click="closeLogin">取消</n-button>
+          <n-button type="primary" :loading="submitting" @click="onSubmit">
+            {{ mode === 'register' ? '注册' : '登录' }}
+          </n-button>
+        </n-space>
       </n-space>
     </template>
   </n-modal>

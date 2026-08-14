@@ -466,6 +466,30 @@ class BetPlanRenameRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
 
 
+class AuthCredentialsRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=128, description="用户名或邮箱")
+    password: str = Field(..., min_length=1, max_length=64)
+
+
+class AuthUserResponse(BaseModel):
+    id: str
+    username: str
+    is_admin: bool = False
+
+
+class AuthClaimResponse(BaseModel):
+    favorites: int = 0
+    favorites_dup_dropped: int = 0
+    plans: int = 0
+
+
+class AuthSessionResponse(BaseModel):
+    """Login/register result. The session token only travels in an httpOnly cookie."""
+
+    user: AuthUserResponse
+    claimed: AuthClaimResponse = Field(default_factory=AuthClaimResponse)
+
+
 class AccuracyStatResponse(BaseModel):
     hits: int = 0
     total: int = 0

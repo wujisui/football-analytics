@@ -1,51 +1,79 @@
 import { computed, ref } from 'vue'
 
-const STORAGE_KEY = 'fa-auth-session'
+import {
+  fetchAuthMe,
+  loginAccount,
+  logoutAccount,
+  registerAccount,
+  type AuthClaim,
+} from '@/api/auth'
+import { setOnAuthExpired, type ApiError } from '@/api/client'
+import { useBetPlans } from '@/composables/useBetPlans'
+import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 
-export type AuthSession = {
+/**
+ * Cached display identity only — the session itself is an httpOnly cookie that
+ * scripts cannot read, so this is a paint hint that `verifySession` confirms.
+ */
+const STORAGE_KEY = 'fa-auth-user'
+
+export type AuthUserCache = {
+  userId: string
   username: string
-  loggedInAt: string
+  isAdmin: boolean
 }
 
-function readSession(): AuthSession | null {
+function readCachedUser(): AuthUserCache | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<AuthSession>
+    const parsed = JSON.parse(raw) as Partial<AuthUserCache>
     if (!parsed?.username || typeof parsed.username !== 'string') return null
     return {
+      userId: typeof parsed.userId === 'string' ? parsed.userId : '',
       username: parsed.username.trim(),
-      loggedInAt:
-        typeof parsed.loggedInAt === 'string'
-          ? parsed.loggedInAt
-          : new Date().toISOString(),
+      isAdmin: !!parsed.isAdmin,
     }
   } catch {
     return null
   }
 }
 
-function writeSession(session: AuthSession | null) {
+function writeCachedUser(user: AuthUserCache | null) {
   try {
-    if (!session) localStorage.removeItem(STORAGE_KEY)
-    else localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
+    if (!user) localStorage.removeItem(STORAGE_KEY)
+    else localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
   } catch {
     /* private mode / quota */
   }
 }
 
-const session = ref<AuthSession | null>(readSession())
+const user = ref<AuthUserCache | null>(readCachedUser())
 const loginModalShow = ref(false)
+
+function clearLocalUser() {
+  user.value = null
+  writeCachedUser(null)
+}
+
+setOnAuthExpired(() => {
+  clearLocalUser()
+})
+
+async function refreshPrivateCaches() {
+  const { refresh: refreshFavorites } = useFavoriteFixtures()
+  const { reload: reloadPlans } = useBetPlans()
+  await Promise.allSettled([refreshFavorites(), reloadPlans()])
+}
 
 /**
  * Auth session for 「登录 / 我的」.
- * - Mobile: Mine always available; login entry lives on the Mine page.
- * - Desktop: Mine nav only after login; otherwise header shows 登录.
- * Backend auth is not wired yet — credentials are accepted locally.
+ * Backend: httpOnly `fa_session` cookie set by `/auth/login` / `/auth/register`.
  */
 export function useAuthSession() {
-  const isLoggedIn = computed(() => !!session.value)
-  const username = computed(() => session.value?.username ?? '')
+  const isLoggedIn = computed(() => !!user.value)
+  const username = computed(() => user.value?.username ?? '')
+  const isAdmin = computed(() => !!user.value?.isAdmin)
 
   function openLogin() {
     loginModalShow.value = true
@@ -55,32 +83,87 @@ export function useAuthSession() {
     loginModalShow.value = false
   }
 
-  function login(name: string) {
-    const username = name.trim()
-    if (!username) return false
-    const next: AuthSession = {
-      username,
-      loggedInAt: new Date().toISOString(),
+  function applyUser(userId: string, name: string, isAdminFlag: boolean) {
+    const next: AuthUserCache = {
+      userId,
+      username: name,
+      isAdmin: !!isAdminFlag,
     }
-    session.value = next
-    writeSession(next)
-    loginModalShow.value = false
-    return true
+    user.value = next
+    writeCachedUser(next)
   }
 
-  function logout() {
-    session.value = null
-    writeSession(null)
+  async function submit(
+    kind: 'login' | 'register',
+    name: string,
+    password: string,
+  ): Promise<{ ok: true; claimed: AuthClaim } | { ok: false; error: string }> {
+    const account = name.trim()
+    if (!account || !password) {
+      return { ok: false, error: '请输入账号和密码' }
+    }
+    try {
+      const data =
+        kind === 'register'
+          ? await registerAccount(account, password)
+          : await loginAccount(account, password)
+      applyUser(data.user.id, data.user.username, data.user.is_admin)
+      loginModalShow.value = false
+      await refreshPrivateCaches()
+      return { ok: true, claimed: data.claimed }
+    } catch (err) {
+      const fallback = kind === 'register' ? '注册失败' : '登录失败'
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : fallback,
+      }
+    }
+  }
+
+  function login(name: string, password: string) {
+    return submit('login', name, password)
+  }
+
+  function register(name: string, password: string) {
+    return submit('register', name, password)
+  }
+
+  async function logout() {
+    try {
+      await logoutAccount()
+    } catch {
+      /* still clear local state */
+    }
+    clearLocalUser()
+    await refreshPrivateCaches()
+  }
+
+  /** Confirm the cookie is still valid once after boot (401 → guest). */
+  async function verifySession() {
+    if (!user.value) return
+    try {
+      const me = await fetchAuthMe()
+      applyUser(me.id, me.username, me.is_admin)
+    } catch (err) {
+      // Only an explicit 401 means the session is gone; a network error or a
+      // stopped backend must not silently log the user out.
+      if ((err as ApiError)?.status !== 401) return
+      clearLocalUser()
+      await refreshPrivateCaches()
+    }
   }
 
   return {
-    session,
+    user,
     isLoggedIn,
+    isAdmin,
     username,
     loginModalShow,
     openLogin,
     closeLogin,
     login,
+    register,
     logout,
+    verifySession,
   }
 }

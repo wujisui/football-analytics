@@ -13,7 +13,7 @@ import {
   SunnyOutline,
 } from '@vicons/ionicons5'
 import { NIcon, type MenuOption } from 'naive-ui'
-import { computed, h, type Component } from 'vue'
+import { computed, h, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthSession } from '@/composables/useAuthSession'
@@ -75,7 +75,7 @@ const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
 const { isDark, toggleTheme } = useTheme()
-const { isLoggedIn, username, openLogin, logout } = useAuthSession()
+const { isLoggedIn, isAdmin, username, openLogin, logout } = useAuthSession()
 const { filterDate, planDays } = useBetPlans()
 
 function renderIcon(icon: Component) {
@@ -129,11 +129,15 @@ const menuOptions = computed<MenuOption[]>(() => [
     key: 'group-other',
     label: '其他',
     children: [
-      {
-        key: 'admin',
-        label: '管理员设置',
-        icon: renderIcon(sectionMeta.admin.icon),
-      },
+      ...(isAdmin.value
+        ? [
+            {
+              key: 'admin',
+              label: '管理员设置',
+              icon: renderIcon(sectionMeta.admin.icon),
+            } satisfies MenuOption,
+          ]
+        : []),
       {
         key: 'about',
         label: '关于',
@@ -163,8 +167,11 @@ const profileTitle = computed(() =>
 const profileDescription = computed(() =>
   isLoggedIn.value ? '已登录' : '暂未登录',
 )
-const mobileSections = computed(() =>
-  (['plans', 'theme', 'session', 'admin', 'about'] as MineSection[]).map((key) => ({
+const mobileSections = computed(() => {
+  const keys: MineSection[] = ['plans', 'theme', 'session']
+  if (isAdmin.value) keys.push('admin')
+  keys.push('about')
+  return keys.map((key) => ({
     key,
     ...sectionMeta[key],
     title:
@@ -179,19 +186,31 @@ const mobileSections = computed(() =>
           ? LogOutOutline
           : LogInOutline
         : sectionMeta[key].icon,
-  })),
-)
+  }))
+})
 
 function openSection(section: string) {
   if (!(section in sectionMeta)) return
+  if (section === 'admin' && !isAdmin.value) return
   const mineSection = section as MineSection
   const target = sectionMeta[mineSection].routeName
   if (route.name !== target) void router.push({ name: target })
 }
 
+watch(
+  () => [activeSection.value, isAdmin.value] as const,
+  ([section, admin]) => {
+    if (section === 'admin' && !admin) {
+      void router.replace({ name: 'mine-account' })
+    }
+  },
+  { immediate: true },
+)
+
 function onLogout() {
-  logout()
-  if (!isPhone.value) void router.replace({ name: 'predictions' })
+  void logout().then(() => {
+    if (!isPhone.value) void router.replace({ name: 'predictions' })
+  })
 }
 </script>
 

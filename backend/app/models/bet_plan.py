@@ -9,14 +9,19 @@ from app.core.database import Base
 class BetPlan(Base):
     """Saved calculator plan (user-private).
 
-    ``user_id`` is NULL pre-auth (single-tenant). After login, write/read with
-    the real user id; claim NULL rows once on first login if desired.
+    ``user_id`` empty string = pre-auth guest bucket; login claims those rows.
     """
 
     __tablename__ = "bet_plans"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    user_id: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="",
+        server_default="",
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     plan_day: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     fold: Mapped[str] = mapped_column(String(16), nullable=False)

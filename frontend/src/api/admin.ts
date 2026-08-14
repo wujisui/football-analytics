@@ -19,42 +19,29 @@ export type TriggerTaskResult = {
   }
 }
 
-function adminHeaders(adminKey: string) {
-  return { 'X-Admin-Key': adminKey }
-}
-
-export async function fetchScheduledFullDetailSetting(
-  adminKey: string,
-): Promise<ScheduledFullDetailSetting> {
+/** Admin routes authenticate via the logged-in is_admin session cookie. */
+export async function fetchScheduledFullDetailSetting(): Promise<ScheduledFullDetailSetting> {
   const { data } = await apiClient.get<ScheduledFullDetailSetting>(
     '/admin/settings/scheduled-full-detail',
-    { headers: adminHeaders(adminKey) },
   )
   return data
 }
 
 export async function updateScheduledFullDetailSetting(
-  adminKey: string,
   enabled: boolean,
 ): Promise<ScheduledFullDetailSetting> {
   const { data } = await apiClient.patch<ScheduledFullDetailSetting>(
     '/admin/settings/scheduled-full-detail',
     { enabled },
-    { headers: adminHeaders(adminKey) },
   )
   return data
 }
 
-export async function triggerScheduledFixturesSync(
-  adminKey: string,
-): Promise<TriggerTaskResult> {
+export async function triggerScheduledFixturesSync(): Promise<TriggerTaskResult> {
   const { data } = await apiClient.post<TriggerTaskResult>(
     '/admin/tasks/trigger',
     { name: 'scheduled_fixtures_sync' },
-    {
-      headers: adminHeaders(adminKey),
-      timeout: 5 * 60_000,
-    },
+    { timeout: 5 * 60_000 },
   )
   return data
 }

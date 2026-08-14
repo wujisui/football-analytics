@@ -88,6 +88,17 @@ class Settings(BaseSettings):
     CLEANUP_DAYS: int = 7
     ADMIN_API_KEY: str = ""
     LOG_DIR: str = "logs"
+    # Session cookie for /auth. httpOnly so page scripts can never read it.
+    SESSION_COOKIE_NAME: str = "fa_session"
+    # Must be true in production (HTTPS only). See docs/AUTH_VIP_QUOTA.md §4.2.
+    SESSION_COOKIE_SECURE: bool = False
+    # lax blocks the cookie on cross-site fetch/XHR — baseline CSRF defense.
+    SESSION_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    # Credentialed browser origins. Cookie auth makes a wildcard unsafe.
+    CORS_ALLOW_ORIGINS: str = (
+        "http://localhost:7800,http://127.0.0.1:7800,"
+        "http://localhost:5173,http://127.0.0.1:5173"
+    )
     # Prefer local DB / cache before calling API-Sports (saves quota).
     LOCAL_FIRST: bool = True
     # Future / paid scale default (env). Runtime override via Mine admin UI
@@ -239,6 +250,15 @@ class Settings(BaseSettings):
                 )
 
         return self
+
+    @property
+    def cors_allow_origins(self) -> list[str]:
+        """Explicit origin allowlist; credentialed cookie auth forbids "*"."""
+        return [
+            origin.strip()
+            for origin in self.CORS_ALLOW_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
     @property
     def api_host(self) -> str:

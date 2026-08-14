@@ -51,6 +51,93 @@ async def _ensure_table_columns(conn, table: str, additions: dict[str, str]) -> 
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
 
 
+async def _migrate_favorite_fixtures_owner_pk(conn) -> None:
+    """Rebuild favorite_fixtures with composite PK (user_id, fixture_id).
+
+    Legacy rows used ``fixture_id`` alone and nullable ``user_id``. Anonymous
+    ownership is normalized to empty string so uniqueness works on SQLite.
+    """
+    from sqlalchemy import text
+
+    try:
+        info = await conn.execute(text("PRAGMA table_info(favorite_fixtures)"))
+        cols = list(info.fetchall())
+    except Exception:
+        return
+    if not cols:
+        return
+
+    col_names = {row[1] for row in cols}
+    pk_cols = [row[1] for row in cols if row[5]]
+    needs_rebuild = pk_cols == ["fixture_id"] or (
+        "user_id" in col_names and pk_cols == ["fixture_id"]
+    )
+    # Also rebuild when PK is missing user_id entirely.
+    if "user_id" in pk_cols and "fixture_id" in pk_cols:
+        # Normalize any leftover NULL owner keys.
+        await conn.execute(
+            text(
+                "UPDATE favorite_fixtures SET user_id = '' "
+                "WHERE user_id IS NULL"
+            )
+        )
+        return
+    if not needs_rebuild and pk_cols != ["fixture_id"]:
+        # Unexpected shape — still try NULL normalize if column exists.
+        if "user_id" in col_names:
+            await conn.execute(
+                text(
+                    "UPDATE favorite_fixtures SET user_id = '' "
+                    "WHERE user_id IS NULL"
+                )
+            )
+        return
+
+    await conn.execute(text("ALTER TABLE favorite_fixtures RENAME TO favorite_fixtures_legacy"))
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE favorite_fixtures (
+                user_id TEXT NOT NULL DEFAULT '',
+                fixture_id INTEGER NOT NULL,
+                source TEXT NOT NULL DEFAULT 'manual',
+                auto_market TEXT,
+                auto_lean TEXT,
+                quality_low INTEGER NOT NULL DEFAULT 0,
+                saved_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                PRIMARY KEY (user_id, fixture_id),
+                FOREIGN KEY(fixture_id) REFERENCES fixtures (id) ON DELETE CASCADE
+            )
+            """
+        )
+    )
+    legacy_cols = {row[1] for row in (
+        await conn.execute(text("PRAGMA table_info(favorite_fixtures_legacy)"))
+    ).fetchall()}
+    has_quality = "quality_low" in legacy_cols
+    has_source = "source" in legacy_cols
+    quality_expr = "COALESCE(quality_low, 0)" if has_quality else "0"
+    source_expr = "COALESCE(source, 'manual')" if has_source else "'manual'"
+    await conn.execute(
+        text(
+            f"""
+            INSERT OR IGNORE INTO favorite_fixtures
+                (user_id, fixture_id, source, auto_market, auto_lean, quality_low, saved_at)
+            SELECT
+                COALESCE(user_id, ''),
+                fixture_id,
+                {source_expr},
+                auto_market,
+                auto_lean,
+                {quality_expr},
+                saved_at
+            FROM favorite_fixtures_legacy
+            """
+        )
+    )
+    await conn.execute(text("DROP TABLE favorite_fixtures_legacy"))
+
+
 async def _ensure_sqlite_columns(conn) -> None:
     """Add newly introduced columns on existing SQLite databases."""
     await _ensure_table_columns(
@@ -108,7 +195,7 @@ async def _ensure_sqlite_columns(conn) -> None:
         conn,
         "favorite_fixtures",
         {
-            # Pre-auth single-tenant; real login fills this (AUTH_VIP_QUOTA §4.3).
+            # Owner bucket; "" = guest (AUTH_VIP_QUOTA §4.4).
             "user_id": "TEXT",
             "source": "TEXT DEFAULT 'manual'",
             "auto_market": "TEXT",
@@ -124,6 +211,26 @@ async def _ensure_sqlite_columns(conn) -> None:
             "quality_low": "INTEGER DEFAULT 0",
         },
     )
+    await _ensure_table_columns(
+        conn,
+        "bet_plans",
+        {
+            "user_id": "TEXT DEFAULT ''",
+        },
+    )
+    await _ensure_table_columns(
+        conn,
+        "users",
+        {
+            "is_admin": "INTEGER DEFAULT 0",
+        },
+    )
+    from sqlalchemy import text
+
+    await conn.execute(
+        text("UPDATE bet_plans SET user_id = '' WHERE user_id IS NULL")
+    )
+    await _migrate_favorite_fixtures_owner_pk(conn)
 
 
 async def init_db() -> None:

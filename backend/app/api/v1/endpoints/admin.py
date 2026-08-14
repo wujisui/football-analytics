@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.api.deps_auth import require_admin
 from app.core.database import get_db
 from app.services.runtime_settings import (
     get_enable_scheduled_full_detail,
@@ -11,17 +11,6 @@ from app.services.runtime_settings import (
 from app.tasks.scheduler import get_task_status, trigger_task
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def verify_admin_key(x_admin_key: str | None = Header(default=None)) -> None:
-    settings = get_settings()
-    if not settings.ADMIN_API_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="Admin API is not configured. Set ADMIN_API_KEY in .env.",
-        )
-    if x_admin_key != settings.ADMIN_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid admin API key.")
 
 
 class TriggerTaskRequest(BaseModel):
@@ -41,14 +30,14 @@ class ScheduledFullDetailUpdate(BaseModel):
 
 
 @router.get("/tasks")
-async def list_task_status(_: None = Depends(verify_admin_key)) -> dict:
+async def list_task_status(_: None = Depends(require_admin)) -> dict:
     return get_task_status()
 
 
 @router.post("/tasks/trigger")
 async def trigger_task_endpoint(
     body: TriggerTaskRequest,
-    _: None = Depends(verify_admin_key),
+    _: None = Depends(require_admin),
 ) -> dict:
     try:
         await trigger_task(body.name)
@@ -67,7 +56,7 @@ async def trigger_task_endpoint(
     response_model=ScheduledFullDetailSetting,
 )
 async def get_scheduled_full_detail_setting(
-    _: None = Depends(verify_admin_key),
+    _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> ScheduledFullDetailSetting:
     enabled, source = await get_enable_scheduled_full_detail(db)
@@ -80,7 +69,7 @@ async def get_scheduled_full_detail_setting(
 )
 async def patch_scheduled_full_detail_setting(
     body: ScheduledFullDetailUpdate,
-    _: None = Depends(verify_admin_key),
+    _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> ScheduledFullDetailSetting:
     enabled = await set_enable_scheduled_full_detail(db, body.enabled)

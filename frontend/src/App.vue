@@ -20,7 +20,7 @@ import {
   zhCN,
   dateZhCN,
 } from 'naive-ui'
-import { computed, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthSession } from '@/composables/useAuthSession'
@@ -36,7 +36,11 @@ const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
-const { isLoggedIn, openLogin } = useAuthSession()
+const { isLoggedIn, openLogin, verifySession } = useAuthSession()
+
+onMounted(() => {
+  void verifySession()
+})
 
 /** 详情页、以及【我的】二级页（不含个人主页）自动隐藏底栏。 */
 function hidesPhoneBottomNav(name: unknown): boolean {

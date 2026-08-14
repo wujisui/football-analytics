@@ -5,18 +5,19 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.favorite_fixture import (
+    FAVORITE_SOURCE_AUTO,
     FAVORITE_SOURCE_MANUAL,
     FavoriteFixture,
 )
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.schemas.response import FavoriteFixtureResponse
-from app.services.user_scope import owner_is
+from app.services.user_scope import ANON_OWNER_ID, normalize_owner_id, owner_is
 
 
 def _utc_now() -> datetime:
@@ -167,15 +168,40 @@ async def list_favorite_responses(
     *,
     user_id: str | None = None,
 ) -> list[FavoriteFixtureResponse]:
+    owner = normalize_owner_id(user_id)
+    if owner == ANON_OWNER_ID:
+        scope = owner_is(FavoriteFixture.user_id, None)
+    else:
+        # Logged-in: own rows + shared daily auto tips in the guest bucket.
+        scope = or_(
+            FavoriteFixture.user_id == owner,
+            (
+                (FavoriteFixture.user_id == ANON_OWNER_ID)
+                & (FavoriteFixture.source == FAVORITE_SOURCE_AUTO)
+            ),
+        )
     fav_rows = (
         await db.execute(
             select(FavoriteFixture)
-            .where(owner_is(FavoriteFixture.user_id, user_id))
+            .where(scope)
             .order_by(FavoriteFixture.saved_at.desc())
         )
     ).scalars().all()
     if not fav_rows:
         return []
+
+    # Prefer the owner's row when both personal and shared-auto exist.
+    by_fixture: dict[int, FavoriteFixture] = {}
+    for fav in fav_rows:
+        prev = by_fixture.get(fav.fixture_id)
+        if prev is None:
+            by_fixture[fav.fixture_id] = fav
+            continue
+        if prev.user_id != owner and fav.user_id == owner:
+            by_fixture[fav.fixture_id] = fav
+
+    fav_rows = list(by_fixture.values())
+    fav_rows.sort(key=lambda row: row.saved_at, reverse=True)
 
     ids = [row.fixture_id for row in fav_rows]
     fixtures = await _load_fixtures_map(db, ids)
@@ -214,14 +240,25 @@ async def get_favorite_response(
     *,
     user_id: str | None = None,
 ) -> FavoriteFixtureResponse | None:
+    owner = normalize_owner_id(user_id)
     fav = (
         await db.execute(
             select(FavoriteFixture).where(
                 FavoriteFixture.fixture_id == fixture_id,
-                owner_is(FavoriteFixture.user_id, user_id),
+                FavoriteFixture.user_id == owner,
             )
         )
     ).scalar_one_or_none()
+    if fav is None and owner != ANON_OWNER_ID:
+        fav = (
+            await db.execute(
+                select(FavoriteFixture).where(
+                    FavoriteFixture.fixture_id == fixture_id,
+                    FavoriteFixture.user_id == ANON_OWNER_ID,
+                    FavoriteFixture.source == FAVORITE_SOURCE_AUTO,
+                )
+            )
+        ).scalar_one_or_none()
     if fav is None:
         return None
     fixtures = await _load_fixtures_map(db, [fixture_id])
@@ -250,6 +287,7 @@ async def add_favorite(
     *,
     user_id: str | None = None,
 ) -> FavoriteFixtureResponse:
+    owner = normalize_owner_id(user_id)
     fixture = await db.get(Fixture, fixture_id)
     if fixture is None:
         raise LookupError(f"fixture {fixture_id} not found")
@@ -258,7 +296,7 @@ async def add_favorite(
         await db.execute(
             select(FavoriteFixture).where(
                 FavoriteFixture.fixture_id == fixture_id,
-                owner_is(FavoriteFixture.user_id, user_id),
+                FavoriteFixture.user_id == owner,
             )
         )
     ).scalar_one_or_none()
@@ -266,7 +304,7 @@ async def add_favorite(
     if fav is None:
         fav = FavoriteFixture(
             fixture_id=fixture_id,
-            user_id=user_id,
+            user_id=owner,
             source=FAVORITE_SOURCE_MANUAL,
             auto_market=None,
             auto_lean=None,
@@ -281,7 +319,7 @@ async def add_favorite(
         fav.auto_lean = None
     await db.commit()
 
-    response = await get_favorite_response(db, fixture_id, user_id=user_id)
+    response = await get_favorite_response(db, fixture_id, user_id=owner)
     if response is None:
         raise RuntimeError(f"favorite {fixture_id} missing after commit")
     return response
@@ -293,11 +331,18 @@ async def remove_favorite(
     *,
     user_id: str | None = None,
 ) -> bool:
+    """Delete the caller's own favorite row only.
+
+    Shared guest-bucket ``source=auto`` tips are never removed here — logged-in
+    users only see them via list merge; unstarring requires an owned row
+    (e.g. after upgrading an auto tip with a manual star).
+    """
+    owner = normalize_owner_id(user_id)
     fav = (
         await db.execute(
             select(FavoriteFixture).where(
                 FavoriteFixture.fixture_id == fixture_id,
-                owner_is(FavoriteFixture.user_id, user_id),
+                FavoriteFixture.user_id == owner,
             )
         )
     ).scalar_one_or_none()

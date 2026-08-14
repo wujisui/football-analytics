@@ -8,13 +8,20 @@ export const apiClient = axios.create({
   timeout: 15000,
   // FastAPI list query expects league_ids=1&league_ids=2 (not league_ids[]=).
   paramsSerializer: { indexes: null },
+  // Session token is an httpOnly cookie; scripts never touch it.
+  withCredentials: true,
   headers: {
     'Cache-Control': 'no-cache',
     Pragma: 'no-cache',
   },
 })
 
-function toError(error: AxiosError<{ detail?: string | { msg?: string }[] }>): Error {
+/** Error carrying the HTTP status so callers can tell 401 from a network drop. */
+export interface ApiError extends Error {
+  status?: number
+}
+
+function toError(error: AxiosError<{ detail?: string | { msg?: string }[] }>): ApiError {
   const status = error.response?.status
   const rawDetail = error.response?.data?.detail
   const detail =
@@ -33,10 +40,27 @@ function toError(error: AxiosError<{ detail?: string | { msg?: string }[] }>): E
         ? `请求失败（${status}）`
         : error.message || '网络错误，请确认后端服务是否已启动')
 
-  return new Error(message)
+  const apiError: ApiError = new Error(message)
+  apiError.status = status
+  return apiError
+}
+
+type AuthExpiredHandler = () => void
+let onAuthExpired: AuthExpiredHandler | null = null
+
+export function setOnAuthExpired(handler: AuthExpiredHandler | null) {
+  onAuthExpired = handler
 }
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<{ detail?: string }>) => Promise.reject(toError(error)),
+  (error: AxiosError<{ detail?: string }>) => {
+    const url = String(error.config?.url || '')
+    // /auth/* 401 is a credential answer, not an expired session.
+    const isAuthEndpoint = url.includes('/auth/')
+    if (error.response?.status === 401 && !isAuthEndpoint) {
+      onAuthExpired?.()
+    }
+    return Promise.reject(toError(error))
+  },
 )

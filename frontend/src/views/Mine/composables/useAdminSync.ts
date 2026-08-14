@@ -30,11 +30,11 @@ export function useAdminSync() {
       : `上次同步失败（${formatTime(outcome.at)}）：${outcome.detail}`
   })
 
-  async function runSync(adminKey: string) {
-    if (syncing.value || !adminKey) return
+  async function runSync() {
+    if (syncing.value) return
     syncing.value = true
     try {
-      const data = await triggerScheduledFixturesSync(adminKey)
+      const data = await triggerScheduledFixturesSync()
       const task = data.task_status.active_tasks.scheduled_fixtures_sync
       if (task?.status === 'failed') {
         const detail = task.error || '后端未返回失败原因'

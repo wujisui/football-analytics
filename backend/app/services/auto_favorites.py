@@ -38,7 +38,7 @@ from app.services.prediction import (
 )
 from app.services.prematch_package import package_from_record, rehydrate_odds_markets
 from app.services.results_capture import prematch_list_clause
-from app.services.user_scope import owner_is
+from app.services.user_scope import ANON_OWNER_ID
 
 logger = logging.getLogger(__name__)
 
@@ -399,13 +399,18 @@ async def sync_daily_auto_favorites(
     limit: int = AUTO_PICK_LIMIT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Replace ``source=auto`` favorites with per-match-day single-lean picks.
+    """Replace guest-bucket ``source=auto`` tips with per-match-day picks.
+
+    Daily tips always live in the anonymous owner bucket (``ANON_OWNER_ID``)
+    so every session can list them; ``user_id`` is ignored for writes.
 
     Each UTC match day in the synced prematch window gets up to ``limit`` tips
     (default 4). A 7-day window with many fixtures therefore yields many more
     than four auto favorites — never one global cherry-pick across the week.
     Manual favorites are never touched.
     """
+    del user_id  # product-wide tips; kept for call-site compat
+    owner = ANON_OWNER_ID
     settings = get_settings()
     catalog_ids = list(settings.LEAGUE_IDS.values())
     current = now or _utc_now()
@@ -438,12 +443,14 @@ async def sync_daily_auto_favorites(
         incentive_state=incentive_state,
     )
 
+    # Skip fixtures any user already starred manually in the guest bucket
+    # (logged-in manuals live on their own rows and do not block shared tips).
     manual_ids = {
         int(row[0])
         for row in (
             await db.execute(
                 select(FavoriteFixture.fixture_id).where(
-                    owner_is(FavoriteFixture.user_id, user_id),
+                    FavoriteFixture.user_id == owner,
                     FavoriteFixture.source == FAVORITE_SOURCE_MANUAL,
                 )
             )
@@ -458,7 +465,7 @@ async def sync_daily_auto_favorites(
 
     await db.execute(
         delete(FavoriteFixture).where(
-            owner_is(FavoriteFixture.user_id, user_id),
+            FavoriteFixture.user_id == owner,
             FavoriteFixture.source == FAVORITE_SOURCE_AUTO,
         )
     )
@@ -468,7 +475,7 @@ async def sync_daily_auto_favorites(
         db.add(
             FavoriteFixture(
                 fixture_id=candidate.fixture_id,
-                user_id=user_id,
+                user_id=owner,
                 source=FAVORITE_SOURCE_AUTO,
                 auto_market=candidate.market,
                 auto_lean=candidate.lean,
