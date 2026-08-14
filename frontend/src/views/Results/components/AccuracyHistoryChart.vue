@@ -8,7 +8,15 @@ import {
 } from 'echarts/components'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { computed } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  ref,
+} from 'vue'
 import VChart from 'vue-echarts'
 
 import type { AccuracyDayPoint, AccuracyStat } from '@/api/fixtures'
@@ -53,6 +61,53 @@ const props = withDefaults(
 const emit = defineEmits<{
   selectDay: [day: string]
 }>()
+
+/**
+ * Results lives under keep-alive. Mounting / autoresizing VChart while the
+ * shell is still display:none (or flex height is 0) triggers ECharts'
+ * "Can't get DOM width or height" warning. Gate the chart on a real size.
+ */
+const hostRef = ref<HTMLElement | null>(null)
+const showChart = ref(false)
+let sizeObserver: ResizeObserver | null = null
+
+function stopObserving() {
+  sizeObserver?.disconnect()
+  sizeObserver = null
+}
+
+function tryShowChart() {
+  const el = hostRef.value
+  if (!el) return
+  if (el.clientWidth > 0 && el.clientHeight > 0) {
+    showChart.value = true
+    stopObserving()
+  }
+}
+
+function armChartWhenSized() {
+  stopObserving()
+  showChart.value = false
+  void nextTick(() => {
+    tryShowChart()
+    if (showChart.value) return
+    const el = hostRef.value
+    if (!el || typeof ResizeObserver === 'undefined') return
+    sizeObserver = new ResizeObserver(() => tryShowChart())
+    sizeObserver.observe(el)
+  })
+}
+
+onMounted(armChartWhenSized)
+onActivated(armChartWhenSized)
+onDeactivated(() => {
+  showChart.value = false
+  stopObserving()
+})
+onUnmounted(() => {
+  showChart.value = false
+  stopObserving()
+})
 
 /** ``windowDays <= 0`` → full series（全部）; otherwise last N days ending today. */
 const viewSeries = computed(() => {
@@ -190,16 +245,25 @@ const option = computed(() => {
 </script>
 
 <template>
-  <VChart
-    class="accuracy-chart"
-    :option="option"
-    autoresize
-    @click="onChartClick"
-  />
+  <div ref="hostRef" class="accuracy-chart">
+    <VChart
+      v-if="showChart"
+      class="accuracy-chart__canvas"
+      :option="option"
+      autoresize
+      @click="onChartClick"
+    />
+  </div>
 </template>
 
 <style scoped>
 .accuracy-chart {
+  width: 100%;
+  height: 100%;
+  min-height: 160px;
+}
+
+.accuracy-chart__canvas {
   width: 100%;
   height: 100%;
   min-height: 160px;
