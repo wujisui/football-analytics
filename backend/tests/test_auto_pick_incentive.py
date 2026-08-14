@@ -8,10 +8,11 @@ from app.services.auto_pick_incentive import (
     IncentiveParams,
     IncentiveState,
     adjust_pick_score,
+    build_quality_deciles,
     build_soft_weights,
     hit_rate_to_multiplier,
-    is_quality_low,
     percentile,
+    quality_rating,
     resolve_soft_weight,
     soft_weight_keys,
     update_ema_value,
@@ -52,7 +53,8 @@ class AutoPickIncentiveTests(unittest.TestCase):
         self.assertEqual(hit_rate_to_multiplier(0.5), 1.0)
 
     def test_ema_and_adjust_score(self) -> None:
-        params = IncentiveParams(ema_alpha=0.5, ema_clamp=0.5)
+        # alpha 需明显小于 0.5，否则最后一场负会盖掉前两场胜。
+        params = IncentiveParams(ema_alpha=0.2, ema_clamp=0.5)
         ema_m, ema_l = walk_auto_pick_ema(
             [("1x2", 39, True), ("1x2", 39, True), ("1x2", 39, False)],
             params=params,
@@ -64,12 +66,26 @@ class AutoPickIncentiveTests(unittest.TestCase):
             ema_market=ema_m,
             ema_league=ema_l,
             soft_weights={"global": 1.0, "39|1x2": 1.1},
-            quality_threshold=0.05,
         )
         boosted = adjust_pick_score(0.1, league_id=39, market="1x2", state=state)
         self.assertGreater(boosted, 0.1)
-        self.assertTrue(is_quality_low(0.01, 0.05))
-        self.assertFalse(is_quality_low(0.2, 0.05))
+
+    def test_quality_rating_maps_deciles_to_half_stars(self) -> None:
+        deciles = build_quality_deciles([float(i) for i in range(1, 101)])
+        self.assertEqual(len(deciles), 9)
+        # Below every decile → weakest half star; above all → full 5 星.
+        self.assertEqual(quality_rating(0.0, deciles), 0.5)
+        self.assertEqual(quality_rating(1000.0, deciles), 5.0)
+        # Mid-distribution lands mid-ladder and stays monotonic.
+        self.assertEqual(quality_rating(50.0, deciles), 2.5)
+        self.assertGreater(
+            quality_rating(80.0, deciles) or 0.0,
+            quality_rating(20.0, deciles) or 0.0,
+        )
+
+    def test_quality_rating_without_history(self) -> None:
+        self.assertEqual(build_quality_deciles([]), [])
+        self.assertIsNone(quality_rating(0.5, []))
 
     def test_ema_update_clamps(self) -> None:
         self.assertEqual(

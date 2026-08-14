@@ -51,6 +51,25 @@ async def _ensure_table_columns(conn, table: str, additions: dict[str, str]) -> 
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
 
 
+async def _drop_table_columns(conn, table: str, columns: tuple[str, ...]) -> None:
+    """Drop retired columns on an existing SQLite table (no-op when unsupported)."""
+    from sqlalchemy import text
+
+    try:
+        result = await conn.execute(text(f"PRAGMA table_info({table})"))
+        existing = {row[1] for row in result.fetchall()}
+    except Exception:
+        return
+
+    for column in columns:
+        if column not in existing:
+            continue
+        try:
+            await conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
+        except Exception:
+            return
+
+
 async def _migrate_favorite_fixtures_owner_pk(conn) -> None:
     """Rebuild favorite_fixtures with composite PK (user_id, fixture_id).
 
@@ -103,7 +122,7 @@ async def _migrate_favorite_fixtures_owner_pk(conn) -> None:
                 source TEXT NOT NULL DEFAULT 'manual',
                 auto_market TEXT,
                 auto_lean TEXT,
-                quality_low INTEGER NOT NULL DEFAULT 0,
+                quality_rating REAL,
                 saved_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
                 PRIMARY KEY (user_id, fixture_id),
                 FOREIGN KEY(fixture_id) REFERENCES fixtures (id) ON DELETE CASCADE
@@ -114,15 +133,17 @@ async def _migrate_favorite_fixtures_owner_pk(conn) -> None:
     legacy_cols = {row[1] for row in (
         await conn.execute(text("PRAGMA table_info(favorite_fixtures_legacy)"))
     ).fetchall()}
-    has_quality = "quality_low" in legacy_cols
     has_source = "source" in legacy_cols
-    quality_expr = "COALESCE(quality_low, 0)" if has_quality else "0"
+    # Legacy quality_low was a boolean gate; ratings are recomputed on next sync.
+    quality_expr = (
+        "quality_rating" if "quality_rating" in legacy_cols else "NULL"
+    )
     source_expr = "COALESCE(source, 'manual')" if has_source else "'manual'"
     await conn.execute(
         text(
             f"""
             INSERT OR IGNORE INTO favorite_fixtures
-                (user_id, fixture_id, source, auto_market, auto_lean, quality_low, saved_at)
+                (user_id, fixture_id, source, auto_market, auto_lean, quality_rating, saved_at)
             SELECT
                 COALESCE(user_id, ''),
                 fixture_id,
@@ -200,7 +221,7 @@ async def _ensure_sqlite_columns(conn) -> None:
             "source": "TEXT DEFAULT 'manual'",
             "auto_market": "TEXT",
             "auto_lean": "TEXT",
-            "quality_low": "INTEGER DEFAULT 0",
+            "quality_rating": "REAL",
         },
     )
     await _ensure_table_columns(
@@ -208,7 +229,7 @@ async def _ensure_sqlite_columns(conn) -> None:
         "auto_pick_snapshots",
         {
             "score": "REAL",
-            "quality_low": "INTEGER DEFAULT 0",
+            "quality_rating": "REAL",
         },
     )
     await _ensure_table_columns(
@@ -230,6 +251,9 @@ async def _ensure_sqlite_columns(conn) -> None:
     await conn.execute(
         text("UPDATE bet_plans SET user_id = '' WHERE user_id IS NULL")
     )
+    # quality_low 已被 0.5–5 星的 quality_rating 取代。
+    await _drop_table_columns(conn, "favorite_fixtures", ("quality_low",))
+    await _drop_table_columns(conn, "auto_pick_snapshots", ("quality_low",))
     await _migrate_favorite_fixtures_owner_pk(conn)
 
 

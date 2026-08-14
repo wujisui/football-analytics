@@ -24,9 +24,8 @@ from app.models.pre_match_data import PreMatchData
 from app.services.ah_features import handicap_pick_from_lean
 from app.services.auto_pick_incentive import (
     adjust_pick_score,
-    effective_quality_threshold,
     ensure_incentives_for_picks,
-    is_quality_low,
+    quality_rating,
 )
 from app.services.data_cleanup import record_has_algorithm_recommendation
 from app.services.prediction import (
@@ -58,7 +57,8 @@ class AutoPickCandidate:
     confidence: float
     decimal_odd: float
     expected_return: float
-    quality_low: bool = False
+    # 0.5–5 星质量分级；历史样本不足时为 None。
+    quality_rating: float | None = None
 
 
 @dataclass(frozen=True)
@@ -298,8 +298,8 @@ def score_auto_pick_candidates(
 ) -> list[AutoPickCandidate]:
     """Score every scorable single-lean fixture (no day / count cap)."""
     ranked: list[AutoPickCandidate] = []
-    threshold = (
-        effective_quality_threshold(incentive_state) if incentive_state is not None else None
+    deciles = (
+        (incentive_state.quality_deciles or []) if incentive_state is not None else []
     )
     for fixture, stored, feature in rows:
         if not record_has_algorithm_recommendation(stored, feature):
@@ -345,7 +345,7 @@ def score_auto_pick_candidates(
                 confidence=best.confidence,
                 decimal_odd=best.decimal_odd,
                 expected_return=best.expected_return,
-                quality_low=is_quality_low(final_score, threshold),
+                quality_rating=quality_rating(final_score, deciles),
             )
         )
     ranked.sort(key=lambda item: (-item.score, item.kickoff, item.fixture_id))
@@ -479,7 +479,7 @@ async def sync_daily_auto_favorites(
                 source=FAVORITE_SOURCE_AUTO,
                 auto_market=candidate.market,
                 auto_lean=candidate.lean,
-                quality_low=candidate.quality_low,
+                quality_rating=candidate.quality_rating,
                 saved_at=saved_at,
             )
         )
@@ -511,7 +511,7 @@ async def sync_daily_auto_favorites(
                 decimal_odd=candidate.decimal_odd,
                 expected_return=candidate.expected_return,
                 score=candidate.score,
-                quality_low=candidate.quality_low,
+                quality_rating=candidate.quality_rating,
                 picked_at=saved_at,
             )
         )
@@ -544,7 +544,7 @@ async def sync_daily_auto_favorites(
                 "confidence": round(item.confidence, 4),
                 "decimal_odd": round(item.decimal_odd, 3),
                 "expected_return": round(item.expected_return, 4),
-                "quality_low": item.quality_low,
+                "quality_rating": item.quality_rating,
             }
             for item in selected
         ],

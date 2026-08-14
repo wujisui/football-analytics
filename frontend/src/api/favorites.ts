@@ -41,8 +41,8 @@ export interface FavoriteFixtureRecord {
   source?: 'manual' | 'auto' | string
   auto_market?: AutoFavoriteMarket | string | null
   auto_lean?: string | null
-  /** Auto tip below quality threshold — info-blue [荐] play tag; star stays gold. */
-  quality_low?: boolean
+  /** 0.5–5 星推荐质量（历史分位分级）；手动关注与历史不足时为空。 */
+  quality_rating?: number | null
 }
 
 export interface FavoriteFixturesResponse {

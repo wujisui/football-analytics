@@ -49,7 +49,7 @@ function optimisticFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord 
     source: 'manual',
     auto_market: null,
     auto_lean: null,
-    quality_low: false,
+    quality_rating: null,
     odds_snippet: oddsSnippetFromFixture(fixture),
     home_rank: fixture.home_rank ?? null,
     away_rank: fixture.away_rank ?? null,
@@ -80,7 +80,7 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     source: 'manual',
     auto_market: null,
     auto_lean: null,
-    quality_low: false,
+    quality_rating: null,
     has_prediction: hasPrediction,
     recommendation: fixture.recommendation ?? undefined,
     handicap_lean: fixture.handicap_lean ?? undefined,
@@ -252,13 +252,15 @@ export function autoFavoriteMarket(
   return market || null
 }
 
-/** True when this fixture is an auto tip marked below quality threshold. */
-export function favoriteQualityLow(
+/** 0.5–5 星推荐质量；非算法推荐或历史不足时为 null。 */
+export function favoriteQualityRating(
   fixtureId: number | null | undefined,
-): boolean {
-  if (fixtureId == null) return false
+): number | null {
+  if (fixtureId == null) return null
   const item = findFavoriteListFixture(fixtureId)
-  return !!item?.quality_low
+  if (!item || item.source !== 'auto') return null
+  const rating = Number(item.quality_rating ?? 0)
+  return rating > 0 ? rating : null
 }
 
 export function useFavoriteFixtures() {

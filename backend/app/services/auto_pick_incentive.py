@@ -52,8 +52,6 @@ class IncentiveParams:
     soft_min_samples: int = DEFAULT_SOFT_MIN_SAMPLES
     soft_mult_min: float = DEFAULT_SOFT_MULT_MIN
     soft_mult_max: float = DEFAULT_SOFT_MULT_MAX
-    # None → use calibrated P30; float override wins when set.
-    quality_threshold_override: float | None = None
 
 
 @dataclass
@@ -63,7 +61,8 @@ class IncentiveState:
     ema_market: dict[str, float] | None = None
     ema_league: dict[str, float] | None = None
     soft_weights: dict[str, float] | None = None
-    quality_threshold: float | None = None
+    # P10…P90 of historical pick scores; ladder behind the 0.5–5 星 rating.
+    quality_deciles: list[float] | None = None
 
     def __post_init__(self) -> None:
         if self.params is None:
@@ -185,15 +184,35 @@ def adjust_pick_score(
     return float(base_score) * soft * ema
 
 
-def is_quality_low(score: float, threshold: float | None) -> bool:
-    if threshold is None:
-        return False
-    return float(score) < float(threshold)
+QUALITY_DECILE_POINTS = (10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0)
+QUALITY_RATING_STEP = 0.5
+
+
+def build_quality_deciles(scores: list[float]) -> list[float]:
+    """P10…P90 ladder of historical pick scores (empty when no history)."""
+    ordered = sorted(scores)
+    if not ordered:
+        return []
+    return [
+        value
+        for point in QUALITY_DECILE_POINTS
+        if (value := percentile(ordered, point)) is not None
+    ]
+
+
+def quality_rating(score: float, deciles: list[float] | None) -> float | None:
+    """Rank ``score`` against the decile ladder → 0.5–5 星 in half-star steps.
+
+    Returns ``None`` while history is too thin to rank against.
+    """
+    if not deciles:
+        return None
+    beaten = sum(1 for edge in deciles if float(score) >= float(edge))
+    return round((beaten + 1) * QUALITY_RATING_STEP, 1)
 
 
 def params_from_dict(raw: dict[str, Any] | None) -> IncentiveParams:
     data = raw or {}
-    override = data.get("quality_threshold_override")
     return IncentiveParams(
         ema_alpha=float(data.get("ema_alpha", DEFAULT_EMA_ALPHA)),
         ema_market_weight=float(
@@ -206,9 +225,6 @@ def params_from_dict(raw: dict[str, Any] | None) -> IncentiveParams:
         soft_min_samples=int(data.get("soft_min_samples", DEFAULT_SOFT_MIN_SAMPLES)),
         soft_mult_min=float(data.get("soft_mult_min", DEFAULT_SOFT_MULT_MIN)),
         soft_mult_max=float(data.get("soft_mult_max", DEFAULT_SOFT_MULT_MAX)),
-        quality_threshold_override=(
-            float(override) if override is not None else None
-        ),
     )
 
 
@@ -222,11 +238,9 @@ def state_from_dict(raw: dict[str, Any] | None) -> IncentiveState:
         soft_weights={
             str(k): float(v) for k, v in (data.get("soft_weights") or {"global": 1.0}).items()
         },
-        quality_threshold=(
-            float(data["quality_threshold"])
-            if data.get("quality_threshold") is not None
-            else None
-        ),
+        quality_deciles=[
+            float(value) for value in (data.get("quality_deciles") or [])
+        ],
     )
 
 
@@ -242,12 +256,11 @@ def state_to_dict(state: IncentiveState) -> dict[str, Any]:
             "soft_min_samples": p.soft_min_samples,
             "soft_mult_min": p.soft_mult_min,
             "soft_mult_max": p.soft_mult_max,
-            "quality_threshold_override": p.quality_threshold_override,
         },
         "ema_market": dict(state.ema_market or {}),
         "ema_league": dict(state.ema_league or {}),
         "soft_weights": dict(state.soft_weights or {"global": 1.0}),
-        "quality_threshold": state.quality_threshold,
+        "quality_deciles": list(state.quality_deciles or []),
     }
 
 
@@ -347,12 +360,6 @@ def build_soft_weights(
     return weights
 
 
-def effective_quality_threshold(state: IncentiveState) -> float | None:
-    if state.params.quality_threshold_override is not None:
-        return float(state.params.quality_threshold_override)
-    return state.quality_threshold
-
-
 async def load_incentive_state(db: AsyncSession) -> IncentiveState:
     row = await get_setting_row(db, KEY_INCENTIVE_STATE)
     if row is None or not (row.value or "").strip():
@@ -413,10 +420,14 @@ async def refresh_incentive_state(
     now: datetime | None = None,
     force: bool = False,
 ) -> IncentiveState:
-    """Recompute EMA + soft weights once per scheduler-local day."""
+    """Recompute EMA + soft weights once per scheduler-local day.
+
+    A same-day state without the quality ladder is stale (older format), so it
+    is refreshed anyway instead of leaving every pick unrated.
+    """
     state = await load_incentive_state(db)
     today = _local_day(now)
-    if not force and state.updated_day == today:
+    if not force and state.updated_day == today and state.quality_deciles:
         return state
 
     params = state.params
@@ -461,7 +472,7 @@ async def refresh_incentive_state(
         params=params,
     )
 
-    # Quality seed: P30 of historical auto-pick composite scores (prefer stored score).
+    # Quality ladder: deciles of historical auto-pick composite scores.
     snap_rows = (
         await db.execute(
             select(AutoPickSnapshot.score, AutoPickSnapshot.expected_return).order_by(
@@ -475,8 +486,7 @@ async def refresh_incentive_state(
         if value is None:
             continue
         hist_scores.append(float(value))
-    hist_scores.sort()
-    calibrated = percentile(hist_scores, 30.0)
+    deciles = build_quality_deciles(hist_scores)
 
     state = IncentiveState(
         updated_day=today,
@@ -484,16 +494,16 @@ async def refresh_incentive_state(
         ema_market=ema_market,
         ema_league=ema_league,
         soft_weights=soft_weights,
-        quality_threshold=calibrated,
+        quality_deciles=deciles,
     )
     await save_incentive_state(db, state)
     logger.info(
         "Auto-pick incentives refreshed day=%s auto_settled=%s soft_keys=%s "
-        "quality_p30=%s",
+        "quality_deciles=%s",
         today,
         len(auto_settled),
         len(soft_weights),
-        calibrated,
+        [round(value, 4) for value in deciles],
     )
     return state
 

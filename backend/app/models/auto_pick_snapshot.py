@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -33,14 +33,10 @@ class AutoPickSnapshot(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     decimal_odd: Mapped[float | None] = mapped_column(Float, nullable=True)
     expected_return: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Final ranking score after incentives (quality threshold compares this).
+    # Final ranking score after incentives (the quality ladder ranks this).
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    quality_low: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        server_default="0",
-        nullable=False,
-    )
+    # 0.5–5 星质量分级，按挑场当日的历史分位冻结。
+    quality_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     picked_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),

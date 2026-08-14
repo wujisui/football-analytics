@@ -394,7 +394,8 @@ class FavoriteFixtureResponse(BaseModel):
     source: str = "manual"
     auto_market: str | None = None
     auto_lean: str | None = None
-    quality_low: bool = False
+    # 0.5–5 星推荐质量（历史分位分级）；手动关注与历史不足时为空。
+    quality_rating: float | None = None
 
     @field_serializer("fixture_date", "saved_at")
     def serialize_datetimes(self, value: datetime) -> str:

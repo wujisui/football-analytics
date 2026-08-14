@@ -8,6 +8,7 @@ import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
 import WdlProbabilityBars from '@/components/WdlProbabilityBars.vue'
+import { favoriteQualityRating } from '@/composables/useFavoriteFixtures'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import {
   formatOdd,
@@ -113,6 +114,9 @@ const primaryAwayOdd = computed(() =>
   primaryAh.value ? formatOdd(primaryAh.value.away) : '—',
 )
 const primaryLine = computed(() => primaryAh.value?.line || '—')
+
+/** 每日推荐质量：0.5–5 星，只有算法推荐场次才有。 */
+const qualityRating = computed(() => favoriteQualityRating(resolvedFixtureId.value))
 
 const probs = computed(() => {
   if (!predictionReady.value) return []
@@ -312,6 +316,17 @@ function onOddsClick() {
         <span class="handicap-odd">{{ primaryAwayOdd }}</span>
       </div>
       <span v-else class="handicap-empty">暂无盘口</span>
+      <n-rate
+        v-if="qualityRating != null"
+        class="quality-rate"
+        readonly
+        allow-half
+        :size="14"
+        :count="5"
+        :value="qualityRating"
+        :aria-label="`推荐质量 ${qualityRating} / 5`"
+        :title="`推荐质量 ${qualityRating} / 5（与历史推荐分位对比）`"
+      />
     </div>
 
     <PredictionRecommendationRow
@@ -429,8 +444,9 @@ function onOddsClick() {
 }
 
 .handicap-line {
+  /* 让球数字紧凑靠左，右侧留给推荐质量星级 */
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -444,8 +460,12 @@ function onOddsClick() {
 .handicap-values {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   min-width: 0;
+}
+
+.quality-rate {
+  justify-self: end;
 }
 
 .handicap-label {

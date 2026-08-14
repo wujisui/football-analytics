@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -46,13 +46,8 @@ class FavoriteFixture(Base):
     # Populated only when source=auto: which single-lean market won ranking.
     auto_market: Mapped[str | None] = mapped_column(String(16), nullable=True)
     auto_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Auto tip below quality threshold — FavoriteButton second-tier star.
-    quality_low: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default="0",
-    )
+    # Auto tip quality as 0.5–5 星（历史分位分级）；手动关注与历史不足时为空。
+    quality_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     saved_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),
