@@ -8,6 +8,7 @@ from app.services.auto_favorites import (
     score_auto_pick_candidates,
     score_fixture_confidence,
     select_auto_picks_by_match_day,
+    within_day_quality_ratings,
 )
 
 
@@ -315,4 +316,41 @@ def test_selects_four_per_match_day_not_four_for_whole_window() -> None:
 
     assert [item.fixture_id for item in picked] == [1, 2, 3, 4, 11, 12, 13, 14]
     assert len(picked) == 8
+
+
+def test_within_day_ratings_anchor_best_at_five_per_day() -> None:
+    def pick(fid: int, score: float, kickoff: str):
+        return SimpleNamespace(
+            fixture_id=fid,
+            kickoff=datetime.fromisoformat(kickoff),
+            score=score,
+        )
+
+    picks = [
+        pick(1, 0.09, "2026-08-12T12:00:00"),
+        pick(2, 0.07, "2026-08-12T13:00:00"),
+        pick(3, 0.03, "2026-08-12T14:00:00"),
+        pick(4, 50.0, "2026-08-13T12:00:00"),  # lone pick next day
+    ]
+    ratings = within_day_quality_ratings(picks)
+
+    # Each match day anchors its own best at 5 星; lower score tiers lose 0.5.
+    assert ratings[1] == 5.0
+    assert ratings[2] == 4.5
+    assert ratings[3] == 4.0
+    # A day's sole pick is that day's best → full stars.
+    assert ratings[4] == 5.0
+
+
+def test_within_day_ratings_equal_scores_all_five() -> None:
+    def pick(fid: int, kickoff: str):
+        return SimpleNamespace(
+            fixture_id=fid,
+            kickoff=datetime.fromisoformat(kickoff),
+            score=-0.03,
+        )
+
+    picks = [pick(1, "2026-08-12T12:00:00"), pick(2, "2026-08-12T13:00:00")]
+    ratings = within_day_quality_ratings(picks)
+    assert ratings == {1: 5.0, 2: 5.0}
 

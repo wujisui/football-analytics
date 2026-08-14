@@ -39,6 +39,22 @@ python manage.py init-db
 
 **不要**加 `--reload`（生产无热重载；改代码需手动重启）。
 
+### 1.1 首次上线：与本机模型、推荐历史对齐
+
+仅部署 Git 代码不会带上本机训练结果和推荐历史。若首发要求与本机对齐：
+
+1. 停止本机与服务器两端的后端写入进程。
+2. 将 `backend/data/football.db` 和整个 `backend/data/models/` 一起复制到服务器相同路径。
+3. 使用相同代码提交、Python/NumPy 依赖、`config/leagues.json`，并对齐
+   `SCHEDULER_TIMEZONE`、`API_HISTORY_MODE`、全部 `ML_*` 配置及详情预拉开关。
+4. 从服务器的 `backend/` 目录执行 `python manage.py model-status`，核对三套模型的
+   inference mode、样本数、deployable 状态与本机一致，再启动服务。
+5. 上线后以服务器数据库与模型目录为唯一权威源；本机只做开发或接收单向备份。
+
+`football.db` 内同时包含冻结赛前特征、赛果标签、每日推荐快照和
+`app_settings.auto_pick_incentive_state`。只复制模型文件而不复制数据库，推荐排序和
+历史反馈权重仍会与本机不同；只复制数据库而漏掉模型文件，1X2/AH/进球推断模式也可能不同。
+
 ```powershell
 cd backend
 .\.venv\Scripts\Activate.ps1

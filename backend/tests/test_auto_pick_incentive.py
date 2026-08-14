@@ -8,11 +8,8 @@ from app.services.auto_pick_incentive import (
     IncentiveParams,
     IncentiveState,
     adjust_pick_score,
-    build_quality_deciles,
     build_soft_weights,
     hit_rate_to_multiplier,
-    percentile,
-    quality_rating,
     resolve_soft_weight,
     soft_weight_keys,
     update_ema_value,
@@ -21,11 +18,6 @@ from app.services.auto_pick_incentive import (
 
 
 class AutoPickIncentiveTests(unittest.TestCase):
-    def test_percentile_p30(self) -> None:
-        values = [float(i) for i in range(1, 11)]
-        # P30 of 1..10 ≈ 3.7
-        self.assertAlmostEqual(percentile(values, 30.0) or 0.0, 3.7, places=5)
-
     def test_soft_weight_fallback_order(self) -> None:
         self.assertEqual(
             soft_weight_keys(39, "1x2"),
@@ -69,23 +61,6 @@ class AutoPickIncentiveTests(unittest.TestCase):
         )
         boosted = adjust_pick_score(0.1, league_id=39, market="1x2", state=state)
         self.assertGreater(boosted, 0.1)
-
-    def test_quality_rating_maps_deciles_to_half_stars(self) -> None:
-        deciles = build_quality_deciles([float(i) for i in range(1, 101)])
-        self.assertEqual(len(deciles), 9)
-        # Below every decile → weakest half star; above all → full 5 星.
-        self.assertEqual(quality_rating(0.0, deciles), 0.5)
-        self.assertEqual(quality_rating(1000.0, deciles), 5.0)
-        # Mid-distribution lands mid-ladder and stays monotonic.
-        self.assertEqual(quality_rating(50.0, deciles), 2.5)
-        self.assertGreater(
-            quality_rating(80.0, deciles) or 0.0,
-            quality_rating(20.0, deciles) or 0.0,
-        )
-
-    def test_quality_rating_without_history(self) -> None:
-        self.assertEqual(build_quality_deciles([]), [])
-        self.assertIsNone(quality_rating(0.5, []))
 
     def test_ema_update_clamps(self) -> None:
         self.assertEqual(

@@ -33,9 +33,9 @@ class AutoPickSnapshot(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     decimal_odd: Mapped[float | None] = mapped_column(Float, nullable=True)
     expected_return: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Final ranking score after incentives (the quality ladder ranks this).
+    # Final ranking score after incentives (the within-day rating ranks this).
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # 0.5–5 星质量分级，按挑场当日的历史分位冻结。
+    # 0.5–5 星质量分级，按同一比赛日的入选场次内部排名冻结。
     quality_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     picked_at: Mapped[datetime] = mapped_column(
         DateTime,

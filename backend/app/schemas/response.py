@@ -394,7 +394,7 @@ class FavoriteFixtureResponse(BaseModel):
     source: str = "manual"
     auto_market: str | None = None
     auto_lean: str | None = None
-    # 0.5–5 星推荐质量（历史分位分级）；手动关注与历史不足时为空。
+    # 0.5–5 星推荐质量（同一比赛日的入选场次内部排名）。
     quality_rating: float | None = None
 
     @field_serializer("fixture_date", "saved_at")

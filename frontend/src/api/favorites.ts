@@ -41,7 +41,7 @@ export interface FavoriteFixtureRecord {
   source?: 'manual' | 'auto' | string
   auto_market?: AutoFavoriteMarket | string | null
   auto_lean?: string | null
-  /** 0.5–5 星推荐质量（历史分位分级）；手动关注与历史不足时为空。 */
+  /** 0.5–5 星推荐质量（同一比赛日的入选场次内部排名）。 */
   quality_rating?: number | null
 }
 

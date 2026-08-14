@@ -263,7 +263,12 @@ function onOddsClick() {
       暂无有效胜平负概率（缺近况或盘口）
     </p>
 
-    <div v-if="standalone" class="handicap-line" @click.stop>
+    <div
+      v-if="standalone"
+      class="handicap-line"
+      :class="{ 'has-rate': qualityRating != null }"
+      @click.stop
+    >
       <span class="handicap-label">让球：</span>
       <div v-if="primaryAh" class="handicap-values">
         <span class="handicap-odd">{{ primaryHomeOdd }}</span>
@@ -325,7 +330,7 @@ function onOddsClick() {
         :count="5"
         :value="qualityRating"
         :aria-label="`推荐质量 ${qualityRating} / 5`"
-        :title="`推荐质量 ${qualityRating} / 5（与历史推荐分位对比）`"
+        :title="`推荐质量 ${qualityRating} / 5（同日推荐内部比较）`"
       />
     </div>
 
@@ -444,9 +449,8 @@ function onOddsClick() {
 }
 
 .handicap-line {
-  /* 让球数字紧凑靠左，右侧留给推荐质量星级 */
   display: grid;
-  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -457,11 +461,21 @@ function onOddsClick() {
   font-variant-numeric: tabular-nums;
 }
 
+/* 有星级时让球数字收紧靠左，把右侧让给星级 */
+.handicap-line.has-rate {
+  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr);
+}
+
 .handicap-values {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
   min-width: 0;
+}
+
+.handicap-line.has-rate .handicap-values {
+  justify-content: flex-start;
+  gap: 6px;
 }
 
 .quality-rate {

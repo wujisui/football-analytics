@@ -168,6 +168,8 @@ python -m unittest discover -s tests -v
 
 已有本地数据库时，这些回填/训练命令不调用官方 API。完整的换机步骤、依赖检查及 pip SSL 故障处理见根目录 [`DEV_SETUP.md`](../DEV_SETUP.md)。
 
+> **线上与本地对齐**：上述“重新训练”只保证使用云上样本产生一套可用模型，不保证与本机输出一致。首次上线若要求严格对齐，需停写后同时迁移 `data/football.db` 与整个 `data/models/`（1X2、AH、进球分布的权重及元数据），并保持相同代码提交、`ML_*` 配置、联赛目录和依赖版本。迁移后以服务器为唯一权威源，不在本地与线上分别训练后期待自动一致。
+
 可触发的任务名：`scheduled_fixtures_sync`、`clean_old_data`、`train_model`。
 
 ### 概率模型（时间验证 + 基线门禁）

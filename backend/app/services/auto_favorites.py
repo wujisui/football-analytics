@@ -1,4 +1,4 @@
-"""Auto-favorites: top confident single-lean picks from catalog leagues."""
+"""Auto-favorites: history-adjusted single-lean picks from catalog leagues."""
 
 from __future__ import annotations
 
@@ -22,11 +22,7 @@ from app.models.fixture import Fixture
 from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
 from app.services.ah_features import handicap_pick_from_lean
-from app.services.auto_pick_incentive import (
-    adjust_pick_score,
-    ensure_incentives_for_picks,
-    quality_rating,
-)
+from app.services.auto_pick_incentive import adjust_pick_score, ensure_incentives_for_picks
 from app.services.data_cleanup import record_has_algorithm_recommendation
 from app.services.prediction import (
     _odd_float,
@@ -42,8 +38,38 @@ from app.services.user_scope import ANON_OWNER_ID
 logger = logging.getLogger(__name__)
 
 AUTO_PICK_LIMIT = 4
-# Soft floor only — always fill up to AUTO_PICK_LIMIT when enough fixtures exist.
 MIN_CONFIDENCE = 0.01
+QUALITY_RATING_MAX = 5.0
+QUALITY_RATING_MIN = 0.5
+
+
+def within_day_quality_ratings(
+    picks: list["AutoPickCandidate"],
+) -> dict[int, float]:
+    """Rate selected picks within each match day by final score rank.
+
+    The highest score anchors 5 星; each lower distinct score tier deducts
+    0.5 星. Equal scores receive equal ratings.
+    """
+    by_day: dict[str, list[AutoPickCandidate]] = {}
+    for pick in picks:
+        by_day.setdefault(_schedule_day_key(pick.kickoff), []).append(pick)
+
+    ratings: dict[int, float] = {}
+    for day_picks in by_day.values():
+        distinct_scores = sorted(
+            {pick.score for pick in day_picks},
+            reverse=True,
+        )
+        score_tiers = {
+            score: index for index, score in enumerate(distinct_scores)
+        }
+        for pick in day_picks:
+            ratings[pick.fixture_id] = max(
+                QUALITY_RATING_MIN,
+                QUALITY_RATING_MAX - 0.5 * score_tiers[pick.score],
+            )
+    return ratings
 
 
 @dataclass(frozen=True)
@@ -57,9 +83,6 @@ class AutoPickCandidate:
     confidence: float
     decimal_odd: float
     expected_return: float
-    # 0.5–5 星质量分级；历史样本不足时为 None。
-    quality_rating: float | None = None
-
 
 @dataclass(frozen=True)
 class MarketCandidate:
@@ -298,9 +321,6 @@ def score_auto_pick_candidates(
 ) -> list[AutoPickCandidate]:
     """Score every scorable single-lean fixture (no day / count cap)."""
     ranked: list[AutoPickCandidate] = []
-    deciles = (
-        (incentive_state.quality_deciles or []) if incentive_state is not None else []
-    )
     for fixture, stored, feature in rows:
         if not record_has_algorithm_recommendation(stored, feature):
             continue
@@ -345,7 +365,6 @@ def score_auto_pick_candidates(
                 confidence=best.confidence,
                 decimal_odd=best.decimal_odd,
                 expected_return=best.expected_return,
-                quality_rating=quality_rating(final_score, deciles),
             )
         )
     ranked.sort(key=lambda item: (-item.score, item.kickoff, item.fixture_id))
@@ -404,10 +423,14 @@ async def sync_daily_auto_favorites(
     Daily tips always live in the anonymous owner bucket (``ANON_OWNER_ID``)
     so every session can list them; ``user_id`` is ignored for writes.
 
-    Each UTC match day in the synced prematch window gets up to ``limit`` tips
-    (default 4). A 7-day window with many fixtures therefore yields many more
-    than four auto favorites — never one global cherry-pick across the week.
-    Manual favorites are never touched.
+    Historical hit feedback adjusts candidate scores without eliminating
+    candidates. Each UTC match day gets up to ``limit`` tips (default 4),
+    ranked by final score. The day's best pick anchors 5 quality stars and
+    lower score tiers deduct 0.5 stars.
+
+    A 7-day window can therefore yield many more than four auto favorites —
+    never one global cherry-pick across the week. Manual favorites are never
+    touched.
     """
     del user_id  # product-wide tips; kept for call-site compat
     owner = ANON_OWNER_ID
@@ -463,6 +486,8 @@ async def sync_daily_auto_favorites(
         skip_fixture_ids=manual_ids,
     )
 
+    ratings = within_day_quality_ratings(selected)
+
     await db.execute(
         delete(FavoriteFixture).where(
             FavoriteFixture.user_id == owner,
@@ -479,7 +504,7 @@ async def sync_daily_auto_favorites(
                 source=FAVORITE_SOURCE_AUTO,
                 auto_market=candidate.market,
                 auto_lean=candidate.lean,
-                quality_rating=candidate.quality_rating,
+                quality_rating=ratings.get(candidate.fixture_id),
                 saved_at=saved_at,
             )
         )
@@ -511,7 +536,7 @@ async def sync_daily_auto_favorites(
                 decimal_odd=candidate.decimal_odd,
                 expected_return=candidate.expected_return,
                 score=candidate.score,
-                quality_rating=candidate.quality_rating,
+                quality_rating=ratings.get(candidate.fixture_id),
                 picked_at=saved_at,
             )
         )
@@ -544,7 +569,7 @@ async def sync_daily_auto_favorites(
                 "confidence": round(item.confidence, 4),
                 "decimal_odd": round(item.decimal_odd, 3),
                 "expected_return": round(item.expected_return, 4),
-                "quality_rating": item.quality_rating,
+                "quality_rating": ratings.get(item.fixture_id),
             }
             for item in selected
         ],
