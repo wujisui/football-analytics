@@ -1,6 +1,8 @@
 :root,
 html[data-theme='light'] {
   --fa-bg: #f5f6f8;
+  /* Backdrop outside the centered content band (wide screens). */
+  --fa-backdrop: #e3e5ea;
   --fa-bg-elevated: #ffffff;
   --fa-bg-soft: #fafafa;
   --fa-border: #e8e8e8;
@@ -26,6 +28,8 @@ html[data-theme='light'] {
 
 html[data-theme='dark'] {
   --fa-bg: #101014;
+  /* Backdrop outside the centered content band (wide screens). */
+  --fa-backdrop: #050507;
   --fa-bg-elevated: #18181c;
   --fa-bg-soft: #1f1f24;
   --fa-border: #2e2e36;
@@ -109,7 +113,9 @@ button {
   display: flex;
   justify-content: center;
   overflow: hidden;
-  background: var(--fa-bg);
+  /* Distinct from the content band so the 1280 shell reads as a bordered
+     page on wide screens (no visible edge when both were --fa-bg). */
+  background: var(--fa-backdrop);
 }
 
 .fa-page-shell {
@@ -120,6 +126,7 @@ button {
   min-height: 0;
   min-width: 0;
   box-sizing: border-box;
+  background: var(--fa-bg);
 }
 
 /* Shared in-page toolbar (calculator / Results / etc.) */
