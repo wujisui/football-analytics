@@ -88,16 +88,27 @@ async def scheduled_fixtures_sync() -> None:
                     "(official quota exhausted earlier in this batch)"
                 )
 
-        # Batch scope is fixtures + odds + results + league standings. Full
-        # display packages stay on-demand via analyze_fixture until this flag
-        # is on *and* bulk enrich is wired. Toggle via admin UI / env.
+        # Optional: pre-pull detail packages for catalog prematch fixtures that
+        # still lack a display package. Same path as GET /fixtures/{id}/analysis.
+        # Default off — burns official quota; admin toggles via Mine UI / env.
         full_detail_enabled, full_detail_source = await get_enable_scheduled_full_detail()
+        full_detail_stats: dict = {
+            "enabled": full_detail_enabled,
+            "source": full_detail_source,
+        }
         if full_detail_enabled:
-            logger.info(
-                "scheduled full detail enabled (source=%s) but bulk package "
-                "enrich is not wired yet; skipping (detail click still enriches)",
-                full_detail_source,
-            )
+            try:
+                from app.services.scheduled_detail_enrich import (
+                    run_scheduled_full_detail_enrich,
+                )
+
+                full_detail_stats.update(await run_scheduled_full_detail_enrich())
+            except Exception as exc:
+                logger.warning(
+                    "scheduled_fixtures_sync full-detail enrich skipped: %s",
+                    exc,
+                )
+                full_detail_stats["error"] = str(exc)
 
         for module_path, function_name, label in (
             ("app.services.ml_predictor", "maybe_auto_train_model", "1X2"),
@@ -133,8 +144,9 @@ async def scheduled_fixtures_sync() -> None:
 
     logger.info(
         "scheduled_fixtures_sync done fixtures_saved=%s results_saved=%s "
-        "standings=%s",
+        "standings=%s full_detail=%s",
         fixtures_saved,
         results_saved,
         standings_stats,
+        full_detail_stats,
     )

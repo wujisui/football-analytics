@@ -104,6 +104,9 @@ class Settings(BaseSettings):
     # Future / paid scale default (env). Runtime override via Mine admin UI
     # persists in app_settings; scheduled batches read the effective value.
     ENABLE_SCHEDULED_FULL_DETAIL: bool = False
+    # Max incomplete catalog prematch fixtures to enrich per scheduled batch
+    # when the flag is on. Each fixture may cost several official API calls.
+    SCHEDULED_FULL_DETAIL_BUDGET: int = 10
     # History window for H2H / team form / free-plan date+season clamps:
     # - full: paid plan — no artificial 2022–2024 / ±2-day fixture clip
     # - free: API-Sports free tier (default — matches typical local keys)

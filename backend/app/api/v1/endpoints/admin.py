@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps_auth import require_admin
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.services.runtime_settings import (
     get_enable_scheduled_full_detail,
@@ -23,10 +24,21 @@ class TriggerTaskRequest(BaseModel):
 class ScheduledFullDetailSetting(BaseModel):
     enabled: bool
     source: str = Field(description="db = 管理员已覆盖；env = 使用环境变量默认值")
+    budget: int = Field(
+        description="每个定时批次最多预拉的缺包场次数（SCHEDULED_FULL_DETAIL_BUDGET）"
+    )
 
 
 class ScheduledFullDetailUpdate(BaseModel):
     enabled: bool
+
+
+def _full_detail_payload(enabled: bool, source: str) -> ScheduledFullDetailSetting:
+    return ScheduledFullDetailSetting(
+        enabled=enabled,
+        source=source,
+        budget=max(0, int(get_settings().SCHEDULED_FULL_DETAIL_BUDGET)),
+    )
 
 
 @router.get("/tasks")
@@ -60,7 +72,7 @@ async def get_scheduled_full_detail_setting(
     db: AsyncSession = Depends(get_db),
 ) -> ScheduledFullDetailSetting:
     enabled, source = await get_enable_scheduled_full_detail(db)
-    return ScheduledFullDetailSetting(enabled=enabled, source=source)
+    return _full_detail_payload(enabled, source)
 
 
 @router.patch(
@@ -73,4 +85,4 @@ async def patch_scheduled_full_detail_setting(
     db: AsyncSession = Depends(get_db),
 ) -> ScheduledFullDetailSetting:
     enabled = await set_enable_scheduled_full_detail(db, body.enabled)
-    return ScheduledFullDetailSetting(enabled=enabled, source="db")
+    return _full_detail_payload(enabled, "db")

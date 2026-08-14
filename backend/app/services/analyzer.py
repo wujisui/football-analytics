@@ -654,10 +654,9 @@ class AnalyzerService:
     ) -> dict[str, Any]:
         """Fetch package pieces sequentially (AsyncSession-safe). Odds first.
 
-        Used by on-demand ``analyze_fixture`` (user opens detail). Scheduled
-        window-wide enrich is gated by runtime setting
-        ``enable_scheduled_full_detail`` (admin UI / env) and is not wired yet —
-        keep this method as the single enrich implementation.
+        Used by on-demand ``analyze_fixture`` (user opens detail) and by
+        scheduled bulk enrich when ``enable_scheduled_full_detail`` is on
+        (admin UI / env; see ``scheduled_detail_enrich``).
         """
         package = self._empty_prematch_package()
         league = fixture.league

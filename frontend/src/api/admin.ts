@@ -3,6 +3,7 @@ import { apiClient } from './client'
 export type ScheduledFullDetailSetting = {
   enabled: boolean
   source: 'db' | 'env' | string
+  budget: number
 }
 
 export type TriggerTaskResult = {
