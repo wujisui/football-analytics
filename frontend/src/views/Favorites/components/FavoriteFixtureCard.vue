@@ -111,6 +111,7 @@ function openOddsModal() {
     v-if="isPhone"
     v-model:show="showOddsModal"
     preset="card"
+    :auto-focus="false"
     title="赛前盘口"
     :style="{ width: 'min(360px, calc(100vw - 24px))' }"
     :segmented="{ content: true, footer: false }"

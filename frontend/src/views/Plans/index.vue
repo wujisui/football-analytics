@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useMessage } from 'naive-ui'
+import { computed, h, onMounted, ref } from 'vue'
+import { NInput, useMessage, useModal, type ModalReactive } from 'naive-ui'
 import { ChevronForwardOutline } from '@vicons/ionicons5'
 
 import PlanDetail from '@/views/Plans/PlanDetail.vue'
@@ -11,6 +11,7 @@ import type { SavedBetPlan } from '@/utils/betPlans'
 defineOptions({ name: 'BetPlans' })
 
 const message = useMessage()
+const modal = useModal()
 const {
   filterDate,
   plansForDay,
@@ -20,16 +21,10 @@ const {
   getPlan,
 } = useBetPlans()
 
-const editingPlan = ref<SavedBetPlan | null>(null)
-const renameDraft = ref('')
-const showRename = ref(false)
-const detailPlanId = ref<string | null>(null)
-const showDetail = ref(false)
-
 const dayPlans = computed(() => plansForDay(filterDate.value))
-const detailTitle = computed(
-  () => (detailPlanId.value && getPlan(detailPlanId.value)?.name) || '方案详情',
-)
+
+let detailModal: ModalReactive | null = null
+let detailPlanId: string | null = null
 
 /** yyyy-MM-dd HH:mm in local timezone. */
 function formatPlanSavedAt(savedAt: string): string {
@@ -40,31 +35,66 @@ function formatPlanSavedAt(savedAt: string): string {
 }
 
 function openPlan(id: string) {
-  detailPlanId.value = id
-  showDetail.value = true
-}
-
-function closeDetail() {
-  showDetail.value = false
-  detailPlanId.value = null
+  detailModal?.destroy()
+  detailPlanId = id
+  const title = getPlan(id)?.name || '方案详情'
+  detailModal = modal.create({
+    preset: 'card',
+    title,
+    bordered: false,
+    autoFocus: false,
+    style: { width: 'min(420px, calc(100vw - 32px))' },
+    segmented: { content: true },
+    content: () =>
+      h(
+        'div',
+        {
+          class: 'plan-detail-scroll fa-scrollbar-hidden',
+          style: {
+            maxHeight: 'min(70vh, 640px)',
+            overflowY: 'auto',
+          },
+        },
+        [h(PlanDetail, { planId: id })],
+      ),
+    onAfterLeave: () => {
+      if (detailPlanId === id) {
+        detailPlanId = null
+        detailModal = null
+      }
+    },
+  })
 }
 
 function openRename(plan: SavedBetPlan) {
-  editingPlan.value = plan
-  renameDraft.value = plan.name
-  showRename.value = true
-}
-
-async function confirmRename() {
-  const current = editingPlan.value
-  if (!current) return
-  if (!(await renamePlan(current.id, renameDraft.value))) {
-    message.warning('名称不能为空或保存失败')
-    return
-  }
-  showRename.value = false
-  editingPlan.value = null
-  message.success('已改名')
+  const draft = ref(plan.name)
+  modal.create({
+    preset: 'dialog',
+    title: '修改方案名称',
+    autoFocus: false,
+    positiveText: '保存',
+    negativeText: '取消',
+    // defaultValue keeps NInput self-updating; draft only feeds onPositiveClick
+    // so we do not depend on modal content re-rendering each keystroke.
+    content: () =>
+      h(NInput, {
+        defaultValue: plan.name,
+        maxlength: 40,
+        showCount: true,
+        placeholder: '方案名称',
+        'onUpdate:value': (value: string) => {
+          draft.value = value
+        },
+      }),
+    onPositiveClick: async () => {
+      if (!(await renamePlan(plan.id, draft.value))) {
+        message.warning('名称不能为空或保存失败')
+        return false
+      }
+      message.success('已改名')
+      return true
+    },
+  })
 }
 
 async function confirmDelete(plan: SavedBetPlan) {
@@ -74,7 +104,11 @@ async function confirmDelete(plan: SavedBetPlan) {
     message.error('删除失败，请稍后重试')
     return
   }
-  if (detailPlanId.value === plan.id) closeDetail()
+  if (detailPlanId === plan.id) {
+    detailModal?.destroy()
+    detailModal = null
+    detailPlanId = null
+  }
   message.success('已删除')
 }
 
@@ -126,46 +160,10 @@ onMounted(() => {
         </n-list>
       </div>
     </n-scrollbar>
-
-    <n-modal
-      v-model:show="showRename"
-      preset="dialog"
-      title="修改方案名称"
-      positive-text="保存"
-      negative-text="取消"
-      @positive-click="confirmRename"
-    >
-      <n-input
-        v-model:value="renameDraft"
-        maxlength="40"
-        show-count
-        placeholder="方案名称"
-      />
-    </n-modal>
-
-    <n-modal
-      v-model:show="showDetail"
-      preset="card"
-      :title="detailTitle"
-      :bordered="false"
-      :style="{ width: 'min(420px, calc(100vw - 32px))' }"
-      :segmented="{ content: true }"
-      display-directive="if"
-      @after-leave="detailPlanId = null"
-    >
-      <div class="plan-detail-scroll fa-scrollbar-hidden">
-        <PlanDetail :plan-id="detailPlanId" />
-      </div>
-    </n-modal>
   </div>
 </template>
 
 <style scoped>
-.plan-detail-scroll {
-  max-height: min(70vh, 640px);
-  overflow-y: auto;
-}
-
 .plans-panel {
   height: 100%;
   min-height: 0;

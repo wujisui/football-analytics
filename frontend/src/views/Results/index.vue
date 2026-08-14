@@ -629,6 +629,7 @@ onMounted(() => {
           preset="card"
           title="当日统计"
           to="body"
+          :auto-focus="false"
           :bordered="false"
           :style="{
           width: 'min(420px, calc(100vw - 24px))',

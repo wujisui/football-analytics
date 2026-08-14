@@ -25,10 +25,34 @@ alwaysApply: false
 | 表单输入 | `n-input`、`n-form`（需要时） | 原生 textarea 无统一样式 |
 | 数据展示 | `n-descriptions`、`n-progress`、`n-list`、**`n-data-table` / `n-table`** | **禁止**原生 `<table>` / 手写表格网格；对阵列表、赛果表一律 Naive 表格 |
 | 分区栅格 | `n-grid` / `n-gi`、`n-flex`、`n-space` | 业务页再造一套 `display:grid/flex` 分栏（壳层 Layout 除外） |
-| 全局配置 | 根节点 `n-config-provider`（中文 locale + `theme`） | 各页各自套主题 |
+| 全局配置 | 根节点 `n-config-provider`（中文 locale + `theme`）+ `n-message-provider` + **`n-modal-provider`**（命令式弹窗） | 各页各自套主题；在组件外调用 `useModal` |
+| 业务模态框 | **`useModal().create(...)`**（见下节） | 页面里堆 `v-model:show` 的 `<n-modal>` |
 | 明暗主题 | `darkTheme` + 顶栏切换，偏好写入 `localStorage` | 手写整站 CSS 变量换肤 |
 
 按需自动引入已配置 `unplugin-vue-components` + `NaiveUiResolver`；根布局等需显式 import 的除外。
+
+## 模态框（命令式优先）
+
+业务弹窗统一用 **`useModal().create`**（须在 `App.vue` 的 `n-modal-provider` 内调用），参考【我的方案】`views/Plans/index.vue`。
+
+```ts
+const modal = useModal()
+
+modal.create({
+  preset: 'card', // 或 'dialog'
+  title: '标题',
+  autoFocus: false, // 必填，见下第 2 条
+  style: { width: 'min(420px, calc(100vw - 32px))' },
+  content: () => h(SomeContent, { id }),
+  // dialog：positiveText / negativeText / onPositiveClick（返回 false 阻止关闭）
+})
+```
+
+1. **新建**业务确认框、详情浮层、表单弹窗 → `useModal.create`，不要再加 `v-model:show` + `<n-modal>`。
+2. **每个弹窗必须 `autoFocus: false`（声明式写 `:auto-focus="false"`）**：`display-directive` 默认 `if`，弹窗内容比 vueuc `FocusTrap` 激活晚一帧，`FocusTrap` 会退回聚焦自己那个 `aria-hidden="true"` 的 0 尺寸哨兵 div，Chrome 拦下并刷 "Blocked aria-hidden on an element because its descendant retained focus"。关掉初始自动聚焦即可，焦点陷阱与 Esc 关闭仍生效；**不要**改成 `trap-focus=false`（会丢焦点陷阱）。
+3. **改名等带输入的 dialog**：用 `defaultValue` + `onUpdate:value` 收集草稿，勿依赖每次按键都重渲染 `content`。
+4. **例外**：应用壳级、需跨路由长期挂着的会话态浮层（如 `LoginModal` 绑 `useAuthSession`）可暂时保留声明式；新业务弹窗仍走命令式。
+5. 需要时 `const m = modal.create(...)` 后调 `m.destroy()`；同一业务同时只开一个时先 destroy 再 create。
 
 ## 路由与组件目录
 

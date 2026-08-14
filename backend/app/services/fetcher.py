@@ -12,6 +12,10 @@ from app.core.database import AsyncSessionLocal
 from app.models.fixture import Fixture
 from app.models.league import League
 from app.models.team import Team
+from app.services.api_quota import (
+    api_errors_quota_exhausted,
+    clip_fixture_dates_for_plan,
+)
 from app.services.api_utils import parse_remaining_requests
 from app.services.league_names import league_name_zh
 from app.services.results_capture import (
@@ -160,8 +164,23 @@ class FootballFetcher:
         self._owns_session = session is None
         self._client: httpx.AsyncClient | None = None
         self.last_remaining_requests: int | None = None
+        # Once the free-tier daily limit is hit, skip further official calls
+        # in this fetcher session so the rest of the batch does not burn empty.
+        self.quota_exhausted: bool = False
         # AsyncSession is not safe for concurrent awaitables; package gather must serialize DB I/O.
         self._db_lock = asyncio.Lock()
+
+    def _note_upstream_payload(self, payload: dict[str, Any] | None) -> None:
+        errors = _api_payload_errors(payload)
+        if errors is None or self.quota_exhausted:
+            return
+        if api_errors_quota_exhausted(errors):
+            self.quota_exhausted = True
+            logger.error(
+                "Official API daily quota exhausted; skipping further calls "
+                "in this sync session: %s",
+                errors,
+            )
 
     async def __aenter__(self) -> "FootballFetcher":
         ensure_api_key_configured(self.settings)
@@ -235,6 +254,19 @@ class FootballFetcher:
         (free-plan season blocks, rate limits, etc.) — those must not poison
         later syncs.
         """
+        if self.quota_exhausted:
+            return {
+                "get": operation,
+                "errors": {
+                    "requests": (
+                        "Official API daily quota already exhausted in this "
+                        "sync session; call skipped."
+                    )
+                },
+                "results": 0,
+                "response": [],
+            }
+
         if not force:
             cached = await self.cache.get(cache_key)
             if cached is not None and "payload" in cached:
@@ -285,6 +317,7 @@ class FootballFetcher:
         )
         payload = await self._run_with_retry(operation, fetch_callback)
         if _api_payload_unusable(payload):
+            self._note_upstream_payload(payload)
             logger.warning(
                 "Not caching unusable API payload for %s: %s",
                 cache_key,
@@ -733,6 +766,32 @@ class FootballFetcher:
         assert self.session is not None
         if end < start:
             start, end = end, start
+        if not self.settings.uses_full_history:
+            clipped = clip_fixture_dates_for_plan(
+                [
+                    start + timedelta(days=offset)
+                    for offset in range((end - start).days + 1)
+                ],
+                date.today(),
+            )
+            if not clipped:
+                logger.warning(
+                    "Free-plan fixtures window %s..%s is outside the allowed "
+                    "date range; skipping official fetch",
+                    start.isoformat(),
+                    end.isoformat(),
+                )
+                return 0
+            if clipped[0] != start or clipped[-1] != end:
+                logger.info(
+                    "Free-plan fixtures window clipped %s..%s → %s..%s",
+                    start.isoformat(),
+                    end.isoformat(),
+                    clipped[0].isoformat(),
+                    clipped[-1].isoformat(),
+                )
+            start, end = clipped[0], clipped[-1]
+
         allowed: set[int] | None = None
         if league_ids is not None:
             allowed = {int(x) for x in league_ids}
@@ -748,6 +807,12 @@ class FootballFetcher:
         cursor = start
         first = True
         while cursor <= end:
+            if self.quota_exhausted:
+                logger.warning(
+                    "Stopping fixtures window fetch at %s (quota exhausted)",
+                    cursor.isoformat(),
+                )
+                break
             total += await self._fetch_day_worldwide_filtered(
                 cursor,
                 allowed,
@@ -817,6 +882,23 @@ class FootballFetcher:
         fixtures = list(result.scalars().all())
         if day_set is not None:
             fixtures = [fx for fx in fixtures if fx.date.date() in day_set]
+        # Free plan cannot request fixtures outside its date window — drop those
+        # days before burning quota on guaranteed plan errors.
+        if not self.settings.uses_full_history:
+            allowed_days = set(
+                clip_fixture_dates_for_plan(
+                    sorted({fx.date.date() for fx in fixtures}),
+                    date.today(),
+                )
+            )
+            dropped = {fx.date.date() for fx in fixtures} - allowed_days
+            if dropped:
+                logger.info(
+                    "capture_finished_results free-plan skipped dates outside "
+                    "window: %s",
+                    ",".join(sorted(d.isoformat() for d in dropped)),
+                )
+            fixtures = [fx for fx in fixtures if fx.date.date() in allowed_days]
         if not fixtures:
             logger.info("capture_finished_results: nothing to update.")
             return 0
@@ -827,6 +909,12 @@ class FootballFetcher:
 
         total = 0
         for day, league_ids in sorted(by_day.items()):
+            if self.quota_exhausted:
+                logger.warning(
+                    "Stopping result capture at %s (quota exhausted)",
+                    day.isoformat(),
+                )
+                break
             try:
                 total += await self.fetch_fixtures_for_date(
                     day,
@@ -1245,6 +1333,13 @@ class FootballFetcher:
         )
 
         for index, fixture_id in enumerate(queue):
+            if self.quota_exhausted:
+                logger.warning(
+                    "Stopping odds sync after %s/%s (quota exhausted)",
+                    index,
+                    take,
+                )
+                break
             try:
                 if await self.refresh_odds_for_fixture(
                     fixture_id,
@@ -1253,7 +1348,7 @@ class FootballFetcher:
                     updated += 1
             except Exception as exc:
                 logger.warning("Fixture odds %s failed: %s", fixture_id, exc)
-            if index + 1 < take:
+            if index + 1 < take and not self.quota_exhausted:
                 # Free-plan friendly pacing; keep short so toolbar sync follow-up
                 # does not feel stuck for a minute on large league selections.
                 await asyncio.sleep(0.35)

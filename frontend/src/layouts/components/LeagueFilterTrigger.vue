@@ -64,6 +64,7 @@ function confirm() {
       v-model:show="show"
       preset="card"
       title="联赛筛选"
+      :auto-focus="false"
       class="league-filter-modal"
       :style="{ width: 'min(560px, 94vw)', maxHeight: 'calc(100dvh - 48px)' }"
       content-style="display: flex; flex-direction: column; min-height: 0; padding: 16px;"

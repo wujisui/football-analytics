@@ -61,6 +61,7 @@ const showOddsModal = ref(false)
     preset="card"
     title="赛前盘口"
     to="body"
+    :auto-focus="false"
     :style="{ width: 'min(360px, calc(100vw - 24px))' }"
     :segmented="{ content: true, footer: false }"
   >

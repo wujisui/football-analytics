@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.models.fixture import Fixture
 from app.models.league import League
 from app.models.league_standing import LeagueStanding
+from app.services.api_quota import FREE_STANDINGS_MAX_SEASON, api_payload_unusable
 from app.services.api_utils import extract_items, first_value
 from app.services.calendar_tz import utc_span_range
 from app.services.prematch_package import dumps_json, loads_json
@@ -28,10 +29,10 @@ def standings_season_for_league(season: str | None) -> str:
         return text
     try:
         year = int(str(text)[:4])
-        if year > 2024:
-            return "2024"
+        if year > FREE_STANDINGS_MAX_SEASON:
+            return str(FREE_STANDINGS_MAX_SEASON)
     except ValueError:
-        return "2024"
+        return str(FREE_STANDINGS_MAX_SEASON)
     return text
 
 
@@ -214,10 +215,14 @@ async def sync_league_standings_for_dates(
     days: list[date],
     *,
     force: bool = False,
+    league_ids: list[int] | None = None,
 ) -> dict[str, int]:
     """Fetch standings once per league+season that has fixtures on ``days``.
 
     Same local calendar day skips leagues already refreshed (unless ``force``).
+    When ``league_ids`` is set (scheduled sync passes catalog leagues), only
+    those leagues are refreshed — extra leagues on the date strip stay display-
+    only and must not burn official quota.
     """
     assert fetcher.session is not None
     session: AsyncSession = fetcher.session
@@ -234,21 +239,34 @@ async def sync_league_standings_for_dates(
             select(Fixture).where(Fixture.date >= start, Fixture.date < end)
         )
     ).scalars().all()
-    league_ids = sorted({int(f.league_id) for f in fixtures})
-    if not league_ids:
+    present_ids = {int(f.league_id) for f in fixtures}
+    if league_ids is not None:
+        allowed = {int(x) for x in league_ids}
+        league_ids_sorted = sorted(present_ids & allowed)
+    else:
+        league_ids_sorted = sorted(present_ids)
+    if not league_ids_sorted:
         return {"leagues": 0, "fetched": 0, "skipped": 0, "failed": 0}
 
     leagues = {
         int(row.id): row
         for row in (
-            await session.execute(select(League).where(League.id.in_(league_ids)))
+            await session.execute(select(League).where(League.id.in_(league_ids_sorted)))
         ).scalars().all()
     }
 
     fetched = 0
     skipped = 0
     failed = 0
-    for league_id in league_ids:
+    for index, league_id in enumerate(league_ids_sorted):
+        if getattr(fetcher, "quota_exhausted", False):
+            skipped += len(league_ids_sorted) - index
+            logger.warning(
+                "Stopping league standings sync (quota exhausted); "
+                "remaining=%s leagues skipped",
+                len(league_ids_sorted) - index,
+            )
+            break
         league = leagues.get(league_id)
         season = standings_season_for_league(league.season if league else None)
         existing = await get_league_standing(session, league_id, season)
@@ -261,6 +279,15 @@ async def sync_league_standings_for_dates(
             continue
         try:
             payload = await fetcher.fetch_standings(league_id, season)
+            if api_payload_unusable(payload):
+                failed += 1
+                logger.warning(
+                    "league standings unusable league=%s season=%s: %s",
+                    league_id,
+                    season,
+                    (payload or {}).get("errors") if isinstance(payload, dict) else None,
+                )
+                continue
             await upsert_league_standing(
                 session,
                 league_id=league_id,
@@ -281,13 +308,13 @@ async def sync_league_standings_for_dates(
     await session.commit()
     logger.info(
         "league standings sync leagues=%s fetched=%s skipped=%s failed=%s",
-        len(league_ids),
+        len(league_ids_sorted),
         fetched,
         skipped,
         failed,
     )
     return {
-        "leagues": len(league_ids),
+        "leagues": len(league_ids_sorted),
         "fetched": fetched,
         "skipped": skipped,
         "failed": failed,

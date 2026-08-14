@@ -93,10 +93,10 @@ class Settings(BaseSettings):
     # Future / paid scale default (env). Runtime override via Mine admin UI
     # persists in app_settings; scheduled batches read the effective value.
     ENABLE_SCHEDULED_FULL_DETAIL: bool = False
-    # History window for H2H / team form:
-    # - full: paid plan — no artificial 2022–2024 cap (h2h all history; form via last=)
-    # - free: API-Sports free tier season/date limits
-    API_HISTORY_MODE: Literal["full", "free"] = "full"
+    # History window for H2H / team form / free-plan date+season clamps:
+    # - full: paid plan — no artificial 2022–2024 / ±2-day fixture clip
+    # - free: API-Sports free tier (default — matches typical local keys)
+    API_HISTORY_MODE: Literal["full", "free"] = "free"
     # Optional override for analysis refresh TTL (seconds). Empty/0 = kickoff-based policy.
     ANALYSIS_REFRESH_TTL_SECONDS: int = 0
     # ML: accumulate local labels from now; auto-train & switch when enough samples.

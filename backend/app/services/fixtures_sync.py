@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.core.config import get_settings
+from app.services.api_quota import clip_fixture_dates_for_plan
 from app.services.fetcher import FootballFetcher
 from app.services.league_standings import sync_league_standings_for_dates
 from app.services.runtime_settings import get_enable_scheduled_full_detail
@@ -29,6 +30,9 @@ async def scheduled_fixtures_sync() -> None:
     window = max(1, min(int(settings.FIXTURES_LOOKAHEAD_DAYS), 14))
     days = [today + timedelta(days=offset) for offset in range(window)]
     result_days = [today - timedelta(days=offset) for offset in range(3, -1, -1)]
+    # Free plan cannot request far-future / old dates — clip before any call.
+    days = clip_fixture_dates_for_plan(days, today)
+    result_days = clip_fixture_dates_for_plan(result_days, today)
     primary_league_ids = list(settings.LEAGUE_IDS.values())
     # Standings cover the same upcoming window plus recent result days so list
     # ranks work for both pending and finished cards.
@@ -36,24 +40,53 @@ async def scheduled_fixtures_sync() -> None:
 
     async with _sync_lock:
         async with FootballFetcher() as fetcher:
-            fixtures_saved = await fetcher.fetch_fixtures_window(
-                days[0],
-                days[-1],
-                force=True,
-                league_ids=None,
-            )
-            await fetcher.sync_odds_for_dates(
-                days,
-                refresh_existing=True,
-                league_ids=primary_league_ids,
-                budget=100,
-                set_opening=True,
-            )
-            results_saved = await fetcher.capture_finished_results(on_days=result_days)
-            standings_stats = await sync_league_standings_for_dates(
-                fetcher,
-                standings_days,
-            )
+            fixtures_saved = 0
+            if days:
+                fixtures_saved = await fetcher.fetch_fixtures_window(
+                    days[0],
+                    days[-1],
+                    force=True,
+                    league_ids=None,
+                )
+            else:
+                logger.warning(
+                    "scheduled_fixtures_sync: no fixture dates left after "
+                    "free-plan window clip; skipping fixtures fetch"
+                )
+
+            if days and not fetcher.quota_exhausted:
+                await fetcher.sync_odds_for_dates(
+                    days,
+                    refresh_existing=True,
+                    league_ids=primary_league_ids,
+                    budget=100,
+                    set_opening=True,
+                )
+
+            results_saved = 0
+            if result_days and not fetcher.quota_exhausted:
+                results_saved = await fetcher.capture_finished_results(
+                    on_days=result_days
+                )
+
+            standings_stats = {
+                "leagues": 0,
+                "fetched": 0,
+                "skipped": 0,
+                "failed": 0,
+            }
+            if standings_days and not fetcher.quota_exhausted:
+                # Catalog leagues only — date-strip extras must not burn quota.
+                standings_stats = await sync_league_standings_for_dates(
+                    fetcher,
+                    standings_days,
+                    league_ids=primary_league_ids,
+                )
+            elif fetcher.quota_exhausted:
+                logger.warning(
+                    "scheduled_fixtures_sync: skipping standings "
+                    "(official quota exhausted earlier in this batch)"
+                )
 
         # Batch scope is fixtures + odds + results + league standings. Full
         # display packages stay on-demand via analyze_fixture until this flag

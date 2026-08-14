@@ -262,6 +262,7 @@ defineExpose({ openFormula, openDetails })
       title="投注详情"
       :bordered="false"
       to="body"
+      :auto-focus="false"
       closable
       mask-closable
       :style="detailsModalStyle"
@@ -300,6 +301,7 @@ defineExpose({ openFormula, openDetails })
       title="保存到相册"
       :bordered="false"
       to="body"
+      :auto-focus="false"
       closable
       mask-closable
       :style="{
@@ -336,6 +338,7 @@ defineExpose({ openFormula, openDetails })
       :title="`奖金算式 · ${foldModeLabel(fold)}`"
       :bordered="false"
       to="body"
+      :auto-focus="false"
       closable
       mask-closable
       :style="{
@@ -401,6 +404,7 @@ defineExpose({ openFormula, openDetails })
       v-model:show="showSave"
       preset="dialog"
       title="保存方案"
+      :auto-focus="false"
       positive-text="保存"
       negative-text="取消"
       :positive-button-props="{ disabled: !matchCount }"

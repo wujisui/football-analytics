@@ -108,7 +108,7 @@ API_SPORTS_KEY=你的官方Key
 | `HTTP_VERIFY_SSL`                 | 公司代理拦截 SSL 时设为 `false`                      |
 | `SCHEDULER_TIMEZONE`              | 调度器时区，默认 `Asia/Shanghai`                    |
 | `LOCAL_FIRST`                     | `true` 时优先读本地库/缓存，再打官方                      |
-| `API_HISTORY_MODE`                | `full`=付费历史（H2H 不限年份）；`free`=仅 2022–2024      |
+| `API_HISTORY_MODE`                | `free`（默认）=免费套餐日期/赛季夹紧；`full`=付费不限年份与赛程窗口 |
 
 > 不要把真实 Key 写进 `.env.example` 或提交到 Git。本地运行时会先读 `.env`，再读 `secrets.local.env`（后者覆盖前者）。
 

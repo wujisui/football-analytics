@@ -66,7 +66,7 @@ async function onSubmit(e?: Event) {
     to="body"
     :mask-closable="true"
     :closable="true"
-    display-directive="if"
+    :auto-focus="false"
     :style="{ width: 'min(400px, calc(100vw - 32px))' }"
     :segmented="{ content: true, footer: true }"
     @after-leave="onAfterLeave"

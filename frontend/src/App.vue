@@ -16,6 +16,7 @@ import {
   NLayoutContent,
   NLayoutHeader,
   NMessageProvider,
+  NModalProvider,
   zhCN,
   dateZhCN,
 } from 'naive-ui'
@@ -135,98 +136,100 @@ const bottomItems: {
     :theme-overrides="themeOverrides"
   >
     <n-message-provider>
-      <n-layout
-        class="app-shell"
-        position="absolute"
-        content-style="display: flex; flex-direction: column; height: 100%;"
-      >
-        <!-- Phone uses bottom nav; hide top brand/header to free content height. -->
-        <n-layout-header v-if="!isPhone" class="app-header">
-          <div class="app-header-inner">
-            <div
-              class="brand"
-              role="link"
-              tabindex="0"
-              @click="goNav('predictions')"
-              @keydown.enter="goNav('predictions')"
-            >
-              <n-ellipsis class="brand-title">Football Analytics</n-ellipsis>
-              <n-ellipsis class="brand-subtitle">赛前分析 · 人机协同</n-ellipsis>
-            </div>
-
-            <div class="header-actions">
-              <n-button-group size="small">
-                <n-button
-                  :type="navType('predictions')"
-                  @click="goNav('predictions')"
-                >
-                  比赛
-                </n-button>
-                <n-button :type="navType('results')" @click="goNav('results')">赛程</n-button>
-                <n-button :type="navType('favorites')" @click="goFavorites">关注</n-button>
-                <n-button
-                  v-if="showDesktopMine"
-                  :type="navType('mine')"
-                  @click="goMine"
-                >
-                  我的
-                </n-button>
-              </n-button-group>
-
-              <n-button
-                v-if="showDesktopLogin"
-                size="small"
-                type="primary"
-                @click="openLogin"
-              >
-                登录
-              </n-button>
-
-              <n-button
-                size="small"
-                quaternary
-                :aria-label="isDark ? '切换到浅色' : '切换到深色'"
-                @click="toggleTheme"
-              >
-                <template #icon>
-                  <n-icon :component="isDark ? MoonOutline : SunnyOutline" />
-                </template>
-              </n-button>
-            </div>
-          </div>
-        </n-layout-header>
-
-        <n-layout-content
-          class="app-body"
-          content-style="height: 100%; overflow: hidden; position: relative;"
+      <n-modal-provider>
+        <n-layout
+          class="app-shell"
+          position="absolute"
+          content-style="display: flex; flex-direction: column; height: 100%;"
         >
-          <router-view v-slot="{ Component }">
-            <keep-alive :include="['FixturesShellLayout', 'Favorites', 'Mine']">
-              <component :is="Component" />
-            </keep-alive>
-          </router-view>
-        </n-layout-content>
+          <!-- Phone uses bottom nav; hide top brand/header to free content height. -->
+          <n-layout-header v-if="!isPhone" class="app-header">
+            <div class="app-header-inner">
+              <div
+                class="brand"
+                role="link"
+                tabindex="0"
+                @click="goNav('predictions')"
+                @keydown.enter="goNav('predictions')"
+              >
+                <n-ellipsis class="brand-title">Football Analytics</n-ellipsis>
+                <n-ellipsis class="brand-subtitle">赛前分析 · 人机协同</n-ellipsis>
+              </div>
 
-        <nav
-          v-if="showBottomNav"
-          class="bottom-nav"
-          aria-label="主导航"
-        >
-          <button
-            v-for="item in bottomItems"
-            :key="item.key"
-            type="button"
-            class="bottom-nav-item"
-            :class="{ active: activeNav === item.key }"
-            :aria-current="activeNav === item.key ? 'page' : undefined"
-            @click="item.onClick"
+              <div class="header-actions">
+                <n-button-group size="small">
+                  <n-button
+                    :type="navType('predictions')"
+                    @click="goNav('predictions')"
+                  >
+                    比赛
+                  </n-button>
+                  <n-button :type="navType('results')" @click="goNav('results')">赛程</n-button>
+                  <n-button :type="navType('favorites')" @click="goFavorites">关注</n-button>
+                  <n-button
+                    v-if="showDesktopMine"
+                    :type="navType('mine')"
+                    @click="goMine"
+                  >
+                    我的
+                  </n-button>
+                </n-button-group>
+
+                <n-button
+                  v-if="showDesktopLogin"
+                  size="small"
+                  type="primary"
+                  @click="openLogin"
+                >
+                  登录
+                </n-button>
+
+                <n-button
+                  size="small"
+                  quaternary
+                  :aria-label="isDark ? '切换到浅色' : '切换到深色'"
+                  @click="toggleTheme"
+                >
+                  <template #icon>
+                    <n-icon :component="isDark ? MoonOutline : SunnyOutline" />
+                  </template>
+                </n-button>
+              </div>
+            </div>
+          </n-layout-header>
+
+          <n-layout-content
+            class="app-body"
+            content-style="height: 100%; overflow: hidden; position: relative;"
           >
-            <n-icon :component="item.icon" :size="20" />
-            <span>{{ item.label }}</span>
-          </button>
-        </nav>
-      </n-layout>
-      <LoginModal />
+            <router-view v-slot="{ Component }">
+              <keep-alive :include="['FixturesShellLayout', 'Favorites', 'Mine']">
+                <component :is="Component" />
+              </keep-alive>
+            </router-view>
+          </n-layout-content>
+
+          <nav
+            v-if="showBottomNav"
+            class="bottom-nav"
+            aria-label="主导航"
+          >
+            <button
+              v-for="item in bottomItems"
+              :key="item.key"
+              type="button"
+              class="bottom-nav-item"
+              :class="{ active: activeNav === item.key }"
+              :aria-current="activeNav === item.key ? 'page' : undefined"
+              @click="item.onClick"
+            >
+              <n-icon :component="item.icon" :size="20" />
+              <span>{{ item.label }}</span>
+            </button>
+          </nav>
+        </n-layout>
+        <LoginModal />
+      </n-modal-provider>
     </n-message-provider>
   </n-config-provider>
 </template>
