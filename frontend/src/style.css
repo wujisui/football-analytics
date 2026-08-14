@@ -14,9 +14,13 @@ html[data-theme='light'] {
   --fa-text-faint: #999999;
   --fa-hover-border: #b8d4f8;
   --fa-hover-shadow: rgba(32, 128, 240, 0.08);
+  /* 每日推荐玩法标签：高质量走 warning 暖色，质量偏低走 info 蓝 */
   --fa-highlight-bg: #fff7e6;
   --fa-highlight-border: #f0c78a;
   --fa-highlight-text: #c2410c;
+  --fa-highlight-low-bg: #e6f4ff;
+  --fa-highlight-low-border: #8ac2f5;
+  --fa-highlight-low-text: #1060c9;
   --fa-header-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
   --fa-bottom-nav-shadow: 0 -1px 6px rgba(0, 0, 0, 0.12);
   --fa-sider-shadow: 1px 0 6px rgba(0, 0, 0, 0.1);
@@ -44,6 +48,9 @@ html[data-theme='dark'] {
   --fa-highlight-bg: rgba(240, 160, 32, 0.12);
   --fa-highlight-border: #8a6a2b;
   --fa-highlight-text: #f0c78a;
+  --fa-highlight-low-bg: rgba(32, 128, 240, 0.14);
+  --fa-highlight-low-border: #2b5c8a;
+  --fa-highlight-low-text: #8ac2f5;
   --fa-header-shadow:
     0 1px 0 rgba(255, 255, 255, 0.08),
     0 4px 10px rgba(0, 0, 0, 0.42);

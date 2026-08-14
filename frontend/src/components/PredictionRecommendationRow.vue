@@ -2,7 +2,10 @@
 import { computed } from 'vue'
 
 import type { AutoFavoriteMarket } from '@/api/favorites'
-import { autoFavoriteMarket } from '@/composables/useFavoriteFixtures'
+import {
+  autoFavoriteMarket,
+  favoriteQualityLow,
+} from '@/composables/useFavoriteFixtures'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
 import { isPredictionPending } from '@/utils/handicapDisplay'
 
@@ -55,9 +58,24 @@ const showScore = computed(() => !isPredictionPending(props.scoreHint))
 const pickMarket = computed(() =>
   (props.highlightMarket ?? autoFavoriteMarket(props.fixtureId) ?? '').trim(),
 )
+/** 每日推荐质量分级只作用在被推荐的玩法标签上，关注星标保持统一。 */
+const pickQualityLow = computed(() => favoriteQualityLow(props.fixtureId))
 
 function isPick(market: AutoFavoriteMarket): boolean {
   return pickMarket.value === market
+}
+
+function pickClass(market: AutoFavoriteMarket) {
+  const picked = isPick(market)
+  return {
+    'rec-pick': picked,
+    'rec-pick--low': picked && pickQualityLow.value,
+  }
+}
+
+function pickTitle(market: AutoFavoriteMarket): string | undefined {
+  if (!isPick(market)) return undefined
+  return pickQualityLow.value ? '每日推荐（质量偏低）' : '每日推荐'
 }
 
 function open() {
@@ -78,7 +96,8 @@ function open() {
     <n-tag
       size="small"
       class="rec-tag"
-      :class="{ 'rec-pick': isPick('1x2') }"
+      :class="pickClass('1x2')"
+      :title="pickTitle('1x2')"
       :bordered="false"
       :type="recommendationTagColor ? undefined : 'default'"
       :color="isPick('1x2') ? undefined : recommendationTagColor"
@@ -90,7 +109,8 @@ function open() {
       v-if="showHandicap"
       size="small"
       class="handicap-tag rec-tag"
-      :class="{ 'rec-pick': isPick('ah') }"
+      :class="pickClass('ah')"
+      :title="pickTitle('ah')"
       :bordered="false"
       :type="handicapTagColor ? undefined : 'default'"
       :color="isPick('ah') ? undefined : handicapTagColor"
@@ -102,7 +122,8 @@ function open() {
       v-if="showGoal"
       size="small"
       class="rec-tag"
-      :class="{ 'rec-pick': isPick('ou') }"
+      :class="pickClass('ou')"
+      :title="pickTitle('ou')"
       :type="isPick('ou') ? undefined : 'warning'"
       :bordered="false"
     >
@@ -113,7 +134,8 @@ function open() {
       v-if="showBothScore"
       size="small"
       class="rec-tag"
-      :class="{ 'rec-pick': isPick('btts') }"
+      :class="pickClass('btts')"
+      :title="pickTitle('btts')"
       :bordered="false"
     >
       <span v-if="isPick('btts')" class="rec-pick-mark">[荐]</span>
@@ -165,6 +187,13 @@ function open() {
   background: var(--fa-highlight-bg) !important;
   box-shadow: inset 0 0 0 1px var(--fa-highlight-border);
   font-weight: 600;
+}
+
+/* 质量偏低的每日推荐：同样带 [荐]，用 info 蓝与高质量区分 */
+.rec-tag.rec-pick--low {
+  color: var(--fa-highlight-low-text) !important;
+  background: var(--fa-highlight-low-bg) !important;
+  box-shadow: inset 0 0 0 1px var(--fa-highlight-low-border);
 }
 
 .rec-pick-mark {
