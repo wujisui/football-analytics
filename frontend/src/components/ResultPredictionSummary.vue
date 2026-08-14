@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import ResultHitTags from '@/components/ResultHitTags.vue'
-import { toPercent } from '@/utils/format'
+import WdlProbabilityBars from '@/components/WdlProbabilityBars.vue'
 import type { HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
 
@@ -67,21 +67,7 @@ const probabilities = computed(() => {
       · {{ fixture.goal_lean || '—' }}
       · {{ fixture.both_score_lean || '—' }}
     </n-text>
-    <div v-if="probabilities.length" class="prob-row">
-      <div v-for="prob in probabilities" :key="prob.key" class="prob-item">
-        <span class="prob-head">
-          <span>{{ prob.label }}</span>
-          <strong>{{ toPercent(prob.value) }}</strong>
-        </span>
-        <n-progress
-          type="line"
-          :percentage="Math.round(prob.value * 100)"
-          :show-indicator="false"
-          :height="8"
-          processing
-        />
-      </div>
-    </div>
+    <WdlProbabilityBars v-if="probabilities.length" :items="probabilities" />
     <ResultHitTags
       :fixture="fixture"
       :filterable="hitFilterable"
@@ -125,35 +111,6 @@ const probabilities = computed(() => {
   line-height: 1.45;
   overflow-wrap: anywhere;
   word-break: break-word;
-}
-
-.prob-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.prob-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.prob-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px;
-  font-size: 11px;
-  line-height: 1.2;
-  color: var(--fa-text-faint);
-}
-
-.prob-head strong {
-  color: var(--fa-text-strong);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
 .no-pred {

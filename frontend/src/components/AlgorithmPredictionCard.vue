@@ -7,13 +7,13 @@ import type { FixtureResponse } from '@/api/types'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
+import WdlProbabilityBars from '@/components/WdlProbabilityBars.vue'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import {
   formatOdd,
   formatTime,
   hasRealProbabilities,
   leagueTagColor,
-  toPercent,
 } from '@/utils/format'
 import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
 import { leagueLabel } from '@/utils/leagueNames'
@@ -234,7 +234,6 @@ function onOddsClick() {
 
     <div
       v-if="predictionReady"
-      class="prob-row"
       :class="{ 'odds-clickable': oddsClickable }"
       :role="oddsClickable ? 'button' : undefined"
       :tabindex="oddsClickable ? 0 : undefined"
@@ -242,22 +241,10 @@ function onOddsClick() {
       @keydown.enter.prevent="onOddsClick"
       @keydown.space.prevent="onOddsClick"
     >
-      <div v-for="p in probs" :key="p.key" class="prob-item">
-        <span class="prob-head">
-          <span>{{ p.label }}</span>
-          <strong>{{ toPercent(p.value) }}</strong>
-        </span>
-        <div
-          class="prob-bar"
-          :class="{ slim: standalone }"
-          :aria-hidden="true"
-        >
-          <span
-            class="prob-bar-fill"
-            :style="{ width: `${Math.round(p.value * 100)}%` }"
-          />
-        </div>
-      </div>
+      <WdlProbabilityBars
+        :items="probs"
+        :variant="standalone ? 'card' : 'list'"
+      />
     </div>
     <p
       v-else
@@ -428,12 +415,6 @@ function onOddsClick() {
   justify-self: end;
 }
 
-.prob-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
 .odds-clickable {
   padding: 4px;
   margin: -4px;
@@ -445,47 +426,6 @@ function onOddsClick() {
 .odds-clickable:focus-visible {
   outline: none;
   background: var(--fa-bg-elevated);
-}
-
-.prob-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.prob-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px;
-  font-size: 11px;
-  line-height: 1.2;
-  color: var(--fa-text-faint);
-}
-
-.prob-head strong {
-  color: var(--fa-text-strong);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.prob-bar {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--fa-bg-elevated);
-  overflow: hidden;
-}
-
-.prob-bar.slim {
-  height: 6px;
-}
-
-.prob-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--fa-highlight-text);
 }
 
 .handicap-line {
@@ -555,16 +495,4 @@ function onOddsClick() {
   color: var(--fa-text-faint);
 }
 
-.predict-card.standalone .prob-item {
-  gap: 4px;
-}
-
-.predict-card.standalone .prob-head {
-  gap: 2px;
-}
-
-.predict-card.standalone .prob-head strong {
-  font-size: 14px;
-  font-weight: 700;
-}
 </style>

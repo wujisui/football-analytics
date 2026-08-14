@@ -76,5 +76,6 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     ScoreDetailLink: typeof import('./src/components/ScoreDetailLink.vue')['default']
     VirtualCardList: typeof import('./src/components/VirtualCardList.vue')['default']
+    WdlProbabilityBars: typeof import('./src/components/WdlProbabilityBars.vue')['default']
   }
 }
