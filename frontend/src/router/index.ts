@@ -8,6 +8,11 @@ import Detail from '@/views/Detail/index.vue'
 // Off the first-paint path — keep secondary shells split so cold reload boots lists sooner.
 const Favorites = () => import('@/views/Favorites/index.vue')
 const Mine = () => import('@/views/Mine/index.vue')
+const MineAccount = () => import('@/views/Mine/account/index.vue')
+const MinePlans = () => import('@/views/Mine/plans/index.vue')
+const MineTheme = () => import('@/views/Mine/theme/index.vue')
+const MineAdmin = () => import('@/views/Mine/admin/index.vue')
+const MineAbout = () => import('@/views/Mine/about/index.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -46,43 +51,47 @@ const router = createRouter({
       redirect: { name: 'mine-plans' },
     },
     {
-      path: '/mine',
-      name: 'mine',
-      redirect: { name: 'mine-account' },
-    },
-    {
-      path: '/mine/account',
-      name: 'mine-account',
-      component: Mine,
-    },
-    {
       path: '/mine/favorites',
       redirect: { name: 'favorites' },
     },
     {
-      path: '/mine/plans',
-      name: 'mine-plans',
+      path: '/mine',
       component: Mine,
-    },
-    {
-      path: '/mine/theme',
-      name: 'mine-theme',
-      component: Mine,
-    },
-    {
-      path: '/mine/session',
-      name: 'mine-session',
-      component: Mine,
-    },
-    {
-      path: '/mine/admin',
-      name: 'mine-admin',
-      component: Mine,
-    },
-    {
-      path: '/mine/about',
-      name: 'mine-about',
-      component: Mine,
+      children: [
+        {
+          path: '',
+          redirect: { name: 'mine-account' },
+        },
+        {
+          path: 'account',
+          name: 'mine-account',
+          component: MineAccount,
+        },
+        {
+          path: 'plans',
+          name: 'mine-plans',
+          component: MinePlans,
+        },
+        {
+          path: 'theme',
+          name: 'mine-theme',
+          component: MineTheme,
+        },
+        {
+          path: 'session',
+          redirect: { name: 'mine-account' },
+        },
+        {
+          path: 'admin',
+          name: 'mine-admin',
+          component: MineAdmin,
+        },
+        {
+          path: 'about',
+          name: 'mine-about',
+          component: MineAbout,
+        },
+      ],
     },
     {
       path: '/fixture/:fixtureId',

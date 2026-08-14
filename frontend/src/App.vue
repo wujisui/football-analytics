@@ -20,7 +20,7 @@ import {
   zhCN,
   dateZhCN,
 } from 'naive-ui'
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthSession } from '@/composables/useAuthSession'
@@ -36,7 +36,7 @@ const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
-const { isLoggedIn, openLogin, verifySession } = useAuthSession()
+const { verifySession } = useAuthSession()
 
 onMounted(() => {
   void verifySession()
@@ -52,10 +52,6 @@ function hidesPhoneBottomNav(name: unknown): boolean {
 const showBottomNav = computed(
   () => isPhone.value && !hidesPhoneBottomNav(route.name),
 )
-
-/** Desktop: 「我的」 only after login; otherwise show 登录. Mobile always has Mine. */
-const showDesktopMine = computed(() => !isPhone.value && isLoggedIn.value)
-const showDesktopLogin = computed(() => !isPhone.value && !isLoggedIn.value)
 
 function isMineRoute(name: unknown) {
   return String(name ?? '').startsWith('mine')
@@ -85,10 +81,6 @@ function goNav(name: 'predictions' | 'results') {
 }
 
 function goMine() {
-  if (!isPhone.value && !isLoggedIn.value) {
-    openLogin()
-    return
-  }
   if (route.name === 'mine-account') return
   void router.push({ name: 'mine-account' })
 }
@@ -97,17 +89,6 @@ function goFavorites() {
   if (route.name === 'favorites') return
   void router.push({ name: 'favorites' })
 }
-
-/** Desktop deep-link to a Mine section while logged out → calculator + login form. */
-watch(
-  [() => route.name, isPhone, isLoggedIn],
-  ([name, phone, loggedIn]) => {
-    if (!isMineRoute(name) || phone || loggedIn) return
-    openLogin()
-    void router.replace({ name: 'predictions' })
-  },
-  { immediate: true },
-)
 
 const bottomItems: {
   key: NavKey
@@ -170,23 +151,10 @@ const bottomItems: {
                   </n-button>
                   <n-button :type="navType('results')" @click="goNav('results')">赛程</n-button>
                   <n-button :type="navType('favorites')" @click="goFavorites">关注</n-button>
-                  <n-button
-                    v-if="showDesktopMine"
-                    :type="navType('mine')"
-                    @click="goMine"
-                  >
+                  <n-button :type="navType('mine')" @click="goMine">
                     我的
                   </n-button>
                 </n-button-group>
-
-                <n-button
-                  v-if="showDesktopLogin"
-                  size="small"
-                  type="primary"
-                  @click="openLogin"
-                >
-                  登录
-                </n-button>
 
                 <n-button
                   size="small"

@@ -3,7 +3,7 @@ import { computed, h, onMounted, ref } from 'vue'
 import { NInput, useMessage, useModal, type ModalReactive } from 'naive-ui'
 import { ChevronForwardOutline } from '@vicons/ionicons5'
 
-import PlanDetail from '@/views/Plans/PlanDetail.vue'
+import PlanDetail from '@/views/Mine/plans/PlanDetail.vue'
 import { useBetPlans } from '@/composables/useBetPlans'
 import { formatScheduleDay, parseApiDate } from '@/utils/format'
 import type { SavedBetPlan } from '@/utils/betPlans'

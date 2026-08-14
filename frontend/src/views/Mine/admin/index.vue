@@ -7,9 +7,10 @@ import {
   fetchScheduledFullDetailSetting,
   updateScheduledFullDetailSetting,
 } from '@/api/admin'
-import { useAdminSync } from '@/views/Mine/composables/useAdminSync'
+import { useAdminSync } from '@/views/Mine/admin/useAdminSync'
+import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 
-defineOptions({ name: 'AdminOpsPanel' })
+defineOptions({ name: 'MineAdmin' })
 
 const message = useMessage()
 const modal = useModal()
@@ -64,7 +65,6 @@ function onToggle(next: boolean) {
     void applyToggle(false)
     return
   }
-  // Opening burns official quota — confirm before persisting.
   modal.create({
     preset: 'dialog',
     title: '确认开启定时全量详情？',
@@ -89,64 +89,56 @@ onMounted(() => {
 </script>
 
 <template>
-  <n-card size="small" title="管理员运维" :bordered="false">
-    <n-alert type="info" :show-icon="false" style="margin-bottom: 12px">
-      当前账号已具备管理员权限。入口仅对
-      <code>is_admin</code>
-      账号可见。授予：
-      <code>python manage.py set-admin &lt;账号&gt;</code>
-      ；取消：
-      <code>python manage.py unset-admin &lt;账号&gt;</code>
-      。
-    </n-alert>
-
-    <n-list>
-      <n-list-item>
-        <template #prefix>
-          <n-icon :component="RefreshOutline" :size="20" />
-        </template>
-        <n-thing
-          title="同步官方 API 数据"
-          :description="
-            statusText ||
-            '立即执行一次赛程、盘口与赛果同步；若下方开关已开，同批会按预算预拉缺包详情'
-          "
-        />
-        <template #suffix>
-          <n-button
-            size="small"
-            type="primary"
-            :disabled="syncing"
-            :loading="syncing"
-            @click="syncOfficialData"
-          >
-            {{ syncing ? '同步中' : '立即同步' }}
-          </n-button>
-        </template>
-      </n-list-item>
-
-      <n-list-item>
-        <template #prefix>
-          <n-icon :component="SettingsOutline" :size="20" />
-        </template>
-        <n-thing
-          title="定时全量获取详情"
-          :description="
-            source
-              ? `当前来源：${source === 'db' ? '管理员覆盖（库）' : '环境变量默认'}；开关只改设置，真正预拉发生在下一次定时批次或「立即同步」（热门联赛未开赛缺包，每批最多 ${detailBudget} 场）`
-              : '读取并切换；默认关闭。开启会额外消耗官方 API 配额'
-          "
-        />
-        <template #suffix>
-          <n-switch
-            :value="enabled"
-            :disabled="loading || saving"
-            :loading="saving"
-            aria-label="定时全量获取详情"
-            @update:value="onToggle"
+  <MineSectionBody>
+    <n-card size="small" title="管理员运维" :bordered="false">
+      <n-list>
+        <n-list-item>
+          <template #prefix>
+            <n-icon :component="RefreshOutline" :size="20" />
+          </template>
+          <n-thing
+            title="同步官方 API 数据"
+            :description="
+              statusText ||
+              '立即执行一次赛程、盘口与赛果同步；若下方开关已开，同批会按预算预拉缺包详情'
+            "
           />
-        </template>
-      </n-list-item>
-    </n-list>
-  </n-card>
+          <template #suffix>
+            <n-button
+              size="small"
+              type="primary"
+              :disabled="syncing"
+              :loading="syncing"
+              @click="syncOfficialData"
+            >
+              {{ syncing ? '同步中' : '立即同步' }}
+            </n-button>
+          </template>
+        </n-list-item>
+
+        <n-list-item>
+          <template #prefix>
+            <n-icon :component="SettingsOutline" :size="20" />
+          </template>
+          <n-thing
+            title="定时全量获取详情"
+            :description="
+              source
+                ? `当前来源：${source === 'db' ? '管理员覆盖（库）' : '环境变量默认'}；开关只改设置，真正预拉发生在下一次定时批次或「立即同步」（热门联赛未开赛缺包，每批最多 ${detailBudget} 场）`
+                : '读取并切换；默认关闭。开启会额外消耗官方 API 配额'
+            "
+          />
+          <template #suffix>
+            <n-switch
+              :value="enabled"
+              :disabled="loading || saving"
+              :loading="saving"
+              aria-label="定时全量获取详情"
+              @update:value="onToggle"
+            />
+          </template>
+        </n-list-item>
+      </n-list>
+    </n-card>
+  </MineSectionBody>
 </template>
