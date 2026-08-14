@@ -40,7 +40,7 @@ export const sectionMeta: Record<
   about: {
     routeName: 'mine-about',
     title: '关于',
-    description: 'Football Analytics 产品与版本信息',
+    description: 'Football Analytics 产品说明与版本信息',
     icon: InformationCircleOutline,
   },
 }

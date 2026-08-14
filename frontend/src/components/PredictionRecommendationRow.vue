@@ -186,7 +186,6 @@ function open() {
   color: var(--fa-highlight-text) !important;
   background: var(--fa-highlight-bg) !important;
   box-shadow: inset 0 0 0 1px var(--fa-highlight-border);
-  font-weight: 600;
 }
 
 /* 质量偏低的每日推荐：同样带 [荐]，用 info 蓝与高质量区分 */
