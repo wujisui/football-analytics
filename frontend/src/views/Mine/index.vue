@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ChevronBackOutline, LogOutOutline } from '@vicons/ionicons5'
-import { NIcon, useModal, type MenuOption } from 'naive-ui'
+import { ChevronBackOutline } from '@vicons/ionicons5'
+import { NIcon, type MenuOption } from 'naive-ui'
 import { computed, h, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -8,7 +8,6 @@ import { useAuthSession } from '@/composables/useAuthSession'
 import { useBetPlans } from '@/composables/useBetPlans'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
-import { confirmLogout } from '@/views/Mine/confirmLogout'
 import {
   sectionFromRouteName,
   sectionMeta,
@@ -19,9 +18,8 @@ defineOptions({ name: 'Mine' })
 
 const route = useRoute()
 const router = useRouter()
-const modal = useModal()
 const isPhone = useIsPhone()
-const { isLoggedIn, isAdmin, logout } = useAuthSession()
+const { isAdmin } = useAuthSession()
 const { filterDate, planDays } = useBetPlans()
 
 function renderIcon(icon: Component) {
@@ -63,15 +61,6 @@ const menuOptions = computed<MenuOption[]>(() => [
         label: '主题设置',
         icon: renderIcon(sectionMeta.theme.icon),
       },
-      ...(isLoggedIn.value
-        ? [
-            {
-              key: 'logout',
-              label: '退出登录',
-              icon: renderIcon(LogOutOutline),
-            } satisfies MenuOption,
-          ]
-        : []),
     ],
   },
   {
@@ -106,15 +95,7 @@ const showSectionHeader = computed(
     (isPhone.value && activeSection.value !== 'account') || !isPhone.value,
 )
 
-function onLogout() {
-  confirmLogout(modal, logout)
-}
-
 function openSection(section: string) {
-  if (section === 'logout') {
-    onLogout()
-    return
-  }
   if (!(section in sectionMeta)) return
   if (section === 'admin' && !isAdmin.value) return
   const mineSection = section as MineSection

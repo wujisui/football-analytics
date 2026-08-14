@@ -2,7 +2,7 @@ import type { useModal } from 'naive-ui'
 
 type ModalApi = ReturnType<typeof useModal>
 
-/** Shared logout confirm used by Mine sider and phone account list. */
+/** Shared logout confirm used by the account page login/logout slot. */
 export function confirmLogout(
   modal: ModalApi,
   logout: () => Promise<void>,

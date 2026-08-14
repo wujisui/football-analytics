@@ -68,7 +68,15 @@ function onLogout() {
             </n-avatar>
           </template>
           <template #header-extra>
-            <n-tag v-if="isLoggedIn" size="small" type="success">已登录</n-tag>
+            <n-button
+              v-if="isLoggedIn"
+              size="small"
+              type="error"
+              secondary
+              @click="onLogout"
+            >
+              退出
+            </n-button>
             <n-button v-else size="small" type="primary" @click="openLogin">
               登录
             </n-button>
@@ -97,12 +105,6 @@ function onLogout() {
               <n-icon :component="ChevronForwardOutline" :size="18" />
             </template>
           </n-list-item>
-          <n-list-item v-if="isLoggedIn" @click="onLogout">
-            <template #prefix>
-              <n-icon :component="LogOutOutline" :size="21" />
-            </template>
-            <n-thing title="退出登录" description="退出当前账号" />
-          </n-list-item>
         </n-list>
       </n-card>
     </div>
@@ -120,7 +122,12 @@ function onLogout() {
           </template>
           <template #description>收藏与方案按当前账号保存</template>
           <template #header-extra>
-            <n-tag size="small" type="success">已登录</n-tag>
+            <n-button size="small" type="error" secondary @click="onLogout">
+              <template #icon>
+                <n-icon :component="LogOutOutline" />
+              </template>
+              退出
+            </n-button>
           </template>
         </n-thing>
       </template>

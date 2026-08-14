@@ -1,15 +1,44 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { FormInst, FormRules } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 
 import { useAuthSession } from '@/composables/useAuthSession'
+
+const REMEMBER_ACCOUNT_KEY = 'fa-remember-account'
+
+function readRememberedAccount(): string {
+  try {
+    return localStorage.getItem(REMEMBER_ACCOUNT_KEY)?.trim() || ''
+  } catch {
+    return ''
+  }
+}
+
+function writeRememberedAccount(username: string) {
+  try {
+    const value = username.trim()
+    if (value) localStorage.setItem(REMEMBER_ACCOUNT_KEY, value)
+    else localStorage.removeItem(REMEMBER_ACCOUNT_KEY)
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+function clearRememberedAccount() {
+  try {
+    localStorage.removeItem(REMEMBER_ACCOUNT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
 
 const { loginModalShow, closeLogin, login, register } = useAuthSession()
 const message = useMessage()
 const formRef = ref<FormInst | null>(null)
 const submitting = ref(false)
 const mode = ref<'login' | 'register'>('login')
+const rememberAccount = ref(!!readRememberedAccount())
 const model = ref({
   username: '',
   password: '',
@@ -44,15 +73,31 @@ const rules = ref<FormRules>({
   ],
 })
 
-function resetForm() {
-  model.value = { username: '', password: '', password2: '' }
+function resetForm(keepUsername = false) {
+  const remembered = keepUsername ? model.value.username || readRememberedAccount() : ''
+  model.value = {
+    username: keepUsername ? remembered : '',
+    password: '',
+    password2: '',
+  }
   formRef.value?.restoreValidation()
 }
 
+function hydrateRememberedAccount() {
+  const remembered = readRememberedAccount()
+  rememberAccount.value = !!remembered
+  if (remembered) model.value.username = remembered
+}
+
+watch(loginModalShow, (open) => {
+  if (open) hydrateRememberedAccount()
+})
+
 function onAfterLeave() {
-  resetForm()
+  resetForm(false)
   submitting.value = false
   mode.value = 'login'
+  rememberAccount.value = !!readRememberedAccount()
 }
 
 function switchMode(next: 'login' | 'register') {
@@ -74,6 +119,7 @@ function claimedHint(claimed: {
 
 async function onSubmit(e?: Event) {
   e?.preventDefault()
+  if (submitting.value) return
   try {
     await formRef.value?.validate()
   } catch {
@@ -88,6 +134,12 @@ async function onSubmit(e?: Event) {
     if (!result.ok) {
       message.error(result.error)
       return
+    }
+    if (mode.value === 'register' || rememberAccount.value) {
+      writeRememberedAccount(model.value.username)
+      rememberAccount.value = true
+    } else {
+      clearRememberedAccount()
     }
     const verb = mode.value === 'register' ? '注册并登录成功' : '登录成功'
     message.success(`${verb}${claimedHint(result.claimed)}`)
@@ -137,7 +189,6 @@ async function onSubmit(e?: Event) {
           placeholder="至少 6 位"
           maxlength="64"
           autocomplete="current-password"
-          @keydown.enter="onSubmit"
         />
       </n-form-item>
       <n-form-item v-if="mode === 'register'" path="password2" label="确认密码">
@@ -148,9 +199,13 @@ async function onSubmit(e?: Event) {
           placeholder="再次输入密码"
           maxlength="64"
           autocomplete="new-password"
-          @keydown.enter="onSubmit"
         />
       </n-form-item>
+      <n-form-item v-if="mode === 'login'" :show-label="false" :show-feedback="false">
+        <n-checkbox v-model:checked="rememberAccount">记住账号</n-checkbox>
+      </n-form-item>
+      <!-- Keep submit control inside the form so Enter works from any input. -->
+      <button type="submit" hidden tabindex="-1" aria-hidden="true" />
     </n-form>
     <template #footer>
       <n-space justify="space-between" style="width: 100%;">
