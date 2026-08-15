@@ -183,8 +183,9 @@ def describe_ttl_policy() -> dict[str, str]:
     return {
         "product": "pre-match analysis only (no live polling)",
         "after_kickoff": (
-            "prediction snapshot frozen; detail display package fetched on demand "
-            f"if missing; score refreshed per detail click ({TTL_FIXTURE_LIVE_SCORE}s cache "
+            "prediction snapshot frozen; display package read locally once a "
+            "pre-match snapshot exists; score refreshed per detail click "
+            f"({TTL_FIXTURE_LIVE_SCORE}s cache "
             f"while in play, {TTL_FIXTURE_SETTLE_SCORE // 60}min cache once it should be over)"
         ),
         "far_>72h": f"analysis refresh every {TTL_ANALYSIS_FAR // 3600}h",
