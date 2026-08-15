@@ -29,6 +29,7 @@ import {useScrollRestore} from '@/composables/useScrollRestore'
 import {useFavoriteFixtures} from '@/composables/useFavoriteFixtures'
 import {
   cacheResultsHistory,
+  consumeResultsSettlementDirty,
   invalidateCachedResultsDay,
   loadResultsFilterOptions,
   publishResultsFixtures,
@@ -177,6 +178,14 @@ const leagueScopedFixtures = computed(() => {
   return list
 })
 
+const dailyPickIds = computed(
+    () => new Set(
+        fixtures.value
+            .filter((fx) => !!fx.auto_pick_market)
+            .map((fx) => fx.fixture_id),
+    ),
+)
+
 const listedFixtures = computed(() => {
   let list = leagueScopedFixtures.value
   const hitKey = filterHitKey.value
@@ -187,6 +196,7 @@ const listedFixtures = computed(() => {
   return sortFixturesFavoritesFirst(
       filterByTeamQuery(list, teamSearch.value),
       favoriteIds.value,
+      dailyPickIds.value,
   )
 })
 
@@ -482,6 +492,13 @@ onActivated(() => {
     return
   }
   applySavedFiltersIfAny()
+  // Detail may have written FT score into the list cache without hit flags.
+  // Force a local reload so evaluate_fixture_prediction settles recommendations.
+  if (consumeResultsSettlementDirty(selectedDay.value)) {
+    void loadSelectedDay(true)
+    void loadHistory(true)
+    return
+  }
   if (resultsLoadedDay.value !== selectedDay.value) {
     void loadSelectedDay()
   }

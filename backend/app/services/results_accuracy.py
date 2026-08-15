@@ -31,6 +31,23 @@ from app.services.prediction import (
     summarize_accuracy,
 )
 
+# Official short codes that mean regulation (or AET/PEN) is final.
+_FINISHED_SHORT = frozenset({"FT", "AET", "PEN"})
+
+
+def fixture_ready_to_grade(fixture: Fixture) -> bool:
+    """True when local score is final enough to settle recommendations.
+
+    Prefer mapped ``status=finished``; also accept FT/AET/PEN short codes when
+    detail refresh wrote the board but a stale ``live`` status lingered.
+    """
+    if fixture.home_goals is None or fixture.away_goals is None:
+        return False
+    if is_finished_status(fixture.status):
+        return True
+    short = (getattr(fixture, "status_short", None) or "").strip().upper()
+    return short in _FINISHED_SHORT
+
 
 def settle_auto_pick_hit(
     *,
@@ -119,9 +136,7 @@ def evaluate_fixture_prediction(
         "auto_pick_market": None,
         "auto_pick_lean": None,
         # Unsettled rows (feed still live) carry provisional scores — show, never grade.
-        "evaluable": is_finished_status(fixture.status)
-        and fixture.home_goals is not None
-        and fixture.away_goals is not None,
+        "evaluable": fixture_ready_to_grade(fixture),
     }
 
     def _attach_auto_pick(*, grade: bool) -> None:

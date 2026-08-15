@@ -175,11 +175,19 @@ export function invalidateCachedResultsDay(day: string, schedule: boolean) {
   else resultsByDay.delete(day)
 }
 
+function detailHasFinishedScore(detail: FixtureResponse): boolean {
+  return (
+    (detail.status || '').toLowerCase() === 'finished' &&
+    detail.home_goals != null &&
+    detail.away_goals != null
+  )
+}
+
 function mergeDetailScoreIntoResult(
   prev: ResultFixture,
   detail: FixtureResponse,
 ): ResultFixture {
-  return {
+  const next: ResultFixture = {
     ...prev,
     status: detail.status,
     home_goals: detail.home_goals ?? prev.home_goals,
@@ -187,17 +195,43 @@ function mergeDetailScoreIntoResult(
     home_rank: detail.home_rank ?? prev.home_rank,
     away_rank: detail.away_rank ?? prev.away_rank,
   }
+  // Detail response has score/status only — never inherit stale null hit flags
+  // as if settlement already ran. List reload regrades from local DB.
+  if (detailHasFinishedScore(detail) && prev.result_hit == null) {
+    next.handicap_result = null
+    next.handicap_hit = null
+    next.score_hit = null
+    next.ou_hit = null
+    next.btts_hit = null
+    next.result_hit = null
+    next.auto_pick_hit = null
+  }
+  return next
+}
+
+/** Days whose score patch still needs a local results reload for hit flags. */
+const settlementDirtyDays = new Set<string>()
+
+/** True when returning to 赛果 should force-reload the selected day. */
+export function consumeResultsSettlementDirty(day: string): boolean {
+  if (!settlementDirtyDays.has(day)) return false
+  settlementDirtyDays.delete(day)
+  return true
 }
 
 /**
- * Detail click may pull the latest official score. Patch both results and
- * future-schedule caches immediately; do not refetch the whole list.
+ * Detail click may pull the latest official score. Patch score/status into the
+ * list cache immediately; once the match is finished, drop that day's cache so
+ * the next 赛果 visit re-reads hit flags (evaluate on read from local DB).
  */
 export function patchResultsFixtureFromDetail(detail: FixtureResponse): void {
+  const finished = detailHasFinishedScore(detail)
+  const daysTouched = new Set<string>()
   let touchedResults = false
   for (const [day, rows] of resultsByDay) {
     const idx = rows.findIndex((f) => f.fixture_id === detail.fixture_id)
     if (idx < 0) continue
+    daysTouched.add(day)
     const next = rows.map((row, i) =>
       i === idx ? mergeDetailScoreIntoResult(row, detail) : row,
     )
@@ -212,9 +246,26 @@ export function patchResultsFixtureFromDetail(detail: FixtureResponse): void {
       (f) => f.fixture_id === detail.fixture_id,
     )
     if (idx >= 0) {
+      if (resultsLoadedDay.value) daysTouched.add(resultsLoadedDay.value)
       resultsFixtures.value = resultsFixtures.value.map((row, i) =>
         i === idx ? mergeDetailScoreIntoResult(row, detail) : row,
       )
+    }
+  }
+
+  if (finished && daysTouched.size) {
+    for (const day of daysTouched) {
+      settlementDirtyDays.add(day)
+      resultsByDay.delete(day)
+    }
+    // Accuracy series also grades finished rows — rebuild on next visit.
+    resultsHistory.value = null
+    if (
+      !scheduleMode.value &&
+      daysTouched.has(resultsLoadedDay.value)
+    ) {
+      // Force onActivated / next loadSelectedDay to refetch and settle hits.
+      resultsLoadedDay.value = ''
     }
   }
 

@@ -8,14 +8,18 @@ from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.sql import ColumnElement
 
 from app.models.fixture import Fixture
+from app.services.ttl_policy import TTL_FIXTURE_LIVE_SCORE, TTL_FIXTURE_SETTLE_SCORE
 
 STALE_RESULT_HOURS = 2
 # No match runs this long — past it, a live row means the feed has not settled yet.
 STUCK_LIVE_HOURS = 4
 # Feed codes reached only after the 90 minutes are over, so ``fulltime`` is final.
 POST_REGULATION_SHORT = frozenset({"ET", "BT", "P"})
-# 用户点开详情时补拉比分的时间上限；更早的场次交给定时批次回写。
+# 详情点击补分：开赛后这段时间按「可能仍在踢」跟进，短 TTL。
 LIVE_SCORE_REFRESH_HOURS = 12
+# 之后仍未完场的，按真实时间线早该结束（多为定时回写被配额挤掉），
+# 仍允许点击时低频补一次结算，直到这个天数上限。
+SETTLE_SCORE_REFRESH_DAYS = 7
 UNFINISHED_STATUSES = frozenset({"pending", "live"})
 
 
@@ -64,19 +68,28 @@ def results_list_score(
     return home_goals, away_goals
 
 
-def needs_live_score_refresh(
+def score_refresh_ttl(
     status: str | None,
     fixture_date: datetime,
     now: datetime | None = None,
-) -> bool:
-    """已开赛未完场：用户打开详情时值得为它补一次官方比分。"""
+) -> int | None:
+    """打开详情时用多长缓存去补官方比分；``None`` = 只读本地。
+
+    已开赛未完场都值得补一次：开赛不久用短 TTL 跟比分，久未结算的用长 TTL
+    追一次终场（定时回写可能被配额挤掉，赛果页不该一直停在「进行中」）。
+    """
     if (status or "").strip().lower() not in UNFINISHED_STATUSES:
-        return False
+        return None
     current = now or datetime.utcnow()
     kickoff = as_naive_utc(fixture_date)
     if kickoff > current:
-        return False
-    return current - kickoff <= timedelta(hours=LIVE_SCORE_REFRESH_HOURS)
+        return None
+    elapsed = current - kickoff
+    if elapsed <= timedelta(hours=LIVE_SCORE_REFRESH_HOURS):
+        return TTL_FIXTURE_LIVE_SCORE
+    if elapsed <= timedelta(days=SETTLE_SCORE_REFRESH_DAYS):
+        return TTL_FIXTURE_SETTLE_SCORE
+    return None
 
 
 def settled_by_full_time(

@@ -403,6 +403,15 @@ class FootballFetcher:
             fixture_date=fixture_date,
             has_full_time_score=home_goals is not None and away_goals is not None,
         )
+        # Detail refresh / day feeds sometimes keep a live long-form status while
+        # short is already FT and fulltime goals are present — force finished so
+        # list settlement and UI stay aligned.
+        if (
+            home_goals is not None
+            and away_goals is not None
+            and (status_short or "").upper() in {"FT", "AET", "PEN"}
+        ):
+            status = "finished"
         if fixture is not None and is_stale_live_row(previous_status, status):
             # Keep the recorded result; a later good row will update it.
             logger.debug(
@@ -1451,15 +1460,16 @@ class FootballFetcher:
             lambda client: self.provider.fetch_predictions_payload(client, fixture_id),
         )
 
-    async def refresh_fixture_score(self, fixture_id: int) -> bool:
+    async def refresh_fixture_score(self, fixture_id: int, ttl: int | None = None) -> bool:
         """One official detail call → write status / score back to the local DB.
 
-        只由未完场详情点击触发；短 TTL 让连续点击复用缓存，不做轮询。
+        只由未完场详情点击触发；调用方按开赛多久给 TTL（``score_refresh_ttl``），
+        让连续点击复用缓存，不做轮询。
         """
         assert self.session is not None
         payload = await self._get_or_fetch(
             fixture_score_cache_key(fixture_id),
-            TTL_FIXTURE_LIVE_SCORE,
+            ttl or TTL_FIXTURE_LIVE_SCORE,
             "refresh_fixture_score",
             lambda client: self.provider.fetch_fixture_detail_payload(client, fixture_id),
         )

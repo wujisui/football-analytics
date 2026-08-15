@@ -51,10 +51,10 @@ from app.services.results_accuracy import (
     load_stored_by_fixture_ids,
 )
 from app.services.results_capture import (
-    needs_live_score_refresh,
     prematch_list_clause,
     results_list_clause,
     results_list_score,
+    score_refresh_ttl,
 )
 from app.services.league_names import league_name_zh
 from app.services.league_standings import (
@@ -669,10 +669,11 @@ async def get_fixture_analysis(
         raise HTTPException(status_code=404, detail=f"Fixture {fixture_id} not found.")
 
     # 已开赛未完场：这一次点击补拉官方比分（预测快照仍冻结）。
-    if needs_live_score_refresh(fixture.status, fixture.date):
+    score_ttl = score_refresh_ttl(fixture.status, fixture.date)
+    if score_ttl is not None:
         try:
             async with FootballFetcher(session=db) as fetcher:
-                refreshed = await fetcher.refresh_fixture_score(fixture.id)
+                refreshed = await fetcher.refresh_fixture_score(fixture.id, ttl=score_ttl)
             if refreshed:
                 await db.refresh(fixture)
         except Exception as exc:

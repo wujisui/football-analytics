@@ -37,9 +37,11 @@ from app.services.prematch_package import (
 )
 from app.services.ttl_policy import (
     PREDICTION_EXAM_FIELDS,
+    detail_package_frozen,
     is_finished_status,
     is_prediction_exam_locked,
     refresh_ttl_seconds,
+    should_stop_api_refresh,
 )
 
 logger = logging.getLogger(__name__)
@@ -879,6 +881,25 @@ class AnalyzerService:
         settings = get_settings()
         refresh_ttl = self._analysis_refresh_ttl(fixture) or TTL_ANALYSIS
 
+        # 已开赛且赛前已冻结过预测：展示包只读本地。这一趟对官方的唯一请求是端点侧
+        # 的比分 + 状态补拉（``score_refresh_ttl``），把配额留给结算。
+        if should_stop_api_refresh(fixture.date, fixture.status):
+            frozen = await self._get_stored_pre_match_row(fixture_id)
+            if detail_package_frozen(fixture.date, fixture.status, frozen):
+                result = await self._result_from_pre_match(
+                    fixture, home_name, away_name, league_name, frozen, confidence="中"
+                )
+                if not include_package:
+                    result.package = None
+                await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
+                logger.info(
+                    "Analysis served local-only for started fixture %s (status=%s): "
+                    "package frozen, official call limited to score refresh",
+                    fixture_id,
+                    fixture.status,
+                )
+                return result
+
         if include_package:
             # Persist odds ASAP for list cards, but do not short-circuit detail
             # when form / standings / lineups / injuries / briefing are still missing.
@@ -918,7 +939,8 @@ class AnalyzerService:
                     history_tag=history_tag,
                     standings_overlay=standings_overlay,
                 ):
-                    pass  # fall through — same detail path for all match states
+                    # 走补包：未开赛，或开赛前从未落过预测快照的场次。
+                    pass
                 else:
                     result = await self._result_from_pre_match(
                         fixture, home_name, away_name, league_name, stored, confidence="中"

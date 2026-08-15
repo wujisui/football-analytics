@@ -105,10 +105,10 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       双进
     </n-tag>
     <n-tag
-      v-if="fixture.handicap_lean && fixture.handicap_hit != null"
+      v-if="fixture.handicap_lean"
       class="hit-tag"
       :class="{
-        clickable: filterable,
+        clickable: filterable && fixture.handicap_hit != null,
         active: activeHitKey === 'handicap',
       }"
       size="small"

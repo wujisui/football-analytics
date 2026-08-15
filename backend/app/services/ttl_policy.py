@@ -34,6 +34,9 @@ TTL_ANALYSIS_REDIS = 10 * 60
 
 # Single fixture score refresh on detail click (kicked off, not finished yet).
 TTL_FIXTURE_LIVE_SCORE = 60
+# Same call for rows the scheduled backfill never settled (usually quota starvation):
+# the match is long over, so one low-frequency re-check per click is enough.
+TTL_FIXTURE_SETTLE_SCORE = 30 * 60
 
 FINISHED_STATUSES = {
     "finished",
@@ -118,6 +121,22 @@ def has_exam_prediction_snapshot(record: object | None) -> bool:
     return bool(rec and rec != "待分析")
 
 
+def detail_package_frozen(
+    fixture_date: datetime | None,
+    status: str | None = None,
+    stored: object | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """True → 打开详情时展示包只读本地，不再为补包打官方接口。
+
+    条件是「已开赛 + 赛前已落过真实预测快照」。这类场次的详情只值得补比分与
+    状态（结算用），赔率 / 交锋 / 近况 / 阵容都已冻结，补包只会白烧配额。
+    """
+    if not should_stop_api_refresh(fixture_date, status=status, now=now):
+        return False
+    return has_exam_prediction_snapshot(stored)
+
+
 def refresh_ttl_seconds(
     fixture_date: datetime | None,
     *,
@@ -165,7 +184,8 @@ def describe_ttl_policy() -> dict[str, str]:
         "product": "pre-match analysis only (no live polling)",
         "after_kickoff": (
             "prediction snapshot frozen; detail display package fetched on demand "
-            f"if missing; score refreshed per detail click ({TTL_FIXTURE_LIVE_SCORE}s cache)"
+            f"if missing; score refreshed per detail click ({TTL_FIXTURE_LIVE_SCORE}s cache "
+            f"while in play, {TTL_FIXTURE_SETTLE_SCORE // 60}min cache once it should be over)"
         ),
         "far_>72h": f"analysis refresh every {TTL_ANALYSIS_FAR // 3600}h",
         "mid_24_72h": f"analysis refresh every {TTL_ANALYSIS_MID // 3600}h",
