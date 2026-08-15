@@ -1,8 +1,9 @@
 """Resolve the current owner from the httpOnly session cookie.
 
-Missing / invalid cookie → ``None`` (guest bucket). The token is never exposed
-to page scripts. Admin ops accept either a logged-in ``is_admin`` user or the
-legacy ``X-Admin-Key`` header. See ``docs/AUTH_VIP_QUOTA.md`` §4.2 / §4.4.
+Missing / invalid cookie → ``None`` (guest). Private writes (收藏 / 方案) must
+use ``RequiredUserId`` and return 401. Admin ops accept either a logged-in
+``is_admin`` user or the legacy ``X-Admin-Key`` header. See
+``docs/AUTH_VIP_QUOTA.md`` §4.2 / §4.4.
 """
 
 from __future__ import annotations
@@ -26,13 +27,27 @@ async def get_current_user_id(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> str | None:
-    """Return authenticated user id, or ``None`` for the guest owner bucket."""
+    """Return authenticated user id, or ``None`` when no valid session."""
     return await auth_service.resolve_user_id_from_token(
         db, session_token_from_request(request)
     )
 
 
+async def require_current_user_id(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> str:
+    """Same as ``get_current_user_id``, but 401 when the caller is a guest."""
+    user_id = await auth_service.resolve_user_id_from_token(
+        db, session_token_from_request(request)
+    )
+    if not user_id:
+        raise HTTPException(status_code=401, detail="请先登录")
+    return user_id
+
+
 CurrentUserId = Annotated[str | None, Depends(get_current_user_id)]
+RequiredUserId = Annotated[str, Depends(require_current_user_id)]
 
 
 async def require_admin(

@@ -16,6 +16,7 @@ export type { FavoriteFixtureRecord }
 
 const favorites = ref<FavoriteFixtureRecord[]>([])
 let loadPromise: Promise<void> | null = null
+let loading = false
 
 function predictionFieldsFromSnapshot(snapshot: ReturnType<typeof snapshotFromAnalysis>) {
   return {
@@ -106,17 +107,25 @@ async function loadFavorites(): Promise<void> {
 
 async function ensureLoaded(): Promise<void> {
   if (loadPromise) return loadPromise
+  loading = true
   loadPromise = (async () => {
     try {
       await loadFavorites()
     } catch {
       /* keep empty until next reload */
+    } finally {
+      loading = false
     }
   })()
   return loadPromise
 }
 
+/** Force a re-read; a request already in flight is awaited instead of duplicated. */
 async function refreshFavorites(): Promise<void> {
+  if (loading && loadPromise) {
+    await loadPromise
+    return
+  }
   loadPromise = null
   await ensureLoaded()
 }

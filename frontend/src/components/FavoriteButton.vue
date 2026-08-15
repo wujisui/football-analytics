@@ -4,6 +4,7 @@ import { computed } from 'vue'
 
 import type { FixtureResponse } from '@/api/types'
 import type { ResultFixture } from '@/api/fixtures'
+import { useAuthSession } from '@/composables/useAuthSession'
 import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
 
 const props = withDefaults(
@@ -19,11 +20,13 @@ const props = withDefaults(
 )
 
 const { isFavorite, toggleFixture, toggleResultFixture, remove } = useFavoriteFixtures()
+const { requireLogin } = useAuthSession()
 
 const active = computed(() => isFavorite(props.fixtureId))
 
 function onClick(event: MouseEvent) {
   if (props.stopPropagation) event.stopPropagation()
+  if (!requireLogin()) return
   if (active.value) {
     void remove(props.fixtureId)
     return

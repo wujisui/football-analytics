@@ -113,15 +113,16 @@ DevTools 的 Network 面板挂在 TLS 之上，展示的是加密**之前**的�
 
 | 约定 | 说明 |
 |------|------|
-| 游客桶 | `user_id=""`（空串，非 SQL NULL），兼容 SQLite 复合主键 |
+| 游客桶 | `user_id=""`（空串，非 SQL NULL），仅承载共享的 `source=auto` 每日推荐；兼容 SQLite 复合主键 |
 | 查询必带作用域 | `owner_is` / `normalize_owner_id`；登录用户收藏列表额外合并游客桶 `source=auto` |
-| 鉴权依赖 | `CurrentUserId` 解析 `fa_session` cookie；无效/缺失 → 游客 |
-| 首登迁移 | 注册/登录时 `claim_anonymous_private_data`：手动收藏 + 方案；auto 不认领 |
+| 鉴权依赖 | `CurrentUserId` 解析 `fa_session` cookie（可空）；写操作走 `RequiredUserId`，无效/缺失 → **401 请先登录** |
+| 私有写操作 | `/favorites` POST/DELETE、`/bet-plans` 全部方法均要求登录；前端未登录先弹登录窗 |
+| 首登迁移 | 注册/登录时 `claim_anonymous_private_data`：认领历史游客桶里的手动收藏 + 方案；auto 不认领 |
 | 收藏 PK | `(user_id, fixture_id)` |
 
 已挂钩的表/接口：`favorite_fixtures.user_id`、`bet_plans.user_id`，以及 `/favorites`、`/bet-plans`、`/auth/*`。
 
-**原则**：未登录时**不假装**做云同步或跨设备私有；私有数据路径必须过 `CurrentUserId` + owner 过滤。
+**原则**：未登录时**不假装**做云同步或跨设备私有；私有写路径必须过 `RequiredUserId`；列表只读（如自动关注星标）仍可用 `CurrentUserId`。
 
 ---
 

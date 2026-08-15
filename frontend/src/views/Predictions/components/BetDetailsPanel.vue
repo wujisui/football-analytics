@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 
 import BetSelectionList from '@/views/Predictions/components/BetSelectionList.vue'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
+import { useAuthSession } from '@/composables/useAuthSession'
 import { useBetPlans } from '@/composables/useBetPlans'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import {
@@ -41,6 +42,7 @@ const {
   removeFixture,
 } = useBetCalculator()
 const { savePlan } = useBetPlans()
+const { requireLogin } = useAuthSession()
 
 const showDetails = ref(false)
 const showFormula = ref(false)
@@ -78,11 +80,13 @@ function openFormula() {
 
 function openSave() {
   if (!matchCount.value) return
+  if (!requireLogin()) return
   saveName.value = defaultPlanName(selections.value, fold.value)
   showSave.value = true
 }
 
 async function confirmSave(): Promise<boolean> {
+  if (!requireLogin()) return false
   if (!selections.value.length) return false
   const plan = await savePlan({
     name: saveName.value,

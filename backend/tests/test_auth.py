@@ -213,6 +213,54 @@ def test_login_uses_httponly_cookie_and_never_returns_token() -> None:
     asyncio.run(_run())
 
 
+def test_private_writes_require_login() -> None:
+    async def _run() -> None:
+        db, engine = await _session()
+        try:
+            from fastapi import FastAPI
+            from httpx import ASGITransport, AsyncClient
+
+            from app.api.v1.endpoints import bet_plans as bet_plans_endpoints
+            from app.api.v1.endpoints import favorites as favorites_endpoints
+            from app.core.database import get_db
+
+            app = FastAPI()
+            app.include_router(favorites_endpoints.router, prefix="/api/v1")
+            app.include_router(bet_plans_endpoints.router, prefix="/api/v1")
+
+            async def _override_db():
+                yield db
+
+            app.dependency_overrides[get_db] = _override_db
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                fav = await client.post("/api/v1/favorites", json={"fixture_id": 1})
+                assert fav.status_code == 401
+                assert fav.json()["detail"] == "请先登录"
+
+                plan = await client.post(
+                    "/api/v1/bet-plans",
+                    json={
+                        "name": "测",
+                        "plan_day": "2026-08-15",
+                        "fold": "single",
+                        "multiplier": 1,
+                        "selections": [],
+                    },
+                )
+                assert plan.status_code == 401
+
+                listed = await client.get("/api/v1/bet-plans")
+                assert listed.status_code == 401
+        finally:
+            await db.close()
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
 def test_list_favorites_merges_guest_auto_for_user() -> None:
     async def _run() -> None:
         db, engine = await _session()

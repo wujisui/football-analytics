@@ -119,9 +119,16 @@ export function useBetPlans() {
   const planDays = computed(() => new Set(plans.value.map((p) => p.planDay)))
 
   async function reload() {
-    await migrateLocalPlansIfNeeded()
-    const data = await fetchBetPlans()
-    plans.value = data.plans.map(dtoToPlan)
+    try {
+      await migrateLocalPlansIfNeeded()
+      const data = await fetchBetPlans()
+      plans.value = data.plans.map(dtoToPlan)
+    } catch (err) {
+      // Guest / expired session: private list is empty until login.
+      const status = (err as { status?: number })?.status
+      if (status === 401) plans.value = []
+      else throw err
+    }
     loaded.value = true
     persistSession()
   }

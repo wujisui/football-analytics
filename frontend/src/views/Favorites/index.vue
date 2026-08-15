@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
@@ -44,7 +44,7 @@ function writeSavedFilterDate(date: string) {
 
 const router = useRouter()
 const isPhone = useIsPhone()
-const { favorites, refresh } = useFavoriteFixtures()
+const { favorites, ensureLoaded, refresh } = useFavoriteFixtures()
 
 const filterDate = ref<string>(readSavedFilterDate())
 const selectedLeagueId = ref<number | null>(null)
@@ -125,17 +125,20 @@ function snapFilterToAvailableDay() {
   }
 }
 
-async function reloadFavorites() {
-  await refresh()
+async function reloadFavorites(force: boolean) {
+  await (force ? refresh() : ensureLoaded())
   snapFilterToAvailableDay()
 }
 
-onMounted(() => {
-  void reloadFavorites()
-})
-
+/**
+ * keep-alive 下首次挂载也会触发 onActivated，所以不另挂 onMounted。
+ * 首次激活复用应用启动时那次加载（本页 chunk 通常比接口慢，强制刷新会多打一次）；
+ * 之后每次回到本页才真正重读，收藏可能在别处被改过。
+ */
+let visited = false
 onActivated(() => {
-  void reloadFavorites()
+  void reloadFavorites(visited)
+  visited = true
 })
 </script>
 

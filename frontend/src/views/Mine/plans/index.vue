@@ -4,6 +4,7 @@ import { NInput, useMessage, useModal, type ModalReactive } from 'naive-ui'
 import { ChevronForwardOutline } from '@vicons/ionicons5'
 
 import PlanDetail from '@/views/Mine/plans/PlanDetail.vue'
+import { useAuthSession } from '@/composables/useAuthSession'
 import { useBetPlans } from '@/composables/useBetPlans'
 import { formatScheduleDay, parseApiDate } from '@/utils/format'
 import type { SavedBetPlan } from '@/utils/betPlans'
@@ -12,6 +13,7 @@ defineOptions({ name: 'BetPlans' })
 
 const message = useMessage()
 const modal = useModal()
+const { requireLogin } = useAuthSession()
 const {
   filterDate,
   plansForDay,
@@ -67,6 +69,7 @@ function openPlan(id: string) {
 }
 
 function openRename(plan: SavedBetPlan) {
+  if (!requireLogin()) return
   const draft = ref(plan.name)
   modal.create({
     preset: 'dialog',
@@ -87,6 +90,7 @@ function openRename(plan: SavedBetPlan) {
         },
       }),
     onPositiveClick: async () => {
+      if (!requireLogin()) return false
       if (!(await renamePlan(plan.id, draft.value))) {
         message.warning('名称不能为空或保存失败')
         return false
@@ -98,6 +102,7 @@ function openRename(plan: SavedBetPlan) {
 }
 
 async function confirmDelete(plan: SavedBetPlan) {
+  if (!requireLogin()) return
   try {
     await removePlan(plan.id)
   } catch {
@@ -113,6 +118,10 @@ async function confirmDelete(plan: SavedBetPlan) {
 }
 
 onMounted(() => {
+  if (!requireLogin()) {
+    // Login modal is open; list stays empty until they sign in and re-enter.
+    return
+  }
   void ensureLoaded()
 })
 </script>

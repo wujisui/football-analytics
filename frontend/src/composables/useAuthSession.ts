@@ -83,6 +83,13 @@ export function useAuthSession() {
     loginModalShow.value = false
   }
 
+  /** Private writes (收藏 / 方案). Opens the login modal and returns false when guest. */
+  function requireLogin(): boolean {
+    if (user.value) return true
+    loginModalShow.value = true
+    return false
+  }
+
   function applyUser(userId: string, name: string, isAdminFlag: boolean) {
     const next: AuthUserCache = {
       userId,
@@ -161,6 +168,7 @@ export function useAuthSession() {
     loginModalShow,
     openLogin,
     closeLogin,
+    requireLogin,
     login,
     register,
     logout,

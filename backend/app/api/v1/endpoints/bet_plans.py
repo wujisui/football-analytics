@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps_auth import CurrentUserId
+from app.api.deps_auth import RequiredUserId
 from app.api.v1.http_cache import set_no_store_headers
 from app.core.database import get_db
 from app.schemas.response import (
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/bet-plans", tags=["bet-plans"])
 @router.get("", response_model=BetPlansResponse)
 async def list_bet_plans(
     response: Response,
-    user_id: CurrentUserId,
+    user_id: RequiredUserId,
     plan_day: str | None = Query(default=None, description="按赛程日过滤 YYYY-MM-DD"),
     db: AsyncSession = Depends(get_db),
 ) -> BetPlansResponse:
@@ -39,7 +39,7 @@ async def list_bet_plans(
 @router.get("/days", response_model=BetPlanDaysResponse)
 async def list_bet_plan_days(
     response: Response,
-    user_id: CurrentUserId,
+    user_id: RequiredUserId,
     db: AsyncSession = Depends(get_db),
 ) -> BetPlanDaysResponse:
     set_no_store_headers(response)
@@ -51,7 +51,7 @@ async def list_bet_plan_days(
 async def get_bet_plan(
     plan_id: str,
     response: Response,
-    user_id: CurrentUserId,
+    user_id: RequiredUserId,
     db: AsyncSession = Depends(get_db),
 ) -> BetPlanResponse:
     set_no_store_headers(response)
@@ -65,7 +65,7 @@ async def get_bet_plan(
 async def create_bet_plan(
     body: BetPlanCreateRequest,
     response: Response,
-    user_id: CurrentUserId,
+    user_id: RequiredUserId,
     db: AsyncSession = Depends(get_db),
 ) -> BetPlanResponse:
     set_no_store_headers(response)
@@ -90,7 +90,7 @@ async def rename_bet_plan(
     plan_id: str,
     body: BetPlanRenameRequest,
     response: Response,
-    user_id: CurrentUserId,
+    user_id: RequiredUserId,
     db: AsyncSession = Depends(get_db),
 ) -> BetPlanResponse:
     set_no_store_headers(response)
@@ -109,7 +109,7 @@ async def rename_bet_plan(
 async def delete_bet_plan(
     plan_id: str,
     response: Response,
-    user_id: CurrentUserId,
+    user_id: RequiredUserId,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     set_no_store_headers(response)
