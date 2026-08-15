@@ -228,6 +228,7 @@ async def _ensure_sqlite_columns(conn) -> None:
         conn,
         "auto_pick_snapshots",
         {
+            "raw_confidence": "REAL",
             "score": "REAL",
             "quality_rating": "REAL",
         },

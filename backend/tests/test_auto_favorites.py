@@ -48,6 +48,27 @@ def test_score_prefers_sharp_single_1x2() -> None:
     assert score == 0.62 * 1.60 - 1.0
 
 
+def test_score_uses_validated_calibration_before_expected_return() -> None:
+    odds = {
+        "match_winner": {"home": "1.60", "draw": "3.80", "away": "5.50"},
+        "asian_handicap": {"home": "1.90", "away": "1.90", "line": "0"},
+        "goals_ou": {"home": "2.10", "away": "1.70", "line": "2.5"},
+        "both_teams_score": {"home": "2.00", "away": "1.75"},
+    }
+    calibration = {
+        "version": "daily-pick-platt-v1",
+        # a=0,b=0 maps 1X2 confidence to 0.5; other markets stay raw.
+        "markets": {"1x2": {"deployable": True, "a": 0.0, "b": 0.0}},
+    }
+    score, market, _lean = score_fixture_confidence(
+        _stored(),
+        odds=odds,
+        calibration=calibration,
+    )
+    assert market != "1x2"
+    assert score > 0.5 * 1.60 - 1.0
+
+
 def test_double_chance_is_rejected() -> None:
     odds = {
         "match_winner": {"home": "2.10", "draw": "3.20", "away": "3.40"},
@@ -153,6 +174,46 @@ def test_rank_still_fills_four_when_only_short_odds_exist() -> None:
 
     assert len(picked) == 4
     assert [item.fixture_id for item in picked] == [1, 2, 3, 4]
+
+
+def test_calibration_changes_confidence_without_changing_daily_cap() -> None:
+    odds = {
+        "match_winner": {"home": "1.70", "draw": "4.00", "away": "6.00"},
+        "asian_handicap": {"home": "1.55", "away": "2.40", "line": "-0.5"},
+        "goals_ou": {"home": "1.90", "away": "1.90", "line": "2.5"},
+        "both_teams_score": {"home": "1.90", "away": "1.90"},
+    }
+    rows = [
+        (
+            SimpleNamespace(
+                id=fid,
+                league_id=39,
+                date=datetime.fromisoformat(f"2026-08-12T{11 + fid:02d}:00:00"),
+            ),
+            _stored(
+                home_win_prob=0.70 - fid * 0.02,
+                draw_prob=0.20,
+                away_win_prob=0.10 + fid * 0.02,
+            ),
+            None,
+        )
+        for fid in range(1, 6)
+    ]
+    calibration = {
+        "version": "daily-pick-platt-v1",
+        "markets": {"1x2": {"deployable": True, "a": 0.8, "b": -0.15}},
+    }
+
+    import app.services.auto_favorites as mod
+
+    original = _patch_odds(mod, odds)
+    try:
+        picked = rank_auto_pick_candidates(rows, limit=4, calibration=calibration)
+    finally:
+        mod.package_from_record, mod.rehydrate_odds_markets = original
+
+    assert len(picked) == 4
+    assert any(item.confidence != item.raw_confidence for item in picked)
 
 
 def test_rank_prefers_value_fixture_over_tiny_odds() -> None:

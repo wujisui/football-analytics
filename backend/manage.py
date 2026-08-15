@@ -351,12 +351,14 @@ async def run_model_status() -> None:
     from app.services.ah_predictor import model_status as ah_model_status
     from app.services.goal_predictor import model_status as goal_model_status
     from app.services.ml_predictor import model_status
+    from app.services.probability_calibration import load_calibration_artifact
     from sqlalchemy import func, select
 
     await init_db()
     status = model_status()
     ah_status = ah_model_status()
     goal_status = goal_model_status()
+    calibration = load_calibration_artifact()
     async with AsyncSessionLocal() as session:
         total = await session.scalar(select(func.count()).select_from(MatchFeature))
         labeled = await session.scalar(
@@ -392,6 +394,16 @@ async def run_model_status() -> None:
     print(f"val_metrics: {goal_status.get('val_metrics')}")
     print(f"baseline_total_mae: {goal_status.get('baseline_total_mae')}")
     print(f"trained_at: {goal_status.get('trained_at')}")
+    print("--- 日推概率校准 (time holdout) ---")
+    print(f"trained_n_samples: {calibration.get('n_samples', 0)}")
+    print(f"trained_at: {calibration.get('trained_at')}")
+    for market, row in (calibration.get("markets") or {}).items():
+        print(
+            f"{market}: deployable={row.get('deployable')} "
+            f"n={row.get('n_samples', 0)} "
+            f"raw={row.get('raw_holdout')} "
+            f"calibrated={row.get('calibrated_holdout')}"
+        )
 
 
 async def run_backfill_ah_features() -> None:

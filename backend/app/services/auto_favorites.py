@@ -32,6 +32,10 @@ from app.services.prediction import (
     resolve_match_probabilities,
 )
 from app.services.prematch_package import package_from_record, rehydrate_odds_markets
+from app.services.probability_calibration import (
+    calibrate_probability,
+    train_from_frozen_history,
+)
 from app.services.results_capture import prematch_list_clause
 from app.services.user_scope import ANON_OWNER_ID
 
@@ -80,6 +84,7 @@ class AutoPickCandidate:
     score: float
     market: str
     lean: str
+    raw_confidence: float
     confidence: float
     decimal_odd: float
     expected_return: float
@@ -88,6 +93,7 @@ class AutoPickCandidate:
 class MarketCandidate:
     market: str
     lean: str
+    raw_confidence: float
     confidence: float
     decimal_odd: float
 
@@ -261,6 +267,7 @@ def _market_candidates(
     *,
     odds: dict[str, Any] | None,
     feature: MatchFeature | None = None,
+    calibration: dict[str, Any] | None = None,
 ) -> list[MarketCandidate]:
     scored = (
         ("1x2", _score_1x2(stored, odds)),
@@ -269,16 +276,18 @@ def _market_candidates(
         ("btts", _score_btts(stored, odds)),
     )
     candidates: list[MarketCandidate] = []
-    for market, (confidence, lean) in scored:
+    for market, (raw_confidence, lean) in scored:
         if not lean:
             continue
         decimal_odd = _market_decimal_odd(market, lean, odds)
         if decimal_odd is None:
             continue
+        confidence = calibrate_probability(calibration, market, raw_confidence)
         candidates.append(
             MarketCandidate(
                 market=market,
                 lean=lean,
+                raw_confidence=raw_confidence,
                 confidence=confidence,
                 decimal_odd=decimal_odd,
             )
@@ -305,9 +314,17 @@ def score_fixture_confidence(
     *,
     odds: dict[str, Any] | None,
     feature: MatchFeature | None = None,
+    calibration: dict[str, Any] | None = None,
 ) -> tuple[float, str, str]:
     """Return (ranking_score, market, lean) for the best single-lean market."""
-    best = _best_market(_market_candidates(stored, odds=odds, feature=feature))
+    best = _best_market(
+        _market_candidates(
+            stored,
+            odds=odds,
+            feature=feature,
+            calibration=calibration,
+        )
+    )
     if best is None:
         return 0.0, "", ""
     return best.ranking_score, best.market, best.lean
@@ -318,6 +335,7 @@ def score_auto_pick_candidates(
     *,
     min_confidence: float = MIN_CONFIDENCE,
     incentive_state: Any | None = None,
+    calibration: dict[str, Any] | None = None,
 ) -> list[AutoPickCandidate]:
     """Score every scorable single-lean fixture (no day / count cap)."""
     ranked: list[AutoPickCandidate] = []
@@ -338,6 +356,7 @@ def score_auto_pick_candidates(
                     stored,
                     odds=odds if isinstance(odds, dict) else None,
                     feature=feature,
+                    calibration=calibration,
                 )
                 if item.confidence >= min_confidence
             ]
@@ -362,6 +381,7 @@ def score_auto_pick_candidates(
                 score=final_score,
                 market=best.market,
                 lean=best.lean,
+                raw_confidence=best.raw_confidence,
                 confidence=best.confidence,
                 decimal_odd=best.decimal_odd,
                 expected_return=best.expected_return,
@@ -377,12 +397,14 @@ def rank_auto_pick_candidates(
     limit: int = AUTO_PICK_LIMIT,
     min_confidence: float = MIN_CONFIDENCE,
     incentive_state: Any | None = None,
+    calibration: dict[str, Any] | None = None,
 ) -> list[AutoPickCandidate]:
     """Rank one pool and keep top ``limit`` (single-day helper / tests)."""
     return score_auto_pick_candidates(
         rows,
         min_confidence=min_confidence,
         incentive_state=incentive_state,
+        calibration=calibration,
     )[: max(0, limit)]
 
 
@@ -440,6 +462,7 @@ async def sync_daily_auto_favorites(
 
     # Once per scheduler-local day: refresh EMA + soft weights before ranking.
     incentive_state = await ensure_incentives_for_picks(db, now=current)
+    calibration = await train_from_frozen_history(db, now=current)
 
     rows = (
         await db.execute(
@@ -464,6 +487,7 @@ async def sync_daily_auto_favorites(
     candidates = score_auto_pick_candidates(
         list(by_fixture.values()),
         incentive_state=incentive_state,
+        calibration=calibration,
     )
 
     # Skip fixtures any user already starred manually in the guest bucket
@@ -532,6 +556,7 @@ async def sync_daily_auto_favorites(
                 match_day=_schedule_day_key(candidate.kickoff),
                 market=candidate.market,
                 lean=candidate.lean,
+                raw_confidence=candidate.raw_confidence,
                 confidence=candidate.confidence,
                 decimal_odd=candidate.decimal_odd,
                 expected_return=candidate.expected_return,
@@ -558,6 +583,10 @@ async def sync_daily_auto_favorites(
         "day": local_day,
         "candidates": len(candidates),
         "selected_count": len(selected),
+        "calibration": {
+            market: bool(config.get("deployable"))
+            for market, config in (calibration.get("markets") or {}).items()
+        },
         "by_day": by_day_counts,
         "selected": [
             {
@@ -566,6 +595,7 @@ async def sync_daily_auto_favorites(
                 "score": round(item.score, 4),
                 "market": item.market,
                 "lean": item.lean,
+                "raw_confidence": round(item.raw_confidence, 4),
                 "confidence": round(item.confidence, 4),
                 "decimal_odd": round(item.decimal_odd, 3),
                 "expected_return": round(item.expected_return, 4),
