@@ -132,6 +132,13 @@ async function refreshFavorites(): Promise<void> {
 
 void ensureLoaded()
 
+/** Drop the previous account's favorites before guest reload / login refresh. */
+export function clearPrivateFavorites() {
+  favorites.value = []
+  loadPromise = null
+  loading = false
+}
+
 const favoriteIds = computed(() => new Set(favorites.value.map((f) => f.fixture_id)))
 const favoriteList = computed<FavoriteFixtureRecord[]>(() => favorites.value)
 
@@ -282,5 +289,6 @@ export function useFavoriteFixtures() {
     remove,
     ensureLoaded,
     refresh: refreshFavorites,
+    clearPrivate: clearPrivateFavorites,
   }
 }

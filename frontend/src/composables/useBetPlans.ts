@@ -71,6 +71,18 @@ function persistSession() {
   }
 }
 
+/** Drop in-memory + session caches for the previous account (logout / switch). */
+export function clearPrivateBetPlans() {
+  plans.value = []
+  loaded.value = false
+  try {
+    sessionStorage.removeItem(CACHE_KEY)
+    localStorage.removeItem(BET_PLANS_STORAGE_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 hydrateFromSession()
 
 function dtoToPlan(row: BetPlanDto): SavedBetPlan {
@@ -211,5 +223,6 @@ export function useBetPlans() {
     getPlan,
     plansForDay,
     loadDays,
+    clearPrivate: clearPrivateBetPlans,
   }
 }

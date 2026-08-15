@@ -117,6 +117,7 @@ DevTools 的 Network 面板挂在 TLS 之上，展示的是加密**之前**的�
 | 查询必带作用域 | `owner_is` / `normalize_owner_id`；登录用户收藏列表额外合并游客桶 `source=auto` |
 | 鉴权依赖 | `CurrentUserId` 解析 `fa_session` cookie（可空）；写操作走 `RequiredUserId`，无效/缺失 → **401 请先登录** |
 | 私有写操作 | `/favorites` POST/DELETE、`/bet-plans` 全部方法均要求登录；前端未登录先弹登录窗 |
+| 登出清缓存 | 清账号侧客户端缓存：`fa-auth-user`、方案 session 缓存 / 遗留 localStorage、内存收藏与方案、计算器选单；**保留**主题、联赛勾选、记住账号、日期条、滚动位置 |
 | 首登迁移 | 注册/登录时 `claim_anonymous_private_data`：认领历史游客桶里的手动收藏 + 方案；auto 不认领 |
 | 收藏 PK | `(user_id, fixture_id)` |
 

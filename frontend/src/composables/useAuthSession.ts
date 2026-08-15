@@ -8,8 +8,15 @@ import {
   type AuthClaim,
 } from '@/api/auth'
 import { setOnAuthExpired, type ApiError } from '@/api/client'
-import { useBetPlans } from '@/composables/useBetPlans'
-import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
+import {
+  clearPrivateBetPlans,
+  useBetPlans,
+} from '@/composables/useBetPlans'
+import {
+  clearPrivateFavorites,
+  useFavoriteFixtures,
+} from '@/composables/useFavoriteFixtures'
+import { clearPrivateCalculator } from '@/views/Predictions/composables/useBetCalculator'
 
 /**
  * Cached display identity only — the session itself is an httpOnly cookie that
@@ -56,15 +63,32 @@ function clearLocalUser() {
   writeCachedUser(null)
 }
 
-setOnAuthExpired(() => {
-  clearLocalUser()
-})
+/**
+ * Drop account-scoped client caches. Keeps device prefs (theme, league filters,
+ * remember-account, date strips, scroll).
+ */
+function wipePrivateClientCaches() {
+  clearPrivateBetPlans()
+  clearPrivateFavorites()
+  clearPrivateCalculator()
+}
 
-async function refreshPrivateCaches() {
+async function refreshPrivateCaches(mode: 'guest' | 'user') {
+  wipePrivateClientCaches()
   const { refresh: refreshFavorites } = useFavoriteFixtures()
+  if (mode === 'guest') {
+    // Guest may still see shared daily auto tips; plans stay empty until login.
+    await Promise.allSettled([refreshFavorites()])
+    return
+  }
   const { reload: reloadPlans } = useBetPlans()
   await Promise.allSettled([refreshFavorites(), reloadPlans()])
 }
+
+setOnAuthExpired(() => {
+  clearLocalUser()
+  void refreshPrivateCaches('guest')
+})
 
 /**
  * Auth session for 「登录 / 我的」.
@@ -116,7 +140,7 @@ export function useAuthSession() {
           : await loginAccount(account, password)
       applyUser(data.user.id, data.user.username, data.user.is_admin)
       loginModalShow.value = false
-      await refreshPrivateCaches()
+      await refreshPrivateCaches('user')
       return { ok: true, claimed: data.claimed }
     } catch (err) {
       const fallback = kind === 'register' ? '注册失败' : '登录失败'
@@ -142,7 +166,7 @@ export function useAuthSession() {
       /* still clear local state */
     }
     clearLocalUser()
-    await refreshPrivateCaches()
+    await refreshPrivateCaches('guest')
   }
 
   /** Confirm the cookie is still valid once after boot (401 → guest). */
@@ -156,7 +180,7 @@ export function useAuthSession() {
       // stopped backend must not silently log the user out.
       if ((err as ApiError)?.status !== 401) return
       clearLocalUser()
-      await refreshPrivateCaches()
+      await refreshPrivateCaches('guest')
     }
   }
 

@@ -103,6 +103,17 @@ const selections = ref<CalcSelection[]>(stored?.selections ?? [])
 const multiplier = ref(stored?.multiplier ?? 1)
 const fold = ref<FoldMode>(stored?.fold ?? '2x1')
 
+/** Drop calculator draft when the account session ends. */
+export function clearPrivateCalculator() {
+  selections.value = []
+  multiplier.value = 1
+  try {
+    sessionStorage.removeItem(STORAGE_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 function pruneExpiredSelections() {
   const next = pruneExpiredCalcSelections(selections.value)
   if (next.length === selections.value.length) return
@@ -235,6 +246,7 @@ export function useBetCalculator() {
 
   function clearAll() {
     selections.value = []
+    multiplier.value = 1
   }
 
   function removeFixture(fixtureId: number) {
