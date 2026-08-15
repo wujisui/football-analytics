@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { FilterOutline } from '@vicons/ionicons5'
-import { computed, onActivated, onMounted } from 'vue'
+import { computed, onActivated } from 'vue'
 import { useRoute } from 'vue-router'
 
 import HomeDateStrip from '@/layouts/components/HomeDateStrip.vue'
@@ -46,11 +46,17 @@ const showShellLeagueNav = computed(
   () => !isResultsPage.value || isScheduleFutureDay.value,
 )
 
-onMounted(() => {
-  bootstrapFixturesShell({ reloadPrematch: route.name !== 'results' })
-})
-
+/**
+ * keep-alive 下首次挂载也会触发 onActivated；再挂 onMounted 会把【比赛】日列表
+ * 多刷一遍。首次激活按当前路由决定是否拉赛前列表，之后回到 shell 只同步路由。
+ */
+let shellVisited = false
 onActivated(() => {
+  if (!shellVisited) {
+    shellVisited = true
+    bootstrapFixturesShell({ reloadPrematch: route.name !== 'results' })
+    return
+  }
   bootstrapFixturesShell()
 })
 </script>

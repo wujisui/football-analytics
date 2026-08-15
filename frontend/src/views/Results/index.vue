@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, defineAsyncComponent, onActivated, onMounted, ref, watch} from 'vue'
+import {computed, defineAsyncComponent, onActivated, ref, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 
 import {
@@ -484,14 +484,52 @@ watch(resultsFilterRevision, () => {
   void loadSelectedDay(true)
 })
 
+let visited = false
 onActivated(() => {
+  /**
+   * keep-alive 下首次挂载也会触发 onActivated，勿再挂 onMounted 拉数，
+   * 否则 filter-options / fixtures/results 会各打两次。
+   */
+  let dayChanged = false
+  if (!visited) {
+    const qDate = route.query.date
+    if (typeof qDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(qDate)) {
+      if (qDate !== selectedDay.value) {
+        selectedDay.value = qDate
+        dayChanged = true
+      }
+    } else if (!hasSessionShellDay && selectedDay.value !== yesterdayDate()) {
+      selectedDay.value = yesterdayDate()
+      dayChanged = true
+    }
+  }
+
   if (isScheduleFutureDay.value) {
+    if (!visited) {
+      visited = true
+      // dayChanged → watch(selectedDay) already queued loadSelectedDay.
+      if (!dayChanged && resultsLoadedDay.value !== selectedDay.value) {
+        void loadSelectedDay()
+      }
+      return
+    }
     if (resultsLoadedDay.value !== selectedDay.value) {
       void loadSelectedDay()
     }
     return
   }
+
   applySavedFiltersIfAny()
+
+  if (!visited) {
+    visited = true
+    if (!dayChanged && resultsLoadedDay.value !== selectedDay.value) {
+      void loadSelectedDay()
+    }
+    void loadHistory()
+    return
+  }
+
   // Detail may have written FT score into the list cache without hit flags.
   // Force a local reload so evaluate_fixture_prediction settles recommendations.
   if (consumeResultsSettlementDirty(selectedDay.value)) {
@@ -502,25 +540,6 @@ onActivated(() => {
   if (resultsLoadedDay.value !== selectedDay.value) {
     void loadSelectedDay()
   }
-})
-
-onMounted(() => {
-  const qDate = route.query.date
-  let dayChanged = false
-  if (typeof qDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(qDate)) {
-    if (qDate !== selectedDay.value) {
-      selectedDay.value = qDate
-      dayChanged = true
-    }
-  } else if (!hasSessionShellDay && selectedDay.value !== yesterdayDate()) {
-    selectedDay.value = yesterdayDate()
-    dayChanged = true
-  }
-  applySavedFiltersIfAny()
-  if (!dayChanged && resultsLoadedDay.value !== selectedDay.value) {
-    void loadSelectedDay()
-  }
-  void loadHistory()
 })
 </script>
 
