@@ -162,6 +162,7 @@ BY_ID: dict[int, str] = {
     533: "维拉利尔",
     536: "塞维利亚",
     538: "塞尔塔",
+    539: "莱万特",
     540: "西班牙人",
     541: "皇马",
     542: "阿拉维斯",
@@ -171,16 +172,16 @@ BY_ID: dict[int, str] = {
     547: "赫罗纳",
     548: "皇家社会",
     715: "格拉纳达",
+    718: "奥维耶多",
     720: "巴拉多利德",
     724: "加的斯",
-    726: "莱加内斯",
+    726: "韦斯卡",
     727: "奥萨苏纳",
     728: "巴列卡诺",
-    750: "拉斯帕尔马斯",
     797: "埃尔切",
     798: "马略卡",
     4665: "桑坦德竞技",
-    9580: "莱万特",
+    9580: "布尔戈斯",
     # 德甲
     157: "拜仁",
     159: "柏林赫塔",
@@ -197,13 +198,12 @@ BY_ID: dict[int, str] = {
     172: "斯图加特",
     173: "莱比锡",
     174: "沙尔克04",
-    175: "达姆施塔特",
-    178: "波鸿",
+    175: "汉堡",
+    178: "菲尔特",
     182: "柏林联合",
-    186: "科隆",
-    191: "海登海姆",
-    192: "圣保利",
-    761: "霍尔施泰因基尔",
+    186: "圣保利",
+    191: "霍尔施泰因基尔",
+    192: "科隆",
     # 意甲
     487: "拉齐奥",
     488: "萨索洛",
@@ -226,9 +226,10 @@ BY_ID: dict[int, str] = {
     515: "斯佩齐亚",
     517: "威尼斯",
     523: "帕尔马",
-    801: "科莫",
+    520: "克雷莫纳",
+    801: "比萨",
     867: "莱切",
-    895: "克雷莫纳",
+    895: "科莫",
     1579: "蒙扎",
     # 法甲
     77: "昂热",
@@ -240,19 +241,19 @@ BY_ID: dict[int, str] = {
     84: "尼斯",
     85: "巴黎",
     91: "摩纳哥",
-    93: "雷恩",
+    93: "兰斯",
+    94: "雷恩",
     95: "斯特拉斯堡",
     96: "图卢兹",
     97: "洛里昂",
-    99: "兰斯",
-    106: "圣埃蒂安",
+    99: "克莱蒙",
+    106: "布雷斯特",
     108: "欧塞尔",
     111: "勒阿弗尔",
     112: "梅斯",
+    114: "巴黎FC",
     116: "朗斯",
-    129: "布雷斯特",
-    130: "克莱蒙",
-    1063: "巴黎FC",
+    1063: "圣埃蒂安",
     # 德乙
     166: "汉诺威96",
     171: "纽伦堡",
@@ -562,6 +563,8 @@ BY_ID: dict[int, str] = {
     126: "圣保罗",
     127: "弗拉门戈",
     128: "桑托斯",
+    129: "塞阿拉",
+    130: "格雷米奥",
     131: "科林蒂安",
     132: "沙佩科恩塞",
     133: "达伽马",
@@ -1266,9 +1269,14 @@ _BY_NAME_RAW: dict[str, str] = {
     "FC Koln": "科隆",
     "1.FC Köln": "科隆",
     "Bochum": "波鸿",
+    "VfL Bochum": "波鸿",
     "Heidenheim": "海登海姆",
     "St. Pauli": "圣保利",
+    "FC St. Pauli": "圣保利",
     "Holstein Kiel": "霍尔施泰因基尔",
+    "Hamburger SV": "汉堡",
+    "SpVgg Greuther Furth": "菲尔特",
+    "SpVgg Greuther Fürth": "菲尔特",
     "Hertha": "赫塔",
     "Hertha Berlin": "柏林赫塔",
     "Schalke": "沙尔克",
@@ -1592,6 +1600,72 @@ def localize_match_teams(match: dict[str, Any]) -> dict[str, Any]:
     if away is not None or aid is not None:
         match["away"] = team_name_zh(away if isinstance(away, str) else None, aid) or away
     return match
+
+
+async def audit_curated_ids(session: Any) -> dict[str, Any]:
+    """Cross-check ``BY_ID`` against official names captured in ``api_snapshots``.
+
+    ``BY_ID`` is keyed by provider team id while ``BY_NAME`` is keyed by the
+    provider's own English label, so the two tables are independent: when both
+    resolve a team and disagree, the id row is wrong. This catches whole blocks
+    of ids that were curated against the wrong club (e.g. Holstein Kiel showing
+    up as "海登海姆"). Returns conflicts plus the ids that lack local evidence.
+    """
+    from sqlalchemy import text
+
+    official: dict[int, set[str]] = {}
+
+    def harvest(node: Any) -> None:
+        if isinstance(node, dict):
+            for key in ("home", "away", "team"):
+                block = node.get(key)
+                if isinstance(block, dict):
+                    tid, name = block.get("id"), block.get("name")
+                    if isinstance(tid, int) and isinstance(name, str) and name:
+                        official.setdefault(tid, set()).add(name.strip())
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    harvest(value)
+        elif isinstance(node, list):
+            for value in node:
+                harvest(value)
+
+    rows = await session.execute(text("select payload_json from api_snapshots"))
+    for (raw,) in rows:
+        if not raw:
+            continue
+        try:
+            harvest(json.loads(raw))
+        except (TypeError, ValueError):
+            continue
+
+    conflicts: list[dict[str, Any]] = []
+    unverified: list[int] = []
+    verified = 0
+    for tid, zh in sorted(BY_ID.items()):
+        english = sorted(n for n in (official.get(tid) or ()) if not name_has_cjk(n))
+        expected = {BY_NAME[n.lower()] for n in english if n.lower() in BY_NAME}
+        if not expected:
+            unverified.append(tid)
+        elif any(full.startswith(zh) or zh.startswith(full) for full in expected):
+            # Deliberate short forms such as 拜仁 / 多特 are prefixes of the full name.
+            verified += 1
+        else:
+            conflicts.append(
+                {
+                    "team_id": tid,
+                    "curated": zh,
+                    "expected": sorted(expected),
+                    "official": english,
+                }
+            )
+
+    return {
+        "curated": len(BY_ID),
+        "verified": verified,
+        "conflicts": conflicts,
+        "unverified": unverified,
+    }
 
 
 async def backfill_team_names(session: Any) -> int:

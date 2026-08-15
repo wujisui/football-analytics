@@ -176,6 +176,37 @@ async def run_backfill_team_names() -> None:
     print(f"Updated {updated} team display name(s) to Chinese.")
 
 
+async def run_audit_team_names() -> None:
+    """Report curated team ids that disagree with the provider's own labels."""
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.team_names import audit_curated_ids
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        result = await audit_curated_ids(session)
+
+    stream = getattr(sys.stdout, "buffer", None)
+    enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+
+    def _out(msg: str) -> None:
+        if stream is None:
+            print(msg)
+        else:
+            stream.write((msg + "\n").encode(enc, errors="replace"))
+
+    _out(
+        f"Curated ids: {result['curated']} | cross-checked ok: {result['verified']} "
+        f"| conflicts: {len(result['conflicts'])} | no local evidence: {len(result['unverified'])}"
+    )
+    for row in result["conflicts"]:
+        _out(
+            f"  {row['team_id']}: curated={row['curated']} "
+            f"expected={'/'.join(row['expected'])} official={'/'.join(row['official'])}"
+        )
+    if not result["conflicts"]:
+        _out("No conflicts. Short forms such as 拜仁 / 多特 are kept on purpose.")
+
+
 async def run_translate_catalog_teams(dry_run: bool = False) -> None:
     """Auto-translate unmapped clubs that appear in config/leagues.json leagues."""
     import sys
@@ -463,6 +494,10 @@ def main() -> None:
         "backfill-team-names",
         help="Rewrite teams.name to Chinese from the built-in id/name map",
     )
+    subparsers.add_parser(
+        "audit-team-names",
+        help="Cross-check curated team ids against official names in api_snapshots",
+    )
     translate_parser = subparsers.add_parser(
         "translate-catalog-teams",
         help=(
@@ -587,6 +622,7 @@ def main() -> None:
         "list-tasks": run_list_tasks,
         "run-scheduler": run_scheduler_loop,
         "backfill-team-names": run_backfill_team_names,
+        "audit-team-names": run_audit_team_names,
         "backfill-features": run_backfill_features,
         "refresh-pending-predictions": run_refresh_pending_predictions,
         "upgrade-models": run_upgrade_models,

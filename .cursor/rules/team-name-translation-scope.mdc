@@ -21,6 +21,15 @@ alwaysApply: true
 2. 其余 catalog 球队 → `python manage.py translate-catalog-teams`（机翻 + 质量闸，不耗官方 API 配额）。
 3. 写完 `backfill-team-names` 回写本地 `teams.name`。
 
+## 手写 BY_ID 必须核对 ID
+
+`BY_ID` 按官方 team id 写，**不能照着联赛名单顺序猜 ID**：曾经整段德/法/意/西被写偏一位，Holstein Kiel 显示成“海登海姆”、Köln 显示成“圣保利”，直接导致按错队名下注。
+
+- 改完 `BY_ID` 必须跑 `python manage.py audit-team-names`：它用 `api_snapshots` 里的官方英文名反查，`BY_ID`（按 ID）与 `BY_NAME`（按英文名）互相独立，两者给出不同中文名即 ID 行写错。要求 conflicts = 0。
+- 有意保留的简称（拜仁 / 多特 / 门兴 / 莱比锡 / 巴黎）是全名前缀，审计会自动放过；出现非前缀差异就是真错。
+- 发现某个 ID 其实属于别的球队（如 761 是 Sporting CP B、750 是 Naftan）：删掉该行，并把本地 `teams.name` 复位成官方英文名，否则库里旧中文名会一直留着。
+- 关键 ID 补一条 `backend/tests/test_team_names.py` 回归断言。
+
 ## 例外
 
 仅当用户**明确点名**某个冷门联赛/球队时才翻它；不要主动扩大范围。

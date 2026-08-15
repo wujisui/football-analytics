@@ -165,8 +165,11 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```bash
 python manage.py check-quota
 python manage.py backfill-team-names
+python manage.py audit-team-names   # 用官方原始响应核对队名 ID 对照表，不耗配额
 python manage.py model-status
 ```
+
+`audit-team-names` 拿 `api_snapshots` 里的官方英文队名反查 `team_names.py`：`BY_ID`（按 ID）与 `BY_NAME`（按英文名）互相独立，两者对同一支球队给出不同中文名就说明 ID 行写错了。改完队名对照表后跑一次，再 `backfill-team-names` 回写本地库。
 
 验证：浏览器打开 http://127.0.0.1:8000/docs ，或 `GET http://127.0.0.1:8000/api/v1/health`。
 
