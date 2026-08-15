@@ -104,6 +104,9 @@ let listResizeObserver: ResizeObserver | null = null
 
 function syncExpandMaxHeight() {
   const height = listEl.value?.clientHeight ?? 0
+  // keep-alive 停用后 shell 被移出文档，clientHeight 归零；此时改高度会重建
+  // 展开日的虚拟列表，下次激活就撞上空引用。保留上一次的可见高度。
+  if (height <= 0) return
   expandMaxHeight.value = Math.max(200, Math.floor(height - DAY_ROW_RESERVE_PX))
 }
 
