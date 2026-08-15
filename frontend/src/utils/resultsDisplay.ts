@@ -19,6 +19,8 @@ export interface HitTagFixture {
   /** Daily auto-pick settlement (catalog tips). */
   auto_pick_hit?: boolean | null
   auto_pick_lean?: string | null
+  /** Which play carried the daily pick; marks that tag with [荐]. */
+  auto_pick_market?: string | null
   score_hit?: boolean | null
   ou_hit?: boolean | null
   btts_hit?: boolean | null

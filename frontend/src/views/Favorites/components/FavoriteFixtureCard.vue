@@ -48,6 +48,7 @@ function openOddsModal() {
     v-if="isFinished && isPhone"
     :fixture="item"
     odds-clickable
+    :highlight-market="highlightMarket"
     @open-detail="openDetail"
     @open-odds="openOddsModal"
   />
@@ -68,6 +69,7 @@ function openOddsModal() {
       <ResultFixtureCard
         :fixture="item"
         show-probabilities
+        :highlight-market="highlightMarket"
         @open-detail="openDetail"
       />
     </div>

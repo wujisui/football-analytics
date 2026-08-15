@@ -241,6 +241,7 @@ function onLeagueClick(e: Event) {
       :show-probabilities="showProbabilities"
       :hit-filterable="hitFilterable"
       :active-hit-key="activeHitKey"
+      :highlight-market="highlightMarket"
       @open-odds="emit('openOdds')"
       @filter-hit="emit('filterHit', $event)"
     />
