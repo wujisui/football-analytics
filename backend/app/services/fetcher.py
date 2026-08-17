@@ -866,38 +866,78 @@ class FootballFetcher:
         lookback_days: int = 3,
         *,
         on_days: list[date] | None = None,
+        today: date | None = None,
     ) -> int:
         """
         One-shot result backfill for recently kicked-off fixtures still missing FT scores.
 
-        Fetches by calendar date (not per-fixture live polling). Safe for quota.
-        ``on_days`` limits capture to those calendar days (e.g. sync window);
-        otherwise uses ``lookback_days`` from today.
+        When ``on_days`` is set (scheduled / admin sync), each calendar day is
+        force-refreshed via worldwide ``date=`` so yesterday's FT scores land even
+        if local rows were never marked stale. Otherwise falls back to scanning
+        stale local rows over ``lookback_days``.
         """
         assert self.session is not None
-        cutoff = results_capture_cutoff()
+        base_today = today or date.today()
+
         if on_days:
-            day_set = set(on_days)
-            start = datetime.combine(min(day_set), datetime.min.time())
-        else:
-            day_set = None
-            start = (datetime.utcnow() - timedelta(days=max(1, lookback_days))).replace(
-                hour=0, minute=0, second=0, microsecond=0
+            day_list = sorted(set(on_days))
+            if not self.settings.uses_full_history:
+                clipped = clip_fixture_dates_for_plan(day_list, base_today)
+                dropped = set(day_list) - set(clipped)
+                if dropped:
+                    logger.info(
+                        "capture_finished_results free-plan skipped dates outside "
+                        "window: %s",
+                        ",".join(sorted(d.isoformat() for d in dropped)),
+                    )
+                day_list = clipped
+            if not day_list:
+                logger.info("capture_finished_results: no result days after clip.")
+                return 0
+
+            total = 0
+            for day in day_list:
+                if self.quota_exhausted:
+                    logger.warning(
+                        "Stopping result capture at %s (quota exhausted)",
+                        day.isoformat(),
+                    )
+                    break
+                try:
+                    # Worldwide day fetch (all leagues) — one call settles FT scores.
+                    total += await self.fetch_fixtures_for_date(day, force=True)
+                except Exception as exc:
+                    logger.error(
+                        "capture_finished_results failed for %s: %s",
+                        day,
+                        exc,
+                        exc_info=True,
+                    )
+            logger.info(
+                "capture_finished_results refreshed %s date(s), fixtures_touched≈%s",
+                len(day_list),
+                total,
             )
+            await self._label_match_features_for_finished()
+            await self._label_ah_for_finished()
+            return total
+
+        cutoff = results_capture_cutoff()
+        start = (datetime.utcnow() - timedelta(days=max(1, lookback_days))).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
 
         result = await self.session.execute(
             select_stale_pending_fixtures(start=start, cutoff=cutoff)
         )
         fixtures = list(result.scalars().all())
-        if day_set is not None:
-            fixtures = [fx for fx in fixtures if fx.date.date() in day_set]
         # Free plan cannot request fixtures outside its date window — drop those
         # days before burning quota on guaranteed plan errors.
         if not self.settings.uses_full_history:
             allowed_days = set(
                 clip_fixture_dates_for_plan(
                     sorted({fx.date.date() for fx in fixtures}),
-                    date.today(),
+                    base_today,
                 )
             )
             dropped = {fx.date.date() for fx in fixtures} - allowed_days

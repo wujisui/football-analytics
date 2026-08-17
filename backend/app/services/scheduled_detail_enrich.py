@@ -54,6 +54,7 @@ async def list_prematch_fixtures_needing_package(
     session: AsyncSession,
     *,
     now: datetime | None = None,
+    before: datetime | None = None,
     limit: int,
 ) -> list[int]:
     """Catalog-league prematch fixtures whose stored display package is incomplete."""
@@ -63,22 +64,22 @@ async def list_prematch_fixtures_needing_package(
         return []
 
     current = now or datetime.utcnow()
-    rows = (
-        await session.execute(
-            select(Fixture, PreMatchData)
-            .outerjoin(PreMatchData, PreMatchData.fixture_id == Fixture.id)
-            .options(
-                selectinload(Fixture.home_team),
-                selectinload(Fixture.away_team),
-                selectinload(Fixture.league),
-            )
-            .where(
-                Fixture.league_id.in_(catalog_ids),
-                prematch_list_clause(current),
-            )
-            .order_by(Fixture.date, Fixture.id)
+    query = (
+        select(Fixture, PreMatchData)
+        .outerjoin(PreMatchData, PreMatchData.fixture_id == Fixture.id)
+        .options(
+            selectinload(Fixture.home_team),
+            selectinload(Fixture.away_team),
+            selectinload(Fixture.league),
         )
-    ).all()
+        .where(
+            Fixture.league_id.in_(catalog_ids),
+            prematch_list_clause(current),
+        )
+    )
+    if before is not None:
+        query = query.where(Fixture.date < before)
+    rows = (await session.execute(query.order_by(Fixture.date, Fixture.id))).all()
 
     history_tag = settings.history_source_tag
     needed: list[int] = []
@@ -98,6 +99,7 @@ async def run_scheduled_full_detail_enrich(
     *,
     budget: int | None = None,
     now: datetime | None = None,
+    before: datetime | None = None,
 ) -> dict[str, Any]:
     """Enrich up to ``budget`` incomplete catalog prematch packages.
 
@@ -122,7 +124,7 @@ async def run_scheduled_full_detail_enrich(
 
     async with AsyncSessionLocal() as session:
         ids = await list_prematch_fixtures_needing_package(
-            session, now=now, limit=limit
+            session, now=now, before=before, limit=limit
         )
         stats["candidates"] = len(ids)
         if not ids:

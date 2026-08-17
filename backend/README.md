@@ -108,6 +108,7 @@ API_SPORTS_KEY=你的官方Key
 | `HTTP_VERIFY_SSL`                 | 公司代理拦截 SSL 时设为 `false`                      |
 | `SCHEDULER_TIMEZONE`              | 调度器时区，默认 `Asia/Shanghai`                    |
 | `LOCAL_FIRST`                     | `true` 时优先读本地库/缓存，再打官方                      |
+| `ENABLE_FREE_QUOTA`               | `true`（默认）=每天 11:00 仅同步昨天赛果与今天比赛；管理员 UI 可覆盖 |
 | `API_HISTORY_MODE`                | `free`（默认）=免费套餐日期/赛季夹紧；`full`=付费不限年份与赛程窗口 |
 
 > 不要把真实 Key 写进 `.env.example` 或提交到 Git。本地运行时会先读 `.env`，再读 `secrets.local.env`（后者覆盖前者）。
@@ -233,6 +234,8 @@ GET /api/v1/fixtures/today?league_id=39
 | POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"clean_old_data"|"train_model"}` |
 | GET  | `/admin/settings/scheduled-full-detail` | 读取「定时全量详情」开关（DB 覆盖优先，否则 env） |
 | PATCH | `/admin/settings/scheduled-full-detail` | 写入开关到 `app_settings`（body: `{"enabled": true\|false}`） |
+| GET  | `/admin/settings/free-quota` | 读取「免费配额模式」开关（默认 ON；只改同步整点） |
+| PATCH | `/admin/settings/free-quota` | 写入并立刻重排 cron；若从关→开且已过今日 11:00 则后台补跑一次同步 |
 
 前端「我的 → 管理员设置」可保存本机 `ADMIN_API_KEY` 并切换上述开关；重启后仍生效。批量预拉逻辑就绪后即按该开关执行。
 
@@ -255,11 +258,11 @@ API-Sports 没有跨国家统一可靠的“第几级联赛”字段，因此**�
 
 | 任务                     | 触发规则      | 作用                                      |
 |------------------------|-----------|-----------------------------------------|
-| `scheduled_fixtures_sync` | 每天 00/06/11/16/19/22 点 | 刷新未来窗口全量赛程、一级联赛已有/缺失盘口，并回写窗口内赛果 |
+| `scheduled_fixtures_sync` | 默认每天 **11:00**（免费配额模式）；关闭后恢复 00/06/11/16/19/22 | 免费模式先回写昨天赛果并打标，再拉今天赛程与盘口，跳过积分榜、不拉未来比赛；关闭后才拉未来窗口与积分榜 |
 | `clean_old_data`       | 每周一 03:00 | 物理删除「完场且无盘口/推荐」的场次、空联赛行与孤立球队，并清理过期分析与日志 |
 
 时区由 `SCHEDULER_TIMEZONE` 控制（默认 `Asia/Shanghai`）。  
-六个固定时点只更新赛程、一级联赛盘口与赛果（首次盘口仍冻为初盘）；**不做**窗口全量详情预拉（默认关，管理员可在「我的 → 管理员设置」开启并落库）。列表 / F5 / 筛选只读本地；用户打开详情时若展示包缺失，后端按需补拉并落库。无公开 sync、无 SSE、无轮询。
+默认定时只跑 11:00（管理员「打开免费配额」可关，恢复六个整点）。免费模式固定**先拉昨天赛果，再拉今天赛程/盘口，跳过积分榜、不请求未来比赛**（积分榜逐联赛拉取易耗光当日配额；排名读上一次本地快照）；详情预拉即使另行开启也只覆盖今天。列表 / F5 / 筛选只读本地；用户打开详情时若展示包缺失，后端按需补拉并落库。无公开 sync、无 SSE、无轮询。
 手动：`python manage.py trigger-task --name scheduled_fixtures_sync`。
 
 ## 前端对接提示

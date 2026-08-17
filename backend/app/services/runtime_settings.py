@@ -12,6 +12,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.app_setting import AppSetting
 
 KEY_ENABLE_SCHEDULED_FULL_DETAIL = "enable_scheduled_full_detail"
+KEY_ENABLE_FREE_QUOTA = "enable_free_quota"
 
 SettingSource = Literal["db", "env"]
 
@@ -32,14 +33,13 @@ async def get_setting_row(session: AsyncSession, key: str) -> AppSetting | None:
     return result.scalar_one_or_none()
 
 
-async def get_enable_scheduled_full_detail(
+async def _get_bool_setting(
+    key: str,
+    env_default: bool,
     session: AsyncSession | None = None,
 ) -> tuple[bool, SettingSource]:
-    """Effective flag: DB row if present, else env ``ENABLE_SCHEDULED_FULL_DETAIL``."""
-    env_default = bool(get_settings().ENABLE_SCHEDULED_FULL_DETAIL)
-
     async def _read(db: AsyncSession) -> tuple[bool, SettingSource]:
-        row = await get_setting_row(db, KEY_ENABLE_SCHEDULED_FULL_DETAIL)
+        row = await get_setting_row(db, key)
         if row is None:
             return env_default, "env"
         parsed = _parse_bool(row.value)
@@ -53,15 +53,45 @@ async def get_enable_scheduled_full_detail(
         return await _read(db)
 
 
-async def set_enable_scheduled_full_detail(
-    session: AsyncSession,
-    enabled: bool,
-) -> bool:
-    row = await get_setting_row(session, KEY_ENABLE_SCHEDULED_FULL_DETAIL)
+async def _set_bool_setting(session: AsyncSession, key: str, enabled: bool) -> bool:
+    row = await get_setting_row(session, key)
     value = "true" if enabled else "false"
     if row is None:
-        session.add(AppSetting(key=KEY_ENABLE_SCHEDULED_FULL_DETAIL, value=value))
+        session.add(AppSetting(key=key, value=value))
     else:
         row.value = value
     await session.commit()
     return enabled
+
+
+async def get_enable_scheduled_full_detail(
+    session: AsyncSession | None = None,
+) -> tuple[bool, SettingSource]:
+    """Effective flag: DB row if present, else env ``ENABLE_SCHEDULED_FULL_DETAIL``."""
+    return await _get_bool_setting(
+        KEY_ENABLE_SCHEDULED_FULL_DETAIL,
+        bool(get_settings().ENABLE_SCHEDULED_FULL_DETAIL),
+        session,
+    )
+
+
+async def set_enable_scheduled_full_detail(
+    session: AsyncSession,
+    enabled: bool,
+) -> bool:
+    return await _set_bool_setting(session, KEY_ENABLE_SCHEDULED_FULL_DETAIL, enabled)
+
+
+async def get_enable_free_quota(
+    session: AsyncSession | None = None,
+) -> tuple[bool, SettingSource]:
+    """Effective flag: DB row if present, else env ``ENABLE_FREE_QUOTA`` (default ON)."""
+    return await _get_bool_setting(
+        KEY_ENABLE_FREE_QUOTA,
+        bool(get_settings().ENABLE_FREE_QUOTA),
+        session,
+    )
+
+
+async def set_enable_free_quota(session: AsyncSession, enabled: bool) -> bool:
+    return await _set_bool_setting(session, KEY_ENABLE_FREE_QUOTA, enabled)

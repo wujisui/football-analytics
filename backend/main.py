@@ -23,11 +23,14 @@ async def lifespan(app: FastAPI):
     # Ensure SQLite schema (e.g. new pre_match_data columns) before serving traffic.
     from app.core.database import init_db
     from app.services.cache import get_cache_service
+    from app.tasks.scheduler import refresh_fixture_sync_jobs
 
     await init_db()
     # Warm cache once so the first API request does not pay Redis connect latency.
     await get_cache_service().connect()
     start_scheduler()
+    # Re-apply free-quota cron from app_settings (env default until admin overrides).
+    await refresh_fixture_sync_jobs()
     yield
     shutdown_scheduler()
     await get_cache_service().close()

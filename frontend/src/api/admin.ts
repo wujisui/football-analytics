@@ -6,6 +6,13 @@ export type ScheduledFullDetailSetting = {
   budget: number
 }
 
+export type FreeQuotaSetting = {
+  enabled: boolean
+  source: 'db' | 'env' | string
+  sync_hours: number[]
+  catch_up_started?: boolean
+}
+
 export type TriggerTaskResult = {
   status: string
   message: string
@@ -35,6 +42,18 @@ export async function updateScheduledFullDetailSetting(
     '/admin/settings/scheduled-full-detail',
     { enabled },
   )
+  return data
+}
+
+export async function fetchFreeQuotaSetting(): Promise<FreeQuotaSetting> {
+  const { data } = await apiClient.get<FreeQuotaSetting>('/admin/settings/free-quota')
+  return data
+}
+
+export async function updateFreeQuotaSetting(enabled: boolean): Promise<FreeQuotaSetting> {
+  const { data } = await apiClient.patch<FreeQuotaSetting>('/admin/settings/free-quota', {
+    enabled,
+  })
   return data
 }
 

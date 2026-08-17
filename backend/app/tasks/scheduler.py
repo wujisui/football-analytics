@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -13,12 +14,18 @@ from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.services.data_cleanup import prune_low_value_data
 from app.services.fixtures_sync import scheduled_fixtures_sync
+from app.services.runtime_settings import get_enable_free_quota
 
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 active_tasks: dict[str, dict[str, Any]] = {}
 _scheduler_started = False
+
+# Paid / full schedule vs free-quota mode (admin toggle, default ON).
+SYNC_HOURS_FULL = (0, 6, 11, 16, 19, 22)
+SYNC_HOURS_FREE_QUOTA = (11,)
+FREE_QUOTA_SYNC_HOUR = 11
 
 
 def _utc_now() -> datetime:
@@ -229,25 +236,35 @@ async def trigger_task(task_name: str) -> None:
     await handler()
 
 
-def register_jobs() -> None:
+def register_jobs(*, free_quota: bool | None = None) -> None:
+    """Register cron jobs. ``free_quota=True`` keeps only the 11:00 sync slot."""
     settings = get_settings()
     timezone = settings.SCHEDULER_TIMEZONE
+    if free_quota is None:
+        free_quota = bool(settings.ENABLE_FREE_QUOTA)
+    sync_hours = SYNC_HOURS_FREE_QUOTA if free_quota else SYNC_HOURS_FULL
 
     # Remove legacy 06:00 daily_init if still registered from an older process.
     if scheduler.get_job("daily_init") is not None:
         scheduler.remove_job("daily_init")
-    for hour in (0, 6, 11, 16, 19, 22):
+
+    # Drop every fixtures-sync slot first so toggling free-quota rewrites cron.
+    for hour in SYNC_HOURS_FULL:
         job_id = f"scheduled_fixtures_sync_{hour:02d}"
-        if scheduler.get_job(job_id) is None:
-            scheduler.add_job(
-                run_scheduled_fixtures_sync,
-                CronTrigger(hour=hour, minute=0, timezone=timezone),
-                id=job_id,
-                name=job_id,
-                replace_existing=True,
-                max_instances=1,
-                coalesce=True,
-            )
+        if scheduler.get_job(job_id) is not None:
+            scheduler.remove_job(job_id)
+
+    for hour in sync_hours:
+        job_id = f"scheduled_fixtures_sync_{hour:02d}"
+        scheduler.add_job(
+            run_scheduled_fixtures_sync,
+            CronTrigger(hour=hour, minute=0, timezone=timezone),
+            id=job_id,
+            name=job_id,
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
 
     # Auto favorites refresh inside scheduled_fixtures_sync after odds update.
     if scheduler.get_job("daily_auto_favorites") is not None:
@@ -263,6 +280,37 @@ def register_jobs() -> None:
             max_instances=1,
             coalesce=True,
         )
+
+
+async def refresh_fixture_sync_jobs() -> bool:
+    """Re-read free-quota flag from DB/env and rewrite fixtures-sync cron slots."""
+    enabled, source = await get_enable_free_quota()
+    register_jobs(free_quota=enabled)
+    if _scheduler_started:
+        for job in scheduler.get_jobs():
+            if str(job.id).startswith("scheduled_fixtures_sync_"):
+                logger.info(
+                    "Refreshed scheduler job: id=%s trigger=%s next_run=%s "
+                    "(free_quota=%s source=%s)",
+                    job.id,
+                    job.trigger,
+                    job.next_run_time,
+                    enabled,
+                    source,
+                )
+    return enabled
+
+
+def free_quota_catch_up_due(now: datetime | None = None) -> bool:
+    """True when local clock is past today's 11:00 free-quota sync slot."""
+    settings = get_settings()
+    tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
+    local_now = now or datetime.now(tz)
+    if local_now.tzinfo is None:
+        local_now = local_now.replace(tzinfo=tz)
+    else:
+        local_now = local_now.astimezone(tz)
+    return (local_now.hour, local_now.minute) > (FREE_QUOTA_SYNC_HOUR, 0)
 
 
 def start_scheduler() -> None:

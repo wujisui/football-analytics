@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     # Max incomplete catalog prematch fixtures to enrich per scheduled batch
     # when the flag is on. Each fixture may cost several official API calls.
     SCHEDULED_FULL_DETAIL_BUDGET: int = 10
+    # Free-quota mode (env default ON). Runtime override via Mine admin UI.
+    # When on, sync runs only at 11:00 and official fixture calls are limited
+    # to yesterday's results plus today's schedule/odds (no future dates).
+    ENABLE_FREE_QUOTA: bool = True
     # History window for H2H / team form / free-plan date+season clamps:
     # - full: paid plan — no artificial 2022–2024 / ±2-day fixture clip
     # - free: API-Sports free tier (default — matches typical local keys)
