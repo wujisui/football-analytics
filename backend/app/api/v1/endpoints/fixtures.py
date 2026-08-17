@@ -547,6 +547,7 @@ async def get_fixture_results(
                 auto_pick_hit=evaluated["auto_pick_hit"],
                 auto_pick_market=evaluated["auto_pick_market"],
                 auto_pick_lean=evaluated["auto_pick_lean"],
+                quality_rating=evaluated.get("quality_rating"),
                 score_hit=evaluated["score_hit"],
                 ou_hit=evaluated["ou_hit"],
                 btts_hit=evaluated["btts_hit"],

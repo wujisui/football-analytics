@@ -21,6 +21,8 @@ export interface HitTagFixture {
   auto_pick_lean?: string | null
   /** Which play carried the daily pick; marks that tag with [荐]. */
   auto_pick_market?: string | null
+  /** 0.5–5 star quality when this fixture was a daily pick. */
+  quality_rating?: number | null
   score_hit?: boolean | null
   ou_hit?: boolean | null
   btts_hit?: boolean | null

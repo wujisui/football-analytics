@@ -347,6 +347,10 @@ class ResultFixtureResponse(BaseModel):
     auto_pick_lean: str | None = Field(
         default=None, description="每日自动推荐文案"
     )
+    quality_rating: float | None = Field(
+        default=None,
+        description="0.5–5 星推荐质量（同一比赛日的入选场次内部排名，开赛后冻结）",
+    )
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
 

@@ -7,6 +7,7 @@ import type { FixtureResponse } from '@/api/types'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
+import RecommendationQualityRate from '@/components/RecommendationQualityRate.vue'
 import WdlProbabilityBars from '@/components/WdlProbabilityBars.vue'
 import { favoriteQualityRating } from '@/composables/useFavoriteFixtures'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
@@ -321,17 +322,7 @@ function onOddsClick() {
         <span class="handicap-odd">{{ primaryAwayOdd }}</span>
       </div>
       <span v-else class="handicap-empty">暂无盘口</span>
-      <n-rate
-        v-if="qualityRating != null"
-        class="quality-rate"
-        readonly
-        allow-half
-        :size="14"
-        :count="5"
-        :value="qualityRating"
-        :aria-label="`推荐质量 ${qualityRating} / 5`"
-        :title="`推荐质量 ${qualityRating} / 5（同日推荐内部比较）`"
-      />
+      <RecommendationQualityRate :value="qualityRating" />
     </div>
 
     <PredictionRecommendationRow
@@ -478,7 +469,7 @@ function onOddsClick() {
   gap: 6px;
 }
 
-.quality-rate {
+.handicap-line :deep(.quality-rate) {
   justify-self: end;
 }
 

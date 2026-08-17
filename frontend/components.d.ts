@@ -73,6 +73,7 @@ declare module 'vue' {
     PredictionRecommendationRow: typeof import('./src/components/PredictionRecommendationRow.vue')['default']
     PreMatchOddsTable: typeof import('./src/components/PreMatchOddsTable.vue')['default']
     PullToRefresh: typeof import('./src/components/PullToRefresh.vue')['default']
+    RecommendationQualityRate: typeof import('./src/components/RecommendationQualityRate.vue')['default']
     ResultFixtureCard: typeof import('./src/components/ResultFixtureCard.vue')['default']
     ResultHitTags: typeof import('./src/components/ResultHitTags.vue')['default']
     ResultPredictionSummary: typeof import('./src/components/ResultPredictionSummary.vue')['default']

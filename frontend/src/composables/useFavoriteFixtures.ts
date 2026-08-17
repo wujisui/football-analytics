@@ -11,6 +11,7 @@ import {
 import { oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import { toScheduleDayKey } from '@/utils/format'
+import { normalizeQualityRating } from '@/utils/qualityRating'
 
 export type { FavoriteFixtureRecord }
 
@@ -275,8 +276,7 @@ export function favoriteQualityRating(
   if (fixtureId == null) return null
   const item = findFavoriteListFixture(fixtureId)
   if (!item || item.source !== 'auto') return null
-  const rating = Number(item.quality_rating ?? 0)
-  return rating > 0 ? rating : null
+  return normalizeQualityRating(item.quality_rating)
 }
 
 export function useFavoriteFixtures() {

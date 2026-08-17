@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import type { AutoFavoriteMarket } from '@/api/favorites'
+import RecommendationQualityRate from '@/components/RecommendationQualityRate.vue'
 import { hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
 import { handicapLeanLabel } from '@/utils/handicapDisplay'
@@ -119,6 +120,11 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       <span v-if="isPick('ah')" class="hit-pick-mark">[荐]</span>
       {{ handicapLeanLabel(fixture.handicap_lean) }}
     </n-tag>
+    <RecommendationQualityRate
+      class="hit-rate"
+      :value="fixture.quality_rating"
+      @click.stop
+    />
   </n-flex>
 </template>
 
@@ -138,6 +144,11 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
   margin-right: 3px;
   font-size: 11px;
   opacity: 0.95;
+}
+
+/* 跟着标签一起换行，落在最后一枚标签后面 */
+.hit-rate {
+  align-self: center;
 }
 
 .hit-tag.active {

@@ -135,6 +135,7 @@ def evaluate_fixture_prediction(
         "auto_pick_hit": None,
         "auto_pick_market": None,
         "auto_pick_lean": None,
+        "quality_rating": None,
         # Unsettled rows (feed still live) carry provisional scores — show, never grade.
         "evaluable": fixture_ready_to_grade(fixture),
     }
@@ -144,6 +145,12 @@ def evaluate_fixture_prediction(
             return
         payload["auto_pick_market"] = auto_pick.market
         payload["auto_pick_lean"] = auto_pick.lean
+        rating = getattr(auto_pick, "quality_rating", None)
+        try:
+            rating_f = float(rating) if rating is not None else None
+        except (TypeError, ValueError):
+            rating_f = None
+        payload["quality_rating"] = rating_f if rating_f and rating_f > 0 else None
         if not grade:
             return
         ah_line = None
