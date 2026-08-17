@@ -410,6 +410,7 @@ function onOddsClick() {
   flex-shrink: 0;
   font-size: 12px;
   white-space: nowrap;
+  user-select: none;
 }
 
 .league-tag.active {

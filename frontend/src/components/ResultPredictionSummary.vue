@@ -115,6 +115,7 @@ const probabilities = computed(() => {
   line-height: 1.45;
   overflow-wrap: anywhere;
   word-break: break-word;
+  user-select: none;
 }
 
 .no-pred {

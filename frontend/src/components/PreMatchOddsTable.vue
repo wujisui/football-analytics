@@ -244,6 +244,7 @@ function renderMidCell(row: OddsRow) {
   font-size: 12px;
   color: var(--fa-text-secondary);
   font-weight: 500;
+  user-select: none;
 }
 
 :deep(.value-cell) {
@@ -251,6 +252,7 @@ function renderMidCell(row: OddsRow) {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--fa-text);
+  user-select: none;
 }
 
 :deep(.mid-text) {
@@ -258,6 +260,7 @@ function renderMidCell(row: OddsRow) {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--fa-text);
+  user-select: none;
 }
 
 :deep(.mid-line) {
@@ -265,6 +268,7 @@ function renderMidCell(row: OddsRow) {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--fa-text-strong);
+  user-select: none;
 }
 
 :deep(.ah-line-trigger) {
@@ -282,6 +286,7 @@ function renderMidCell(row: OddsRow) {
   text-decoration: underline;
   text-decoration-style: dotted;
   text-underline-offset: 3px;
+  user-select: none;
 }
 
 :deep(.ah-line-trigger:hover),

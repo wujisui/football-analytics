@@ -193,9 +193,9 @@ function onLeagueClick(e: Event) {
       >
         <n-ellipsis style="max-width: 100%">{{ leagueName }}</n-ellipsis>
       </n-tag>
-      <n-ellipsis class="kickoff">
+      <span class="kickoff">
         {{ kickoffText }}
-      </n-ellipsis>
+      </span>
       <n-tag
         size="small"
         :type="
@@ -345,10 +345,11 @@ function onLeagueClick(e: Event) {
 }
 
 .kickoff {
-  flex: 1 1 0;
+  display: inline-block;
   min-width: 0;
   font-size: 12px;
   color: var(--fa-text-secondary);
+  user-select: none;
 }
 
 .card-head > :deep(.n-tag) {

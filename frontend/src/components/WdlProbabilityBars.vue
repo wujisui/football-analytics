@@ -51,6 +51,7 @@ withDefaults(
   font-size: 11px;
   line-height: 1.2;
   color: var(--fa-text-faint);
+  user-select: none;
 }
 
 .prob-head strong {

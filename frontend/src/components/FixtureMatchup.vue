@@ -83,6 +83,7 @@ const awayRankText = computed(() => rankBracket(props.awayRank))
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  user-select: none;
 }
 
 .matchup-link {

@@ -130,6 +130,7 @@ function pickRows(picks: CalcSelection[]) {
 
 .selection-card {
   background: var(--fa-bg-soft);
+  user-select: none;
 }
 
 /* Compact rows: fit one more fixture per viewport in the details list. */
