@@ -102,6 +102,14 @@ async function confirmSave(): Promise<boolean> {
   return true
 }
 
+/** 输入框回车 = 点「保存」（naive dialog 不会默认绑 Enter） */
+function onSaveNameEnter(e: KeyboardEvent) {
+  if (e.isComposing) return
+  if (!matchCount.value) return
+  e.preventDefault()
+  void confirmSave()
+}
+
 /** Save first — jumping away without persisting silently dropped the plan. */
 async function saveAndGoPlans() {
   if (!(await confirmSave())) return
@@ -419,6 +427,7 @@ defineExpose({ openFormula, openDetails })
           maxlength="40"
           show-count
           placeholder="方案名称"
+          @keydown.enter="onSaveNameEnter"
         />
         <n-text depth="3" style="font-size: 12px;">
           保存后可在「我的 → 我的方案」按赛程日回溯命中情况。
