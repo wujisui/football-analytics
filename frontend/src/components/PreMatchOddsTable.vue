@@ -289,6 +289,6 @@ function renderMidCell(row: OddsRow) {
   margin-left: 2px;
   font-size: 10px;
   font-weight: 600;
-  color: var(--fa-accent, #2080f0);
+  color: var(--fa-accent);
 }
 </style>

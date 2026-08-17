@@ -296,6 +296,7 @@ function goDetail() {
   height: 100%;
   padding-left: 2px;
   word-break: keep-all;
+  user-select: none;
 }
 
 .odd-button {

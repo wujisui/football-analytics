@@ -292,9 +292,8 @@ const bottomItems: {
   background: var(--fa-bg-elevated);
   box-shadow: var(--fa-bottom-nav-shadow);
   box-sizing: border-box;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
+  /* 不可选由全局触屏规则统一负责（style.css @media pointer: coarse） */
+  touch-action: manipulation;
 }
 
 .bottom-nav-item {
@@ -312,9 +311,7 @@ const bottomItems: {
   line-height: 1.2;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
 
 .bottom-nav-item.active {

@@ -14,6 +14,8 @@ html[data-theme='light'] {
   --fa-text-faint: #999999;
   --fa-hover-border: #b8d4f8;
   --fa-hover-shadow: rgba(32, 128, 240, 0.08);
+  /* 盘口线 / 链接类强调色（与 hover 蓝同源） */
+  --fa-accent: #2080f0;
   --fa-highlight-bg: #fff7e6;
   --fa-highlight-border: #f0c78a;
   --fa-highlight-text: #c2410c;
@@ -41,6 +43,8 @@ html[data-theme='dark'] {
   --fa-text-faint: #737373;
   --fa-hover-border: #3b6ea8;
   --fa-hover-shadow: rgba(0, 0, 0, 0.35);
+  /* 盘口线 / 链接类强调色（深色下略提亮，保证可读） */
+  --fa-accent: #69b1ff;
   --fa-highlight-bg: rgba(240, 160, 32, 0.12);
   --fa-highlight-border: #8a6a2b;
   --fa-highlight-text: #f0c78a;
@@ -104,6 +108,24 @@ a {
 
 button {
   font-family: inherit;
+}
+
+/* 触屏：长按不要弹出文字选择/放大镜（导航、卡片都是点按目标，不是可读正文）。
+   输入类元素仍可选，鼠标设备不受影响。 */
+@media (pointer: coarse) {
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'] {
+    user-select: text;
+    -webkit-user-select: text;
+    -webkit-touch-callout: default;
+  }
 }
 
 /* Centered content band — same max width as detail page */
@@ -220,18 +242,13 @@ button {
   box-shadow: 0 2px 8px var(--fa-hover-shadow);
 }
 
-.fa-card-markable.is-marked {
-  background: color-mix(in srgb, var(--fa-hover-border) 16%, var(--fa-bg-soft));
-  box-shadow: inset 0 0 0 1px var(--fa-hover-border);
-}
-
 .fa-card-markable.is-marked::before {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
-  width: 3px;
+  width: 2px;
   z-index: 1;
   background: var(--fa-hover-border);
   border-radius: 1px 0 0 1px;
@@ -343,7 +360,7 @@ button {
 
 .ah-popover-col.line {
   font-weight: 700;
-  color: var(--fa-accent, #2080f0);
+  color: var(--fa-accent);
 }
 
 .ah-popover-head .ah-popover-col {
