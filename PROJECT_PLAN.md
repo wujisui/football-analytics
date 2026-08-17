@@ -56,7 +56,7 @@
 | 用户打开详情（已开赛且已有冻结快照） | 展示包只读本地，不再补包；官方仅一次比分 + 状态（12 小时内 60 秒缓存跟比分，12 小时~7 天按 30 分钟缓存追终场结算）。真源 `ttl_policy.detail_package_frozen` |
 | 已开赛或已结束 | **预测快照审计字段不再刷新**；展示包仍可按点击补缺；赛果随固定批次回写 |
 
-列表归属只比较**服务器当前 UTC 时间与开赛时刻**：开赛时刻未到进入 **比赛**，开赛时刻已到进入 **赛果**；不依赖定时批次回写、可能仍为 `pending` 的本地状态。比赛列表请求 `/fixtures/today?scope=prematch` 时由后端 SQL 直接过滤，前端不再二次判断。预测卡片内附带让球主盘一行（多盘口悬停展开）；赛果列表不做滚球刷新。边界唯一真源：`backend/app/services/results_capture.py` 的 `prematch_list_clause` / `results_list_clause`。
+列表归属以**服务器当前 UTC 时间与开赛时刻**为主：开赛时刻未到进入 **比赛**，开赛时刻已到进入 **赛果**；不依赖定时批次回写、可能仍为 `pending` 的本地状态。**例外**：状态为 `postponed` 且原定开赛已过超过 1 天的场次移出赛果列表（避免延期场长期占位；官方改期后按新开赛日再进列表）。比赛列表请求 `/fixtures/today?scope=prematch` 时由后端 SQL 直接过滤，前端不再二次判断。预测卡片内附带让球主盘一行（多盘口悬停展开）；赛果列表不做滚球刷新。边界唯一真源：`backend/app/services/results_capture.py` 的 `prematch_list_clause` / `results_list_clause`。
 
 读取顺序：`Redis` → `SQLite（api_snapshots / pre_match_data）` → `API-Sports`（本地缺展示数据时，含完场复盘详情）。
 

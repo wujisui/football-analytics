@@ -49,7 +49,7 @@ async def get_league_filter_options(
     ),
     scope: str = Query(
         default="prematch",
-        description="prematch=未开赛；results=完场日（含进行中/取消/延期）",
+        description="prematch=未开赛；results=完场日（含进行中/取消；延期仅保留原定开赛未超 1 天）",
     ),
     db: AsyncSession = Depends(get_db),
 ) -> LeagueFilterOptionsResponse:

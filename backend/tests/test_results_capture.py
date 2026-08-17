@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.models.fixture import Fixture
 from app.services.results_capture import (
     LIVE_SCORE_REFRESH_HOURS,
+    POSTPONED_HIDE_AFTER_DAYS,
     SETTLE_SCORE_REFRESH_DAYS,
     prematch_list_clause,
     results_list_clause,
@@ -28,11 +29,19 @@ def _sql(clause) -> str:
 def test_list_membership_depends_only_on_kickoff_time() -> None:
     prematch = _sql(prematch_list_clause(NOW))
     results = _sql(results_list_clause(NOW))
-    # 本地 status 可能仍是 pending；列表归属只比较服务器时间与开赛时刻。
+    # 本地 status 可能仍是 pending；列表归属以开赛时刻为主。
     assert "fixtures.date > '2026-08-11 01:53:00'" in prematch
     assert "fixtures.date <= '2026-08-11 01:53:00'" in results
     assert "fixtures.status" not in prematch
-    assert "fixtures.status" not in results
+
+
+def test_stale_postponed_fixtures_leave_results_list() -> None:
+    """延期且原定开赛已过超过一天：不再占【赛果】。"""
+    results = _sql(results_list_clause(NOW))
+    cutoff = NOW - timedelta(days=POSTPONED_HIDE_AFTER_DAYS)
+    assert "fixtures.status" in results
+    assert "postponed" in results
+    assert cutoff.strftime("%Y-%m-%d %H:%M:%S") in results
 
 
 def test_live_score_refresh_only_for_started_unfinished_fixtures() -> None:

@@ -21,6 +21,8 @@ LIVE_SCORE_REFRESH_HOURS = 12
 # 仍允许点击时低频补一次结算，直到这个天数上限。
 SETTLE_SCORE_REFRESH_DAYS = 7
 UNFINISHED_STATUSES = frozenset({"pending", "live"})
+# 延期场次：原定开赛已过超过该天数后不再占【赛果】列表（等官方改日再进新比赛日）。
+POSTPONED_HIDE_AFTER_DAYS = 1
 
 
 def results_capture_cutoff(now: datetime | None = None) -> datetime:
@@ -51,8 +53,20 @@ def prematch_list_clause(now: datetime | None = None) -> ColumnElement[bool]:
 
 
 def results_list_clause(now: datetime | None = None) -> ColumnElement[bool]:
-    """【赛果】：开赛时刻已到；不依赖可能仍是 pending 的本地状态。"""
-    return Fixture.date <= (now or datetime.utcnow())
+    """【赛果】：开赛时刻已到；延期超过一天不再占列表。
+
+    归属仍以开赛时刻为主（本地可能仍是 pending）。``postponed`` 且原定开赛
+    已超过 ``POSTPONED_HIDE_AFTER_DAYS`` 的场次移出赛果，避免长期占位。
+    """
+    current = now or datetime.utcnow()
+    postponed_cutoff = current - timedelta(days=POSTPONED_HIDE_AFTER_DAYS)
+    return and_(
+        Fixture.date <= current,
+        or_(
+            Fixture.status != "postponed",
+            Fixture.date > postponed_cutoff,
+        ),
+    )
 
 
 def results_list_score(
