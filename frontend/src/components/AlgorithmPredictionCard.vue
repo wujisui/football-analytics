@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { FixtureResponse } from '@/api/types'
+import DetailTabHint from '@/components/DetailTabHint.vue'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
@@ -219,15 +220,17 @@ function onOddsClick() {
           {{ kickoffText }}
         </n-text>
       </div>
-      <FixtureMatchup
-        class="head-matchup"
-        clickable
-        :home-name="homeName"
-        :away-name="awayName"
-        :home-rank="fixture?.home_rank"
-        :away-rank="fixture?.away_rank"
-        @click="goStats"
-      />
+      <DetailTabHint tab="record">
+        <FixtureMatchup
+          class="head-matchup"
+          clickable
+          :home-name="homeName"
+          :away-name="awayName"
+          :home-rank="fixture?.home_rank"
+          :away-rank="fixture?.away_rank"
+          @click="goStats"
+        />
+      </DetailTabHint>
       <FavoriteButton
         v-if="fixture"
         class="card-fav"
@@ -293,7 +296,6 @@ function onOddsClick() {
           </template>
           <div class="ah-popover-panel">
             <div class="ah-popover-row ah-popover-head">
-              <span class="ah-popover-label">让球</span>
               <span class="ah-popover-col">主队</span>
               <span class="ah-popover-col mid">盘口</span>
               <span class="ah-popover-col">客队</span>
@@ -303,39 +305,42 @@ function onOddsClick() {
               :key="`ah-pop-${line.line}-${idx}`"
               class="ah-popover-row"
             >
-              <span class="ah-popover-label" />
               <span class="ah-popover-col">{{ formatOdd(line.home) }}</span>
               <span class="ah-popover-col mid line">{{ line.line || '—' }}</span>
               <span class="ah-popover-col">{{ formatOdd(line.away) }}</span>
             </div>
+            <p class="ah-popover-hint">点击查看我的预测</p>
           </div>
         </n-popover>
-        <button
-          v-else
-          type="button"
-          class="handicap-mid plain"
-          aria-label="查看盘口详情"
-          @click="goPredictionDetail"
-        >
-          {{ primaryLine }}
-        </button>
+        <DetailTabHint v-else tab="prediction">
+          <button
+            type="button"
+            class="handicap-mid plain"
+            aria-label="查看盘口详情"
+            @click="goPredictionDetail"
+          >
+            {{ primaryLine }}
+          </button>
+        </DetailTabHint>
         <span class="handicap-odd">{{ primaryAwayOdd }}</span>
       </div>
       <span v-else class="handicap-empty">暂无盘口</span>
       <RecommendationQualityRate :value="qualityRating" />
     </div>
 
-    <PredictionRecommendationRow
-      :recommendation="prediction.recommendation"
-      :handicap-lean="prediction.handicap_lean"
-      :goal-lean="prediction.goal_lean"
-      :both-score="prediction.both_score_lean"
-      :score-hint="prediction.score_hint"
-      :fixture-id="resolvedFixtureId"
-      :highlight-market="highlightMarket"
-      clickable
-      @open="goBriefing"
-    />
+    <DetailTabHint tab="briefing">
+      <PredictionRecommendationRow
+        :recommendation="prediction.recommendation"
+        :handicap-lean="prediction.handicap_lean"
+        :goal-lean="prediction.goal_lean"
+        :both-score="prediction.both_score_lean"
+        :score-hint="prediction.score_hint"
+        :fixture-id="resolvedFixtureId"
+        :highlight-market="highlightMarket"
+        clickable
+        @open="goBriefing"
+      />
+    </DetailTabHint>
   </component>
 </template>
 

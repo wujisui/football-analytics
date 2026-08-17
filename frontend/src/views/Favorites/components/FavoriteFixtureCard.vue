@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import PreMatchOddsModal from '@/components/PreMatchOddsModal.vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
 import {
@@ -141,22 +142,13 @@ function onDesktopMarkClick(e: MouseEvent) {
     </div>
   </n-card>
 
-  <n-modal
+  <PreMatchOddsModal
     v-if="isPhone"
     v-model:show="showOddsModal"
-    preset="card"
-    :auto-focus="false"
-    title="赛前盘口"
-    :style="{ width: 'min(360px, calc(100vw - 24px))' }"
-    :segmented="{ content: true, footer: false }"
-  >
-    <PreMatchOddsTable
-      :odds="item.odds_snippet"
-      link-middle-to-detail
-      :fixture-id="item.fixture_id"
-      from="favorites"
-    />
-  </n-modal>
+    :odds="item.odds_snippet"
+    :fixture-id="item.fixture_id"
+    from="favorites"
+  />
 </template>
 
 <style scoped>

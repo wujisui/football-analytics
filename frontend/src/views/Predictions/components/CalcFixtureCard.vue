@@ -7,7 +7,7 @@ import type { FixtureResponse } from '@/api/types'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
-import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
+import PreMatchOddsModal from '@/components/PreMatchOddsModal.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
@@ -48,13 +48,18 @@ function selected(cell: CalcCell): boolean {
 
 function goDetail() {
   if (openingDetail.value) return
+  // 卡片在 keep-alive 列表里不卸载：不还原就会一直停在 opening 态，返回后点不动
   openingDetail.value = true
-  void router.push(
-    fixtureDetailRoute(props.fixture.fixture_id, {
-      from: 'predictions',
-      tab: 'record',
-    }),
-  )
+  void router
+    .push(
+      fixtureDetailRoute(props.fixture.fixture_id, {
+        from: 'predictions',
+        tab: 'record',
+      }),
+    )
+    .finally(() => {
+      openingDetail.value = false
+    })
 }
 </script>
 
@@ -150,23 +155,13 @@ function goDetail() {
     />
   </n-card>
 
-  <n-modal
+  <PreMatchOddsModal
     v-if="isPhone"
     v-model:show="showOddsModal"
-    preset="card"
-    title="赛前盘口"
-    to="body"
-    :auto-focus="false"
-    :style="{ width: 'min(360px, calc(100vw - 24px))' }"
-    :segmented="{ content: true, footer: false }"
-  >
-    <PreMatchOddsTable
-      :odds="fixture.odds_snippet"
-      link-middle-to-detail
-      :fixture-id="fixture.fixture_id"
-      from="predictions"
-    />
-  </n-modal>
+    :odds="fixture.odds_snippet"
+    :fixture-id="fixture.fixture_id"
+    from="predictions"
+  />
 </template>
 
 <style scoped>

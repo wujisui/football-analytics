@@ -335,7 +335,7 @@ button {
 
 .ah-popover-row {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 52px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
 }
@@ -344,11 +344,6 @@ button {
   margin-bottom: 2px;
   color: var(--fa-text-faint);
   font-size: 11px;
-}
-
-.ah-popover-label {
-  text-align: left;
-  color: var(--fa-text-faint);
 }
 
 .ah-popover-col {
@@ -368,6 +363,16 @@ button {
 .ah-popover-col.line {
   font-weight: 700;
   color: var(--fa-accent);
+}
+
+/* 弹层已占掉 hover，跳转提示只能写在面板里 */
+.ah-popover-hint {
+  margin: 2px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--fa-border-soft);
+  color: var(--fa-text-faint);
+  font-size: 11px;
+  text-align: center;
 }
 
 .ah-popover-head .ah-popover-col {

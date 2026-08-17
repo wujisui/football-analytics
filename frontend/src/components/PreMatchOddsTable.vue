@@ -4,6 +4,7 @@ import type { DataTableColumns } from 'naive-ui'
 import { NButton, NDataTable, NPopover } from 'naive-ui'
 import { useRouter } from 'vue-router'
 
+import DetailTabHint from '@/components/DetailTabHint.vue'
 import type { DetailFrom, DetailTab } from '@/utils/detailNav'
 import { fixtureDetailRoute } from '@/utils/detailNav'
 import { formatOdd } from '@/utils/format'
@@ -128,14 +129,21 @@ function buildColumns(linkMidHeader: boolean): DataTableColumns<OddsRow> {
       title: () =>
         linkMidHeader
           ? h(
-              NButton,
+              DetailTabHint,
+              { tab: props.detailTab },
               {
-                text: true,
-                type: 'primary',
-                size: 'small',
-                onClick: goDetail,
+                default: () =>
+                  h(
+                    NButton,
+                    {
+                      text: true,
+                      type: 'primary',
+                      size: 'small',
+                      onClick: goDetail,
+                    },
+                    { default: () => '指数' },
+                  ),
               },
-              { default: () => '指数' },
             )
           : '指数',
       key: 'mid',
@@ -157,14 +165,12 @@ const columns = computed(() => buildColumns(middleLinkable()))
 function renderAhPopover() {
   return h('div', { class: 'ah-popover-panel' }, [
     h('div', { class: 'ah-popover-row ah-popover-head' }, [
-      h('span', { class: 'ah-popover-label' }, '让球'),
       h('span', { class: 'ah-popover-col' }, '主队'),
       h('span', { class: 'ah-popover-col mid' }, '盘口'),
       h('span', { class: 'ah-popover-col' }, '客队'),
     ]),
     ...ahLines.value.map((line, idx) =>
       h('div', { class: 'ah-popover-row', key: `ah-pop-${line.line}-${idx}` }, [
-        h('span', { class: 'ah-popover-label' }),
         h('span', { class: 'ah-popover-col' }, formatOdd(line.home)),
         h('span', { class: 'ah-popover-col mid line' }, line.line || '—'),
         h('span', { class: 'ah-popover-col' }, formatOdd(line.away)),

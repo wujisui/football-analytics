@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
+import PreMatchOddsModal from '@/components/PreMatchOddsModal.vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
 import type { FixtureResponse } from '@/api/types'
@@ -55,24 +56,14 @@ const showOddsModal = ref(false)
     </div>
   </n-card>
 
-  <n-modal
+  <PreMatchOddsModal
     v-if="isPhone"
     v-model:show="showOddsModal"
-    preset="card"
-    title="赛前盘口"
-    to="body"
-    :auto-focus="false"
-    :style="{ width: 'min(360px, calc(100vw - 24px))' }"
-    :segmented="{ content: true, footer: false }"
-  >
-    <PreMatchOddsTable
-      :odds="fixture.odds_snippet"
-      link-middle-to-detail
-      :fixture-id="fixture.fixture_id"
-      :from="from"
-      :date="date"
-    />
-  </n-modal>
+    :odds="fixture.odds_snippet"
+    :fixture-id="fixture.fixture_id"
+    :from="from"
+    :date="date"
+  />
 </template>
 
 <style scoped>

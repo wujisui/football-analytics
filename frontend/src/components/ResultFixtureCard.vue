@@ -6,6 +6,7 @@ import type { FavoriteFixtureRecord } from '@/api/favorites'
 import type { ResultFixture } from '@/api/fixtures'
 import type { FixtureResponse } from '@/api/types'
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
+import DetailTabHint from '@/components/DetailTabHint.vue'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import ResultPredictionSummary from '@/components/ResultPredictionSummary.vue'
@@ -212,16 +213,17 @@ function onLeagueClick(e: Event) {
       </n-tag>
     </header>
 
-    <FixtureMatchup
-      v-if="isPrematch"
-      clickable
-      spread
-      :home-name="homeName"
-      :away-name="awayName"
-      :home-rank="homeRank"
-      :away-rank="awayRank"
-      @click="openStats"
-    />
+    <DetailTabHint v-if="isPrematch" tab="record">
+      <FixtureMatchup
+        clickable
+        spread
+        :home-name="homeName"
+        :away-name="awayName"
+        :home-rank="homeRank"
+        :away-rank="awayRank"
+        @click="openStats"
+      />
+    </DetailTabHint>
     <FixtureMatchup
       v-else
       spread

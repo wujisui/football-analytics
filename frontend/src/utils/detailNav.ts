@@ -12,6 +12,19 @@ export type DetailFrom = 'results' | 'predictions' | 'favorites'
 
 export type DetailTab = 'record' | 'stats' | 'lineup' | 'briefing' | 'prediction'
 
+/** Detail tab bar order + labels (`short` for phone). Single source of truth. */
+export const DETAIL_TABS: { name: DetailTab; label: string; short: string }[] = [
+  { name: 'record', label: '统计', short: '统计' },
+  { name: 'stats', label: '赛季数据', short: '数据' },
+  { name: 'lineup', label: '伤病与阵容', short: '阵容' },
+  { name: 'briefing', label: '赛前简报', short: '简报' },
+  { name: 'prediction', label: '我的预测', short: '预测' },
+]
+
+export function detailTabLabel(tab: DetailTab): string {
+  return DETAIL_TABS.find((t) => t.name === tab)?.label ?? ''
+}
+
 /** Fields BasicInfo needs before full /analysis arrives. */
 export type DetailCrumbFixture = {
   league_id: number
@@ -30,16 +43,7 @@ export function parseDetailFrom(raw: unknown): DetailFrom {
 }
 
 export function parseDetailTab(raw: unknown): DetailTab | null {
-  if (
-    raw === 'record' ||
-    raw === 'stats' ||
-    raw === 'lineup' ||
-    raw === 'briefing' ||
-    raw === 'prediction'
-  ) {
-    return raw
-  }
-  return null
+  return DETAIL_TABS.find((t) => t.name === raw)?.name ?? null
 }
 
 export function fixtureDetailRoute(

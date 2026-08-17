@@ -9,6 +9,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AlgorithmPredictionCard: typeof import('./src/components/AlgorithmPredictionCard.vue')['default']
     DayExpandFixtures: typeof import('./src/components/DayExpandFixtures.vue')['default']
+    DetailTabHint: typeof import('./src/components/DetailTabHint.vue')['default']
     FavoriteButton: typeof import('./src/components/FavoriteButton.vue')['default']
     FixtureCard: typeof import('./src/components/FixtureCard.vue')['default']
     FixtureList: typeof import('./src/components/FixtureList.vue')['default']
@@ -71,6 +72,7 @@ declare module 'vue' {
     NVirtualList: typeof import('naive-ui')['NVirtualList']
     PageToolbarSearch: typeof import('./src/components/PageToolbarSearch.vue')['default']
     PredictionRecommendationRow: typeof import('./src/components/PredictionRecommendationRow.vue')['default']
+    PreMatchOddsModal: typeof import('./src/components/PreMatchOddsModal.vue')['default']
     PreMatchOddsTable: typeof import('./src/components/PreMatchOddsTable.vue')['default']
     PullToRefresh: typeof import('./src/components/PullToRefresh.vue')['default']
     RecommendationQualityRate: typeof import('./src/components/RecommendationQualityRate.vue')['default']

@@ -9,7 +9,7 @@ import StatsTab from '@/views/Detail/components/StatsTab.vue'
 import { useHorizontalSwipe } from '@/composables/useHorizontalSwipe'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import type { FixtureResponse, PrematchPackage } from '@/api/types'
-import type { DetailTab } from '@/utils/detailNav'
+import { DETAIL_TABS, type DetailTab } from '@/utils/detailNav'
 
 type TabKey = DetailTab
 
@@ -39,13 +39,7 @@ const activeTab = ref<TabKey>(defaultTab())
 /** Mount tab content only after first visit (lazy UI); data already from /analysis. */
 const visited = ref<Set<TabKey>>(new Set([defaultTab()]))
 
-const tabs: { name: TabKey; label: string; short: string }[] = [
-  { name: 'record', label: '统计', short: '统计' },
-  { name: 'stats', label: '赛季数据', short: '数据' },
-  { name: 'lineup', label: '伤病与阵容', short: '阵容' },
-  { name: 'briefing', label: '赛前简报', short: '简报' },
-  { name: 'prediction', label: '我的预测', short: '预测' },
-]
+const tabs = DETAIL_TABS
 
 const tabKeys = tabs.map((t) => t.name)
 
