@@ -7,6 +7,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthSession } from '@/composables/useAuthSession'
 import { useBetPlans } from '@/composables/useBetPlans'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import ShellBreadcrumb from '@/layouts/components/ShellBreadcrumb.vue'
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import {
   sectionFromRouteName,
@@ -20,7 +21,7 @@ const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
 const { isAdmin } = useAuthSession()
-const { filterDate, planDays } = useBetPlans()
+const { filterDate, planDays, plansForDay } = useBetPlans()
 
 function renderIcon(icon: Component) {
   return () => h(NIcon, null, { default: () => h(icon) })
@@ -89,6 +90,13 @@ const menuOptions = computed<MenuOption[]>(() => [
 const activeSection = computed(() => sectionFromRouteName(route.name))
 const activeMeta = computed(() => sectionMeta[activeSection.value])
 const isPlansSection = computed(() => activeSection.value === 'plans')
+const dayPlanCountLabel = computed(
+  () => `已保存 ${plansForDay(filterDate.value).length} 个方案`,
+)
+/** 顶栏第二行左侧：方案页给统计，其余分区给说明文案，保证面包屑高度一致 */
+const sectionMetaLine = computed(() =>
+  isPlansSection.value ? dayPlanCountLabel.value : (activeMeta.value.hint ?? ''),
+)
 /** PC 二级页 / 手机二级页：共用同一顶栏，手机个人主页不显示 */
 const showSectionHeader = computed(
   () =>
@@ -148,29 +156,53 @@ watch(
           v-if="showSectionHeader"
           class="mine-header fa-page-toolbar"
         >
-          <n-button
-            v-if="isPhone"
-            quaternary
-            circle
-            size="small"
-            aria-label="返回"
-            @click="openSection('account')"
-          >
-            <template #icon>
-              <n-icon :component="ChevronBackOutline" />
-            </template>
-          </n-button>
-          <div class="mine-header__copy">
-            <h1>{{ activeMeta.title }}</h1>
-            <p v-if="!isPhone">{{ activeMeta.description }}</p>
+          <!-- 手机：返回 + 分区标题；方案页日期占右侧槽 -->
+          <div v-if="isPhone" class="fa-toolbar-top">
+            <n-button
+              quaternary
+              circle
+              size="small"
+              aria-label="返回"
+              @click="openSection('account')"
+            >
+              <template #icon>
+                <n-icon :component="ChevronBackOutline" />
+              </template>
+            </n-button>
+            <span class="mine-title">{{ activeMeta.title }}</span>
+            <span v-if="isPlansSection" class="fa-toolbar-day-stat">
+              {{ dayPlanCountLabel }}
+            </span>
+            <div v-if="isPlansSection" class="fa-toolbar-end">
+              <FavoriteDatesPicker
+                v-model="filterDate"
+                :marked-days="planDays"
+                legend="当天有方案（赛程日）"
+              />
+            </div>
           </div>
-          <div v-if="isPlansSection" class="mine-header__end">
-            <FavoriteDatesPicker
-              v-model="filterDate"
-              :marked-days="planDays"
-              legend="当天有方案（赛程日）"
-            />
-          </div>
+
+          <!-- PC 对齐比赛/关注：面包屑在上，统计（或说明）与方案日期在下 -->
+          <template v-else>
+            <div class="fa-toolbar-top">
+              <ShellBreadcrumb
+                root-label="我的"
+                :filter-label="activeMeta.title"
+                @select-root="openSection('account')"
+              />
+            </div>
+            <div class="fa-toolbar-list-meta">
+              <span class="fa-toolbar-day-stat mine-meta-line">
+                {{ sectionMetaLine }}
+              </span>
+              <FavoriteDatesPicker
+                v-if="isPlansSection"
+                v-model="filterDate"
+                :marked-days="planDays"
+                legend="当天有方案（赛程日）"
+              />
+            </div>
+          </template>
         </n-layout-header>
 
         <div class="mine-outlet">
@@ -214,32 +246,24 @@ watch(
 }
 
 .mine-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   box-shadow: var(--fa-header-shadow);
 }
 
-.mine-header__copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.mine-header__end {
+.mine-title {
   flex-shrink: 0;
-}
-
-.mine-header h1 {
-  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--fa-text-strong);
-  font-size: 20px;
-  line-height: 1.5;
 }
 
-.mine-header p {
-  margin: 5px 0 0;
-  color: var(--fa-text-muted);
-  font-size: 13px;
+.mine-meta-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mine-header :deep(.n-breadcrumb-item:first-child .n-breadcrumb-item__link) {
+  cursor: pointer;
 }
 
 .mine-outlet {
@@ -256,35 +280,5 @@ watch(
   flex: 1;
   min-height: 0;
   min-width: 0;
-}
-
-@media (max-width: 767px) {
-  .mine-header {
-    position: relative;
-    justify-content: center;
-    min-height: 48px;
-    padding: 8px 56px;
-  }
-
-  .mine-header > :deep(.n-button) {
-    position: absolute;
-    left: 10px;
-  }
-
-  .mine-header__copy {
-    flex: none;
-    max-width: 100%;
-    text-align: center;
-  }
-
-  .mine-header__end {
-    position: absolute;
-    right: 10px;
-  }
-
-  .mine-header h1 {
-    font-size: 16px;
-    line-height: 1.3;
-  }
 }
 </style>

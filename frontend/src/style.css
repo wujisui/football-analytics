@@ -195,13 +195,14 @@ button {
   max-width: min(240px, 36vw);
 }
 
-/* PC 列表顶栏第二行：场次统计 + 搜索/日期 */
+/* PC 列表顶栏第二行：场次统计 + 搜索/日期
+   min-height 跟 small 输入控件一致，纯文字行（无控件）也保持同一行高 */
 .fa-toolbar-list-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 0 4px;
+  min-height: 28px;
 }
 
 /* Main list / card band — align with .fa-page-toolbar horizontal padding */

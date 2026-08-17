@@ -11,36 +11,36 @@ export type MineSection = 'account' | 'plans' | 'theme' | 'admin' | 'about'
 
 export const sectionMeta: Record<
   MineSection,
-  { routeName: string; title: string; description: string; icon: Component }
+  { routeName: string; title: string; icon: Component; hint?: string }
 > = {
   account: {
     routeName: 'mine-account',
     title: '个人主页',
-    description: '查看当前账号状态与基础信息',
+    hint: '查看当前账号状态与基础信息',
     icon: PersonOutline,
   },
   plans: {
+    // 顶栏第二行左侧显示当天方案统计，不用说明文案
     routeName: 'mine-plans',
     title: '我的方案',
-    description: '查看和管理已保存的投注方案',
     icon: BookmarkOutline,
   },
   theme: {
     routeName: 'mine-theme',
     title: '主题设置',
-    description: '设置界面的显示主题',
+    hint: '设置界面的显示主题',
     icon: ColorPaletteOutline,
   },
   admin: {
     routeName: 'mine-admin',
     title: '管理员设置',
-    description: '管理定时同步与数据获取开关',
+    hint: '管理定时同步与数据获取开关',
     icon: SettingsOutline,
   },
   about: {
     routeName: 'mine-about',
     title: '关于',
-    description: 'Football Analytics 产品说明与版本信息',
+    hint: 'Football Analytics 产品说明与版本信息',
     icon: InformationCircleOutline,
   },
 }
