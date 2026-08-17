@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { SearchOutline } from '@vicons/ionicons5'
+import { computed, ref, watch } from 'vue'
 
 import type { LeagueFilterOption } from '@/api/leagues'
+import { fuzzyMatchAny } from '@/utils/fuzzySearch'
 import { leagueLabel } from '@/utils/leagueNames'
 
 const props = withDefaults(
@@ -9,10 +11,13 @@ const props = withDefaults(
     options: LeagueFilterOption[]
     stacked?: boolean
     compactActions?: boolean
+    /** 弹层打开时清空「其他」搜索，避免上次关键词残留 */
+    visible?: boolean
   }>(),
   {
     stacked: false,
     compactActions: false,
+    visible: false,
   },
 )
 
@@ -22,6 +27,15 @@ const emit = defineEmits<{
   confirm: []
 }>()
 
+const extraQuery = ref('')
+
+watch(
+  () => props.visible,
+  (open) => {
+    if (open) extraQuery.value = ''
+  },
+)
+
 const configuredOptions = computed(() =>
   props.options.filter((o) => o.tier === 'configured'),
 )
@@ -29,6 +43,14 @@ const configuredOptions = computed(() =>
 const extraOptions = computed(() =>
   props.options.filter((o) => o.tier === 'extra'),
 )
+
+const filteredExtraOptions = computed(() => {
+  const q = extraQuery.value.trim()
+  if (!q) return extraOptions.value
+  return extraOptions.value.filter((opt) =>
+    fuzzyMatchAny(q, [leagueLabel(opt.league_name), opt.league_name, opt.country]),
+  )
+})
 
 const actionSize = computed(() => (props.compactActions ? 'tiny' : 'small'))
 const listMaxHeight = computed(() =>
@@ -67,7 +89,9 @@ function invertSelection() {
         :style="{ maxHeight: listMaxHeight }"
       >
         <div class="section">
-          <div class="section-title">热门</div>
+          <div class="section-head">
+            <div class="section-title">热门</div>
+          </div>
           <n-scrollbar class="section-scroll">
             <n-space vertical :size="6">
               <n-checkbox
@@ -85,11 +109,25 @@ function invertSelection() {
           </n-scrollbar>
         </div>
         <div class="section">
-          <div class="section-title">其他</div>
+          <div class="section-head">
+            <div class="section-title">其他</div>
+            <n-input
+              v-if="extraOptions.length"
+              v-model:value="extraQuery"
+              class="extra-search"
+              size="tiny"
+              placeholder="搜索"
+              clearable
+            >
+              <template #prefix>
+                <n-icon :component="SearchOutline" :size="13" />
+              </template>
+            </n-input>
+          </div>
           <n-scrollbar class="section-scroll">
             <n-space vertical :size="6">
               <n-checkbox
-                v-for="opt in extraOptions"
+                v-for="opt in filteredExtraOptions"
                 :key="opt.league_id"
                 :value="opt.league_id"
                 :label="labelOf(opt)"
@@ -98,6 +136,11 @@ function invertSelection() {
             <n-empty
               v-if="!extraOptions.length"
               description="暂无其他联赛"
+              style="padding: 8px 0;"
+            />
+            <n-empty
+              v-else-if="!filteredExtraOptions.length"
+              description="无匹配联赛"
               style="padding: 8px 0;"
             />
           </n-scrollbar>
@@ -183,15 +226,30 @@ function invertSelection() {
   overflow: hidden;
 }
 
+/* 标题与「其他」搜索框同一行，两列表头等高 */
+.section-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  margin-bottom: 6px;
+  padding-bottom: 2px;
+  background: var(--n-color, var(--fa-bg-elevated));
+}
+
 .section-title {
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--fa-text-muted);
-  margin-bottom: 6px;
-  padding-bottom: 2px;
-  background: var(--n-color, var(--fa-bg-elevated));
+}
+
+.extra-search {
+  flex: 1;
+  min-width: 0;
+  margin-left: auto;
 }
 
 .section-scroll {
@@ -232,10 +290,13 @@ function invertSelection() {
     gap: 12px;
   }
 
-  .section-title {
+  .section-head {
     margin-bottom: 8px;
     padding: 0 2px 6px;
     border-bottom: 1px solid var(--fa-border);
+  }
+
+  .section-title {
     font-size: 12px;
   }
 

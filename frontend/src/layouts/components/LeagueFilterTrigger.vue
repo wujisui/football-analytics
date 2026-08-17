@@ -73,6 +73,7 @@ function confirm() {
       <LeagueFilterPanel
         v-model:draft="draft"
         :options="options"
+        :visible="show"
         stacked
         @confirm="confirm"
       />
@@ -82,9 +83,7 @@ function confirm() {
   <n-popover
     v-else
     v-model:show="show"
-    trigger="hover"
-    :delay="80"
-    :duration="180"
+    trigger="click"
     placement="right-start"
     :show-arrow="false"
     display-directive="show"
@@ -107,6 +106,7 @@ function confirm() {
     <LeagueFilterPanel
       v-model:draft="draft"
       :options="options"
+      :visible="show"
       compact-actions
       @confirm="confirm"
     />
