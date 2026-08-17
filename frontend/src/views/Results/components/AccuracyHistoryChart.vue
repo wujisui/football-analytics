@@ -36,7 +36,7 @@ type PlayKey = 'result' | 'auto_pick' | 'handicap' | 'score' | 'ou' | 'btts'
 
 /** Line order matches ``seriesIndex``; labels/colors mirror 当日统计 cards. */
 const PLAY_LINES: ReadonlyArray<{ name: string; color: string; key: PlayKey }> = [
-  { name: '推荐结果', color: ACCURACY_COLORS.result, key: 'result' },
+  { name: '胜平负', color: ACCURACY_COLORS.result, key: 'result' },
   { name: '每日推荐', color: ACCURACY_COLORS.autoPick, key: 'auto_pick' },
   { name: '让球胜平负', color: ACCURACY_COLORS.handicap, key: 'handicap' },
   { name: '比分', color: ACCURACY_COLORS.score, key: 'score' },
