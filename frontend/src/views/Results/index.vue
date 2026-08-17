@@ -200,6 +200,13 @@ const listedFixtures = computed(() => {
   )
 })
 
+const listedFinishedCount = computed(
+  () =>
+    listedFixtures.value.filter(
+      (fx) => (fx.status || '').toLowerCase() === 'finished',
+    ).length,
+)
+
 const listedVirtualRows = computed(() =>
   listedFixtures.value.map((fixture) => ({
     key: fixture.fixture_id,
@@ -580,6 +587,7 @@ onActivated(() => {
                   :tracked-ids="shellTrackedIds"
                   :filter-active="shellFilterActive"
                   :list-count="listedFixtures.length"
+                  :finished-count="listedFinishedCount"
                   show-day-stats
                   @confirm-filter="confirmFilter"
                   @open-day-stats="showDayStatsModal = true"
@@ -734,6 +742,7 @@ onActivated(() => {
               :tracked-ids="shellTrackedIds"
               :filter-active="shellFilterActive"
               :list-count="listedFixtures.length"
+              :finished-count="listedFinishedCount"
               @confirm-filter="confirmFilter"
           />
         </div>

@@ -13,10 +13,12 @@ withDefaults(
     filterActive: boolean
     /** Currently visible list size (after league / hit / search filters). */
     listCount?: number | null
+    /** Visible fixtures with status=finished (shown as finished/total). */
+    finishedCount?: number | null
     /** Phone: open 当日统计 modal from the list toolbar. */
     showDayStats?: boolean
   }>(),
-  { listCount: null, showDayStats: false },
+  { listCount: null, finishedCount: null, showDayStats: false },
 )
 
 const teamSearch = defineModel<string>('teamSearch', { required: true })
@@ -34,8 +36,13 @@ const emit = defineEmits<{
       v-model="teamSearch"
       style="flex: 1; width: auto; min-width: 0; max-width: none;"
     />
-    <n-text v-if="listCount != null" depth="3" class="list-count">
-      {{ listCount }} 场
+    <n-text
+      v-if="listCount != null"
+      depth="3"
+      class="list-count"
+    >
+      <template v-if="finishedCount != null">{{ finishedCount }}/{{ listCount }}场</template>
+      <template v-else>{{ listCount }} 场</template>
     </n-text>
     <n-button
       v-if="showDayStats"
