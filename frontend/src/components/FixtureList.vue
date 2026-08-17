@@ -17,7 +17,9 @@ import DayExpandFixtures from '@/components/DayExpandFixtures.vue'
 import FixtureCard from '@/components/FixtureCard.vue'
 import VirtualCardList from '@/components/VirtualCardList.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { useMarkedFixture } from '@/composables/useMarkedFixture'
 import type { DetailFrom } from '@/utils/detailNav'
+import { isFixtureCardMarkClickIgnored } from '@/utils/fixtureCardMark'
 import {
   groupFixturesByScheduleDay,
   type ScheduleDayGroup,
@@ -39,6 +41,8 @@ const props = withDefaults(
     /** Flat virtual-list padding (groupByDay=false only). */
     paddingTop?: number | string
     paddingBottom?: number | string
+    /** 点卡片空白处留阅读标记，便于翻长列表定位 */
+    markable?: boolean
   }>(),
   {
     groupByDay: true,
@@ -47,12 +51,29 @@ const props = withDefaults(
     itemSize: 168,
     paddingTop: 0,
     paddingBottom: 12,
+    markable: false,
   },
 )
 
 const slots = useSlots()
 const isPhone = useIsPhone()
 const hasCardSlot = computed(() => !!slots.card)
+const { isMarked, toggleMarked, clearMarked, retainIfPresent } = useMarkedFixture()
+
+watch(
+  () => props.fixtures.map((f) => f.fixture_id),
+  (ids) => {
+    if (!props.markable) return
+    retainIfPresent(ids)
+  },
+)
+
+watch(
+  () => [props.date, props.from] as const,
+  () => {
+    if (props.markable) clearMarked()
+  },
+)
 
 const listEl = ref<HTMLElement | null>(null)
 /** Viewport for the expanded day's virtual table (list height − date row). */
@@ -75,11 +96,32 @@ const fixtureMinRowHeight = computed(() => {
   return (isPhone.value ? 184 : 147) + CARD_GAP_PX
 })
 
+function onFixtureRowClick(event: MouseEvent, fixtureId: number) {
+  if (!props.markable) return
+  if (isFixtureCardMarkClickIgnored(event)) return
+  toggleMarked(fixtureId)
+}
+
+function fixtureRowClass(fixtureId: number): Record<string, boolean> {
+  return {
+    'day-fixture-row': true,
+    'fa-card-markable': props.markable,
+    'is-marked': props.markable && isMarked(fixtureId),
+  }
+}
+
 function renderFixture(fixture: FixtureResponse): VNodeChild {
   const body = hasCardSlot.value
     ? (slots.card?.({ fixture }) ?? [])
     : h(FixtureCard, { fixture, from: props.from, date: props.date })
-  return h('div', { class: 'day-fixture-row' }, body)
+  return h(
+    'div',
+    {
+      class: fixtureRowClass(fixture.fixture_id),
+      onClick: (event: MouseEvent) => onFixtureRowClick(event, fixture.fixture_id),
+    },
+    body,
+  )
 }
 
 provide('fixtureListExpandMaxHeight', expandMaxHeight)
@@ -237,7 +279,10 @@ function rowFixture(item: unknown): FixtureResponse {
       :items-style="flatItemsStyle"
     >
       <template #default="{ item }">
-        <div class="day-fixture-row">
+        <div
+          :class="fixtureRowClass(rowFixture(item).fixture_id)"
+          @click="onFixtureRowClick($event, rowFixture(item).fixture_id)"
+        >
           <slot
             v-if="hasCardSlot"
             name="card"
@@ -334,6 +379,25 @@ function rowFixture(item: unknown): FixtureResponse {
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
+}
+
+/* 行级阅读标记：描边包住内部卡片（预测|计算器双列一起亮） */
+.day-fixture-row.fa-card-markable {
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.day-fixture-row.fa-card-markable:hover {
+  background: transparent;
+  box-shadow:
+    0 0 0 1px var(--fa-hover-border),
+    0 2px 8px var(--fa-hover-shadow);
+}
+
+.day-fixture-row.fa-card-markable.is-marked {
+  background: transparent;
+  box-shadow: 0 0 0 1.5px var(--fa-hover-border);
 }
 
 .empty {

@@ -19,6 +19,7 @@ import {
   statusTagType,
 } from '@/utils/format'
 import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
+import { isFixtureCardMarkClickIgnored } from '@/utils/fixtureCardMark'
 import { leagueLabel } from '@/utils/leagueNames'
 import {
   resultExtraScoreLine,
@@ -127,12 +128,9 @@ function openStats() {
 }
 
 /** 卡片内已有自己点击语义的控件（比分/联赛标签/命中标签/收藏）不触发标记 */
-const INTERACTIVE_SELECTOR = 'button, a, input, [role="button"], .n-tag, .n-rate'
-
 function onCardClick(e: MouseEvent) {
   if (!props.selectable) return
-  const target = e.target as Element | null
-  if (target?.closest(INTERACTIVE_SELECTOR)) return
+  if (isFixtureCardMarkClickIgnored(e)) return
   emit('toggleSelect', props.fixture.fixture_id)
 }
 
@@ -159,7 +157,12 @@ function onLeagueClick(e: Event) {
     size="small"
     :bordered="false"
     class="result-fixture-card"
-    :class="{ dense: denseBody, prematch: isPrematch, selectable, selected }"
+    :class="{
+      dense: denseBody,
+      prematch: isPrematch,
+      'fa-card-markable': selectable,
+      'is-marked': selected,
+    }"
     @click="onCardClick"
   >
     <FavoriteButton
@@ -288,34 +291,7 @@ function onLeagueClick(e: Event) {
   min-width: 0;
 }
 
-/* 列表翻阅定位：hover 轻提示，选中留下持续标记 */
-.result-fixture-card.selectable {
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    background 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.result-fixture-card.selectable:hover {
-  background: color-mix(in srgb, var(--fa-hover-border) 8%, var(--fa-bg-soft));
-  box-shadow: 0 2px 8px var(--fa-hover-shadow);
-}
-
-.result-fixture-card.selected {
-  background: color-mix(in srgb, var(--fa-hover-border) 16%, var(--fa-bg-soft));
-  box-shadow: inset 0 0 0 1px var(--fa-hover-border);
-}
-
-.result-fixture-card.selected::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 3px;
-  background: var(--fa-hover-border);
-}
+/* 列表翻阅定位样式见全局 .fa-card-markable */
 
 .result-fixture-card.dense {
   height: 100%;

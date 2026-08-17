@@ -8,6 +8,7 @@ import ListBackTop from '@/components/ListBackTop.vue'
 import LeagueMenu from '@/layouts/components/LeagueMenu.vue'
 import ShellBreadcrumb from '@/layouts/components/ShellBreadcrumb.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { useMarkedFixture } from '@/composables/useMarkedFixture'
 import {
   favoriteFixtureDays,
   nearestFavoriteDay,
@@ -50,8 +51,15 @@ const filterDate = ref<string>(readSavedFilterDate())
 const selectedLeagueId = ref<number | null>(null)
 const siderCollapsed = ref(false)
 const favoritesShellRef = ref<HTMLElement | null>(null)
+const { markedFixtureId, toggleMarked, clearMarked, retainIfPresent } =
+  useMarkedFixture()
 
-watch(filterDate, writeSavedFilterDate)
+watch(filterDate, (day) => {
+  writeSavedFilterDate(day)
+  clearMarked()
+})
+
+watch(selectedLeagueId, () => clearMarked())
 
 const favoriteDays = computed(() => favoriteFixtureDays(favorites.value))
 
@@ -94,6 +102,11 @@ const filteredFavorites = computed(() => {
   if (leagueId == null) return dayFavorites.value
   return dayFavorites.value.filter((item) => item.league_id === leagueId)
 })
+
+watch(
+  () => filteredFavorites.value.map((item) => item.fixture_id),
+  (ids) => retainIfPresent(ids),
+)
 
 const selectedLeagueLabel = computed(() => {
   if (selectedLeagueId.value == null) return '全部'
@@ -219,7 +232,10 @@ onActivated(() => {
                     v-for="item in filteredFavorites"
                     :key="item.fixture_id"
                     :item="item"
+                    selectable
+                    :selected="markedFixtureId === item.fixture_id"
                     @open-detail="goDetail"
+                    @toggle-select="toggleMarked"
                   />
                 </div>
               </div>

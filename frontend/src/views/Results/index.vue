@@ -25,6 +25,7 @@ import {
 } from '@/layouts/composables/useFixturesShell'
 import {useHorizontalSwipe} from '@/composables/useHorizontalSwipe'
 import {useIsPhone} from '@/composables/useMediaQuery'
+import {useMarkedFixture} from '@/composables/useMarkedFixture'
 import {useScrollRestore} from '@/composables/useScrollRestore'
 import {useFavoriteFixtures} from '@/composables/useFavoriteFixtures'
 import {
@@ -148,8 +149,8 @@ const historyLoading = ref(false)
 const error = ref('')
 /** Click a hit tag on a card → keep fixtures that hit that market; click again to clear. */
 const filterHitKey = ref<ResultsHitKey | null>(null)
-/** 阅读标记：点卡片留一个高亮位，翻长列表时不用记主客队名。 */
-const markedFixtureId = ref<number | null>(null)
+const { markedFixtureId, toggleMarked, clearMarked, retainIfPresent } =
+  useMarkedFixture()
 
 const contentLoading = computed(
     () => loading.value || shellContentLoading.value,
@@ -216,12 +217,13 @@ const listedVirtualRows = computed(() =>
   })) as Record<string, unknown>[],
 )
 
+watch(
+  () => listedFixtures.value.map((fx) => fx.fixture_id),
+  (ids) => retainIfPresent(ids),
+)
+
 function onFilterHit(key: ResultsHitKey) {
   filterHitKey.value = filterHitKey.value === key ? null : key
-}
-
-function onToggleSelect(fixtureId: number) {
-  markedFixtureId.value = markedFixtureId.value === fixtureId ? null : fixtureId
 }
 
 /** Mirrors backend ``summarize_accuracy``; grades any non-null hit flag. */
@@ -481,7 +483,7 @@ watch(isScheduleFutureDay, (future, wasFuture) => {
 watch(selectedDay, () => {
   if (route.name !== 'results') return
   filterHitKey.value = null
-  markedFixtureId.value = null
+  clearMarked()
   desktopListScroll.reset()
   phoneListScroll.reset()
   void loadSelectedDay()
@@ -629,7 +631,7 @@ onActivated(() => {
                   :marked-fixture-id="markedFixtureId"
                   @open-detail="goDetail"
                   @filter-hit="onFilterHit"
-                  @toggle-select="onToggleSelect"
+                  @toggle-select="toggleMarked"
               />
               <ListBackTop :shell="phoneListShellRef" :right="12" :bottom="12"/>
             </div>
@@ -730,6 +732,7 @@ onActivated(() => {
             :date="selectedDay"
             :padding-top="12"
             :padding-bottom="20"
+            markable
         />
       </n-spin>
       <ListBackTop :shell="desktopListShellRef" />
@@ -780,7 +783,7 @@ onActivated(() => {
               :marked-fixture-id="markedFixtureId"
               @open-detail="goDetail"
               @filter-hit="onFilterHit"
-              @toggle-select="onToggleSelect"
+              @toggle-select="toggleMarked"
           />
           <ListBackTop :shell="desktopListShellRef" :bottom="16"/>
         </div>

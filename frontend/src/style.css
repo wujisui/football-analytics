@@ -205,6 +205,39 @@ button {
   min-height: 28px;
 }
 
+/* 列表翻阅定位：hover 轻提示，选中留下持续标记（赛果 / 比赛 / 关注共用） */
+.fa-card-markable {
+  position: relative;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.fa-card-markable:hover {
+  background: color-mix(in srgb, var(--fa-hover-border) 8%, var(--fa-bg-soft));
+  box-shadow: 0 2px 8px var(--fa-hover-shadow);
+}
+
+.fa-card-markable.is-marked {
+  background: color-mix(in srgb, var(--fa-hover-border) 16%, var(--fa-bg-soft));
+  box-shadow: inset 0 0 0 1px var(--fa-hover-border);
+}
+
+.fa-card-markable.is-marked::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  z-index: 1;
+  background: var(--fa-hover-border);
+  border-radius: 1px 0 0 1px;
+  pointer-events: none;
+}
+
 /* Main list / card band — align with .fa-page-toolbar horizontal padding */
 .fa-page-content-padding {
   padding: var(--fa-content-block-start) var(--fa-content-inline)

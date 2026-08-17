@@ -67,6 +67,7 @@ onActivated(() => {
           <FixtureList
             :fixtures="prematchDisplayedFixtures"
             :empty-description="predictionsEmptyText"
+            markable
           >
             <template #card="{ fixture }">
               <div class="fixture-slot">
@@ -103,6 +104,7 @@ onActivated(() => {
               <FixtureList
                 :fixtures="prematchDisplayedFixtures"
                 :empty-description="predictionsEmptyText"
+                markable
               >
                 <template #card="{ fixture }">
                   <div class="fixture-row">
