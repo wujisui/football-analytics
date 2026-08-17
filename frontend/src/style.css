@@ -234,22 +234,15 @@ button {
   min-height: 28px;
 }
 
-/* 列表翻阅定位：hover 轻提示，选中留下持续标记（赛果 / 比赛 / 关注共用） */
+/* 列表翻阅定位：hover 预览左侧标记条，点击选中后常驻（赛果 / 比赛 / 关注共用）。
+   不动背景色，避免和卡片自身层级、命中高亮打架。 */
 .fa-card-markable {
   position: relative;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition:
-    background 0.18s ease,
-    box-shadow 0.18s ease;
 }
 
-.fa-card-markable:hover {
-  background: color-mix(in srgb, var(--fa-hover-border) 8%, var(--fa-bg-soft));
-  box-shadow: 0 2px 8px var(--fa-hover-shadow);
-}
-
-.fa-card-markable.is-marked::before {
+.fa-card-markable::before {
   content: '';
   position: absolute;
   top: 0;
@@ -257,9 +250,16 @@ button {
   left: 0;
   width: 2px;
   z-index: 1;
-  background: var(--fa-hover-border);
+  background: var(--fa-accent);
   border-radius: 1px 0 0 1px;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.fa-card-markable:hover::before,
+.fa-card-markable.is-marked::before {
+  opacity: 1;
 }
 
 /* Main list / card band — align with .fa-page-toolbar horizontal padding */

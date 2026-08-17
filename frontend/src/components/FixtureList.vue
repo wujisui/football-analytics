@@ -381,25 +381,6 @@ function rowFixture(item: unknown): FixtureResponse {
   box-sizing: border-box;
 }
 
-/* 行级阅读标记：描边包住内部卡片（预测|计算器双列一起亮） */
-.day-fixture-row.fa-card-markable {
-  border-radius: 6px;
-  background: transparent;
-  box-shadow: none;
-}
-
-.day-fixture-row.fa-card-markable:hover {
-  background: transparent;
-  box-shadow:
-    0 0 0 1px var(--fa-hover-border),
-    0 2px 8px var(--fa-hover-shadow);
-}
-
-.day-fixture-row.fa-card-markable.is-marked {
-  background: transparent;
-  box-shadow: 0 0 0 1.5px var(--fa-hover-border);
-}
-
 .empty {
   margin: 12px var(--fa-content-inline);
   padding: 48px 0;
