@@ -36,13 +36,9 @@ const emit = defineEmits<{
       v-model="teamSearch"
       style="flex: 1; width: auto; min-width: 0; max-width: none;"
     />
-    <n-text
-      v-if="listCount != null"
-      depth="3"
-      class="list-count"
-    >
+    <n-text v-if="listCount != null" depth="3" class="list-count">
       <template v-if="finishedCount != null">{{ finishedCount }}/{{ listCount }}场</template>
-      <template v-else>{{ listCount }} 场</template>
+      <template v-else>{{ listCount }}场</template>
     </n-text>
     <n-button
       v-if="showDayStats"
