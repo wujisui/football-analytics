@@ -110,6 +110,13 @@ button {
   font-family: inherit;
 }
 
+/* Naive UI 标签：点按/筛选用，禁止选中文字（桌面双击、触屏长按） */
+.n-tag {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* 触屏：长按不要弹出文字选择/放大镜（导航、卡片都是点按目标，不是可读正文）。
    输入类元素仍可选，鼠标设备不受影响。 */
 @media (pointer: coarse) {

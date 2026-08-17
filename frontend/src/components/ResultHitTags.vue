@@ -133,7 +133,6 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
   padding: 4px 10px !important;
   height: auto !important;
   line-height: 1.35 !important;
-  user-select: none;
 }
 
 .hit-tag.clickable {
