@@ -41,6 +41,9 @@ const props = withDefaults(defineProps<{
   date?: string | null
   hitFilterable?: boolean
   activeHitKey?: ResultsHitKey | null
+  /** 列表阅读标记：点卡片空白处选中/反选 */
+  selectable?: boolean
+  selected?: boolean
 }>(), {
   prematch: false,
   oddsClickable: false,
@@ -51,12 +54,15 @@ const props = withDefaults(defineProps<{
   date: null,
   hitFilterable: false,
   activeHitKey: null,
+  selectable: false,
+  selected: false,
 })
 
 const emit = defineEmits<{
   openDetail: [fixtureId: number]
   openOdds: []
   filterHit: [key: ResultsHitKey]
+  toggleSelect: [fixtureId: number]
 }>()
 
 const router = useRouter()
@@ -120,6 +126,16 @@ function openStats() {
   )
 }
 
+/** 卡片内已有自己点击语义的控件（比分/联赛标签/命中标签/收藏）不触发标记 */
+const INTERACTIVE_SELECTOR = 'button, a, input, [role="button"], .n-tag, .n-rate'
+
+function onCardClick(e: MouseEvent) {
+  if (!props.selectable) return
+  const target = e.target as Element | null
+  if (target?.closest(INTERACTIVE_SELECTOR)) return
+  emit('toggleSelect', props.fixture.fixture_id)
+}
+
 const FIXTURES_ROUTES = new Set(['predictions', 'results'])
 
 /** Filter the shell list to this league (toggle off if already selected). */
@@ -143,7 +159,8 @@ function onLeagueClick(e: Event) {
     size="small"
     :bordered="false"
     class="result-fixture-card"
-    :class="{ dense: denseBody, prematch: isPrematch }"
+    :class="{ dense: denseBody, prematch: isPrematch, selectable, selected }"
+    @click="onCardClick"
   >
     <FavoriteButton
       class="card-fav"
@@ -269,6 +286,35 @@ function onLeagueClick(e: Event) {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+}
+
+/* 列表翻阅定位：hover 轻提示，选中留下持续标记 */
+.result-fixture-card.selectable {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.result-fixture-card.selectable:hover {
+  background: color-mix(in srgb, var(--fa-hover-border) 8%, var(--fa-bg-soft));
+  box-shadow: 0 2px 8px var(--fa-hover-shadow);
+}
+
+.result-fixture-card.selected {
+  background: color-mix(in srgb, var(--fa-hover-border) 16%, var(--fa-bg-soft));
+  box-shadow: inset 0 0 0 1px var(--fa-hover-border);
+}
+
+.result-fixture-card.selected::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--fa-hover-border);
 }
 
 .result-fixture-card.dense {

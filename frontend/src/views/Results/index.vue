@@ -148,6 +148,8 @@ const historyLoading = ref(false)
 const error = ref('')
 /** Click a hit tag on a card → keep fixtures that hit that market; click again to clear. */
 const filterHitKey = ref<ResultsHitKey | null>(null)
+/** 阅读标记：点卡片留一个高亮位，翻长列表时不用记主客队名。 */
+const markedFixtureId = ref<number | null>(null)
 
 const contentLoading = computed(
     () => loading.value || shellContentLoading.value,
@@ -216,6 +218,10 @@ const listedVirtualRows = computed(() =>
 
 function onFilterHit(key: ResultsHitKey) {
   filterHitKey.value = filterHitKey.value === key ? null : key
+}
+
+function onToggleSelect(fixtureId: number) {
+  markedFixtureId.value = markedFixtureId.value === fixtureId ? null : fixtureId
 }
 
 /** Mirrors backend ``summarize_accuracy``; grades any non-null hit flag. */
@@ -475,6 +481,7 @@ watch(isScheduleFutureDay, (future, wasFuture) => {
 watch(selectedDay, () => {
   if (route.name !== 'results') return
   filterHitKey.value = null
+  markedFixtureId.value = null
   desktopListScroll.reset()
   phoneListScroll.reset()
   void loadSelectedDay()
@@ -619,8 +626,10 @@ onActivated(() => {
                   :padding-top="8"
                   :padding-bottom="16"
                   :items-style="resultsListItemsStyle"
+                  :marked-fixture-id="markedFixtureId"
                   @open-detail="goDetail"
                   @filter-hit="onFilterHit"
+                  @toggle-select="onToggleSelect"
               />
               <ListBackTop :shell="phoneListShellRef" :right="12" :bottom="12"/>
             </div>
@@ -768,8 +777,10 @@ onActivated(() => {
               :padding-top="4"
               :padding-bottom="12"
               :items-style="resultsListItemsStyle"
+              :marked-fixture-id="markedFixtureId"
               @open-detail="goDetail"
               @filter-hit="onFilterHit"
+              @toggle-select="onToggleSelect"
           />
           <ListBackTop :shell="desktopListShellRef" :bottom="16"/>
         </div>

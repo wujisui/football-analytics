@@ -13,11 +13,14 @@ defineProps<{
   paddingTop?: number
   paddingBottom?: number
   itemsStyle?: Record<string, string>
+  /** 阅读标记：点卡片选中，便于翻列表时定位 */
+  markedFixtureId?: number | null
 }>()
 
 const emit = defineEmits<{
   openDetail: [fixtureId: number]
   filterHit: [key: ResultsHitKey]
+  toggleSelect: [fixtureId: number]
 }>()
 
 function rowFixture(item: unknown): ResultFixture {
@@ -46,8 +49,11 @@ function rowFixture(item: unknown): ResultFixture {
           :show-date="false"
           hit-filterable
           :active-hit-key="filterHitKey"
+          selectable
+          :selected="markedFixtureId === rowFixture(item).fixture_id"
           @open-detail="emit('openDetail', $event)"
           @filter-hit="emit('filterHit', $event)"
+          @toggle-select="emit('toggleSelect', $event)"
         />
       </div>
     </template>
