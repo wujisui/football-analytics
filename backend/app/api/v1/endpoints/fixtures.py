@@ -134,9 +134,9 @@ def _list_analysis_from_fixture(
     probs = resolve_match_probabilities(
         raw_probs, odds if isinstance(odds, dict) else None
     )
-    from app.services.prediction import is_flat_prior
+    from app.services.prediction import probabilities_ready
 
-    ready = not is_flat_prior(probs)
+    ready = probabilities_ready(raw_probs, odds if isinstance(odds, dict) else None)
     if odds and isinstance(odds, dict) and odds.get("available") and ready:
         confidence = "中" if confidence == "低" else confidence
 

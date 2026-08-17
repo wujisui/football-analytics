@@ -614,7 +614,7 @@ class LeaguesListResponse(BaseModel):
 def analysis_to_response(analysis) -> AnalysisResponse:
     from app.services.prediction import (
         derive_prediction_leans,
-        is_flat_prior,
+        probabilities_ready,
         resolve_match_probabilities,
     )
 
@@ -631,7 +631,7 @@ def analysis_to_response(analysis) -> AnalysisResponse:
         "away": analysis.away_win_prob,
     }
     probs = resolve_match_probabilities(raw, odds if isinstance(odds, dict) else None)
-    ready = not is_flat_prior(probs)
+    ready = probabilities_ready(raw, odds if isinstance(odds, dict) else None)
 
     league_id: int | None = None
     if isinstance(analysis.package, dict):

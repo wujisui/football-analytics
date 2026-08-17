@@ -151,6 +151,25 @@ def resolve_match_probabilities(
     return implied if implied is not None else normalized
 
 
+def has_1x2_market(odds: dict[str, Any] | None) -> bool:
+    """True when a usable 1X2 board exists (all three prices parse)."""
+    return implied_probs_from_odds(odds) is not None
+
+
+def probabilities_ready(
+    probs: dict[str, float] | None,
+    odds: dict[str, Any] | None = None,
+) -> bool:
+    """True when 1X2 probabilities come from a real source.
+
+    近似均势的盘口（三路都贴近 1/3，如 2.94 / 2.84 / 2.65）是真实读数，
+    不是「没跑过分析」的占位；只有既无模型输出、又无可用 1X2 盘口时才算待分析。
+    """
+    if not is_flat_prior(resolve_match_probabilities(probs, odds)):
+        return True
+    return has_1x2_market(odds)
+
+
 def get_recommendation(
     probs: dict[str, float],
     *,
@@ -163,10 +182,11 @@ def get_recommendation(
     may come from ML; recommendation follows盘口胶着度 + AH 水位, not argmax alone.
     """
     model = normalize_probabilities(probs)
-    market = implied_probs_from_odds(odds)
-    if market is None:
-        market = model
-    if is_flat_prior(model) and is_flat_prior(market):
+    board = implied_probs_from_odds(odds)
+    market = board if board is not None else model
+    # 均势盘（三路都贴近 1/3）仍是真实读数，交给下面的胶着分支给双选；
+    # 只有既没有模型输出、又没有 1X2 盘口时才是真的「待分析」。
+    if is_flat_prior(model) and board is None:
         return "待分析"
 
     def _ranked(p: dict[str, float]) -> list[tuple[str, float]]:
@@ -892,7 +912,8 @@ def derive_prediction_leans(
     reconciled with O/U then BTTS so「1-1」never pairs with「大（2.5）」or「双进:否」.
 
     Flat prior with local odds → use odds-implied 1X2 (no API).
-    Flat prior and no usable odds → 待分析.
+    Flat prior and **no usable 1X2 board** → 待分析；均势盘口（三路贴近 1/3）
+    仍按真实读数出双选，不再整体置为待分析。
 
     ML goal model only **overrides** a lean when that target gate is open.
     Closed gates keep the heuristic/market lean — never blank to 待分析.
@@ -901,7 +922,7 @@ def derive_prediction_leans(
     this function only affects **future** analyses (historical audit stays).
     """
     normalized = resolve_match_probabilities(probs, odds)
-    if is_flat_prior(normalized):
+    if is_flat_prior(normalized) and not has_1x2_market(odds):
         has_ah = isinstance((odds or {}).get("asian_handicap"), dict) if odds else False
         return {
             "goal_lean": "大小：待分析",
