@@ -811,7 +811,7 @@ onActivated(() => {
                 <span class="accuracy-card-title">当日统计</span>
               </template>
               <template #header-extra>
-                <n-text depth="3" style="font-size: 12px;">{{ dayAccuracyHeaderExtra }}</n-text>
+                <n-text depth="3" style="font-size: 12px;user-select: none">{{ dayAccuracyHeaderExtra }}</n-text>
               </template>
               <n-spin :show="contentLoading">
                 <AccuracyMetricsGrid
@@ -835,7 +835,7 @@ onActivated(() => {
                 <span class="accuracy-card-title">历史统计</span>
               </template>
               <template #header-extra>
-                <n-text depth="3" style="font-size: 12px;">{{ historyHeaderExtra }}</n-text>
+                <n-text depth="3" style="font-size: 12px;user-select: none">{{ historyHeaderExtra }}</n-text>
               </template>
               <n-spin :show="historyLoading">
                 <AccuracyMetricsGrid :metrics="history?.overall" />
@@ -1122,6 +1122,7 @@ onActivated(() => {
 
 .accuracy-card-title {
   font-weight: 600;
+  user-select: none;
 }
 
 .chart-card :deep(.n-card-content) {

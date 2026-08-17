@@ -52,6 +52,7 @@ const percent = computed(() =>
 <style scoped>
 .accuracy-statistic {
   min-width: 0;
+  user-select: none;
 }
 
 .accuracy-statistic :deep(.n-statistic-value__content) {
