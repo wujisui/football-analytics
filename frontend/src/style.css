@@ -187,6 +187,7 @@ button {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  user-select: none;
 }
 
 .fa-toolbar-crumb {
@@ -232,6 +233,7 @@ button {
   justify-content: space-between;
   gap: 12px;
   min-height: 28px;
+  user-select: none;
 }
 
 /* 列表翻阅定位：hover 预览左侧标记条，点击选中后常驻（赛果 / 比赛 / 关注共用）。
@@ -250,15 +252,24 @@ button {
   left: 0;
   width: 2px;
   z-index: 1;
-  background: var(--fa-accent);
   border-radius: 1px 0 0 1px;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    background 0.18s ease;
 }
 
-.fa-card-markable:hover::before,
-.fa-card-markable.is-marked::before {
+/* hover 只是预览：中性灰，不抢色 */
+.fa-card-markable:hover::before {
+  background: var(--fa-text-muted);
+  opacity: 1;
+}
+
+/* 选中是结论：换成对比强烈的高亮橙金，且盖过同时 hover 的预览色 */
+.fa-card-markable.is-marked::before,
+.fa-card-markable.is-marked:hover::before {
+  background: var(--fa-highlight-text);
   opacity: 1;
 }
 

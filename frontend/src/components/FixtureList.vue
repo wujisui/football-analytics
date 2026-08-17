@@ -358,6 +358,7 @@ function rowFixture(item: unknown): FixtureResponse {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  user-select: none;
 }
 
 .day-table :deep(.day-title__label) {
