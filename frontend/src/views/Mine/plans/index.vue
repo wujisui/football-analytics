@@ -198,8 +198,12 @@ onMounted(() => {
   padding: 48px 0;
 }
 
-.plans-panel :deep(.n-thing-header) {
+.plans-panel :deep(.n-thing .n-thing-header) {
   margin-bottom: 0;
+}
+
+.plans-panel :deep(.n-thing .n-thing-header .n-thing-header__title) {
+  font-size: 14px;
 }
 
 .plan-saved-at {
