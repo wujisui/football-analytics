@@ -15,7 +15,6 @@ import {
   STAKE_PER_BET,
   type CalcSelection,
 } from '@/utils/betCalculator'
-import { defaultPlanName } from '@/utils/betPlans'
 import { saveDomAsPng, sharePngFile } from '@/utils/saveDomImage'
 import { todayDate } from '@/utils/homeDateStrip'
 
@@ -81,7 +80,7 @@ function openFormula() {
 function openSave() {
   if (!matchCount.value) return
   if (!requireLogin()) return
-  saveName.value = defaultPlanName(selections.value, fold.value)
+  saveName.value = foldModeLabel(fold.value)
   showSave.value = true
 }
 

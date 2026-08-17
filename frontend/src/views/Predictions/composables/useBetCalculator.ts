@@ -155,7 +155,6 @@ export type GroupedFixtureSelections = {
   homeName: string
   awayName: string
   kickoff: string
-  fixtureDate?: string
   leagueName: string
 }
 
@@ -270,15 +269,14 @@ export function useBetCalculator() {
         homeName: picks[0].homeName,
         awayName: picks[0].awayName,
         kickoff: picks[0].kickoff,
-        fixtureDate: picks[0].fixtureDate,
         leagueName: picks[0].leagueName,
       }))
       .sort((a, b) => {
-        const aMs = a.fixtureDate
-          ? parseApiDate(a.fixtureDate).getTime()
+        const aMs = a.picks[0]?.fixtureDate
+          ? parseApiDate(a.picks[0].fixtureDate).getTime()
           : Number.POSITIVE_INFINITY
-        const bMs = b.fixtureDate
-          ? parseApiDate(b.fixtureDate).getTime()
+        const bMs = b.picks[0]?.fixtureDate
+          ? parseApiDate(b.picks[0].fixtureDate).getTime()
           : Number.POSITIVE_INFINITY
         if (aMs !== bMs) return aMs - bMs
         return a.fixtureId - b.fixtureId

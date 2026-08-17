@@ -1,5 +1,5 @@
 import type { CalcSelection, FoldMode } from '@/utils/betCalculator'
-import { foldModeLabel, selectedFixtureIds } from '@/utils/betCalculator'
+import { foldModeLabel } from '@/utils/betCalculator'
 import { toScheduleDayKey } from '@/utils/format'
 import { todayDate } from '@/utils/homeDateStrip'
 
@@ -33,6 +33,7 @@ function isPlan(raw: unknown): raw is SavedBetPlan {
   )
 }
 
+/** Legacy localStorage reader — only used for one-shot API migration. */
 export function readBetPlans(): SavedBetPlan[] {
   try {
     const raw = localStorage.getItem(BET_PLANS_STORAGE_KEY)
@@ -45,17 +46,7 @@ export function readBetPlans(): SavedBetPlan[] {
   }
 }
 
-/** False when the write was rejected (quota / private mode) — caller must surface it. */
-export function writeBetPlans(plans: SavedBetPlan[]): boolean {
-  try {
-    localStorage.setItem(BET_PLANS_STORAGE_KEY, JSON.stringify(plans))
-    return true
-  } catch {
-    return false
-  }
-}
-
-export function planDayOfSelections(selections: CalcSelection[]): string {
+function planDayOfSelections(selections: CalcSelection[]): string {
   const days = selections
     .map((s) => {
       if (s.fixtureDate) return toScheduleDayKey(s.fixtureDate)
@@ -66,17 +57,6 @@ export function planDayOfSelections(selections: CalcSelection[]): string {
   return days[0] || todayDate()
 }
 
-/** Default name: ``08-05 3串1 · 3场``. */
-export function defaultPlanName(
-  selections: CalcSelection[],
-  fold: FoldMode,
-): string {
-  const day = planDayOfSelections(selections)
-  const mmdd = day.slice(5)
-  const n = selectedFixtureIds(selections).length
-  return `${mmdd} ${foldModeLabel(fold)} · ${n}场`
-}
-
 export function createBetPlan(input: {
   name?: string
   fold: FoldMode
@@ -85,7 +65,7 @@ export function createBetPlan(input: {
 }): SavedBetPlan {
   const selections = input.selections.map((s) => ({ ...s }))
   const planDay = planDayOfSelections(selections)
-  const name = (input.name || '').trim() || defaultPlanName(selections, input.fold)
+  const name = (input.name || '').trim() || foldModeLabel(input.fold)
   return {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     name,
@@ -95,8 +75,4 @@ export function createBetPlan(input: {
     multiplier: Math.max(1, Math.floor(input.multiplier) || 1),
     selections,
   }
-}
-
-export function betPlanDays(plans: readonly SavedBetPlan[]): Set<string> {
-  return new Set(plans.map((p) => p.planDay))
 }
