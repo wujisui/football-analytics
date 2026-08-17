@@ -16,7 +16,7 @@ import {
   type CalcSelection,
   type FoldMode,
 } from '@/utils/betCalculator'
-import { formatDate, formatTime } from '@/utils/format'
+import { formatDate, formatTime, parseApiDate } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
 /** Survive tab discard / cold reload within the same browser session. */
@@ -155,6 +155,7 @@ export type GroupedFixtureSelections = {
   homeName: string
   awayName: string
   kickoff: string
+  fixtureDate?: string
   leagueName: string
 }
 
@@ -253,7 +254,7 @@ export function useBetCalculator() {
     selections.value = selections.value.filter((s) => s.fixtureId !== fixtureId)
   }
 
-  /** Group selections by fixture for the bet details panel. */
+  /** Group selections by fixture for the bet details panel (kickoff ascending). */
   const groupedSelections = computed((): GroupedFixtureSelections[] => {
     const map = new Map<number, CalcSelection[]>()
     for (const sel of selections.value) {
@@ -261,15 +262,27 @@ export function useBetCalculator() {
       list.push(sel)
       map.set(sel.fixtureId, list)
     }
-    return [...map.entries()].map(([fixtureId, picks]) => ({
-      fixtureId,
-      leagueId: picks[0].leagueId,
-      picks,
-      homeName: picks[0].homeName,
-      awayName: picks[0].awayName,
-      kickoff: picks[0].kickoff,
-      leagueName: picks[0].leagueName,
-    }))
+    return [...map.entries()]
+      .map(([fixtureId, picks]) => ({
+        fixtureId,
+        leagueId: picks[0].leagueId,
+        picks,
+        homeName: picks[0].homeName,
+        awayName: picks[0].awayName,
+        kickoff: picks[0].kickoff,
+        fixtureDate: picks[0].fixtureDate,
+        leagueName: picks[0].leagueName,
+      }))
+      .sort((a, b) => {
+        const aMs = a.fixtureDate
+          ? parseApiDate(a.fixtureDate).getTime()
+          : Number.POSITIVE_INFINITY
+        const bMs = b.fixtureDate
+          ? parseApiDate(b.fixtureDate).getTime()
+          : Number.POSITIVE_INFINITY
+        if (aMs !== bMs) return aMs - bMs
+        return a.fixtureId - b.fixtureId
+      })
   })
 
   return {
