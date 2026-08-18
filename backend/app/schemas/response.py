@@ -280,6 +280,14 @@ class FixtureResponse(BaseModel):
     home_team_name: str = Field(..., description="主队名称")
     away_team_name: str = Field(..., description="客队名称")
     fixture_date: datetime = Field(..., description="比赛时间（UTC）")
+    match_day: str = Field(..., description="比赛所在地日历日 YYYY-MM-DD")
+    match_timezone: str = Field(..., description="比赛所在地 IANA 时区")
+    match_day_source: str = Field(
+        ..., description="比赛日时区来源：venue_city/league_country/home_team/utc"
+    )
+    match_day_offset: int | None = Field(
+        default=None, description="相对本次查询起始比赛日的偏移；列表分组文案使用"
+    )
     status: str = Field(..., description="比赛状态")
     home_goals: int | None = Field(default=None, description="主队进球（常规时间 90'）")
     away_goals: int | None = Field(default=None, description="客队进球（常规时间 90'）")
@@ -297,8 +305,8 @@ class FixtureResponse(BaseModel):
 
 
 class TodayFixturesResponse(BaseModel):
-    date: str = Field(..., description="起始日期 YYYY-MM-DD")
-    days: int = Field(default=1, description="查询窗口天数（含起始日）")
+    date: str = Field(..., description="起始当地比赛日 YYYY-MM-DD")
+    days: int = Field(default=1, description="连续当地比赛日数量（含起始日）")
     total: int = Field(..., description="比赛总数")
     fixtures: list[FixtureResponse] = Field(default_factory=list, description="赛程列表")
 

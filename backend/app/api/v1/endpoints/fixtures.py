@@ -3,7 +3,7 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -265,29 +265,18 @@ async def get_today_fixtures(
     date_str: str | None = Query(
         default=None,
         alias="date",
-        description="起始比赛日 YYYY-MM-DD（开赛时刻的 UTC 日期 / API 赛程日），默认 UTC 今天",
+        description="起始当地比赛日 YYYY-MM-DD；默认当前尚未开赛场次中最早的比赛日",
     ),
     days: int | None = Query(
         default=None,
         ge=1,
         le=60,
-        description="从起始比赛日起连续几天（含当天），默认 1；即时列表用 2 覆盖今天+明天",
+        description="从起始当地比赛日起连续几天（含当天），默认 1",
     ),
     db: AsyncSession = Depends(get_db),
 ) -> TodayFixturesResponse:
-    """指定日期赛程；prematch 由服务器当前时间过滤未开赛（只读本地库）。"""
-    settings = get_settings()
-    if date_str:
-        try:
-            base_date = date.fromisoformat(date_str)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
-    else:
-        base_date = utc_today()
-
-    window_days = days if days is not None else 1
-    end_date = base_date + timedelta(days=window_days - 1)
-    start_dt, end_dt = utc_span_range(base_date, end_date)
+    """按后端已定稿的场地当地比赛日查询（只读本地库）。"""
+    match_day_expr = func.coalesce(Fixture.match_day, func.date(Fixture.date))
 
     if league_ids is not None:
         allowed = {int(x) for x in league_ids}
@@ -296,11 +285,34 @@ async def get_today_fixtures(
     else:
         allowed = None
 
+    if date_str:
+        try:
+            base_date = date.fromisoformat(date_str)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+    else:
+        base_stmt = select(func.min(match_day_expr))
+        if scope == "prematch":
+            base_stmt = base_stmt.where(prematch_list_clause())
+        if allowed is not None:
+            base_stmt = base_stmt.where(Fixture.league_id.in_(list(allowed)))
+        if league_id is not None:
+            if allowed is not None and league_id not in allowed:
+                base_stmt = base_stmt.where(Fixture.league_id.in_([-1]))
+            else:
+                base_stmt = base_stmt.where(Fixture.league_id == league_id)
+        earliest = (await db.execute(base_stmt)).scalar_one_or_none()
+        base_date = date.fromisoformat(earliest) if earliest else utc_today()
+
+    window_days = days if days is not None else 1
+    end_date = base_date + timedelta(days=window_days - 1)
+    end_exclusive = end_date + timedelta(days=1)
+
     stmt = (
         select(Fixture)
         .where(
-            Fixture.date >= start_dt,
-            Fixture.date < end_dt,
+            match_day_expr >= base_date.isoformat(),
+            match_day_expr < end_exclusive.isoformat(),
         )
         .options(
             selectinload(Fixture.home_team),
@@ -359,6 +371,15 @@ async def get_today_fixtures(
                     fixture.away_team_id,
                 ),
                 fixture_date=fixture.date,
+                match_day=fixture.match_day or fixture.date.date().isoformat(),
+                match_timezone=fixture.match_timezone or "UTC",
+                match_day_source=fixture.match_day_source or "utc",
+                match_day_offset=(
+                    date.fromisoformat(
+                        fixture.match_day or fixture.date.date().isoformat()
+                    )
+                    - base_date
+                ).days,
                 status=fixture.status,
                 home_goals=fixture.home_goals,
                 away_goals=fixture.away_goals,
@@ -726,6 +747,9 @@ async def get_fixture_analysis(
             fixture.away_team_id,
         ),
         fixture_date=fixture.date,
+        match_day=fixture.match_day or fixture.date.date().isoformat(),
+        match_timezone=fixture.match_timezone or "UTC",
+        match_day_source=fixture.match_day_source or "utc",
         status=fixture.status,
         home_goals=fixture.home_goals,
         away_goals=fixture.away_goals,

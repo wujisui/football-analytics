@@ -222,6 +222,10 @@ export interface FixtureResponse {
   home_team_name: string
   away_team_name: string
   fixture_date: string
+  match_day: string
+  match_timezone: string
+  match_day_source: 'venue_city' | 'league_country' | 'home_team' | 'utc'
+  match_day_offset?: number | null
   status: string
   home_goals?: number | null
   away_goals?: number | null

@@ -15,7 +15,6 @@ import {
 } from '@/composables/useResultsLeagues'
 import {
   endScheduleFilterOverride,
-  getActiveFilterDate,
   useTrackedLeagues,
 } from '@/composables/useTrackedLeagues'
 import { sortFixturesFavoritesFirst } from '@/utils/fixtureSort'
@@ -26,7 +25,6 @@ import {
   type FixturesRouteName,
 } from '@/utils/fixturesLeagueFilter'
 import {
-  isPrematchMatchDay,
   isScheduleFutureDay,
   predictionsDayCountLabel,
   prematchFetchParams,
@@ -34,7 +32,6 @@ import {
   todayDate,
   yesterdayDate,
 } from '@/utils/homeDateStrip'
-import { toScheduleDayKey } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 import { filterByTeamQuery, teamSearchEmptyHint } from '@/utils/teamSearch'
 
@@ -157,11 +154,7 @@ export function useFixturesShell() {
 
   const prematchVisibleFixtures = computed(() => {
     const tracked = prematchTrackedIdSet.value
-    const scheduleToday = scheduleTodayDate()
-    return allFixtures.value.filter((f) => {
-      if (!tracked.has(f.league_id)) return false
-      return isPrematchMatchDay(toScheduleDayKey(f.fixture_date), scheduleToday)
-    })
+    return allFixtures.value.filter((f) => tracked.has(f.league_id))
   })
 
   const prematchCountByLeague = computed(() => {
@@ -329,11 +322,10 @@ export function useFixturesShell() {
 
   /** Prematch list only — never write 赛程 selectedDay into shared allFixtures. */
   async function loadDayLocal(force = false) {
-    const { date, days } = prematchFetchParams()
+    const { days } = prematchFetchParams()
     try {
       await loadHomeFixtures({
         force,
-        date,
         days,
         leagueIds: [...prematchTrackedIds.value],
       })
@@ -344,8 +336,9 @@ export function useFixturesShell() {
   }
 
   async function reloadPrematchDay(force = false) {
+    const { days } = prematchFetchParams()
     try {
-      await loadFilterOptions({ date: homeDay.value, scope: 'prematch' })
+      await loadFilterOptions({ days, scope: 'prematch' })
     } catch {
       if (filterOptionsError.value) message.warning(filterOptionsError.value)
     }
@@ -355,9 +348,7 @@ export function useFixturesShell() {
   /** Leave 赛程: restore frozen calculator filter, then refresh list/filter if stale. */
   function restorePrematchAfterResults() {
     endScheduleFilterOverride()
-    const force =
-      getActiveFilterDate() !== homeDay.value ||
-      !isPrematchListCacheFresh(undefined, prematchTrackedIds.value)
+    const force = !isPrematchListCacheFresh(undefined, prematchTrackedIds.value)
     void reloadPrematchDay(force)
   }
 

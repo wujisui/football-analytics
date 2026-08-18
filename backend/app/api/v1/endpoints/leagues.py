@@ -45,29 +45,54 @@ async def get_league_filter_options(
     date_str: str | None = Query(
         default=None,
         alias="date",
-        description="日历日 YYYY-MM-DD，默认今天（筛选先按「今天」匹配）",
+        description="比赛日 YYYY-MM-DD；prematch 默认当前最早的当地比赛日",
     ),
     scope: str = Query(
         default="prematch",
         description="prematch=未开赛；results=完场日（含进行中/取消；延期仅保留原定开赛未超 1 天）",
     ),
+    days: int | None = Query(
+        default=None,
+        ge=1,
+        le=60,
+        description="统计连续比赛日数量；prematch 默认 2，results 默认 1",
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> LeagueFilterOptionsResponse:
     """Day league checklist — counts only, no fixture payloads."""
     settings = get_settings()
+    scope_key = (scope or "prematch").strip().lower()
+    if scope_key not in {"prematch", "results"}:
+        raise HTTPException(status_code=400, detail="scope must be prematch or results")
+    configured_ids = set(settings.LEAGUE_IDS.values())
+
     if date_str:
         try:
             day = date.fromisoformat(date_str)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+    elif scope_key == "prematch":
+        match_day_expr = func.coalesce(Fixture.match_day, func.date(Fixture.date))
+        earliest = (
+            await db.execute(
+                select(func.min(match_day_expr)).where(
+                    prematch_list_clause(),
+                    Fixture.league_id.in_(configured_ids),
+                )
+            )
+        ).scalar_one_or_none()
+        if earliest is None:
+            earliest = (
+                await db.execute(
+                    select(func.min(match_day_expr)).where(prematch_list_clause())
+                )
+            ).scalar_one_or_none()
+        day = date.fromisoformat(earliest) if earliest else date.today()
     else:
         day = date.today()
 
-    scope_key = (scope or "prematch").strip().lower()
-    if scope_key not in {"prematch", "results"}:
-        raise HTTPException(status_code=400, detail="scope must be prematch or results")
-
-    configured_ids = set(settings.LEAGUE_IDS.values())
+    window_days = days if days is not None else (2 if scope_key == "prematch" else 1)
+    end_day = day + timedelta(days=window_days)
 
     # Keep schedule-visible even before bookmakers open 1X2 — pruning only
     # applies after a fixture is finished and still has no odds/recommendation.
@@ -77,10 +102,16 @@ async def get_league_filter_options(
     )
 
     local_counts: dict[int, int] = {}
+    day_expr = (
+        func.coalesce(Fixture.match_day, func.date(Fixture.date))
+        if scope_key == "prematch"
+        else func.date(Fixture.date)
+    )
     local_stmt = (
         select(Fixture.league_id, func.count())
         .where(
-            func.date(Fixture.date) == day,
+            day_expr >= day.isoformat(),
+            day_expr < end_day.isoformat(),
             status_clause,
         )
         .group_by(Fixture.league_id)

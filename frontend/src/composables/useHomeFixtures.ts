@@ -31,11 +31,11 @@ function leagueKey(ids?: number[]): string {
     .join(',')
 }
 
-function cacheKey(date: string, days: number, leagueIds?: number[]): string {
-  return `${date}|${days}|${leagueKey(leagueIds)}`
+function cacheKey(date: string | undefined, days: number, leagueIds?: number[]): string {
+  return `${date ?? 'auto'}|${days}|${leagueKey(leagueIds)}`
 }
 
-function cacheFresh(date: string, days: number, leagueIds?: number[]): boolean {
+function cacheFresh(date: string | undefined, days: number, leagueIds?: number[]): boolean {
   return (
     loadedKey === cacheKey(date, days, leagueIds) &&
     loadedAt.value > 0 &&
@@ -43,13 +43,13 @@ function cacheFresh(date: string, days: number, leagueIds?: number[]): boolean {
   )
 }
 
-/** True when shared list cache matches calculator UTC today + span + league set. */
+/** True when shared list cache matches the backend-defined local-day window. */
 export function isPrematchListCacheFresh(
-  now = new Date(),
+  _now = new Date(),
   leagueIds?: number[],
 ): boolean {
-  const { date, days } = prematchFetchParams(now)
-  return cacheFresh(date, days, leagueIds)
+  const { days } = prematchFetchParams()
+  return cacheFresh(undefined, days, leagueIds)
 }
 
 function applyPendingPatches(): void {
@@ -102,8 +102,8 @@ export function syncHomeListAfterDetail(
   if (!detailListDirty) return
   detailListDirty = false
   if (pendingDetailPatches.size > 0) {
-    const { date: fetchDate, days } = prematchFetchParams()
-    void loadHomeFixtures({ force: true, date: fetchDate, days, leagueIds })
+    const { days } = prematchFetchParams()
+    void loadHomeFixtures({ force: true, days, leagueIds })
   }
 }
 
@@ -118,7 +118,7 @@ async function loadHomeFixtures(options?: {
   days?: number
   leagueIds?: number[]
 }): Promise<void> {
-  const date = options?.date ?? todayDate()
+  const date = options?.date
   const days = options?.days ?? DEFAULT_DAYS
   const leagueIds = options?.leagueIds
   const key = cacheKey(date, days, leagueIds)

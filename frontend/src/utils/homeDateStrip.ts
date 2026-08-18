@@ -2,7 +2,7 @@
 
 export const HOME_DATE_RADIUS = 7
 
-/** 计算器：UTC 比赛日今天 + 明天（与 API date= / 入库赛程日一致） */
+/** 计算器请求后端已定稿的连续两个当地比赛日。 */
 export const PREMATCH_MATCH_DAY_SPAN = 2
 
 const WEEKDAY_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -86,28 +86,7 @@ export function isScheduleFutureDay(day: string, today: string = todayDate()): b
   return day > today
 }
 
-/** 计算器可见的 UTC 比赛日集合 */
-export function prematchAllowedMatchDays(
-  scheduleToday: string = scheduleTodayDate(),
-): Set<string> {
-  const days = new Set<string>()
-  for (let i = 0; i < PREMATCH_MATCH_DAY_SPAN; i += 1) {
-    days.add(addCalendarDays(scheduleToday, i))
-  }
-  return days
-}
-
-export function isPrematchMatchDay(
-  matchDay: string,
-  scheduleToday: string = scheduleTodayDate(),
-): boolean {
-  return prematchAllowedMatchDays(scheduleToday).has(matchDay)
-}
-
-/** 拉取计算器列表：从 UTC 今天起共 2 个比赛日 */
-export function prematchFetchParams(now = new Date()): {
-  date: string
-  days: number
-} {
-  return { date: scheduleTodayDate(now), days: PREMATCH_MATCH_DAY_SPAN }
+/** 不传 date：由后端从尚未开赛场次确定当前当地比赛日。 */
+export function prematchFetchParams(): { days: number } {
+  return { days: PREMATCH_MATCH_DAY_SPAN }
 }

@@ -7,7 +7,8 @@ import {
 } from '@/api/leagues'
 import { resolveTrackedSelection } from '@/utils/leagueFilterSelection'
 
-const STORAGE_KEY = 'fa-tracked-league-ids-by-date-v3'
+// v4: prematch options cover backend-local today + tomorrow, not one UTC day.
+const STORAGE_KEY = 'fa-tracked-league-ids-by-date-v4'
 
 const filterOptions = ref<LeagueFilterOptionsResponse | null>(null)
 const trackedIds = ref<number[]>([])
@@ -106,16 +107,13 @@ export function endScheduleFilterOverride(): void {
   frozenPrematch = null
 }
 
-export function getActiveFilterDate(): string {
-  return activeFilterDate
-}
-
 async function loadFilterOptions(options?: {
   date?: string
+  days?: number
   scope?: 'prematch' | 'results'
 }): Promise<LeagueFilterOptionsResponse> {
   const scope = options?.scope ?? 'prematch'
-  const key = `${options?.date ?? ''}|${scope}`
+  const key = `${options?.date ?? ''}|${options?.days ?? ''}|${scope}`
   if (inflightFilterOptions && inflightFilterOptionsKey === key) {
     return inflightFilterOptions
   }
@@ -127,6 +125,7 @@ async function loadFilterOptions(options?: {
     try {
       const data = await fetchLeagueFilterOptions({
         date: options?.date,
+        days: options?.days,
         scope,
       })
       if (seq !== filterLoadSeq) return data

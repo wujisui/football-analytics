@@ -379,11 +379,45 @@ def test_selects_four_per_match_day_not_four_for_whole_window() -> None:
     assert len(picked) == 8
 
 
+def test_auto_pick_buckets_use_persisted_local_match_day() -> None:
+    odds = {
+        "match_winner": {"home": "1.80", "draw": "4.00", "away": "6.00"},
+        "asian_handicap": {"home": "1.80", "away": "2.00", "line": "-0.5"},
+        "goals_ou": {"home": "2.20", "away": "1.65", "line": "2.5"},
+        "both_teams_score": {"home": "2.10", "away": "1.70"},
+    }
+
+    def row(fid: int, match_day: str):
+        fixture = SimpleNamespace(
+            id=fid,
+            league_id=11,
+            # Both kickoffs share a UTC date; persisted local days differ.
+            date=datetime.fromisoformat("2026-08-19T00:30:00"),
+            match_day=match_day,
+        )
+        return fixture, _stored(home_win_prob=0.60 + fid / 100), None
+
+    import app.services.auto_favorites as mod
+
+    original = _patch_odds(mod, odds)
+    try:
+        scored = score_auto_pick_candidates(
+            [row(1, "2026-08-18"), row(2, "2026-08-19")]
+        )
+        picked = select_auto_picks_by_match_day(scored, limit_per_day=1)
+    finally:
+        mod.package_from_record, mod.rehydrate_odds_markets = original
+
+    assert [item.fixture_id for item in picked] == [1, 2]
+    assert [item.match_day for item in picked] == ["2026-08-18", "2026-08-19"]
+
+
 def test_within_day_ratings_anchor_best_at_five_per_day() -> None:
     def pick(fid: int, score: float, kickoff: str):
         return SimpleNamespace(
             fixture_id=fid,
             kickoff=datetime.fromisoformat(kickoff),
+            match_day=kickoff[:10],
             score=score,
         )
 
@@ -408,6 +442,7 @@ def test_within_day_ratings_equal_scores_all_five() -> None:
         return SimpleNamespace(
             fixture_id=fid,
             kickoff=datetime.fromisoformat(kickoff),
+            match_day=kickoff[:10],
             score=-0.03,
         )
 

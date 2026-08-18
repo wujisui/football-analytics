@@ -26,6 +26,11 @@ class Fixture(Base):
         nullable=False,
     )
     date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # Venue-local calendar day is the product's list / daily-pick grouping key.
+    venue_city: Mapped[str | None] = mapped_column(String, nullable=True)
+    match_timezone: Mapped[str | None] = mapped_column(String, nullable=True)
+    match_day: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    match_day_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
     # Official short code when known: FT / AET / PEN / …
     status_short: Mapped[str | None] = mapped_column(String, nullable=True)

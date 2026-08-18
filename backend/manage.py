@@ -176,6 +176,21 @@ async def run_backfill_team_names() -> None:
     print(f"Updated {updated} team display name(s) to Chinese.")
 
 
+async def run_backfill_match_days() -> None:
+    """Rebuild venue-local fixture days from local snapshots (no API calls)."""
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.match_day import backfill_fixture_match_days
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        result = await backfill_fixture_match_days(session)
+    print(
+        f"Enriched {result['teams_enriched']} team location(s); "
+        f"updated {result['fixtures_updated']} fixture match day(s)."
+    )
+    print(f"Sources: {result['by_source']}")
+
+
 async def run_audit_team_names() -> None:
     """Report curated team ids that disagree with the provider's own labels."""
     from app.core.database import AsyncSessionLocal, init_db
@@ -507,6 +522,10 @@ def main() -> None:
         help="Rewrite teams.name to Chinese from the built-in id/name map",
     )
     subparsers.add_parser(
+        "backfill-match-days",
+        help="Rebuild fixture-local match days from cached official location data",
+    )
+    subparsers.add_parser(
         "audit-team-names",
         help="Cross-check curated team ids against official names in api_snapshots",
     )
@@ -634,6 +653,7 @@ def main() -> None:
         "list-tasks": run_list_tasks,
         "run-scheduler": run_scheduler_loop,
         "backfill-team-names": run_backfill_team_names,
+        "backfill-match-days": run_backfill_match_days,
         "audit-team-names": run_audit_team_names,
         "backfill-features": run_backfill_features,
         "refresh-pending-predictions": run_refresh_pending_predictions,

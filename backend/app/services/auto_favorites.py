@@ -57,7 +57,7 @@ def within_day_quality_ratings(
     """
     by_day: dict[str, list[AutoPickCandidate]] = {}
     for pick in picks:
-        by_day.setdefault(_schedule_day_key(pick.kickoff), []).append(pick)
+        by_day.setdefault(pick.match_day, []).append(pick)
 
     ratings: dict[int, float] = {}
     for day_picks in by_day.values():
@@ -81,6 +81,7 @@ class AutoPickCandidate:
     fixture_id: int
     league_id: int
     kickoff: datetime
+    match_day: str
     score: float
     market: str
     lean: str
@@ -295,9 +296,9 @@ def _market_candidates(
     return candidates
 
 
-def _schedule_day_key(kickoff: datetime) -> str:
-    """UTC match day — same calendar key as frontend ``toScheduleDayKey``."""
-    return kickoff.strftime("%Y-%m-%d")
+def _fixture_match_day(fixture: Fixture) -> str:
+    """Persisted venue-local day; UTC fallback only for legacy test fixtures."""
+    return str(getattr(fixture, "match_day", None) or fixture.date.strftime("%Y-%m-%d"))
 
 
 def _best_market(candidates: list[MarketCandidate]) -> MarketCandidate | None:
@@ -378,6 +379,7 @@ def score_auto_pick_candidates(
                 fixture_id=fixture.id,
                 league_id=int(fixture.league_id),
                 kickoff=fixture.date,
+                match_day=_fixture_match_day(fixture),
                 score=final_score,
                 market=best.market,
                 lean=best.lean,
@@ -414,11 +416,11 @@ def select_auto_picks_by_match_day(
     limit_per_day: int = AUTO_PICK_LIMIT,
     skip_fixture_ids: set[int] | None = None,
 ) -> list[AutoPickCandidate]:
-    """Pick up to ``limit_per_day`` per UTC match day — not one slate for the whole window."""
+    """Pick up to ``limit_per_day`` per persisted venue-local match day."""
     skip = skip_fixture_ids or set()
     by_day: dict[str, list[AutoPickCandidate]] = {}
     for candidate in candidates:
-        by_day.setdefault(_schedule_day_key(candidate.kickoff), []).append(candidate)
+        by_day.setdefault(candidate.match_day, []).append(candidate)
 
     selected: list[AutoPickCandidate] = []
     for day in sorted(by_day):
@@ -446,7 +448,7 @@ async def sync_daily_auto_favorites(
     so every session can list them; ``user_id`` is ignored for writes.
 
     Historical hit feedback adjusts candidate scores without eliminating
-    candidates. Each UTC match day gets up to ``limit`` tips (default 4),
+    candidates. Each venue-local match day gets up to ``limit`` tips (default 4),
     ranked by final score. The day's best pick anchors 5 quality stars and
     lower score tiers deduct 0.5 stars.
 
@@ -553,7 +555,7 @@ async def sync_daily_auto_favorites(
         db.add(
             AutoPickSnapshot(
                 fixture_id=candidate.fixture_id,
-                match_day=_schedule_day_key(candidate.kickoff),
+                match_day=candidate.match_day,
                 market=candidate.market,
                 lean=candidate.lean,
                 raw_confidence=candidate.raw_confidence,
@@ -576,7 +578,7 @@ async def sync_daily_auto_favorites(
 
     by_day_counts: dict[str, int] = {}
     for item in selected:
-        key = _schedule_day_key(item.kickoff)
+        key = item.match_day
         by_day_counts[key] = by_day_counts.get(key, 0) + 1
 
     result = {
@@ -591,7 +593,7 @@ async def sync_daily_auto_favorites(
         "selected": [
             {
                 "fixture_id": item.fixture_id,
-                "match_day": _schedule_day_key(item.kickoff),
+                "match_day": item.match_day,
                 "score": round(item.score, 4),
                 "market": item.market,
                 "lean": item.lean,

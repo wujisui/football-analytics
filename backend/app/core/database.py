@@ -161,6 +161,8 @@ async def _migrate_favorite_fixtures_owner_pk(conn) -> None:
 
 async def _ensure_sqlite_columns(conn) -> None:
     """Add newly introduced columns on existing SQLite databases."""
+    from sqlalchemy import text
+
     await _ensure_table_columns(
         conn,
         "pre_match_data",
@@ -185,6 +187,10 @@ async def _ensure_sqlite_columns(conn) -> None:
         conn,
         "fixtures",
         {
+            "venue_city": "TEXT",
+            "match_timezone": "TEXT",
+            "match_day": "TEXT",
+            "match_day_source": "TEXT",
             "home_goals": "INTEGER",
             "away_goals": "INTEGER",
             "status_short": "TEXT",
@@ -192,6 +198,18 @@ async def _ensure_sqlite_columns(conn) -> None:
             "et_away_goals": "INTEGER",
             "pen_home": "INTEGER",
             "pen_away": "INTEGER",
+        },
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_fixtures_match_day ON fixtures (match_day)")
+    )
+    await _ensure_table_columns(
+        conn,
+        "teams",
+        {
+            "country": "TEXT",
+            "venue_city": "TEXT",
+            "timezone": "TEXT",
         },
     )
     await _ensure_table_columns(
@@ -247,8 +265,6 @@ async def _ensure_sqlite_columns(conn) -> None:
             "is_admin": "INTEGER DEFAULT 0",
         },
     )
-    from sqlalchemy import text
-
     await conn.execute(
         text("UPDATE bet_plans SET user_id = '' WHERE user_id IS NULL")
     )

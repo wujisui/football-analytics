@@ -520,6 +520,12 @@ class ApiFootballProvider(BaseApiProvider):
                     "logo_url": first_value(
                         item, [["team", "logo"], ["logo"], ["logoUrl"], ["image"]]
                     ),
+                    "country": first_value(
+                        item, [["team", "country"], ["country", "name"], ["country"]]
+                    ),
+                    "venue_city": first_value(
+                        item, [["venue", "city"], ["team", "venue", "city"]]
+                    ),
                 }
             )
         return parsed
@@ -561,6 +567,9 @@ class ApiFootballProvider(BaseApiProvider):
                     "home_logo": first_value(item, [["teams", "home", "logo"], ["homeTeam", "logo"]]),
                     "away_logo": first_value(item, [["teams", "away", "logo"], ["awayTeam", "logo"]]),
                     "date": fixture_date,
+                    "venue_city": first_value(
+                        item, [["fixture", "venue", "city"], ["venue", "city"]]
+                    ),
                     "status": map_fixture_status(
                         first_value(
                             item, [["fixture", "status", "short"], ["status", "short"], ["status"]]

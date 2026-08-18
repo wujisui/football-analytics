@@ -18,6 +18,7 @@ from app.services.api_quota import (
 )
 from app.services.api_utils import parse_remaining_requests
 from app.services.league_names import league_name_zh
+from app.services.match_day import infer_team_timezone, resolve_match_day
 from app.services.results_capture import (
     is_stale_live_row,
     results_capture_cutoff,
@@ -365,17 +366,36 @@ class FootballFetcher:
         team_id: int,
         name: str,
         logo_url: str | None = None,
+        country: str | None = None,
+        venue_city: str | None = None,
     ) -> Team:
         assert self.session is not None
         display_name = team_name_zh(name, team_id) or name
         team = await self.session.get(Team, team_id)
+        team_timezone, _source = infer_team_timezone(
+            venue_city=venue_city,
+            country=country,
+        )
         if team is None:
-            team = Team(id=team_id, name=display_name, logo_url=logo_url)
+            team = Team(
+                id=team_id,
+                name=display_name,
+                logo_url=logo_url,
+                country=country or None,
+                venue_city=venue_city or None,
+                timezone=team_timezone,
+            )
             self.session.add(team)
         else:
             team.name = display_name
             if logo_url is not None:
                 team.logo_url = logo_url
+            if country:
+                team.country = country
+            if venue_city:
+                team.venue_city = venue_city
+            if team_timezone:
+                team.timezone = team_timezone
         return team
 
     async def _upsert_fixture(
@@ -393,6 +413,8 @@ class FootballFetcher:
         et_away_goals: int | None = None,
         pen_home: int | None = None,
         pen_away: int | None = None,
+        venue_city: str | None = None,
+        league_country: str | None = None,
     ) -> Fixture:
         assert self.session is not None
         fixture = await self.session.get(Fixture, fixture_id)
@@ -421,6 +443,14 @@ class FootballFetcher:
             )
             return fixture
 
+        home_team = await self.session.get(Team, home_team_id)
+        day = resolve_match_day(
+            fixture_date,
+            venue_city=venue_city,
+            league_country=league_country,
+            home_team_timezone=home_team.timezone if home_team else None,
+        )
+
         if fixture is None:
             fixture = Fixture(
                 id=fixture_id,
@@ -428,6 +458,10 @@ class FootballFetcher:
                 home_team_id=home_team_id,
                 away_team_id=away_team_id,
                 date=fixture_date,
+                venue_city=venue_city or None,
+                match_timezone=day.timezone,
+                match_day=day.match_day,
+                match_day_source=day.source,
                 status=status,
                 status_short=status_short,
                 home_goals=home_goals,
@@ -443,6 +477,11 @@ class FootballFetcher:
             fixture.home_team_id = home_team_id
             fixture.away_team_id = away_team_id
             fixture.date = fixture_date
+            if venue_city:
+                fixture.venue_city = venue_city
+            fixture.match_timezone = day.timezone
+            fixture.match_day = day.match_day
+            fixture.match_day_source = day.source
             fixture.status = status
             if status_short is not None:
                 fixture.status_short = status_short
@@ -566,7 +605,13 @@ class FootballFetcher:
 
         for team in teams:
             try:
-                await self._upsert_team(team["id"], team["name"], team.get("logo_url"))
+                await self._upsert_team(
+                    team["id"],
+                    team["name"],
+                    team.get("logo_url"),
+                    team.get("country"),
+                    team.get("venue_city"),
+                )
                 saved += 1
             except Exception as exc:
                 logger.error(
@@ -576,9 +621,42 @@ class FootballFetcher:
                     exc_info=True,
                 )
 
+        await self._refresh_fixture_match_days(league_id=league_id)
         await self._commit()
         logger.info("Saved %s teams for league %s (season %s).", saved, league_id, season)
         return saved
+
+    async def _refresh_fixture_match_days(self, *, league_id: int) -> int:
+        """Re-resolve a league after its team catalog enriched home locations."""
+
+        from sqlalchemy import select
+
+        assert self.session is not None
+        league = await self.session.get(League, league_id)
+        fixtures = (
+            await self.session.execute(
+                select(Fixture).where(Fixture.league_id == league_id)
+            )
+        ).scalars()
+        updated = 0
+        for fixture in fixtures:
+            home = await self.session.get(Team, fixture.home_team_id)
+            day = resolve_match_day(
+                fixture.date,
+                venue_city=fixture.venue_city,
+                league_country=league.country if league else None,
+                home_team_timezone=home.timezone if home else None,
+            )
+            if (
+                fixture.match_day != day.match_day
+                or fixture.match_timezone != day.timezone
+                or fixture.match_day_source != day.source
+            ):
+                fixture.match_day = day.match_day
+                fixture.match_timezone = day.timezone
+                fixture.match_day_source = day.source
+                updated += 1
+        return updated
 
     async def _persist_fixtures(
         self,
@@ -638,6 +716,8 @@ class FootballFetcher:
                     et_away_goals=_as_int_or_none(fixture.get("et_away_goals")),
                     pen_home=_as_int_or_none(fixture.get("pen_home")),
                     pen_away=_as_int_or_none(fixture.get("pen_away")),
+                    venue_city=fixture.get("venue_city"),
+                    league_country=fixture.get("country"),
                 )
                 league_ids.add(league_id)
                 saved += 1
