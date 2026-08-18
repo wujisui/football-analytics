@@ -20,7 +20,7 @@ export const sectionMeta: Record<
     icon: PersonOutline,
   },
   plans: {
-    // 顶栏第二行左侧显示当天方案统计，不用说明文案
+    // PC 顶栏第二行显示当天方案统计 + 日期选择，不用说明文案
     routeName: 'mine-plans',
     title: '我的方案',
     icon: BookmarkOutline,

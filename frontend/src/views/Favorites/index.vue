@@ -184,64 +184,72 @@ onActivated(() => {
       </n-layout-sider>
 
       <section class="favorites-main">
+        <!-- 标题行：手机居中标题（对齐我的方案），PC 面包屑 + 统计/日期同一块顶栏 -->
         <div class="favorites-header fa-page-toolbar">
-          <!-- 手机沿用比赛顶栏节奏，日期选择器占搜索槽位 -->
-          <div v-if="isPhone" class="fa-toolbar-top">
-            <span class="favorites-title">关注</span>
-            <span class="fa-toolbar-day-stat">{{ dayCountLabel }}</span>
-            <div class="fa-toolbar-end">
-              <FavoriteDatesPicker
-                v-model="filterDate"
-                :marked-days="favoriteDays"
-                legend="当天有关注（赛程日）"
-              />
-            </div>
+          <div
+            class="fa-toolbar-top"
+            :class="{ 'fa-toolbar-centered': isPhone }"
+          >
+            <span v-if="isPhone" class="fa-toolbar-title">关注</span>
+            <ShellBreadcrumb
+              v-else
+              root-label="关注"
+              :filter-label="selectedLeagueLabel"
+              @select-root="selectedLeagueId = null"
+            />
           </div>
-
-          <!-- PC 对齐比赛页：面包屑在上，列表统计与日期在下 -->
-          <template v-else>
-            <div class="fa-toolbar-top">
-              <ShellBreadcrumb
-                root-label="关注"
-                :filter-label="selectedLeagueLabel"
-                @select-root="selectedLeagueId = null"
-              />
-            </div>
-            <div class="fa-toolbar-list-meta">
-              <span class="fa-toolbar-day-stat">{{ dayCountLabel }}</span>
-              <FavoriteDatesPicker
-                v-model="filterDate"
-                :marked-days="favoriteDays"
-                legend="当天有关注（赛程日）"
-              />
-            </div>
-          </template>
+          <div v-if="!isPhone" class="fa-toolbar-list-meta">
+            <span class="fa-toolbar-day-stat">{{ dayCountLabel }}</span>
+            <FavoriteDatesPicker
+              v-model="filterDate"
+              :marked-days="favoriteDays"
+              legend="当天有关注（赛程日）"
+            />
+          </div>
         </div>
 
         <div class="favorites-body">
-          <div ref="favoritesShellRef" class="favorites-list-shell">
-            <n-scrollbar class="favorites-scroll" trigger="hover">
-              <div class="fa-page-content-padding favorites-scroll-pad">
-                <n-empty
-                  v-if="!filteredFavorites.length"
-                  :description="`${filterDate} 无关注场次`"
-                  class="favorites-empty"
-                />
-                <div v-else class="favorites-card-stack">
-                  <FavoriteFixtureCard
-                    v-for="item in filteredFavorites"
-                    :key="item.fixture_id"
-                    :item="item"
-                    selectable
-                    :selected="markedFixtureId === item.fixture_id"
-                    @open-detail="goDetail"
-                    @toggle-select="toggleMarked"
+          <!-- 手机：统计/日期做成卡片头，与列表合成整块；PC 这两项在顶栏第二行 -->
+          <n-card
+            class="favorites-card"
+            :class="{ 'favorites-card--mobile': isPhone }"
+            :bordered="false"
+            content-style="padding: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;"
+          >
+            <template v-if="isPhone" #header>
+              <span class="favorites-card-title">{{ dayCountLabel }}</span>
+            </template>
+            <template v-if="isPhone" #header-extra>
+              <FavoriteDatesPicker
+                v-model="filterDate"
+                :marked-days="favoriteDays"
+                legend="当天有关注（赛程日）"
+              />
+            </template>
+            <div ref="favoritesShellRef" class="favorites-list-shell">
+              <n-scrollbar class="favorites-scroll" trigger="hover">
+                <div class="favorites-scroll-pad">
+                  <n-empty
+                    v-if="!filteredFavorites.length"
+                    :description="`${filterDate} 无关注场次`"
+                    class="favorites-empty"
                   />
+                  <div v-else class="favorites-card-stack">
+                    <FavoriteFixtureCard
+                      v-for="item in filteredFavorites"
+                      :key="item.fixture_id"
+                      :item="item"
+                      selectable
+                      :selected="markedFixtureId === item.fixture_id"
+                      @open-detail="goDetail"
+                      @toggle-select="toggleMarked"
+                    />
+                  </div>
                 </div>
-              </div>
-            </n-scrollbar>
-            <ListBackTop :shell="favoritesShellRef" :right="12" :bottom="12" />
-          </div>
+              </n-scrollbar>
+              <ListBackTop :shell="favoritesShellRef" :right="12" :bottom="12" />
+            </div>
+          </n-card>
         </div>
       </section>
     </n-layout>
@@ -272,17 +280,12 @@ onActivated(() => {
 }
 
 .favorites-header {
+  position: relative;
+  z-index: 2;
   flex-shrink: 0;
   width: 100%;
   box-sizing: border-box;
   box-shadow: var(--fa-header-shadow);
-}
-
-.favorites-title {
-  flex-shrink: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--fa-text-strong);
 }
 
 .favorites-body {
@@ -290,13 +293,46 @@ onActivated(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* 手机卡片的左右留白走父级 padding：n-card 自带 width:100%，
+     用 margin 会让盒宽仍等于父宽而向右溢出被裁掉 */
+  padding: 0 12px;
+  box-sizing: border-box;
 }
 
-.favorites-body :deep(.n-spin-content) {
-  flex: 1;
-  min-height: 0;
+/* PC：卡片透明无边框，等同裸列表（统计/日期在顶栏第二行，保持原样） */
+.favorites-card {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+}
+
+/* 手机：统计/日期 + 列表合成一个抬升卡片，与顶部标题分层 */
+.favorites-card--mobile {
+  margin: 12px 0;
+  background: var(--fa-bg-elevated);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.favorites-card--mobile :deep(.n-card-header) {
+  flex-shrink: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--fa-border);
+}
+
+.favorites-card-title {
+  font-size: 13px;
+  color: var(--fa-text-secondary);
+  white-space: nowrap;
+}
+
+/* PC 保持原样：裸列表，左右留白由 scroll-pad 给 */
+@media (min-width: 768px) {
+  .favorites-body {
+    padding: 0;
+  }
 }
 
 .favorites-list-shell {
@@ -312,8 +348,16 @@ onActivated(() => {
   min-height: 0;
 }
 
+/* 与我的方案面板同一档左右留白 */
 .favorites-scroll-pad {
-  padding-block: 8px 16px;
+  padding: 8px 12px 16px;
+  box-sizing: border-box;
+}
+
+/* 手机：屏幕留白已由外层卡片承担，赛事卡铺满卡片内宽，
+   否则再缩一档会挤到推荐 tag 换行 */
+.favorites-card--mobile .favorites-scroll-pad {
+  padding-inline: 0;
 }
 
 .favorites-empty {

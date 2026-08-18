@@ -93,7 +93,7 @@ const isPlansSection = computed(() => activeSection.value === 'plans')
 const dayPlanCountLabel = computed(
   () => `已保存 ${plansForDay(filterDate.value).length} 个方案`,
 )
-/** 顶栏第二行左侧：方案页给统计，其余分区给说明文案，保证面包屑高度一致 */
+/** PC 顶栏第二行左侧：方案页给统计，其余分区给说明文案，保证面包屑高度一致 */
 const sectionMetaLine = computed(() =>
   isPlansSection.value ? dayPlanCountLabel.value : (activeMeta.value.hint ?? ''),
 )
@@ -156,9 +156,10 @@ watch(
           v-if="showSectionHeader"
           class="mine-header fa-page-toolbar"
         >
-          <!-- 手机：返回 + 分区标题；方案页日期占右侧槽 -->
-          <div v-if="isPhone" class="fa-toolbar-top">
+          <!-- 手机：标题居中，返回键叠在左侧；统计/日期由各分区自己承载 -->
+          <div v-if="isPhone" class="fa-toolbar-top fa-toolbar-centered">
             <n-button
+              class="fa-toolbar-back"
               quaternary
               circle
               size="small"
@@ -169,17 +170,7 @@ watch(
                 <n-icon :component="ChevronBackOutline" />
               </template>
             </n-button>
-            <span class="mine-title">{{ activeMeta.title }}</span>
-            <span v-if="isPlansSection" class="fa-toolbar-day-stat">
-              {{ dayPlanCountLabel }}
-            </span>
-            <div v-if="isPlansSection" class="fa-toolbar-end">
-              <FavoriteDatesPicker
-                v-model="filterDate"
-                :marked-days="planDays"
-                legend="当天有方案（赛程日）"
-              />
-            </div>
+            <span class="fa-toolbar-title">{{ activeMeta.title }}</span>
           </div>
 
           <!-- PC 对齐比赛/关注：面包屑在上，统计（或说明）与方案日期在下 -->
@@ -247,13 +238,6 @@ watch(
 
 .mine-header {
   box-shadow: var(--fa-header-shadow);
-}
-
-.mine-title {
-  flex-shrink: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--fa-text-strong);
 }
 
 .mine-meta-line {

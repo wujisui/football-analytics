@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
-import { NInput, useMessage, useModal, type ModalReactive } from 'naive-ui'
-import { ChevronForwardOutline } from '@vicons/ionicons5'
+import {computed, h, onMounted, ref} from 'vue'
+import {NInput, useMessage, useModal, type ModalReactive} from 'naive-ui'
+import {ChevronForwardOutline} from '@vicons/ionicons5'
 
 import PlanDetail from '@/views/Mine/plans/PlanDetail.vue'
-import { useAuthSession } from '@/composables/useAuthSession'
-import { useBetPlans } from '@/composables/useBetPlans'
-import { formatScheduleDay, parseApiDate } from '@/utils/format'
-import type { SavedBetPlan } from '@/utils/betPlans'
+import {useAuthSession} from '@/composables/useAuthSession'
+import {useBetPlans} from '@/composables/useBetPlans'
+import {useIsPhone} from '@/composables/useMediaQuery'
+import {formatScheduleDay, parseApiDate} from '@/utils/format'
+import type {SavedBetPlan} from '@/utils/betPlans'
+import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 
-defineOptions({ name: 'BetPlans' })
+defineOptions({name: 'BetPlans'})
 
 const message = useMessage()
 const modal = useModal()
-const { requireLogin } = useAuthSession()
+const isPhone = useIsPhone()
+const {requireLogin} = useAuthSession()
 const {
   filterDate,
   plansForDay,
@@ -21,9 +24,13 @@ const {
   renamePlan,
   removePlan,
   getPlan,
+  planDays
 } = useBetPlans()
 
 const dayPlans = computed(() => plansForDay(filterDate.value))
+const dayPlanCountLabel = computed(
+    () => `已保存 ${plansForDay(filterDate.value).length} 个方案`,
+)
 
 let detailModal: ModalReactive | null = null
 let detailPlanId: string | null = null
@@ -45,20 +52,20 @@ function openPlan(id: string) {
     title,
     bordered: false,
     autoFocus: false,
-    style: { width: 'min(420px, calc(100vw - 32px))' },
-    segmented: { content: true },
+    style: {width: 'min(420px, calc(100vw - 32px))'},
+    segmented: {content: true},
     content: () =>
-      h(
-        'div',
-        {
-          class: 'plan-detail-scroll fa-scrollbar-hidden',
-          style: {
-            maxHeight: 'min(70vh, 640px)',
-            overflowY: 'auto',
-          },
-        },
-        [h(PlanDetail, { planId: id })],
-      ),
+        h(
+            'div',
+            {
+              class: 'plan-detail-scroll fa-scrollbar-hidden',
+              style: {
+                maxHeight: 'min(70vh, 640px)',
+                overflowY: 'auto',
+              },
+            },
+            [h(PlanDetail, {planId: id})],
+        ),
     onAfterLeave: () => {
       if (detailPlanId === id) {
         detailPlanId = null
@@ -80,15 +87,15 @@ function openRename(plan: SavedBetPlan) {
     // defaultValue keeps NInput self-updating; draft only feeds onPositiveClick
     // so we do not depend on modal content re-rendering each keystroke.
     content: () =>
-      h(NInput, {
-        defaultValue: plan.name,
-        maxlength: 40,
-        showCount: true,
-        placeholder: '方案名称',
-        'onUpdate:value': (value: string) => {
-          draft.value = value
-        },
-      }),
+        h(NInput, {
+          defaultValue: plan.name,
+          maxlength: 40,
+          showCount: true,
+          placeholder: '方案名称',
+          'onUpdate:value': (value: string) => {
+            draft.value = value
+          },
+        }),
     onPositiveClick: async () => {
       if (!requireLogin()) return false
       if (!(await renamePlan(plan.id, draft.value))) {
@@ -128,70 +135,118 @@ onMounted(() => {
 
 <template>
   <div class="plans-panel">
-    <n-scrollbar class="plans-scroll" trigger="hover">
-      <div class="fa-page-content-padding plans-scroll-pad">
-        <n-empty
+    <!-- 手机：统计/日期做成卡片头，与列表合成一个整块；PC 这两项在顶栏第二行 -->
+    <n-card
+        class="plans-card"
+        :class="{ 'plans-card--mobile': isPhone }"
+        :bordered="false"
+        content-style="padding: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;"
+    >
+      <template v-if="isPhone" #header>
+        <span class="plans-card-title">{{ dayPlanCountLabel }}</span>
+      </template>
+      <template v-if="isPhone" #header-extra>
+        <FavoriteDatesPicker
+            v-model="filterDate"
+            :marked-days="planDays"
+            legend="当天有方案（赛程日）"
+        />
+      </template>
+      <n-scrollbar class="plans-scroll" trigger="hover">
+      <n-empty
           v-if="!dayPlans.length"
           :description="`${formatScheduleDay(filterDate)} 无保存方案`"
           class="plans-empty"
-        />
-        <n-list v-else hoverable clickable>
-          <n-list-item
+      />
+      <n-list v-else hoverable clickable>
+        <n-list-item
             v-for="plan in dayPlans"
             :key="plan.id"
             @click="openPlan(plan.id)"
-          >
-            <n-thing :title="plan.name">
-              <template #header-extra>
-                <n-flex :size="10" align="center">
-                  <span class="plan-saved-at">{{ formatPlanSavedAt(plan.savedAt) }}</span>
-                  <n-flex :size="8" align="center" @click.stop>
-                    <n-button size="tiny" tertiary @click="openRename(plan)">
-                      编辑
-                    </n-button>
-                    <n-popconfirm @positive-click="confirmDelete(plan)">
-                      <template #trigger>
-                        <n-button size="tiny" type="error" tertiary>删除</n-button>
-                      </template>
-                      确定删除「{{ plan.name }}」？
-                    </n-popconfirm>
-                  </n-flex>
-                  <n-icon
+        >
+          <n-thing :title="plan.name">
+            <template #header-extra>
+              <n-flex :size="10" align="center">
+                <span class="plan-saved-at">{{ formatPlanSavedAt(plan.savedAt) }}</span>
+                <n-flex :size="8" align="center" @click.stop>
+                  <n-button size="tiny" tertiary @click="openRename(plan)">
+                    编辑
+                  </n-button>
+                  <n-popconfirm @positive-click="confirmDelete(plan)">
+                    <template #trigger>
+                      <n-button size="tiny" type="error" tertiary>删除</n-button>
+                    </template>
+                    确定删除「{{ plan.name }}」？
+                  </n-popconfirm>
+                </n-flex>
+                <n-icon
                     :component="ChevronForwardOutline"
                     :size="16"
                     depth="3"
                     aria-hidden="true"
-                  />
-                </n-flex>
-              </template>
-            </n-thing>
-          </n-list-item>
-        </n-list>
-      </div>
-    </n-scrollbar>
+                />
+              </n-flex>
+            </template>
+          </n-thing>
+        </n-list-item>
+      </n-list>
+      </n-scrollbar>
+    </n-card>
   </div>
 </template>
 
 <style scoped>
+/* 面板填满 mine-outlet 的槽位，滚动条只在列表区出现 */
 .plans-panel {
-  height: 100%;
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0 var(--fa-content-inline);
+  box-sizing: border-box;
+}
+
+/* PC：卡片透明无边框，等同裸列表（统计/日期在顶栏第二行） */
+.plans-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+}
+
+/* 手机：统计/日期 + 列表合成一个抬升卡片，与顶部标题分层 */
+.plans-card--mobile {
+  margin: 12px 0;
+  background: var(--fa-bg-elevated);
+  border-radius: 12px;
   overflow: hidden;
-  background: var(--fa-bg);
+}
+
+.plans-card--mobile :deep(.n-card-header) {
+  flex-shrink: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--fa-border);
+}
+
+.plans-card-title {
+  font-size: 13px;
+  color: var(--fa-text-secondary);
+  white-space: nowrap;
+}
+
+:deep(.n-list.n-list--hoverable .n-list-item) {
+  padding: 12px 0;
+}
+
+/* 手机：行内容对齐卡片头的左右留白，不贴卡片边 */
+.plans-card--mobile :deep(.n-list.n-list--hoverable .n-list-item) {
+  padding-inline: 14px;
 }
 
 .plans-scroll {
   flex: 1;
   min-height: 0;
-}
-
-.plans-scroll-pad {
-  width: 100%;
-  box-sizing: border-box;
-  padding-top: 12px;
-  padding-bottom: 24px;
 }
 
 .plans-empty {

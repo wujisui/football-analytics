@@ -52,62 +52,59 @@ function onLogout() {
 <template>
   <!-- Phone: settings hub -->
   <n-scrollbar v-if="isPhone" class="mobile-mine-scroll" trigger="hover">
-    <div class="mobile-mine-home">
-      <n-card size="small" :bordered="false" class="mobile-profile-card">
-        <n-thing
-          :title="profileTitle"
-          :description="
-            isLoggedIn
-              ? '收藏与方案按当前账号保存'
-              : '登录后可保存个人收藏与方案'
-          "
-        >
-          <template #avatar>
-            <n-avatar :size="52" round>
-              <n-icon :component="PersonOutline" :size="26" />
-            </n-avatar>
-          </template>
-          <template #header-extra>
-            <n-button
-              v-if="isLoggedIn"
-              size="small"
-              type="error"
-              secondary
-              @click="onLogout"
-            >
-              退出
-            </n-button>
-            <n-button v-else size="small" type="primary" @click="openLogin">
-              登录
-            </n-button>
-          </template>
-        </n-thing>
-      </n-card>
-
-      <n-card
-        size="small"
-        :bordered="false"
-        content-style="padding: 0;"
-        class="mobile-settings-card"
-        aria-label="我的功能"
+    <n-card size="small" :bordered="false" class="mobile-profile-card">
+      <n-thing
+        class="mobile-profile-thing"
+        :title="profileTitle"
+        :description="
+          isLoggedIn
+            ? '收藏与方案按当前账号保存'
+            : '登录后可保存个人收藏与方案'
+        "
       >
-        <n-list hoverable clickable>
-          <n-list-item
-            v-for="item in mobileSections"
-            :key="item.key"
-            @click="openSection(item.key)"
-          >
-            <template #prefix>
-              <n-icon :component="item.icon" :size="21" />
-            </template>
-            <n-thing :title="item.title" :description="item.description" />
-            <template #suffix>
-              <n-icon :component="ChevronForwardOutline" :size="18" />
-            </template>
-          </n-list-item>
-        </n-list>
-      </n-card>
-    </div>
+        <template #avatar>
+          <n-avatar :size="52" round>
+            <n-icon :component="PersonOutline" :size="26" />
+          </n-avatar>
+        </template>
+      </n-thing>
+      <n-button
+        v-if="isLoggedIn"
+        size="small"
+        type="error"
+        secondary
+        @click="onLogout"
+      >
+        退出
+      </n-button>
+      <n-button v-else size="small" type="primary" @click="openLogin">
+        登录
+      </n-button>
+    </n-card>
+
+    <n-card
+      size="small"
+      :bordered="false"
+      content-style="padding: 0;"
+      class="mobile-settings-card"
+      aria-label="我的功能"
+    >
+      <n-list hoverable clickable>
+        <n-list-item
+          v-for="item in mobileSections"
+          :key="item.key"
+          @click="openSection(item.key)"
+        >
+          <template #prefix>
+            <n-icon :component="item.icon" :size="21" />
+          </template>
+          <n-thing :title="item.title" />
+          <template #suffix>
+            <n-icon :component="ChevronForwardOutline" :size="18" />
+          </template>
+        </n-list-item>
+      </n-list>
+    </n-card>
   </n-scrollbar>
 
   <!-- Desktop: account detail -->
@@ -165,12 +162,20 @@ function onLogout() {
   height: 100%;
 }
 
-.mobile-mine-home {
-  padding: 14px var(--fa-content-inline) 28px;
-}
-
 .mobile-profile-card {
   overflow: hidden;
+}
+
+/* 账号信息占满左侧，登录/退出贴右，长用户名不挤按钮 */
+.mobile-profile-card :deep(.n-card-content) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-profile-thing {
+  min-width: 0;
 }
 
 .mobile-settings-card {

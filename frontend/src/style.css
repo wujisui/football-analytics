@@ -183,11 +183,32 @@ button {
 }
 
 .fa-toolbar-top {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 28px;
   min-width: 0;
   user-select: none;
+}
+
+/* 手机二级页标题行：标题真正居中，返回键叠在左侧不占位（我的二级页 / 关注共用） */
+.fa-toolbar-top.fa-toolbar-centered {
+  justify-content: center;
+}
+
+.fa-toolbar-top.fa-toolbar-centered > .fa-toolbar-back {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.fa-toolbar-title {
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fa-text-strong);
 }
 
 .fa-toolbar-crumb {
@@ -212,8 +233,7 @@ button {
   --fa-date-picker-width: 100%;
 }
 
-.fa-toolbar-end > .fa-toolbar-search,
-.fa-toolbar-end > .favorite-dates-picker {
+.fa-toolbar-end > .fa-toolbar-search {
   width: 100%;
   min-width: 0;
   max-width: none;
@@ -271,13 +291,6 @@ button {
 .fa-card-markable.is-marked:hover::before {
   background: var(--fa-highlight-text);
   opacity: 1;
-}
-
-/* Main list / card band — align with .fa-page-toolbar horizontal padding */
-.fa-page-content-padding {
-  padding: var(--fa-content-block-start) var(--fa-content-inline)
-    var(--fa-content-block-end);
-  box-sizing: border-box;
 }
 
 .fa-page-list-shell {
