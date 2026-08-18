@@ -345,6 +345,24 @@ async def run_prune_low_value_data(*, apply: bool) -> None:
     print(report.to_dict())
 
 
+async def run_reset_match_history(*, apply: bool) -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.data_cleanup import reset_match_history
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        report = await reset_match_history(session, apply=apply)
+    mode = "APPLIED" if apply else "DRY-RUN (pass --apply to delete)"
+    print(f"reset-match-history [{mode}]")
+    for key, value in report.to_dict().items():
+        print(f"  {key}: {value}")
+    if apply:
+        print(
+            "Done. Re-sync fixtures/odds (admin「立即同步」or wait for 11:00), "
+            "then accumulate new samples before train-model."
+        )
+
+
 async def run_train_model() -> None:
     from app.core.database import AsyncSessionLocal, init_db
     from app.services.ml_predictor import (
@@ -589,6 +607,18 @@ def main() -> None:
         action="store_true",
         help="Apply physical deletion; omitted means dry-run",
     )
+    reset_history_parser = subparsers.add_parser(
+        "reset-match-history",
+        help=(
+            "Wipe fixtures/odds/features/auto-picks/ML artifacts for a fresh "
+            "bookmaker sample set; keeps users, sessions, bet plans, leagues, teams"
+        ),
+    )
+    reset_history_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply deletion; omitted means dry-run counts only",
+    )
     subparsers.add_parser(
         "train-model",
         help="Train 1X2 probability model from labeled match_features (needs >= ML_MIN_TRAIN_SAMPLES)",
@@ -664,6 +694,9 @@ def main() -> None:
         return
     if args.command == "prune-low-value-data":
         asyncio.run(run_prune_low_value_data(apply=args.apply))
+        return
+    if args.command == "reset-match-history":
+        asyncio.run(run_reset_match_history(apply=args.apply))
         return
 
     commands = {

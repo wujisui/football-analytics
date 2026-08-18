@@ -33,6 +33,8 @@ cd backend
 python manage.py init-db
 ```
 
+若需在本机清空旧比赛/盘口样本（换盘口后从零训练），见 [RESET_MATCH_HISTORY.md](./RESET_MATCH_HISTORY.md)。
+
 ---
 
 ## 1. 启动后端（生产方式）

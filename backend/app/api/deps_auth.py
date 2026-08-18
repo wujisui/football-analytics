@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.models.user import User
 from app.services import auth as auth_service
 
 
@@ -79,3 +80,22 @@ async def require_admin(
             detail="未配置管理员：请用 manage.py set-admin 提升账号，或设置 ADMIN_API_KEY",
         )
     raise HTTPException(status_code=403, detail="需要管理员权限")
+
+
+async def require_admin_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Logged-in ``is_admin`` account only (password confirm ops; no Admin Key)."""
+    user_id = await auth_service.resolve_user_id_from_token(
+        db, session_token_from_request(request)
+    )
+    if not user_id:
+        raise HTTPException(status_code=401, detail="请先用管理员账号登录")
+    user = await auth_service.get_user_by_id(db, user_id)
+    if user is None or not bool(user.is_admin):
+        raise HTTPException(status_code=403, detail="需要管理员账号登录")
+    return user
+
+
+AdminUser = Annotated[User, Depends(require_admin_user)]

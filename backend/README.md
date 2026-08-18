@@ -150,7 +150,11 @@ python manage.py refresh-pending-predictions  # 仅用本地盘口重算未完�
 python manage.py model-status     # 查看 1X2 / 让球 / 进球分布模型及基线门禁
 python manage.py backfill-ah-features  # 回填让球特征与 AH 标签
 python manage.py train-ah-model   # 训练让球穿盘模型（需 ≥ ML_AH_MIN_TRAIN_SAMPLES）
+python manage.py reset-match-history          # 预览：清空比赛/盘口/特征/日推（保留账号）
+python manage.py reset-match-history --apply  # 执行清空，便于换盘口后从零攒 ML 样本
 ```
+
+换盘口后从零攒样本（CLI + 管理员 UI）见 **[docs/RESET_MATCH_HISTORY.md](../docs/RESET_MATCH_HISTORY.md)**。
 
 ### 换机后启用模型
 
@@ -236,8 +240,10 @@ GET /api/v1/fixtures/today?league_id=39
 | PATCH | `/admin/settings/scheduled-full-detail` | 写入开关到 `app_settings`（body: `{"enabled": true\|false}`） |
 | GET  | `/admin/settings/free-quota` | 读取「免费配额模式」开关（默认 ON；只改同步整点） |
 | PATCH | `/admin/settings/free-quota` | 写入并立刻重排 cron；若从关→开且已过今日 11:00 则后台补跑一次同步 |
+| GET  | `/admin/reset-match-history` | 预览清空比赛历史将影响的行数（管理员会话或 Admin Key） |
+| POST | `/admin/reset-match-history` | 需**管理员账号登录** + body `{"password","apply"}`；`apply=true` 时物理清空 |
 
-前端「我的 → 管理员设置」可保存本机 `ADMIN_API_KEY` 并切换上述开关；重启后仍生效。批量预拉逻辑就绪后即按该开关执行。
+前端「我的 → 管理员设置」可用管理员会话切换开关，并用登录密码一键清空比赛历史；详见 [docs/RESET_MATCH_HISTORY.md](../docs/RESET_MATCH_HISTORY.md)。
 
 ### 常用联赛 ID
 

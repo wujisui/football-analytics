@@ -1,12 +1,15 @@
 import asyncio
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps_auth import require_admin
+from app.api.deps_auth import AdminUser, require_admin
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.services import auth as auth_service
+from app.services.data_cleanup import reset_match_history
 from app.services.runtime_settings import (
     get_enable_free_quota,
     get_enable_scheduled_full_detail,
@@ -61,6 +64,29 @@ class FreeQuotaUpdate(BaseModel):
     enabled: bool
 
 
+class ResetMatchHistoryRequest(BaseModel):
+    password: str = Field(..., min_length=1, description="当前管理员登录密码")
+    apply: bool = Field(
+        default=False,
+        description="false=只预览删除数量；true=真正清空",
+    )
+
+
+class ResetMatchHistoryResponse(BaseModel):
+    apply: bool
+    fixtures: int
+    pre_match_data: int
+    match_features: int
+    auto_pick_snapshots: int
+    favorite_fixtures: int
+    league_standings: int
+    api_snapshots: int
+    incentive_settings_cleared: int
+    model_files_removed: int
+    cache_cleared: bool
+    kept: list[str]
+
+
 def _full_detail_payload(enabled: bool, source: str) -> ScheduledFullDetailSetting:
     return ScheduledFullDetailSetting(
         enabled=enabled,
@@ -82,6 +108,12 @@ def _free_quota_payload(
         sync_hours=hours,
         catch_up_started=catch_up_started,
     )
+
+
+def _reset_history_response(report: Any) -> ResetMatchHistoryResponse:
+    payload: dict[str, Any] = report.to_dict()
+    payload["kept"] = list(payload.get("kept") or [])
+    return ResetMatchHistoryResponse(**payload)
 
 
 @router.get("/tasks")
@@ -157,3 +189,37 @@ async def patch_free_quota_setting(
         asyncio.create_task(run_scheduled_fixtures_sync())
 
     return _free_quota_payload(enabled, "db", catch_up_started=catch_up_started)
+
+
+@router.get(
+    "/reset-match-history",
+    response_model=ResetMatchHistoryResponse,
+)
+async def preview_reset_match_history(
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ResetMatchHistoryResponse:
+    """Preview how many match/ML rows would be wiped (no password, no delete)."""
+    report = await reset_match_history(db, apply=False)
+    return _reset_history_response(report)
+
+
+@router.post(
+    "/reset-match-history",
+    response_model=ResetMatchHistoryResponse,
+)
+async def post_reset_match_history(
+    body: ResetMatchHistoryRequest,
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> ResetMatchHistoryResponse:
+    """Wipe match history after verifying the logged-in admin password.
+
+    Requires a logged-in ``is_admin`` session (Admin Key alone is not enough).
+    ``apply=false`` counts only; ``apply=true`` deletes.
+    """
+    if not auth_service.verify_password(body.password, admin.password_hash):
+        raise HTTPException(status_code=403, detail="管理员密码不正确")
+
+    report = await reset_match_history(db, apply=bool(body.apply))
+    return _reset_history_response(report)

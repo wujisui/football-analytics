@@ -5,7 +5,8 @@
 > 产品定位、已完成 / 未完成 / 后续规划见 **[PROJECT_PLAN.md](PROJECT_PLAN.md)**。  
 > 用户鉴权 / VIP / API 配额设计见 **[docs/AUTH_VIP_QUOTA.md](docs/AUTH_VIP_QUOTA.md)**（规划中，代码未落地）。  
 > **换机 / 新环境**：版本、IDE 插件与安装步骤见 **[DEV_SETUP.md](DEV_SETUP.md)**（按该文档准备即可对齐开发环境）。  
-> **本机生产预览**：前端打包与后端部署见 **[docs/LOCAL_PROD_DEPLOY.md](docs/LOCAL_PROD_DEPLOY.md)**。
+> **本机生产预览**：前端打包与后端部署见 **[docs/LOCAL_PROD_DEPLOY.md](docs/LOCAL_PROD_DEPLOY.md)**。  
+> **清空比赛历史 / 换盘口重训**：见 **[docs/RESET_MATCH_HISTORY.md](docs/RESET_MATCH_HISTORY.md)**。
 
 ## 仓库结构
 
@@ -15,6 +16,7 @@ football-analytics/
 ├── DEV_SETUP.md      # 本地开发环境标准（版本 / 插件 / 配置）
 ├── docs/             # 专题设计文档
 │   ├── LOCAL_PROD_DEPLOY.md  # 本机生产打包与部署
+│   ├── RESET_MATCH_HISTORY.md  # 清空比赛历史（换盘口后从零攒样本）
 │   └── AUTH_VIP_QUOTA.md  # 用户鉴权 / VIP / API 配额（规划）
 ├── backend/          # Python + FastAPI 后端
 │   ├── app/          # 业务代码：API、模型、服务、定时任务

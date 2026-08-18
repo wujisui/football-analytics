@@ -282,3 +282,135 @@ async def prune_low_value_data(
         snapshots_deleted=snapshots_deleted,
         orphan_teams_deleted=orphan_teams_deleted,
     )
+
+
+@dataclass(frozen=True)
+class ResetMatchHistoryReport:
+    """Counts for wiping match/ML history while keeping accounts & catalog."""
+
+    apply: bool
+    fixtures: int
+    pre_match_data: int
+    match_features: int
+    auto_pick_snapshots: int
+    favorite_fixtures: int
+    league_standings: int
+    api_snapshots: int
+    incentive_settings_cleared: int
+    model_files_removed: int
+    cache_cleared: bool
+    kept: tuple[str, ...]
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+_RESET_MATCH_HISTORY_KEPT = (
+    "users",
+    "user_sessions",
+    "bet_plans",
+    "app_settings (except auto_pick_incentive_state)",
+    "leagues",
+    "teams",
+)
+
+
+async def reset_match_history(
+    session: AsyncSession,
+    *,
+    apply: bool,
+    clear_cache: bool = True,
+    remove_model_artifacts: bool = True,
+) -> ResetMatchHistoryReport:
+    """Wipe fixtures / odds / features / picks so ML can restart on new boards.
+
+    Keeps user accounts, sessions, bet plans, admin toggles, and league/team
+    catalog rows. Favorites are removed because they FK to fixtures.
+    """
+    from app.core.config import BACKEND_ROOT
+    from app.models.app_setting import AppSetting
+    from app.models.auto_pick_snapshot import AutoPickSnapshot
+    from app.models.league_standing import LeagueStanding
+    from app.services.auto_pick_incentive import KEY_INCENTIVE_STATE
+
+    async def _count(model: type) -> int:
+        from sqlalchemy import func
+
+        return int(await session.scalar(select(func.count()).select_from(model)) or 0)
+
+    fixtures = await _count(Fixture)
+    pre_match = await _count(PreMatchData)
+    features = await _count(MatchFeature)
+    auto_picks = await _count(AutoPickSnapshot)
+    favorites = await _count(FavoriteFixture)
+    standings = await _count(LeagueStanding)
+    snapshots = await _count(ApiSnapshot)
+    incentive_row = (
+        await session.execute(
+            select(AppSetting).where(AppSetting.key == KEY_INCENTIVE_STATE)
+        )
+    ).scalar_one_or_none()
+    incentive_count = 1 if incentive_row is not None else 0
+
+    model_dir = BACKEND_ROOT / "data" / "models"
+    model_files = (
+        [p for p in model_dir.iterdir() if p.is_file()] if model_dir.is_dir() else []
+    )
+
+    if not apply:
+        return ResetMatchHistoryReport(
+            apply=False,
+            fixtures=fixtures,
+            pre_match_data=pre_match,
+            match_features=features,
+            auto_pick_snapshots=auto_picks,
+            favorite_fixtures=favorites,
+            league_standings=standings,
+            api_snapshots=snapshots,
+            incentive_settings_cleared=incentive_count,
+            model_files_removed=len(model_files) if remove_model_artifacts else 0,
+            cache_cleared=False,
+            kept=_RESET_MATCH_HISTORY_KEPT,
+        )
+
+    # Children first for explicit counts; fixtures CASCADE would also work.
+    await session.execute(delete(FavoriteFixture))
+    await session.execute(delete(AutoPickSnapshot))
+    await session.execute(delete(MatchFeature))
+    await session.execute(delete(PreMatchData))
+    await session.execute(delete(Fixture))
+    await session.execute(delete(LeagueStanding))
+    await session.execute(delete(ApiSnapshot))
+    if incentive_row is not None:
+        await session.delete(incentive_row)
+    await session.commit()
+
+    removed_models = 0
+    if remove_model_artifacts:
+        for path in model_files:
+            try:
+                path.unlink()
+                removed_models += 1
+            except OSError:
+                pass
+
+    cache_cleared = False
+    if clear_cache:
+        cache = get_cache_service()
+        await cache.clear_pattern("api:football:*")
+        cache_cleared = True
+
+    return ResetMatchHistoryReport(
+        apply=True,
+        fixtures=fixtures,
+        pre_match_data=pre_match,
+        match_features=features,
+        auto_pick_snapshots=auto_picks,
+        favorite_fixtures=favorites,
+        league_standings=standings,
+        api_snapshots=snapshots,
+        incentive_settings_cleared=incentive_count,
+        model_files_removed=removed_models,
+        cache_cleared=cache_cleared,
+        kept=_RESET_MATCH_HISTORY_KEPT,
+    )

@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { FlashOutline, RefreshOutline, SettingsOutline } from '@vicons/ionicons5'
+import {
+  FlashOutline,
+  RefreshOutline,
+  SettingsOutline,
+  TrashOutline,
+} from '@vicons/ionicons5'
 import { useMessage, useModal } from 'naive-ui'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import {
   fetchFreeQuotaSetting,
   fetchScheduledFullDetailSetting,
+  previewResetMatchHistory,
+  resetMatchHistory,
+  type ResetMatchHistoryReport,
   updateFreeQuotaSetting,
   updateScheduledFullDetailSetting,
 } from '@/api/admin'
@@ -29,6 +37,26 @@ const freeQuotaSource = ref('')
 const freeQuotaHours = ref<number[]>([11, 22])
 const freeQuotaLoading = ref(false)
 const freeQuotaSaving = ref(false)
+
+const resetPreview = ref<ResetMatchHistoryReport | null>(null)
+const resetPreviewLoading = ref(false)
+const resetModalShow = ref(false)
+const resetPassword = ref('')
+const resetSubmitting = ref(false)
+
+const resetSummary = computed(() => {
+  const report = resetPreview.value
+  if (!report) return ''
+  return [
+    `比赛 ${report.fixtures}`,
+    `赛前包 ${report.pre_match_data}`,
+    `特征 ${report.match_features}`,
+    `日推 ${report.auto_pick_snapshots}`,
+    `关注 ${report.favorite_fixtures}`,
+    `快照 ${report.api_snapshots}`,
+    `模型文件 ${report.model_files_removed}`,
+  ].join(' · ')
+})
 
 function formatSyncHours(hours: number[]): string {
   if (!hours.length) return '—'
@@ -108,7 +136,11 @@ async function applyFreeQuotaToggle(next: boolean) {
     const data = await updateFreeQuotaSetting(next)
     freeQuotaEnabled.value = data.enabled
     freeQuotaSource.value = data.source
-    freeQuotaHours.value = data.sync_hours?.length ? data.sync_hours : next ? [11, 22] : [0, 6, 11, 16, 19, 22]
+    freeQuotaHours.value = data.sync_hours?.length
+      ? data.sync_hours
+      : next
+        ? [11, 22]
+        : [0, 6, 11, 16, 19, 22]
     if (next) {
       if (data.catch_up_started) {
         message.success(
@@ -154,8 +186,8 @@ function onFreeQuotaToggle(next: boolean) {
     title: '确认开启免费配额模式？',
     autoFocus: false,
     type: 'warning',
-      content:
-        '免费配额模式：开启后立刻重排定时任务，每日 11:00 同步昨天赛果与今天比赛/盘口，22:00 再轻量刷新今天热门联赛盘口并重算每日推荐；跳过积分榜、不拉未来比赛；若今日 11:00 已过会立即补跑一次。「立即同步」不受时间限制，走 11:00 同款全量范围。确定开启？',
+    content:
+      '免费配额模式：开启后立刻重排定时任务，每日 11:00 同步昨天赛果与今天比赛/盘口，22:00 再轻量刷新今天热门联赛盘口并重算每日推荐；跳过积分榜、不拉未来比赛；若今日 11:00 已过会立即补跑一次。「立即同步」不受时间限制，走 11:00 同款全量范围。确定开启？',
     positiveText: '确认开启',
     negativeText: '取消',
     onPositiveClick: () => {
@@ -166,6 +198,49 @@ function onFreeQuotaToggle(next: boolean) {
 
 function syncOfficialData() {
   void runSync()
+}
+
+async function openResetModal() {
+  resetPassword.value = ''
+  resetModalShow.value = true
+  resetPreviewLoading.value = true
+  resetPreview.value = null
+  try {
+    resetPreview.value = await previewResetMatchHistory()
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : '读取清空预览失败')
+    resetModalShow.value = false
+  } finally {
+    resetPreviewLoading.value = false
+  }
+}
+
+function closeResetModal() {
+  if (resetSubmitting.value) return
+  resetModalShow.value = false
+  resetPassword.value = ''
+}
+
+async function confirmResetMatchHistory() {
+  const password = resetPassword.value.trim()
+  if (!password) {
+    message.warning('请输入管理员登录密码')
+    return
+  }
+  resetSubmitting.value = true
+  try {
+    const report = await resetMatchHistory({ password, apply: true })
+    resetPreview.value = report
+    resetModalShow.value = false
+    resetPassword.value = ''
+    message.success(
+      `已清空比赛历史（比赛 ${report.fixtures} / 特征 ${report.match_features}）。请再点「立即同步」拉新盘口。`,
+    )
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : '清空失败')
+  } finally {
+    resetSubmitting.value = false
+  }
 }
 
 onMounted(() => {
@@ -248,7 +323,71 @@ onMounted(() => {
             />
           </template>
         </n-list-item>
+
+        <n-list-item>
+          <template #prefix>
+            <n-icon :component="TrashOutline" :size="20" />
+          </template>
+          <n-thing
+            title="清空比赛历史（ML 从零）"
+            description="删除赛程/盘口/特征/日推与本地模型文件，保留账号与联赛球队目录；换盘口后重新攒样本用。需输入管理员登录密码确认。"
+          />
+          <template #suffix>
+            <n-button
+              size="small"
+              type="error"
+              secondary
+              :disabled="syncing || resetSubmitting"
+              @click="openResetModal"
+            >
+              一键清空
+            </n-button>
+          </template>
+        </n-list-item>
       </n-list>
     </n-card>
+
+    <n-modal
+      v-model:show="resetModalShow"
+      preset="card"
+      title="确认清空比赛历史？"
+      :mask-closable="!resetSubmitting"
+      :close-on-esc="!resetSubmitting"
+      style="width: min(440px, 92vw)"
+      @update:show="(show: boolean) => !show && closeResetModal()"
+    >
+      <n-spin :show="resetPreviewLoading">
+        <n-alert type="warning" :bordered="false" style="margin-bottom: 12px">
+          不可恢复。关注列表会一并删除；账号、过关方案、联赛/球队目录会保留。
+        </n-alert>
+        <p v-if="resetSummary" style="margin: 0 0 12px; font-size: 13px; line-height: 1.5">
+          将删除：{{ resetSummary }}
+        </p>
+        <n-form-item label="管理员登录密码" :show-feedback="false">
+          <n-input
+            v-model:value="resetPassword"
+            type="password"
+            show-password-on="click"
+            placeholder="当前登录管理员的密码"
+            autocomplete="current-password"
+            :disabled="resetSubmitting"
+            @keyup.enter="confirmResetMatchHistory"
+          />
+        </n-form-item>
+      </n-spin>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 8px">
+          <n-button :disabled="resetSubmitting" @click="closeResetModal">取消</n-button>
+          <n-button
+            type="error"
+            :loading="resetSubmitting"
+            :disabled="resetPreviewLoading || !resetPassword.trim()"
+            @click="confirmResetMatchHistory"
+          >
+            确认清空
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
   </MineSectionBody>
 </template>
