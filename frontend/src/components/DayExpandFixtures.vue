@@ -49,7 +49,6 @@ const columns = computed<DataTableColumns<FixtureResponse>>(() => [
 
 <style scoped>
 .day-expand {
-  padding: 0 0 10px;
   box-sizing: border-box;
   min-height: 0;
 }

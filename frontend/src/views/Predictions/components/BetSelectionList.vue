@@ -139,8 +139,8 @@ function pickRows(picks: CalcSelection[]) {
   line-height: 1.3;
 }
 
-.selection-card :deep(.n-card__content) {
-  padding: 4px 8px 6px;
+.selection-card :deep(.n-card-content) {
+  padding: 0 12px 10px;
 }
 
 .selection-card :deep(.n-card-header__main) {
