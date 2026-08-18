@@ -643,6 +643,10 @@ async def refresh_pending_prediction_snapshots(session: Any) -> dict[str, int]:
 
     Used after model upgrades so list cards pick up heuristic/ML leans instead of
     stale ``待分析`` placeholders. Finished exam snapshots stay frozen.
+
+    Also rewrites ``odds_json`` when re-parsing corrects a stored main board
+    (e.g. rows that captured a half-time O/U line), so the DB stays the single
+    source for both the lean and the displayed line.
     """
     from datetime import datetime, timezone
 
@@ -652,7 +656,11 @@ async def refresh_pending_prediction_snapshots(session: Any) -> dict[str, int]:
     from app.models.pre_match_data import PreMatchData
     from app.services.cache import analysis_cache_key, get_cache_service
     from app.services.prediction import build_prediction_snapshot, implied_probs_from_odds
-    from app.services.prematch_package import package_from_record, rehydrate_odds_markets
+    from app.services.prematch_package import (
+        dumps_json,
+        loads_json,
+        package_from_record,
+    )
 
     rows = (
         await session.execute(
@@ -664,6 +672,7 @@ async def refresh_pending_prediction_snapshots(session: Any) -> dict[str, int]:
 
     updated = 0
     skipped = 0
+    boards_fixed = 0
     cache = get_cache_service()
     for stored, fixture in rows:
         package = package_from_record(stored)
@@ -671,7 +680,13 @@ async def refresh_pending_prediction_snapshots(session: Any) -> dict[str, int]:
         if not isinstance(odds, dict) or not odds.get("available"):
             skipped += 1
             continue
-        odds = rehydrate_odds_markets(odds)
+        raw_odds = loads_json(stored.odds_json, {}) if stored.odds_json else {}
+        if any(
+            (raw_odds.get(market) or {}) != (odds.get(market) or {})
+            for market in ("asian_handicap", "goals_ou", "both_teams_score")
+        ):
+            stored.odds_json = dumps_json(odds)
+            boards_fixed += 1
         pred = predict_probabilities(package)
         probs = pred.probs
         if pred.source == "form_fallback":
@@ -700,5 +715,112 @@ async def refresh_pending_prediction_snapshots(session: Any) -> dict[str, int]:
             pass
 
     await session.commit()
-    return {"updated": updated, "skipped_no_odds": skipped}
+    return {
+        "updated": updated,
+        "skipped_no_odds": skipped,
+        "boards_fixed": boards_fixed,
+    }
+
+
+async def repair_finished_odds_snapshots(session: Any) -> dict[str, int]:
+    """Repair finished exam rows that stored half-time / exotic boards as main lines.
+
+    Re-parses ``odds_json`` with the full-match filter, rewrites corrected main
+    boards, and refreshes frozen leans so results accuracy no longer scores a
+    half-time ``大(0.5)`` against a 90-minute total. No official API calls.
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.models.fixture import Fixture
+    from app.models.pre_match_data import PreMatchData
+    from app.services.cache import analysis_cache_key, get_cache_service
+    from app.services.prediction import build_prediction_snapshot
+    from app.services.prematch_package import (
+        _is_full_match_bet,
+        dumps_json,
+        loads_json,
+        rehydrate_odds_markets,
+    )
+
+    rows = (
+        await session.execute(
+            select(PreMatchData, Fixture)
+            .join(Fixture, Fixture.id == PreMatchData.fixture_id)
+            .where(Fixture.status.notin_(("pending", "postponed")))
+        )
+    ).all()
+
+    updated = 0
+    skipped = 0
+    boards_fixed = 0
+    ou_cleared = 0
+    cache = get_cache_service()
+    markets = ("asian_handicap", "goals_ou", "both_teams_score")
+
+    for stored, fixture in rows:
+        raw_odds = loads_json(stored.odds_json, {"available": False})
+        if not isinstance(raw_odds, dict) or not raw_odds.get("available"):
+            skipped += 1
+            continue
+
+        had_bad_board = any(
+            (raw_odds.get(market) or {}).get("bet")
+            and not _is_full_match_bet(
+                str((raw_odds.get(market) or {}).get("bet") or "").lower()
+            )
+            for market in markets
+        )
+        corrected = rehydrate_odds_markets(raw_odds)
+        boards_changed = any(
+            (raw_odds.get(market) or {}) != (corrected.get(market) or {})
+            for market in markets
+        )
+        if not had_bad_board and not boards_changed:
+            continue
+
+        probs = {
+            "home": float(stored.home_win_prob or 0.0),
+            "draw": float(stored.draw_prob or 0.0),
+            "away": float(stored.away_win_prob or 0.0),
+        }
+        if sum(probs.values()) <= 0:
+            skipped += 1
+            continue
+
+        stored.odds_json = dumps_json(corrected)
+        boards_fixed += 1
+
+        snap = build_prediction_snapshot(
+            probs,
+            corrected,
+            league_id=fixture.league_id,
+        )
+        if corrected.get("goals_ou"):
+            stored.goal_lean = snap.get("goal_lean")
+        else:
+            stored.goal_lean = "大小：待分析"
+            ou_cleared += 1
+        if corrected.get("asian_handicap"):
+            stored.handicap_lean = snap.get("handicap_lean")
+        elif had_bad_board and raw_odds.get("asian_handicap"):
+            stored.handicap_lean = "让球：待分析"
+        if corrected.get("both_teams_score"):
+            stored.both_score_lean = snap.get("both_score_lean")
+        stored.score_hint = snap.get("score_hint")
+        stored.updated_at = datetime.now(timezone.utc)
+        updated += 1
+        try:
+            await cache.delete(analysis_cache_key(fixture.id))
+        except Exception:
+            pass
+
+    await session.commit()
+    return {
+        "updated": updated,
+        "skipped_no_odds": skipped,
+        "boards_fixed": boards_fixed,
+        "ou_leans_cleared": ou_cleared,
+    }
 

@@ -37,6 +37,36 @@ def _bookmaker_priority(bookmaker: dict[str, Any]) -> int:
     return _BOOKMAKER_RANK.get(name, len(_BOOKMAKER_RANK))
 
 
+# Labels that scope a board to a period, a single team, a side event or a combo.
+# 展示与推荐都按全场结算，半场盘绝不能当主盘：曾把「让球 / 大小」主盘选成
+# ``Goals Over/Under First Half``，卡片推荐 小(2.25) 而玩法区给出半场 0.5。
+_NON_FULL_MATCH_BET_TOKENS = (
+    "half",
+    "halves",
+    "ht/ft",
+    "quarter",
+    "period",
+    "minute",
+    "corner",
+    "card",
+    "booking",
+    "clean sheet",
+    "win to nil",
+    "odd/even",
+    "exact score",
+    "correct score",
+    "score first",
+    "score last",
+    "highest scoring",
+    "to qualify",
+)
+
+
+def _is_full_match_bet(bet_name: str) -> bool:
+    """True when the label settles on the full-time, whole-match result."""
+    return not any(token in bet_name for token in _NON_FULL_MATCH_BET_TOKENS)
+
+
 def dumps_json(data: Any) -> str | None:
     if data is None:
         return None
@@ -369,6 +399,9 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 }
                 bookmakers_out.append(entry)
 
+                if not _is_full_match_bet(bet_name):
+                    continue
+
                 if match_winner is None and (
                     "match winner" in bet_name
                     or bet_name in {"1x2", "winner", "full time result"}
@@ -416,8 +449,9 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                     )
 
                 if both_teams_score is None and (
-                    "both teams score" in bet_name
-                    or "both teams to score" in bet_name
+                    # 前缀匹配：Total Goals/Both Teams To Score 等组合盘不是纯双进。
+                    bet_name.startswith("both teams score")
+                    or bet_name.startswith("both teams to score")
                     or bet_name in {"btts", "gg/ng", "goal goal"}
                 ):
                     yes_odd = None
@@ -490,12 +524,7 @@ def _prefer_core_bookmaker_bets(
     used: set[int] = set()
 
     def _is_main_line(bet_name: str, key: str) -> bool:
-        if key not in bet_name:
-            return False
-        # Prefer full-time main markets over half / exotic variants.
-        if "half" in bet_name or "ht/ft" in bet_name:
-            return False
-        return True
+        return key in bet_name and _is_full_match_bet(bet_name)
 
     for key in priority:
         for idx, entry in enumerate(entries):
@@ -734,8 +763,9 @@ def parse_predictions_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def rehydrate_odds_markets(odds: dict[str, Any] | None) -> dict[str, Any]:
     """Normalize odds; re-pick main AH / O-U lines from stored bookmaker values.
 
-    Older rows may have stored the last exotic line (e.g. 4.5). Re-parsing from
-    ``bookmakers`` values applies the balanced-line selection on every read.
+    Older rows may have stored the last exotic line (e.g. 4.5) or a half-time
+    board. Re-parsing from ``bookmakers`` values applies both the balanced-line
+    selection and the full-match check on every read.
     """
     if not isinstance(odds, dict):
         return {"available": False}
@@ -767,12 +797,14 @@ def rehydrate_odds_markets(odds: dict[str, Any] | None) -> dict[str, Any]:
     }
     parsed = parse_odds_payload(synthetic)
     merged = {**odds}
-    if parsed.get("asian_handicap"):
-        merged["asian_handicap"] = parsed["asian_handicap"]
-    if parsed.get("goals_ou"):
-        merged["goals_ou"] = parsed["goals_ou"]
-    if parsed.get("both_teams_score"):
-        merged["both_teams_score"] = parsed["both_teams_score"]
+    for market in ("asian_handicap", "goals_ou", "both_teams_score"):
+        if parsed.get(market):
+            merged[market] = parsed[market]
+        elif not _is_full_match_bet(
+            str((merged.get(market) or {}).get("bet") or "").lower()
+        ):
+            # 旧行存过半场盘，且本次没有可用全场盘：宁可空着，也不能展示错盘。
+            merged[market] = None
     if merged.get("match_winner") is None and parsed.get("match_winner"):
         merged["match_winner"] = parsed["match_winner"]
     merged["available"] = bool(

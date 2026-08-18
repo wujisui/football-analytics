@@ -276,6 +276,23 @@ async def run_refresh_pending_predictions() -> None:
         result = await refresh_pending_prediction_snapshots(session)
     print(
         f"Refreshed pending predictions: updated={result['updated']} "
+        f"skipped_no_odds={result['skipped_no_odds']} "
+        f"boards_fixed={result['boards_fixed']}"
+    )
+
+
+async def run_repair_finished_odds() -> None:
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.ml_predictor import repair_finished_odds_snapshots
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        result = await repair_finished_odds_snapshots(session)
+    print(
+        "Repaired finished odds snapshots: "
+        f"updated={result['updated']} "
+        f"boards_fixed={result['boards_fixed']} "
+        f"ou_leans_cleared={result['ou_leans_cleared']} "
         f"skipped_no_odds={result['skipped_no_odds']}"
     )
 
@@ -550,6 +567,13 @@ def main() -> None:
         help="Recompute pending recommendation leans from local odds (no API)",
     )
     subparsers.add_parser(
+        "repair-finished-odds",
+        help=(
+            "Fix finished rows that stored half-time boards as main lines; "
+            "rewrite odds_json + frozen leans (no API)"
+        ),
+    )
+    subparsers.add_parser(
         "upgrade-models",
         help="Backfill odds+FT samples, retrain 1X2/AH/goals, refresh pending leans",
     )
@@ -657,6 +681,7 @@ def main() -> None:
         "audit-team-names": run_audit_team_names,
         "backfill-features": run_backfill_features,
         "refresh-pending-predictions": run_refresh_pending_predictions,
+        "repair-finished-odds": run_repair_finished_odds,
         "upgrade-models": run_upgrade_models,
         "train-model": run_train_model,
         "model-status": run_model_status,

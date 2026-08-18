@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.prematch_package import parse_odds_payload
+from app.services.prematch_package import parse_odds_payload, rehydrate_odds_markets
 
 
 def _bookmaker(name: str, home_odd: str) -> dict:
@@ -77,6 +77,88 @@ class OddsBookmakerPriorityTests(unittest.TestCase):
 
         self.assertEqual(parsed["match_winner"]["bookmaker"], "SBO")
         self.assertEqual(parsed["match_winner"]["home"], "2.20")
+
+
+class FullMatchBoardTests(unittest.TestCase):
+    """半场 / 组合盘不能当主盘：否则推荐 小(2.25) 会配上半场 0.5 的玩法行。"""
+
+    def _payload(self, bets: list[dict]) -> dict:
+        return {"response": [{"bookmakers": [{"name": "William Hill", "bets": bets}]}]}
+
+    def test_half_time_boards_never_become_main_lines(self) -> None:
+        parsed = parse_odds_payload(
+            self._payload(
+                [
+                    {
+                        "name": "Goals Over/Under First Half",
+                        "values": [
+                            {"value": "Over 0.5", "odd": "1.44"},
+                            {"value": "Under 0.5", "odd": "2.62"},
+                        ],
+                    },
+                    {
+                        "name": "Goals Over/Under",
+                        "values": [
+                            {"value": "Over 2.25", "odd": "2.05"},
+                            {"value": "Under 2.25", "odd": "1.81"},
+                        ],
+                    },
+                    {
+                        "name": "Asian Handicap First Half",
+                        "values": [
+                            {"value": "Home -0.25", "odd": "1.90"},
+                            {"value": "Away -0.25", "odd": "1.95"},
+                        ],
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(parsed["goals_ou"]["line"], "2.25")
+        self.assertEqual(parsed["goals_ou"]["bet"], "Goals Over/Under")
+        self.assertIsNone(parsed["asian_handicap"])
+
+    def test_combo_boards_are_not_treated_as_btts(self) -> None:
+        parsed = parse_odds_payload(
+            self._payload(
+                [
+                    {
+                        "name": "Total Goals/Both Teams To Score",
+                        "values": [{"value": "Yes", "odd": "2.40"}],
+                    },
+                    {
+                        "name": "Both Teams To Score in Both Halves",
+                        "values": [{"value": "Yes", "odd": "6.00"}],
+                    },
+                ]
+            )
+        )
+
+        self.assertIsNone(parsed["both_teams_score"])
+
+    def test_rehydrate_drops_stored_half_time_board(self) -> None:
+        stored = {
+            "available": True,
+            "goals_ou": {
+                "bookmaker": "William Hill",
+                "bet": "Goals Over/Under First Half",
+                "line": "0.5",
+                "home": "1.44",
+                "away": "2.62",
+            },
+            "bookmakers": [
+                {
+                    "bookmaker": "William Hill",
+                    "bet": "Goals Over/Under First Half",
+                    "values": [
+                        {"label": "Over 0.5", "odd": "1.44"},
+                        {"label": "Under 0.5", "odd": "2.62"},
+                    ],
+                }
+            ],
+        }
+
+        self.assertIsNone(rehydrate_odds_markets(stored)["goals_ou"])
 
 
 if __name__ == "__main__":

@@ -287,7 +287,7 @@
 | 预测目标 | 赛前快照时刻 **主盘 Asian Handicap** 上，主队是否 **穿盘**（cover） |
 | 标签 `ah_label` | `cover` \| `no_cover`；整球线走水 `push` **不入训**（或单独三分类，首版二分类+过滤） |
 | 结算 | 90 分钟比分 + 赛前冻结 `ah_line`：`home_adj = home_goals + line`，与 `away_goals` 比大小 |
-| 主盘选取 | 与列表/详情展示一致：取 `pre_match_data.odds_json`（或 `odds_opening_json`）中 **第一条有效 AH 线**；分析时冻结写入特征行 |
+| 主盘选取 | 与列表/详情展示一致：取 `pre_match_data.odds_json`（或 `odds_opening_json`）中 **第一条有效 AH 线**；分析时冻结写入特征行。主盘只认**全场盘**：`prematch_package._is_full_match_bet` 会挡掉半场 / 组合 / 角球等变体（曾把 `Goals Over/Under First Half` 当大小主盘，卡片推荐 小(2.25) 却在玩法区给出半场 0.5） |
 | 与 1X2 关系 | **独立模型**；输出可与 `recommendation` 并存，UI 标明「赛果推荐 vs 赢盘推荐」 |
 
 典型分歧（必须靠模型/特征学，不宜写死）：
