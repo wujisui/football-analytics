@@ -26,7 +26,7 @@ const saving = ref(false)
 
 const freeQuotaEnabled = ref(true)
 const freeQuotaSource = ref('')
-const freeQuotaHours = ref<number[]>([11])
+const freeQuotaHours = ref<number[]>([11, 22])
 const freeQuotaLoading = ref(false)
 const freeQuotaSaving = ref(false)
 
@@ -48,7 +48,7 @@ async function loadSetting() {
     detailBudget.value = Number(detail.budget) || 10
     freeQuotaEnabled.value = freeQuota.enabled
     freeQuotaSource.value = freeQuota.source
-    freeQuotaHours.value = freeQuota.sync_hours?.length ? freeQuota.sync_hours : [11]
+    freeQuotaHours.value = freeQuota.sync_hours?.length ? freeQuota.sync_hours : [11, 22]
   } catch (err) {
     message.error(err instanceof Error ? err.message : '读取管理员设置失败')
   } finally {
@@ -108,15 +108,15 @@ async function applyFreeQuotaToggle(next: boolean) {
     const data = await updateFreeQuotaSetting(next)
     freeQuotaEnabled.value = data.enabled
     freeQuotaSource.value = data.source
-    freeQuotaHours.value = data.sync_hours?.length ? data.sync_hours : next ? [11] : [0, 6, 11, 16, 19, 22]
+    freeQuotaHours.value = data.sync_hours?.length ? data.sync_hours : next ? [11, 22] : [0, 6, 11, 16, 19, 22]
     if (next) {
       if (data.catch_up_started) {
         message.success(
-          '已开启免费配额模式（每日仅 11:00 同步）。今日 11:00 已过，正在后台补跑一次同步',
+          '已开启免费配额模式（每日 11:00 全量 + 22:00 盘口）。今日 11:00 已过，正在后台补跑一次同步',
         )
       } else {
         message.success(
-          `已开启免费配额模式（每日仅 11:00 同步）。下次自动同步：${formatSyncHours(freeQuotaHours.value)}`,
+          `已开启免费配额模式（每日 11:00 全量 + 22:00 盘口）。下次自动同步：${formatSyncHours(freeQuotaHours.value)}`,
         )
       }
     } else {
@@ -154,8 +154,8 @@ function onFreeQuotaToggle(next: boolean) {
     title: '确认开启免费配额模式？',
     autoFocus: false,
     type: 'warning',
-    content:
-      '免费配额模式：开启后立刻重排定时任务，每日仅 11:00 同步昨天赛果与今天比赛/盘口，跳过积分榜、不拉未来比赛；若今日 11:00 已过会立即补跑一次。「立即同步」不受时间限制，但使用相同范围。确定开启？',
+      content:
+        '免费配额模式：开启后立刻重排定时任务，每日 11:00 同步昨天赛果与今天比赛/盘口，22:00 再轻量刷新今天热门联赛盘口并重算每日推荐；跳过积分榜、不拉未来比赛；若今日 11:00 已过会立即补跑一次。「立即同步」不受时间限制，走 11:00 同款全量范围。确定开启？',
     positiveText: '确认开启',
     negativeText: '取消',
     onPositiveClick: () => {
@@ -209,10 +209,10 @@ onMounted(() => {
             title="打开免费配额"
             :description="
               freeQuotaSource
-                ? `免费配额模式（每日仅 11:00，同步昨天赛果 + 今天比赛，不拉未来）。当前来源：${
+                ? `免费配额模式（每日 11:00 全量 + 22:00 盘口，同步昨天赛果 + 今天比赛，不拉未来）。当前来源：${
                     freeQuotaSource === 'db' ? '管理员覆盖（库）' : '环境变量默认'
                   }；生效整点：${formatSyncHours(freeQuotaHours)}`
-                : '免费配额模式（每日仅 11:00，同步昨天赛果 + 今天比赛，不拉未来）；默认开启'
+                : '免费配额模式（每日 11:00 全量 + 22:00 盘口，同步昨天赛果 + 今天比赛，不拉未来）；默认开启'
             "
           />
           <template #suffix>

@@ -9,7 +9,11 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.core.config import get_settings
-from app.services.api_quota import clip_fixture_dates_for_plan
+from app.services.api_quota import (
+    FREE_QUOTA_EVENING_HOUR,
+    FREE_QUOTA_EVENING_ODDS_BUDGET,
+    clip_fixture_dates_for_plan,
+)
 from app.services.fetcher import FootballFetcher
 from app.services.league_standings import sync_league_standings_for_dates
 from app.services.runtime_settings import (
@@ -43,11 +47,15 @@ def sync_dates(
     return fixture_days, result_days
 
 
-async def scheduled_fixtures_sync() -> None:
+async def scheduled_fixtures_sync(*, sync_hour: int | None = None) -> None:
     """Refresh the local DB in one scheduled (or manual) sync batch.
 
     Order matters for free-tier quota: settle recent match-day scores before
     burning calls on odds / standings, otherwise ML labels and 赛果统计 stall.
+
+    Free-quota ``sync_hour=22`` is odds-light: refresh today's catalog boards
+    and recompute auto picks only, so morning + evening fit a ~100-call day.
+    Manual sync / 11:00 keep the full free batch.
     """
     if _sync_lock.locked():
         logger.info("Scheduled fixtures sync already running; skipping overlap")
@@ -56,6 +64,11 @@ async def scheduled_fixtures_sync() -> None:
     settings = get_settings()
     today = datetime.now(ZoneInfo(settings.SCHEDULER_TIMEZONE)).date()
     free_quota, _ = await get_enable_free_quota()
+    evening_odds_only = (
+        free_quota
+        and sync_hour is not None
+        and int(sync_hour) == FREE_QUOTA_EVENING_HOUR
+    )
     days, result_days = sync_dates(
         today,
         lookahead_days=settings.FIXTURES_LOOKAHEAD_DAYS,
@@ -74,63 +87,83 @@ async def scheduled_fixtures_sync() -> None:
 
     async with _sync_lock:
         async with FootballFetcher() as fetcher:
-            # 1) Results first — one worldwide date= call per day, then labels.
             results_saved = 0
-            if result_days and not fetcher.quota_exhausted:
-                results_saved = await fetcher.capture_finished_results(
-                    on_days=result_days,
-                    today=today,
-                )
-
-            # 2) Upcoming fixtures window (may overlap today already refreshed).
             fixtures_saved = 0
-            upcoming = [d for d in days if d not in set(result_days)]
-            if upcoming and not fetcher.quota_exhausted:
-                fixtures_saved = await fetcher.fetch_fixtures_window(
-                    upcoming[0],
-                    upcoming[-1],
-                    force=True,
-                    league_ids=None,
-                )
-            elif not days and not result_days:
-                logger.warning(
-                    "scheduled_fixtures_sync: no fixture dates left after "
-                    "free-plan window clip; skipping fixtures fetch"
-                )
-
-            odds_days = days or result_days
-            if odds_days and not fetcher.quota_exhausted:
-                await fetcher.sync_odds_for_dates(
-                    odds_days,
-                    refresh_existing=True,
-                    league_ids=primary_league_ids,
-                    budget=100,
-                    set_opening=True,
-                )
-
             standings_stats = {
                 "leagues": 0,
                 "fetched": 0,
                 "skipped": 0,
                 "failed": 0,
             }
-            if standings_days and not fetcher.quota_exhausted:
-                # Catalog leagues only — date-strip extras must not burn quota.
-                standings_stats = await sync_league_standings_for_dates(
-                    fetcher,
-                    standings_days,
-                    league_ids=primary_league_ids,
-                )
-            elif not standings_days:
+
+            if evening_odds_only:
+                odds_days = days or [today]
+                odds_days = clip_fixture_dates_for_plan(odds_days, today)
+                if odds_days and not fetcher.quota_exhausted:
+                    await fetcher.sync_odds_for_dates(
+                        odds_days,
+                        refresh_existing=True,
+                        league_ids=primary_league_ids,
+                        budget=FREE_QUOTA_EVENING_ODDS_BUDGET,
+                        set_opening=False,
+                    )
                 logger.info(
-                    "scheduled_fixtures_sync: skipping standings "
-                    "(free-quota mode prioritizes fixtures/odds)"
+                    "scheduled_fixtures_sync evening odds-light "
+                    "hour=%s budget=%s days=%s",
+                    sync_hour,
+                    FREE_QUOTA_EVENING_ODDS_BUDGET,
+                    odds_days,
                 )
-            elif fetcher.quota_exhausted:
-                logger.warning(
-                    "scheduled_fixtures_sync: skipping standings "
-                    "(official quota exhausted earlier in this batch)"
-                )
+            else:
+                # 1) Results first — one worldwide date= call per day, then labels.
+                if result_days and not fetcher.quota_exhausted:
+                    results_saved = await fetcher.capture_finished_results(
+                        on_days=result_days,
+                        today=today,
+                    )
+
+                # 2) Upcoming fixtures window (may overlap today already refreshed).
+                upcoming = [d for d in days if d not in set(result_days)]
+                if upcoming and not fetcher.quota_exhausted:
+                    fixtures_saved = await fetcher.fetch_fixtures_window(
+                        upcoming[0],
+                        upcoming[-1],
+                        force=True,
+                        league_ids=None,
+                    )
+                elif not days and not result_days:
+                    logger.warning(
+                        "scheduled_fixtures_sync: no fixture dates left after "
+                        "free-plan window clip; skipping fixtures fetch"
+                    )
+
+                odds_days = days or result_days
+                if odds_days and not fetcher.quota_exhausted:
+                    await fetcher.sync_odds_for_dates(
+                        odds_days,
+                        refresh_existing=True,
+                        league_ids=primary_league_ids,
+                        budget=100,
+                        set_opening=True,
+                    )
+
+                if standings_days and not fetcher.quota_exhausted:
+                    # Catalog leagues only — date-strip extras must not burn quota.
+                    standings_stats = await sync_league_standings_for_dates(
+                        fetcher,
+                        standings_days,
+                        league_ids=primary_league_ids,
+                    )
+                elif not standings_days:
+                    logger.info(
+                        "scheduled_fixtures_sync: skipping standings "
+                        "(free-quota mode prioritizes fixtures/odds)"
+                    )
+                elif fetcher.quota_exhausted:
+                    logger.warning(
+                        "scheduled_fixtures_sync: skipping standings "
+                        "(official quota exhausted earlier in this batch)"
+                    )
 
         # Optional: pre-pull detail packages for catalog prematch fixtures that
         # still lack a display package. Same path as GET /fixtures/{id}/analysis.
@@ -140,7 +173,8 @@ async def scheduled_fixtures_sync() -> None:
             "enabled": full_detail_enabled,
             "source": full_detail_source,
         }
-        if full_detail_enabled:
+        # Evening free slot must not burn leftover quota on detail enrich.
+        if full_detail_enabled and not evening_odds_only:
             try:
                 from app.services.scheduled_detail_enrich import (
                     run_scheduled_full_detail_enrich,
@@ -166,21 +200,24 @@ async def scheduled_fixtures_sync() -> None:
                     exc,
                 )
                 full_detail_stats["error"] = str(exc)
+        elif evening_odds_only and full_detail_enabled:
+            full_detail_stats["skipped"] = "evening_odds_light"
 
-        for module_path, function_name, label in (
-            ("app.services.ml_predictor", "maybe_auto_train_model", "1X2"),
-            ("app.services.ah_predictor", "maybe_auto_train_model", "AH"),
-            ("app.services.goal_predictor", "maybe_auto_train_model", "goals"),
-        ):
-            try:
-                module = importlib.import_module(module_path)
-                await getattr(module, function_name)()
-            except Exception as exc:
-                logger.warning(
-                    "scheduled_fixtures_sync %s auto-train skipped: %s",
-                    label,
-                    exc,
-                )
+        if not evening_odds_only:
+            for module_path, function_name, label in (
+                ("app.services.ml_predictor", "maybe_auto_train_model", "1X2"),
+                ("app.services.ah_predictor", "maybe_auto_train_model", "AH"),
+                ("app.services.goal_predictor", "maybe_auto_train_model", "goals"),
+            ):
+                try:
+                    module = importlib.import_module(module_path)
+                    await getattr(module, function_name)()
+                except Exception as exc:
+                    logger.warning(
+                        "scheduled_fixtures_sync %s auto-train skipped: %s",
+                        label,
+                        exc,
+                    )
 
         # Odds just refreshed — recompute auto favorites so picks track lines.
         try:
@@ -201,9 +238,10 @@ async def scheduled_fixtures_sync() -> None:
 
     logger.info(
         "scheduled_fixtures_sync done fixtures_saved=%s results_saved=%s "
-        "standings=%s full_detail=%s",
+        "standings=%s full_detail=%s evening_odds_only=%s",
         fixtures_saved,
         results_saved,
         standings_stats,
         full_detail_stats,
+        evening_odds_only,
     )

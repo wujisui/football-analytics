@@ -16,7 +16,7 @@ from app.services.fixtures_sync import sync_dates
 
 
 def test_sync_hour_constants() -> None:
-    assert SYNC_HOURS_FREE_QUOTA == (11,)
+    assert SYNC_HOURS_FREE_QUOTA == (11, 22)
     assert FREE_QUOTA_SYNC_HOUR == 11
     assert SYNC_HOURS_FULL == (0, 6, 11, 16, 19, 22)
 
@@ -96,7 +96,7 @@ def test_free_quota_skips_standings_but_full_keeps_them() -> None:
             ),
             patch("app.core.database.AsyncSessionLocal"),
         ):
-            await fs.scheduled_fixtures_sync()
+            await fs.scheduled_fixtures_sync(sync_hour=11)
         return standings
 
     try:
@@ -111,6 +111,69 @@ def test_free_quota_skips_standings_but_full_keeps_them() -> None:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
 
+def test_free_quota_evening_only_refreshes_odds() -> None:
+    """22:00 free slot skips results/fixtures/standings; odds + auto picks only."""
+    import asyncio
+
+    from app.services import fixtures_sync as fs
+    from app.services.api_quota import FREE_QUOTA_EVENING_ODDS_BUDGET
+
+    async def _run() -> MagicMock:
+        fetcher = MagicMock()
+        fetcher.quota_exhausted = False
+        fetcher.capture_finished_results = AsyncMock(return_value=0)
+        fetcher.fetch_fixtures_window = AsyncMock(return_value=0)
+        fetcher.sync_odds_for_dates = AsyncMock(return_value=None)
+        fetcher.__aenter__ = AsyncMock(return_value=fetcher)
+        fetcher.__aexit__ = AsyncMock(return_value=False)
+
+        standings = AsyncMock(
+            return_value={"leagues": 0, "fetched": 0, "skipped": 0, "failed": 0}
+        )
+        settings = MagicMock()
+        settings.SCHEDULER_TIMEZONE = "Asia/Shanghai"
+        settings.FIXTURES_LOOKAHEAD_DAYS = 8
+        settings.LEAGUE_IDS = {"英超": 39}
+        settings.uses_full_history = True
+
+        with (
+            patch.object(fs, "FootballFetcher", return_value=fetcher),
+            patch.object(fs, "sync_league_standings_for_dates", standings),
+            patch.object(fs, "get_settings", return_value=settings),
+            patch.object(
+                fs, "get_enable_free_quota", AsyncMock(return_value=(True, "db"))
+            ),
+            patch.object(
+                fs,
+                "get_enable_scheduled_full_detail",
+                AsyncMock(return_value=(True, "env")),
+            ),
+            patch.object(fs, "clip_fixture_dates_for_plan", lambda days, today: days),
+            patch.object(fs, "importlib", MagicMock()),
+            patch(
+                "app.services.auto_favorites.sync_daily_auto_favorites",
+                AsyncMock(return_value={"selected": []}),
+            ),
+            patch("app.core.database.AsyncSessionLocal"),
+        ):
+            await fs.scheduled_fixtures_sync(sync_hour=22)
+
+        fetcher.capture_finished_results.assert_not_called()
+        fetcher.fetch_fixtures_window.assert_not_called()
+        standings.assert_not_called()
+        fetcher.sync_odds_for_dates.assert_awaited_once()
+        kwargs = fetcher.sync_odds_for_dates.await_args.kwargs
+        assert kwargs["budget"] == FREE_QUOTA_EVENING_ODDS_BUDGET
+        assert kwargs["set_opening"] is False
+        assert kwargs["refresh_existing"] is True
+        return fetcher
+
+    try:
+        asyncio.run(_run())
+    finally:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
 def test_free_quota_catch_up_due_before_and_after_slot() -> None:
     tz = ZoneInfo("Asia/Shanghai")
     before = datetime(2026, 8, 17, 10, 59, tzinfo=tz)
@@ -121,7 +184,7 @@ def test_free_quota_catch_up_due_before_and_after_slot() -> None:
     assert free_quota_catch_up_due(after) is True
 
 
-def test_register_jobs_free_quota_keeps_only_11() -> None:
+def test_register_jobs_free_quota_keeps_11_and_22() -> None:
     with patch("app.tasks.scheduler.get_settings") as gs:
         gs.return_value.SCHEDULER_TIMEZONE = "Asia/Shanghai"
         gs.return_value.ENABLE_FREE_QUOTA = True
@@ -134,7 +197,10 @@ def test_register_jobs_free_quota_keeps_only_11() -> None:
                 for job in scheduler.get_jobs()
                 if str(job.id).startswith("scheduled_fixtures_sync_")
             )
-            assert sync_ids == ["scheduled_fixtures_sync_11"]
+            assert sync_ids == [
+                "scheduled_fixtures_sync_11",
+                "scheduled_fixtures_sync_22",
+            ]
 
             register_jobs(free_quota=False)
             sync_ids = sorted(

@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
+from app.services.api_quota import FREE_QUOTA_EVENING_HOUR
 from app.services.data_cleanup import prune_low_value_data
 from app.services.fixtures_sync import scheduled_fixtures_sync
 from app.services.runtime_settings import get_enable_free_quota
@@ -24,7 +25,8 @@ _scheduler_started = False
 
 # Paid / full schedule vs free-quota mode (admin toggle, default ON).
 SYNC_HOURS_FULL = (0, 6, 11, 16, 19, 22)
-SYNC_HOURS_FREE_QUOTA = (11,)
+# 11:00 = full free batch (results + today fixtures/odds); 22:00 = odds refresh only.
+SYNC_HOURS_FREE_QUOTA = (11, FREE_QUOTA_EVENING_HOUR)
 FREE_QUOTA_SYNC_HOUR = 11
 
 
@@ -61,12 +63,16 @@ def get_task_status() -> dict[str, Any]:
     }
 
 
-async def run_scheduled_fixtures_sync(task_name: str = "scheduled_fixtures_sync") -> None:
+async def run_scheduled_fixtures_sync(
+    task_name: str = "scheduled_fixtures_sync",
+    *,
+    sync_hour: int | None = None,
+) -> None:
     """Run one fixed daily fixtures/odds/results synchronization batch."""
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
-    logger.info("Task %s started.", task_name)
+    logger.info("Task %s started (sync_hour=%s).", task_name, sync_hour)
     try:
-        await scheduled_fixtures_sync()
+        await scheduled_fixtures_sync(sync_hour=sync_hour)
         _set_task_status(task_name, "completed", finished_at=_utc_now().isoformat())
         logger.info("Task %s completed.", task_name)
     except Exception as exc:
@@ -237,7 +243,7 @@ async def trigger_task(task_name: str) -> None:
 
 
 def register_jobs(*, free_quota: bool | None = None) -> None:
-    """Register cron jobs. ``free_quota=True`` keeps only the 11:00 sync slot."""
+    """Register cron jobs. Free-quota mode keeps 11:00 full + 22:00 odds refresh."""
     settings = get_settings()
     timezone = settings.SCHEDULER_TIMEZONE
     if free_quota is None:
@@ -261,6 +267,7 @@ def register_jobs(*, free_quota: bool | None = None) -> None:
             CronTrigger(hour=hour, minute=0, timezone=timezone),
             id=job_id,
             name=job_id,
+            kwargs={"sync_hour": hour},
             replace_existing=True,
             max_instances=1,
             coalesce=True,

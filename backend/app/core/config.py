@@ -108,6 +108,7 @@ class Settings(BaseSettings):
     # when the flag is on. Each fixture may cost several official API calls.
     SCHEDULED_FULL_DETAIL_BUDGET: int = 10
     # Free-quota mode (env default ON). Runtime override via Mine admin UI.
+    # When ON: 11:00 full free batch + 22:00 odds-light refresh.
     # When on, sync runs only at 11:00 and official fixture calls are limited
     # to yesterday's results plus today's schedule/odds (no future dates).
     ENABLE_FREE_QUOTA: bool = True

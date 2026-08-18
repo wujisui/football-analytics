@@ -14,6 +14,8 @@ from app.services.runtime_settings import (
     set_enable_scheduled_full_detail,
 )
 from app.tasks.scheduler import (
+    SYNC_HOURS_FREE_QUOTA,
+    SYNC_HOURS_FULL,
     free_quota_catch_up_due,
     get_task_status,
     refresh_fixture_sync_jobs,
@@ -73,7 +75,7 @@ def _free_quota_payload(
     *,
     catch_up_started: bool = False,
 ) -> FreeQuotaSetting:
-    hours = [11] if enabled else [0, 6, 11, 16, 19, 22]
+    hours = list(SYNC_HOURS_FREE_QUOTA if enabled else SYNC_HOURS_FULL)
     return FreeQuotaSetting(
         enabled=enabled,
         source=source,
