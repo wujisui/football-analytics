@@ -12,6 +12,30 @@ from app.services.league_names import localize_match_row, localize_matches_block
 
 logger = logging.getLogger(__name__)
 
+# Prefer sharper, more liquid pre-match boards over the provider's response order.
+# API-Sports currently returns 10Bet early, but response position is not a quality signal.
+BOOKMAKER_PRIORITY = (
+    "Pinnacle",
+    "SBO",
+    "Betfair",
+    "Bet365",
+    "Marathonbet",
+    "William Hill",
+    "1xBet",
+    "10Bet",
+)
+_BOOKMAKER_RANK = {
+    bookmaker.casefold(): index
+    for index, bookmaker in enumerate(BOOKMAKER_PRIORITY)
+}
+
+
+def _bookmaker_priority(bookmaker: dict[str, Any]) -> int:
+    name = str(
+        first_value(bookmaker, [["name"], ["bookmaker", "name"]], "")
+    ).casefold()
+    return _BOOKMAKER_RANK.get(name, len(_BOOKMAKER_RANK))
+
 
 def dumps_json(data: Any) -> str | None:
     if data is None:
@@ -310,7 +334,7 @@ def _parse_line_market(
 
 
 def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Extract 1X2 + Asian handicap + Goals O/U + BTTS from first useful bookmaker."""
+    """Extract core markets from the highest-priority available bookmaker."""
     bookmakers_out: list[dict[str, Any]] = []
     match_winner: dict[str, Any] | None = None
     asian_handicap: dict[str, Any] | None = None
@@ -318,7 +342,10 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
     both_teams_score: dict[str, Any] | None = None
 
     for item in extract_items(payload):
-        bookmakers = item.get("bookmakers") or []
+        bookmakers = sorted(
+            item.get("bookmakers") or [],
+            key=_bookmaker_priority,
+        )
         for book in bookmakers:
             book_name = first_value(book, [["name"], ["bookmaker", "name"]], "unknown")
             bets = book.get("bets") or []
