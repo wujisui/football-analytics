@@ -11,7 +11,7 @@ import {
   selectedFixtureIds,
   type CalcOutcome,
 } from '@/utils/betCalculator'
-import { leagueTagColor } from '@/utils/format'
+import { formatDate, formatTime, leagueTagColor } from '@/utils/format'
 import {
   planStatusLabel,
   settleBetPlan,
@@ -105,6 +105,8 @@ type FixtureLegGroup = {
   homeName: string
   awayName: string
   kickoff: string
+  /** Frozen kickoff no longer matches the fixture: officially moved to this label. */
+  rescheduledLabel: string | null
   scoreText: string | null
   rows: {
     key: string
@@ -125,6 +127,7 @@ const legGroups = computed((): FixtureLegGroup[] => {
   return [...byFixture.values()].map((fixtureLegs) => {
     const first = fixtureLegs[0].pick
     const scoreText = fixtureLegs.find((l) => l.scoreText)?.scoreText ?? null
+    const movedTo = fixtureLegs.find((l) => l.rescheduledTo)?.rescheduledTo ?? null
     const buckets = new Map<string, SettledLeg[]>()
     for (const leg of fixtureLegs) {
       const { market, line, playLabel } = leg.pick
@@ -156,6 +159,9 @@ const legGroups = computed((): FixtureLegGroup[] => {
       homeName: first.homeName,
       awayName: first.awayName,
       kickoff: first.kickoff,
+      rescheduledLabel: movedTo
+        ? `${formatDate(movedTo)} ${formatTime(movedTo)}`
+        : null,
       scoreText,
       rows,
     }
@@ -255,9 +261,21 @@ watch(
               {{ group.leagueName }}
             </n-text>
           </n-ellipsis>
-          <n-text depth="3" style="flex-shrink: 0; font-size: 12px;">
+          <n-text
+            depth="3"
+            style="flex-shrink: 0; font-size: 12px;"
+            :delete="!!group.rescheduledLabel"
+          >
             {{ group.kickoff }}
           </n-text>
+          <n-tag
+            v-if="group.rescheduledLabel"
+            size="small"
+            type="warning"
+            :bordered="false"
+          >
+            已改期 → {{ group.rescheduledLabel }}
+          </n-tag>
           <span v-if="group.scoreText" class="leg-score">
             比分
             <span class="leg-score-value">{{ group.scoreText }}</span>

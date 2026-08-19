@@ -6,10 +6,13 @@ import {
   type FoldMode,
   type ParlayCombo,
 } from '@/utils/betCalculator'
+import { parseApiDate } from '@/utils/format'
 
 export type FixtureScoreSnap = {
   fixture_id: number
   status: string
+  /** Current ISO kickoff — differs from the frozen pick when officially rescheduled. */
+  fixture_date?: string
   home_goals?: number | null
   away_goals?: number | null
 }
@@ -21,6 +24,8 @@ export type SettledLeg = {
   pick: CalcSelection
   verdict: LegVerdict
   scoreText: string | null
+  /** ISO kickoff the fixture was moved to, when it no longer matches the saved pick. */
+  rescheduledTo: string | null
 }
 
 export type SettledCombo = {
@@ -63,6 +68,29 @@ function isCancelledStatus(status: string): boolean {
     s === 'abandoned' ||
     s === 'suspended'
   )
+}
+
+/**
+ * Official kickoff nudges of a few minutes are noise; a real reschedule (e.g. a
+ * postponed first leg pushing the return leg a week later) moves it far more.
+ */
+const RESCHEDULE_TOLERANCE_MS = 30 * 60 * 1000
+
+/**
+ * Saved plans freeze the kickoff label, while settlement reads the fixture live by
+ * id. When the official schedule moves a fixture the two disagree and the leg would
+ * otherwise sit on 待定 with no explanation.
+ */
+export function rescheduledKickoff(
+  pick: CalcSelection,
+  snap: FixtureScoreSnap | undefined,
+): string | null {
+  if (!snap?.fixture_date || !pick.fixtureDate) return null
+  const current = parseApiDate(snap.fixture_date).getTime()
+  const saved = parseApiDate(pick.fixtureDate).getTime()
+  if (Number.isNaN(current) || Number.isNaN(saved)) return null
+  if (Math.abs(current - saved) < RESCHEDULE_TOLERANCE_MS) return null
+  return snap.fixture_date
 }
 
 function parseLine(line?: string): number | null {
@@ -224,8 +252,14 @@ export function settleBetPlan(
 ): PlanSettlement {
   const parlay = calculateParlay(selections, fold, multiplier)
   const legs: SettledLeg[] = selections.map((pick) => {
-    const { verdict, scoreText } = settleSelection(pick, scores.get(pick.fixtureId))
-    return { pick, verdict, scoreText }
+    const snap = scores.get(pick.fixtureId)
+    const { verdict, scoreText } = settleSelection(pick, snap)
+    return {
+      pick,
+      verdict,
+      scoreText,
+      rescheduledTo: rescheduledKickoff(pick, snap),
+    }
   })
 
   const verdictByKey = new Map<string, LegVerdict>()
