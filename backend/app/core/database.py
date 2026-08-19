@@ -271,6 +271,7 @@ async def _ensure_sqlite_columns(conn) -> None:
     # quality_low 已被 0.5–5 星的 quality_rating 取代。
     await _drop_table_columns(conn, "favorite_fixtures", ("quality_low",))
     await _drop_table_columns(conn, "auto_pick_snapshots", ("quality_low",))
+    await _drop_table_columns(conn, "match_features", ("audit_snapshot_json",))
     await _migrate_favorite_fixtures_owner_pk(conn)
 
 

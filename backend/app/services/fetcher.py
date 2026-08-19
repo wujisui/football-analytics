@@ -13,6 +13,7 @@ from app.models.fixture import Fixture
 from app.models.league import League
 from app.models.team import Team
 from app.services.api_quota import (
+    api_errors_account_blocked,
     api_errors_quota_exhausted,
     clip_fixture_dates_for_plan,
 )
@@ -99,6 +100,14 @@ def _api_payload_plan_or_season_blocked(payload: dict[str, Any] | None) -> bool:
 
 class ApiKeyNotConfiguredError(RuntimeError):
     """Raised when no football API key is configured."""
+
+
+class ApiAccountBlockedError(RuntimeError):
+    """Raised when the official account is suspended / disabled.
+
+    Fail the batch loudly instead of saving nothing: every data endpoint answers
+    ``200`` with ``errors.access``, so callers would otherwise report success.
+    """
 
 
 def ensure_api_key_configured(settings: Settings | None = None) -> str:
@@ -197,7 +206,13 @@ class FootballFetcher:
 
     def _note_upstream_payload(self, payload: dict[str, Any] | None) -> None:
         errors = _api_payload_errors(payload)
-        if errors is None or self.quota_exhausted:
+        if errors is None:
+            return
+        if api_errors_account_blocked(errors):
+            raise ApiAccountBlockedError(
+                f"官方账号被停用，所有数据接口均返回拒绝：{errors}"
+            )
+        if self.quota_exhausted:
             return
         if api_errors_quota_exhausted(errors):
             self.quota_exhausted = True

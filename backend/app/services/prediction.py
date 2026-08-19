@@ -905,7 +905,6 @@ def derive_prediction_leans(
 
     ML goal model only **overrides** a lean when that target gate is open.
     Closed gates keep the heuristic/market lean — never blank to 待分析.
-
     Frozen ``pre_match_data`` snapshots are written at analysis time; changing
     this function only affects **future** analyses (historical audit stays).
     """

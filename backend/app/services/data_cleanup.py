@@ -6,7 +6,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select, union
+from sqlalchemy import delete, or_, select, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.api_snapshot import ApiSnapshot
@@ -31,10 +31,27 @@ from app.services.features import has_match_winner_odds
 from app.services.prematch_package import loads_json, rehydrate_odds_markets
 from app.services.results_capture import POSTPONED_HIDE_AFTER_DAYS
 
-# Only terminal fixtures may be pruned. Pending / live always stay — odds may
-# open later, and schedule data must not be thrown away before kickoff.
+# Statuses whose packages may be slimmed: the match is over as far as we know.
 TERMINAL_STATUSES = ("finished", "cancelled", "postponed")
+# Pending / live rows still count as prunable candidates because a status that
+# never advanced past kickoff means the score was never written back; such rows
+# are invisible in【比赛】yet unscoreable in【赛果】. Fixtures before kickoff are
+# still protected inside :func:`never_settles` — odds often open late.
+PRUNABLE_STATUSES = TERMINAL_STATUSES + ("pending", "live")
 DELETE_CHUNK_SIZE = 500
+
+# Display-only sections of a pre-match package; safe to drop once a match is old.
+EXPIRED_PACKAGE_COLUMNS = (
+    PreMatchData.lineups_json,
+    PreMatchData.injuries_json,
+    PreMatchData.h2h_json,
+    PreMatchData.home_form_json,
+    PreMatchData.away_form_json,
+    PreMatchData.standings_json,
+    PreMatchData.briefing_json,
+    PreMatchData.injuries_home,
+    PreMatchData.injuries_away,
+)
 
 
 @dataclass(frozen=True)
@@ -87,41 +104,50 @@ def never_settles(fixture: Fixture, *, now: datetime | None = None) -> bool:
 
     Cancelled rows and 「finished」 rows without a score never settle, so 赛果统计
     and ML labels can never use them no matter how complete their pre-match data
-    is. Postponed rows are spared until their original kickoff goes stale, since
-    until then the product still lists them as an upcoming match.
+    is. Postponed / pending / live rows are spared until their kickoff goes stale:
+    until then the product still lists them as an upcoming match, and the score
+    may still arrive. Once stale without a score, 官方 will not backfill them.
     """
     if fixture.status == "finished":
         return fixture.home_goals is None or fixture.away_goals is None
-    if fixture.status == "postponed":
-        current = now or datetime.utcnow()
-        return fixture.date <= current - timedelta(days=POSTPONED_HIDE_AFTER_DAYS)
-    return fixture.status == "cancelled"
+    if fixture.status == "cancelled":
+        return True
+    current = now or datetime.utcnow()
+    if fixture.date > current - timedelta(days=POSTPONED_HIDE_AFTER_DAYS):
+        return False
+    return fixture.home_goals is None or fixture.away_goals is None
 
 
-def should_prune_terminal_fixture(
+def should_prune_fixture(
     fixture: Fixture,
     stored: PreMatchData | None,
     feature: MatchFeature | None,
     *,
     now: datetime | None = None,
 ) -> bool:
-    """Delete terminal rows that 赛果统计 / ML can never score.
+    """Delete rows that 赛果统计 / ML can never score.
 
     Two cases: the match never settles at all, or it settled without a pre-match
     1X2 board. 缺盘口的场次即使库里冻结过预测也删——没有盘口就没有推断依据，
     这种预测属于无效数据，留着只会污染准确率与训练标签。
     """
-    if fixture.status not in TERMINAL_STATUSES:
+    if fixture.status not in PRUNABLE_STATUSES:
         return False
     if never_settles(fixture, now=now):
         return True
-    if fixture.status == "postponed":
-        # 刚延期的场次仍列在【比赛】里，盘口可能稍后才开；等原定开赛陈旧再删。
+    if fixture.status != "finished":
+        # 未结算且尚未陈旧（含未开赛与刚延期）：盘口可能稍后才开，必须保留。
         return False
     return not record_has_prematch_1x2(stored, feature)
 
 
-async def _delete_ids(session: AsyncSession, model, column, ids: set[int]) -> int:
+async def _delete_ids(
+    session: AsyncSession,
+    model,
+    column,
+    ids: set[int] | set[str],
+) -> int:
+    """Chunked ``DELETE ... IN (...)``; SQLite caps bind params per statement."""
     deleted = 0
     ordered = sorted(ids)
     for start in range(0, len(ordered), DELETE_CHUNK_SIZE):
@@ -136,12 +162,12 @@ async def prune_low_value_data(
     *,
     apply: bool,
 ) -> PruneReport:
-    """Delete terminal fixtures 赛果统计 / ML can never score.
+    """Delete fixtures 赛果统计 / ML can never score.
 
-    Covers matches that never settle (cancelled, score-less, stale postponed) plus
-    settled ones that never got a pre-match 1X2 board.
-    Never deletes pending / live fixtures. Never wipes a league's upcoming schedule
-    because some finished matches lacked odds — odds often open closer to kickoff.
+    Covers matches that never settle (cancelled, score-less, or stuck at
+    postponed / pending / live past a stale kickoff) plus settled ones that never
+    got a pre-match 1X2 board. Fixtures before kickoff are never touched, so a
+    league's upcoming schedule survives even when its finished matches lacked odds.
     Empty ``leagues`` rows (no fixtures left) may be removed after fixture prune.
     """
     now = datetime.utcnow()
@@ -150,7 +176,7 @@ async def prune_low_value_data(
             select(Fixture, PreMatchData, MatchFeature)
             .outerjoin(PreMatchData, PreMatchData.fixture_id == Fixture.id)
             .outerjoin(MatchFeature, MatchFeature.fixture_id == Fixture.id)
-            .where(Fixture.status.in_(TERMINAL_STATUSES))
+            .where(Fixture.status.in_(PRUNABLE_STATUSES))
         )
     ).all()
 
@@ -173,7 +199,7 @@ async def prune_low_value_data(
     removed_fixture_ids: set[int] = set()
     removed_dates: set[str] = set()
     for fixture_id, (fixture, stored, feature) in by_fixture.items():
-        if should_prune_terminal_fixture(fixture, stored, feature, now=now):
+        if should_prune_fixture(fixture, stored, feature, now=now):
             removed_fixture_ids.add(fixture_id)
             removed_dates.add(fixture.date.date().isoformat())
 
@@ -237,12 +263,9 @@ async def prune_low_value_data(
         for key_builder in (fixtures_cache_key, fixtures_day_leagues_cache_key)
     }
     snapshot_keys = fixture_snapshot_keys | day_snapshot_keys
-    snapshots_deleted = 0
-    if snapshot_keys:
-        result = await session.execute(
-            delete(ApiSnapshot).where(ApiSnapshot.cache_key.in_(snapshot_keys))
-        )
-        snapshots_deleted = int(result.rowcount or 0)
+    snapshots_deleted = await _delete_ids(
+        session, ApiSnapshot, ApiSnapshot.cache_key, snapshot_keys
+    )
 
     referenced_team_ids = union(
         select(Fixture.home_team_id),
@@ -270,6 +293,49 @@ async def prune_low_value_data(
         snapshots_deleted=snapshots_deleted,
         orphan_teams_deleted=orphan_teams_deleted,
     )
+
+
+async def slim_expired_packages(
+    session: AsyncSession,
+    *,
+    cutoff: datetime,
+) -> int:
+    """Drop the heavy display sections of packages older than ``cutoff``.
+
+    Prediction, probability and odds columns stay: they are the frozen exam
+    赛果统计 grades against. Deleting whole rows used to erase that exam with the
+    display JSON, which quietly shrank the historical sample to the retention
+    window even though the fixtures were still there.
+    """
+    fixture_ids = {
+        int(fixture_id)
+        for (fixture_id,) in (
+            await session.execute(
+                select(Fixture.id).where(
+                    Fixture.date < cutoff,
+                    Fixture.status.in_(TERMINAL_STATUSES),
+                )
+            )
+        ).all()
+    }
+    if not fixture_ids:
+        return 0
+
+    slimmed = 0
+    ordered = sorted(fixture_ids)
+    for start in range(0, len(ordered), DELETE_CHUNK_SIZE):
+        chunk = ordered[start : start + DELETE_CHUNK_SIZE]
+        result = await session.execute(
+            update(PreMatchData)
+            .where(
+                PreMatchData.fixture_id.in_(chunk),
+                or_(*(column.is_not(None) for column in EXPIRED_PACKAGE_COLUMNS)),
+            )
+            .values({column: None for column in EXPIRED_PACKAGE_COLUMNS})
+        )
+        slimmed += int(result.rowcount or 0)
+    await session.commit()
+    return slimmed
 
 
 @dataclass(frozen=True)

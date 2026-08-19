@@ -6,14 +6,11 @@ from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import delete, select
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
-from app.models.fixture import Fixture
-from app.models.pre_match_data import PreMatchData
 from app.services.api_quota import FREE_QUOTA_EVENING_HOUR
-from app.services.data_cleanup import prune_low_value_data
+from app.services.data_cleanup import prune_low_value_data, slim_expired_packages
 from app.services.fixtures_sync import scheduled_fixtures_sync
 from app.services.runtime_settings import get_enable_free_quota
 
@@ -78,7 +75,7 @@ async def run_scheduled_fixtures_sync(
     sync_hour: int | None = None,
 ) -> None:
     """Run one fixed daily fixtures/odds/results synchronization batch."""
-    from app.services.fetcher import ApiKeyNotConfiguredError
+    from app.services.fetcher import ApiAccountBlockedError, ApiKeyNotConfiguredError
 
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
     logger.info("Task %s started (sync_hour=%s).", task_name, sync_hour)
@@ -88,6 +85,15 @@ async def run_scheduled_fixtures_sync(
         logger.info("Task %s completed.", task_name)
         if _should_clean_after_sync(sync_hour):
             await clean_old_data()
+    except ApiAccountBlockedError as exc:
+        # Known account state, not a code fault: no traceback, but never "completed".
+        _set_task_status(
+            task_name,
+            "failed",
+            error=str(exc),
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.error("Task %s failed: %s", task_name, exc)
     except ApiKeyNotConfiguredError as exc:
         # Deploy may start without keys; admin configures later. Do not crash the process.
         _set_task_status(
@@ -119,28 +125,14 @@ async def clean_old_data() -> None:
     logger.info("Task clean_old_data started.")
 
     cutoff = _utc_now().replace(tzinfo=None) - timedelta(days=settings.CLEANUP_DAYS)
-    deleted_analysis = 0
+    slimmed_packages = 0
     removed_logs = 0
     prune_report: dict[str, Any] = {}
 
     try:
         async with AsyncSessionLocal() as session:
             prune_report = (await prune_low_value_data(session, apply=True)).to_dict()
-            old_fixtures = await session.execute(
-                select(Fixture.id).where(
-                    Fixture.date < cutoff,
-                    Fixture.status.in_(["finished", "cancelled", "postponed"]),
-                )
-            )
-            fixture_ids = [row[0] for row in old_fixtures.all()]
-
-            if fixture_ids:
-                # Keep match_features for ML training; only drop display analysis JSON.
-                result = await session.execute(
-                    delete(PreMatchData).where(PreMatchData.fixture_id.in_(fixture_ids))
-                )
-                deleted_analysis = result.rowcount or 0
-                await session.commit()
+            slimmed_packages = await slim_expired_packages(session, cutoff=cutoff)
 
             if prune_report.get("features_deleted"):
                 from app.services.ah_predictor import (
@@ -169,14 +161,14 @@ async def clean_old_data() -> None:
         _set_task_status(
             task_name,
             "completed",
-            deleted_analysis=deleted_analysis,
+            slimmed_packages=slimmed_packages,
             prune=prune_report,
             removed_logs=removed_logs,
             finished_at=_utc_now().isoformat(),
         )
         logger.info(
-            "Task clean_old_data completed. deleted_analysis=%s prune=%s removed_logs=%s",
-            deleted_analysis,
+            "Task clean_old_data completed. slimmed_packages=%s prune=%s removed_logs=%s",
+            slimmed_packages,
             prune_report,
             removed_logs,
         )

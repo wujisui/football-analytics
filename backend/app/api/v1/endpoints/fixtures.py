@@ -136,7 +136,9 @@ def _list_analysis_from_fixture(
     )
     from app.services.prediction import has_1x2_market
 
-    if isinstance(odds, dict) and odds.get("available") and has_1x2_market(odds):
+    # 无赛前 1X2 盘口 → 概率不可用（与 prediction 闸门一致，不展示无依据数字）。
+    ready = has_1x2_market(odds if isinstance(odds, dict) else None)
+    if ready:
         confidence = "中" if confidence == "低" else confidence
 
     # Prefer frozen pre-kickoff snapshot so algorithm changes do not rewrite history.
@@ -508,8 +510,9 @@ async def get_fixture_results(
 
     result = await db.execute(stmt)
     fixtures = list(result.scalars().all())
-    stored_by_id = await load_stored_by_fixture_ids(db, [f.id for f in fixtures])
-    auto_by_id = await load_auto_picks_by_fixture_ids(db, [f.id for f in fixtures])
+    fixture_ids = [f.id for f in fixtures]
+    stored_by_id = await load_stored_by_fixture_ids(db, fixture_ids)
+    auto_by_id = await load_auto_picks_by_fixture_ids(db, fixture_ids)
     standings_keys = {
         key
         for fixture in fixtures

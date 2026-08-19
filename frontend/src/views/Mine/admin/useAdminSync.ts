@@ -36,10 +36,14 @@ export function useAdminSync() {
     try {
       const data = await triggerScheduledFixturesSync()
       const task = data.task_status.active_tasks.scheduled_fixtures_sync
-      if (task?.status === 'failed') {
-        const detail = task.error || '后端未返回失败原因'
+      // 只有 completed 才是真同步；skipped（未配置 Key）也必须报出来，
+      // 否则批次一次官方请求都没发也会提示「同步完成」。
+      if (task?.status !== 'completed') {
+        const detail =
+          task?.error ||
+          (task ? `后端返回状态：${task.status}` : '后端未返回任务状态')
         lastOutcome.value = { ok: false, at: Date.now(), detail }
-        notifyError('同步官方 API 数据失败', detail)
+        notifyError('同步官方 API 数据未完成', detail)
         return
       }
       lastOutcome.value = { ok: true, at: Date.now(), detail: '' }

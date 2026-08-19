@@ -11,8 +11,8 @@ from app.core.database import Base
 class MatchFeature(Base):
     """Normalized numeric features captured at pre-match analysis time.
 
-    Survives ``clean_old_data`` deletion of ``pre_match_data`` so finished
-    fixtures remain usable as training labels.
+    Never deleted by ``clean_old_data``: these rows are the training set, and a
+    label only becomes usable long after the display package was slimmed.
     """
 
     __tablename__ = "match_features"

@@ -50,6 +50,23 @@ def api_errors_quota_exhausted(errors: Any) -> bool:
     )
 
 
+def api_errors_account_blocked(errors: Any) -> bool:
+    """Account itself is suspended / disabled — every data endpoint is dead.
+
+    API-Sports answers ``200`` with ``errors.access`` in this case, so a batch
+    would otherwise "succeed" while saving nothing. Distinct from quota and plan
+    limits: no failover or retry can help, only fixing the account.
+    """
+    text = api_errors_text(errors)
+    if not text:
+        return False
+    return (
+        "suspended" in text
+        or "account is disabled" in text
+        or "deactivated" in text
+    )
+
+
 def api_errors_plan_blocked(errors: Any) -> bool:
     """Plan does not allow this date/season/parameter."""
     text = api_errors_text(errors)
