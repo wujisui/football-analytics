@@ -63,7 +63,7 @@ const columns = computed<DataTableColumns<FixtureResponse>>(() => [
 }
 
 .day-fixture-table :deep(.n-data-table-td) {
-  padding: 5px 12px;
+  padding: 5px;
   background: transparent;
   border: none;
 }
