@@ -110,17 +110,6 @@ def get_confidence_level(data_completeness: float) -> str:
     return "低"
 
 
-def get_recommendation(
-    probs: dict[str, float],
-    *,
-    odds: dict[str, Any] | None = None,
-    features: dict[str, float] | None = None,
-) -> str:
-    from app.services.prediction import get_recommendation as _rec
-
-    return _rec(probs, odds=odds, features=features)
-
-
 def prematch_package_needs_refresh(
     package: dict[str, Any],
     *,
@@ -471,9 +460,14 @@ class AnalyzerService:
             stored_snippet=pkg.get("standings") if isinstance(pkg.get("standings"), dict) else None,
         )
         odds = pkg.get("odds") if isinstance(pkg.get("odds"), dict) else None
-        from app.services.prediction import canonical_score_hint, resolve_handicap_bundle
+        from app.services.prediction import (
+            canonical_score_hint,
+            get_recommendation,
+            resolve_handicap_bundle,
+        )
 
-        rec = frozen_rec if has_frozen else get_recommendation(probs)
+        # 无盘口的场次没有推断依据：get_recommendation 会给「待分析」。
+        rec = frozen_rec if has_frozen else get_recommendation(probs, odds=odds)
         score_hint = canonical_score_hint(getattr(stored, "score_hint", None))
         handicap_lean, handicap_market_note = resolve_handicap_bundle(
             odds,
@@ -1198,8 +1192,7 @@ class AnalyzerService:
             draw_prob=round(probs["draw"], 4),
             away_win_prob=round(probs["away"], 4),
             confidence=confidence,
-            recommendation=snap.get("recommendation")
-            or get_recommendation(probs, features=prediction.features),
+            recommendation=snap["recommendation"],
             data_source=data_source if prediction.source == "form_fallback" else (
                 f"{data_source}+{prediction.source}"
             ),

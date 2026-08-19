@@ -63,6 +63,15 @@ def get_task_status() -> dict[str, Any]:
     }
 
 
+def _should_clean_after_sync(sync_hour: int | None) -> bool:
+    """Run low-value cleanup with the morning full batch (11:00 / admin「立即同步」).
+
+    Skip evening odds-light (22:00) and other free-quota-off slots so prune/retrain
+    does not run multiple times a day.
+    """
+    return sync_hour is None or int(sync_hour) == 11
+
+
 async def run_scheduled_fixtures_sync(
     task_name: str = "scheduled_fixtures_sync",
     *,
@@ -77,6 +86,8 @@ async def run_scheduled_fixtures_sync(
         await scheduled_fixtures_sync(sync_hour=sync_hour)
         _set_task_status(task_name, "completed", finished_at=_utc_now().isoformat())
         logger.info("Task %s completed.", task_name)
+        if _should_clean_after_sync(sync_hour):
+            await clean_old_data()
     except ApiKeyNotConfiguredError as exc:
         # Deploy may start without keys; admin configures later. Do not crash the process.
         _set_task_status(
@@ -293,16 +304,10 @@ def register_jobs(*, free_quota: bool | None = None) -> None:
     if scheduler.get_job("daily_auto_favorites") is not None:
         scheduler.remove_job("daily_auto_favorites")
 
-    if scheduler.get_job("clean_old_data") is None:
-        scheduler.add_job(
-            clean_old_data,
-            CronTrigger(day_of_week="mon", hour=3, minute=0, timezone=timezone),
-            id="clean_old_data",
-            name="clean_old_data",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
+    # Low-value cleanup runs after the 11:00 full sync (and admin「立即同步」),
+    # not as a separate Monday 03:00 cron — machines often off overnight.
+    if scheduler.get_job("clean_old_data") is not None:
+        scheduler.remove_job("clean_old_data")
 
 
 async def refresh_fixture_sync_jobs() -> bool:

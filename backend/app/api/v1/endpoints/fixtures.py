@@ -134,10 +134,9 @@ def _list_analysis_from_fixture(
     probs = resolve_match_probabilities(
         raw_probs, odds if isinstance(odds, dict) else None
     )
-    from app.services.prediction import probabilities_ready
+    from app.services.prediction import has_1x2_market
 
-    ready = probabilities_ready(raw_probs, odds if isinstance(odds, dict) else None)
-    if odds and isinstance(odds, dict) and odds.get("available") and ready:
+    if isinstance(odds, dict) and odds.get("available") and has_1x2_market(odds):
         confidence = "中" if confidence == "低" else confidence
 
     # Prefer frozen pre-kickoff snapshot so algorithm changes do not rewrite history.
@@ -177,10 +176,10 @@ def _list_analysis_from_fixture(
             odds if isinstance(odds, dict) else None,
             league_id=fixture.league_id,
         )
-        recommendation = leans["recommendation"] if ready else "待分析"
-        goal_lean = leans["goal_lean"] if ready else "大小：待分析"
-        both_score_lean = leans["both_score_lean"] if ready else "双进:待分析"
-        score_hint = leans["score_hint"] if ready else "比分:待分析"
+        recommendation = leans["recommendation"]
+        goal_lean = leans["goal_lean"]
+        both_score_lean = leans["both_score_lean"]
+        score_hint = leans["score_hint"]
         handicap_lean = leans["handicap_lean"]
         handicap_market_note = leans.get("handicap_market_note", "")
 

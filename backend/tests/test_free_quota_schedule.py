@@ -21,6 +21,16 @@ def test_sync_hour_constants() -> None:
     assert SYNC_HOURS_FULL == (0, 6, 11, 16, 19, 22)
 
 
+def test_cleanup_runs_with_morning_full_sync_only() -> None:
+    from app.tasks.scheduler import _should_clean_after_sync
+
+    assert _should_clean_after_sync(None) is True
+    assert _should_clean_after_sync(11) is True
+    assert _should_clean_after_sync(22) is False
+    assert _should_clean_after_sync(0) is False
+    assert _should_clean_after_sync(16) is False
+
+
 def test_free_quota_syncs_only_yesterday_results_and_today_fixtures() -> None:
     today = date(2026, 8, 17)
     fixture_days, result_days = sync_dates(
@@ -201,6 +211,7 @@ def test_register_jobs_free_quota_keeps_11_and_22() -> None:
                 "scheduled_fixtures_sync_11",
                 "scheduled_fixtures_sync_22",
             ]
+            assert scheduler.get_job("clean_old_data") is None
 
             register_jobs(free_quota=False)
             sync_ids = sorted(

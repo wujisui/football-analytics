@@ -11,14 +11,22 @@ from app.services.prediction import (
 )
 
 
+HOME_BOARD = {
+    "available": True,
+    "match_winner": {"home": "1.70", "draw": "3.60", "away": "5.00"},
+}
+
+
 class PredictionCopyTests(unittest.TestCase):
     def test_new_recommendations_are_compact(self) -> None:
         self.assertEqual(
-            get_recommendation({"home": 0.7, "draw": 0.2, "away": 0.1}),
+            get_recommendation({"home": 0.7, "draw": 0.2, "away": 0.1}, odds=HOME_BOARD),
             "胜",
         )
         self.assertEqual(
-            get_recommendation({"home": 0.45, "draw": 0.42, "away": 0.13}),
+            get_recommendation(
+                {"home": 0.45, "draw": 0.42, "away": 0.13}, odds=HOME_BOARD
+            ),
             "胜/平",
         )
 

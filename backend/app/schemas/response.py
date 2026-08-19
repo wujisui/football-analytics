@@ -622,7 +622,6 @@ class LeaguesListResponse(BaseModel):
 def analysis_to_response(analysis) -> AnalysisResponse:
     from app.services.prediction import (
         derive_prediction_leans,
-        probabilities_ready,
         resolve_match_probabilities,
     )
 
@@ -639,7 +638,6 @@ def analysis_to_response(analysis) -> AnalysisResponse:
         "away": analysis.away_win_prob,
     }
     probs = resolve_match_probabilities(raw, odds if isinstance(odds, dict) else None)
-    ready = probabilities_ready(raw, odds if isinstance(odds, dict) else None)
 
     league_id: int | None = None
     if isinstance(analysis.package, dict):
@@ -691,10 +689,10 @@ def analysis_to_response(analysis) -> AnalysisResponse:
             odds if isinstance(odds, dict) else None,
             league_id=league_id,
         )
-        recommendation = leans["recommendation"] if ready else "待分析"
-        goal_lean = leans["goal_lean"] if ready else "大小：待分析"
-        both_score_lean = leans["both_score_lean"] if ready else "双进:待分析"
-        score_hint = leans["score_hint"] if ready else "比分:待分析"
+        recommendation = leans["recommendation"]
+        goal_lean = leans["goal_lean"]
+        both_score_lean = leans["both_score_lean"]
+        score_hint = leans["score_hint"]
         handicap_lean = leans["handicap_lean"]
         handicap_market_note = leans.get("handicap_market_note", "")
 

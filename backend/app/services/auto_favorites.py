@@ -23,7 +23,6 @@ from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
 from app.services.ah_features import handicap_pick_from_lean
 from app.services.auto_pick_incentive import adjust_pick_score, ensure_incentives_for_picks
-from app.services.data_cleanup import record_has_algorithm_recommendation
 from app.services.prediction import (
     _odd_float,
     _parse_goal_lean,
@@ -338,11 +337,13 @@ def score_auto_pick_candidates(
     incentive_state: Any | None = None,
     calibration: dict[str, Any] | None = None,
 ) -> list[AutoPickCandidate]:
-    """Score every scorable single-lean fixture (no day / count cap)."""
+    """Score every scorable single-lean fixture (no day / count cap).
+
+    缺盘口的场次自然出不了候选：每个玩法都要求对应盘口报价才能算期望收益，
+    占位倾向（待分析 / 缺少盘口）也拿不到 lean。
+    """
     ranked: list[AutoPickCandidate] = []
     for fixture, stored, feature in rows:
-        if not record_has_algorithm_recommendation(stored, feature):
-            continue
         package = package_from_record(stored)
         odds_raw = package.get("odds") if isinstance(package, dict) else None
         odds = (

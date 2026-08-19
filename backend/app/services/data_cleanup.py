@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,7 @@ from app.services.cache import (
 )
 from app.services.features import has_match_winner_odds
 from app.services.prematch_package import loads_json, rehydrate_odds_markets
+from app.services.results_capture import POSTPONED_HIDE_AFTER_DAYS
 
 # Only terminal fixtures may be pruned. Pending / live always stay — odds may
 # open later, and schedule data must not be thrown away before kickoff.
@@ -80,58 +82,43 @@ def record_has_prematch_1x2(
     return _stored_has_1x2(stored) or _feature_has_1x2(feature)
 
 
-_PLACEHOLDER_MARKERS = ("待分析", "缺少盘口")
+def never_settles(fixture: Fixture, *, now: datetime | None = None) -> bool:
+    """True when no full-time score can ever grade this fixture.
 
-
-def _is_real_prediction_text(text: str | None) -> bool:
-    """True for a frozen lean/recommendation that is not an empty placeholder."""
-    value = (text or "").strip()
-    if not value:
-        return False
-    return not any(marker in value for marker in _PLACEHOLDER_MARKERS)
-
-
-def record_has_algorithm_recommendation(
-    stored: PreMatchData | None,
-    feature: MatchFeature | None = None,
-) -> bool:
-    """Whether a real frozen algorithm prediction exists.
-
-    Flat 1/3·1/3·1/3 probabilities and ``待分析`` / ``缺少盘口`` placeholders do
-    **not** count. Keep terminal fixtures only when a concrete recommendation or
-    lean was frozen (or when ``record_has_prematch_1x2`` already keeps them).
-    ``feature`` is accepted for call-site compatibility; probs-only MatchFeature
-    rows are not enough without odds.
+    Cancelled rows and 「finished」 rows without a score never settle, so 赛果统计
+    and ML labels can never use them no matter how complete their pre-match data
+    is. Postponed rows are spared until their original kickoff goes stale, since
+    until then the product still lists them as an upcoming match.
     """
-    _ = feature
-    if stored is None:
-        return False
-    if _is_real_prediction_text(stored.recommendation):
-        return True
-    return any(
-        _is_real_prediction_text(getattr(stored, field, None))
-        for field in (
-            "score_hint",
-            "goal_lean",
-            "both_score_lean",
-            "handicap_lean",
-        )
-    )
+    if fixture.status == "finished":
+        return fixture.home_goals is None or fixture.away_goals is None
+    if fixture.status == "postponed":
+        current = now or datetime.utcnow()
+        return fixture.date <= current - timedelta(days=POSTPONED_HIDE_AFTER_DAYS)
+    return fixture.status == "cancelled"
 
 
 def should_prune_terminal_fixture(
     fixture: Fixture,
     stored: PreMatchData | None,
     feature: MatchFeature | None,
+    *,
+    now: datetime | None = None,
 ) -> bool:
-    """Delete finished-like rows with neither 1X2 nor a real algorithm prediction."""
+    """Delete terminal rows that 赛果统计 / ML can never score.
+
+    Two cases: the match never settles at all, or it settled without a pre-match
+    1X2 board. 缺盘口的场次即使库里冻结过预测也删——没有盘口就没有推断依据，
+    这种预测属于无效数据，留着只会污染准确率与训练标签。
+    """
     if fixture.status not in TERMINAL_STATUSES:
         return False
-    if record_has_prematch_1x2(stored, feature):
+    if never_settles(fixture, now=now):
+        return True
+    if fixture.status == "postponed":
+        # 刚延期的场次仍列在【比赛】里，盘口可能稍后才开；等原定开赛陈旧再删。
         return False
-    if record_has_algorithm_recommendation(stored, feature):
-        return False
-    return True
+    return not record_has_prematch_1x2(stored, feature)
 
 
 async def _delete_ids(session: AsyncSession, model, column, ids: set[int]) -> int:
@@ -149,12 +136,15 @@ async def prune_low_value_data(
     *,
     apply: bool,
 ) -> PruneReport:
-    """Delete terminal fixtures that never got 1X2 odds or an algorithm recommendation.
+    """Delete terminal fixtures 赛果统计 / ML can never score.
 
+    Covers matches that never settle (cancelled, score-less, stale postponed) plus
+    settled ones that never got a pre-match 1X2 board.
     Never deletes pending / live fixtures. Never wipes a league's upcoming schedule
     because some finished matches lacked odds — odds often open closer to kickoff.
     Empty ``leagues`` rows (no fixtures left) may be removed after fixture prune.
     """
+    now = datetime.utcnow()
     rows = (
         await session.execute(
             select(Fixture, PreMatchData, MatchFeature)
@@ -175,9 +165,7 @@ async def prune_low_value_data(
         keep_stored = prev_stored or stored
         keep_feature = prev_feature
         if feature is not None and (
-            keep_feature is None
-            or record_has_prematch_1x2(None, feature)
-            or record_has_algorithm_recommendation(None, feature)
+            keep_feature is None or _feature_has_1x2(feature)
         ):
             keep_feature = feature
         by_fixture[fixture.id] = (fixture, keep_stored, keep_feature)
@@ -185,7 +173,7 @@ async def prune_low_value_data(
     removed_fixture_ids: set[int] = set()
     removed_dates: set[str] = set()
     for fixture_id, (fixture, stored, feature) in by_fixture.items():
-        if should_prune_terminal_fixture(fixture, stored, feature):
+        if should_prune_terminal_fixture(fixture, stored, feature, now=now):
             removed_fixture_ids.add(fixture_id)
             removed_dates.add(fixture.date.date().isoformat())
 
