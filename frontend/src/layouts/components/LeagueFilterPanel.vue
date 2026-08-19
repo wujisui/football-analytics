@@ -44,6 +44,15 @@ const extraOptions = computed(() =>
   props.options.filter((o) => o.tier === 'extra'),
 )
 
+function fixtureTotal(options: LeagueFilterOption[]): number {
+  return options.reduce((total, option) => total + option.fixtures_count, 0)
+}
+
+const configuredFixturesCount = computed(() =>
+  fixtureTotal(configuredOptions.value),
+)
+const extraFixturesCount = computed(() => fixtureTotal(extraOptions.value))
+
 const filteredExtraOptions = computed(() => {
   const q = extraQuery.value.trim()
   if (!q) return extraOptions.value
@@ -90,7 +99,9 @@ function invertSelection() {
       >
         <div class="section">
           <div class="section-head">
-            <div class="section-title">热门</div>
+            <div class="section-title">
+              热门（{{ configuredFixturesCount }} 场）
+            </div>
           </div>
           <n-scrollbar class="section-scroll">
             <n-space vertical :size="6">
@@ -110,7 +121,7 @@ function invertSelection() {
         </div>
         <div class="section">
           <div class="section-head">
-            <div class="section-title">其他</div>
+            <div class="section-title">其他（{{ extraFixturesCount }} 场）</div>
             <n-input
               v-if="extraOptions.length"
               v-model:value="extraQuery"

@@ -18,6 +18,7 @@ from app.services.api_quota import (
     clip_fixture_dates_for_plan,
 )
 from app.services.api_utils import parse_remaining_requests
+from app.services.competition_scope import allowed_competition_ids
 from app.services.league_names import league_name_zh
 from app.services.match_day import infer_team_timezone, resolve_match_day
 from app.services.results_capture import (
@@ -732,14 +733,24 @@ class FootballFetcher:
         allowed_league_ids: set[int] | None = None,
         fetch_teams: bool = True,
     ) -> int:
-        """Upsert parsed fixtures. If allowed_league_ids is set, skip others."""
+        """Upsert only fixtures admitted by the competition whitelist.
+
+        ``allowed_league_ids`` may further narrow the whitelist for a targeted
+        call, but can never expand it.
+        """
         assert self.session is not None
+        competition_ids = allowed_competition_ids(self.settings)
+        effective_ids = (
+            competition_ids
+            if allowed_league_ids is None
+            else competition_ids & {int(value) for value in allowed_league_ids}
+        )
         league_ids: set[int] = set()
         saved = 0
 
         for fixture in fixtures:
             league_id = int(fixture["league_id"])
-            if allowed_league_ids is not None and league_id not in allowed_league_ids:
+            if league_id not in effective_ids:
                 continue
             try:
                 raw_league_name = str(fixture.get("league_name") or f"League {league_id}")

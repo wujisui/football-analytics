@@ -34,6 +34,7 @@ from app.services.analyzer import (
     AnalyzerService,
 )
 from app.services.calendar_tz import utc_span_range, utc_today
+from app.services.competition_scope import allowed_competition_ids
 from app.services.fetcher import FootballFetcher
 from app.services.prediction import (
     OPINION_FACTORS,
@@ -278,6 +279,7 @@ async def get_today_fixtures(
 ) -> TodayFixturesResponse:
     """按后端已定稿的场地当地比赛日查询（只读本地库）。"""
     match_day_expr = func.coalesce(Fixture.match_day, func.date(Fixture.date))
+    competition_ids = allowed_competition_ids(get_settings())
 
     if league_ids is not None:
         allowed = {int(x) for x in league_ids}
@@ -292,7 +294,9 @@ async def get_today_fixtures(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
     else:
-        base_stmt = select(func.min(match_day_expr))
+        base_stmt = select(func.min(match_day_expr)).where(
+            Fixture.league_id.in_(competition_ids)
+        )
         if scope == "prematch":
             base_stmt = base_stmt.where(prematch_list_clause())
         if allowed is not None:
@@ -314,6 +318,7 @@ async def get_today_fixtures(
         .where(
             match_day_expr >= base_date.isoformat(),
             match_day_expr < end_exclusive.isoformat(),
+            Fixture.league_id.in_(competition_ids),
         )
         .options(
             selectinload(Fixture.home_team),

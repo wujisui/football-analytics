@@ -6,9 +6,10 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, or_, select, union, update
+from sqlalchemy import and_, delete, or_, select, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.api_snapshot import ApiSnapshot
 from app.models.favorite_fixture import FavoriteFixture
 from app.models.fixture import Fixture
@@ -27,6 +28,7 @@ from app.services.cache import (
     odds_cache_key,
     predictions_cache_key,
 )
+from app.services.competition_scope import allowed_competition_ids
 from app.services.features import has_match_winner_odds
 from app.services.prematch_package import loads_json, rehydrate_odds_markets
 from app.services.results_capture import POSTPONED_HIDE_AFTER_DAYS
@@ -166,17 +168,26 @@ async def prune_low_value_data(
 
     Covers matches that never settle (cancelled, score-less, or stuck at
     postponed / pending / live past a stale kickoff) plus settled ones that never
-    got a pre-match 1X2 board. Fixtures before kickoff are never touched, so a
-    league's upcoming schedule survives even when its finished matches lacked odds.
+    got a pre-match 1X2 board. Upcoming fixtures outside the competition whitelist
+    are removed immediately; in-scope fixtures before kickoff are never touched.
     Empty ``leagues`` rows (no fixtures left) may be removed after fixture prune.
     """
     now = datetime.utcnow()
+    competition_ids = allowed_competition_ids(get_settings())
     rows = (
         await session.execute(
             select(Fixture, PreMatchData, MatchFeature)
             .outerjoin(PreMatchData, PreMatchData.fixture_id == Fixture.id)
             .outerjoin(MatchFeature, MatchFeature.fixture_id == Fixture.id)
-            .where(Fixture.status.in_(PRUNABLE_STATUSES))
+            .where(
+                or_(
+                    Fixture.status.in_(PRUNABLE_STATUSES),
+                    and_(
+                        Fixture.date > now,
+                        Fixture.league_id.not_in(competition_ids),
+                    ),
+                )
+            )
         )
     ).all()
 
@@ -199,7 +210,12 @@ async def prune_low_value_data(
     removed_fixture_ids: set[int] = set()
     removed_dates: set[str] = set()
     for fixture_id, (fixture, stored, feature) in by_fixture.items():
-        if should_prune_fixture(fixture, stored, feature, now=now):
+        out_of_scope_upcoming = (
+            fixture.date > now and fixture.league_id not in competition_ids
+        )
+        if out_of_scope_upcoming or should_prune_fixture(
+            fixture, stored, feature, now=now
+        ):
             removed_fixture_ids.add(fixture_id)
             removed_dates.add(fixture.date.date().isoformat())
 

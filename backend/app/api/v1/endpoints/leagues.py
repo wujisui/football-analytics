@@ -17,6 +17,7 @@ from app.schemas.response import (
     LeaguesListResponse,
     LeagueSummaryResponse,
 )
+from app.services.competition_scope import allowed_competition_ids
 from app.services.league_names import league_name_zh
 from app.services.results_capture import prematch_list_clause, results_list_clause
 
@@ -65,6 +66,7 @@ async def get_league_filter_options(
     if scope_key not in {"prematch", "results"}:
         raise HTTPException(status_code=400, detail="scope must be prematch or results")
     configured_ids = set(settings.LEAGUE_IDS.values())
+    competition_ids = allowed_competition_ids(settings)
 
     if date_str:
         try:
@@ -113,6 +115,7 @@ async def get_league_filter_options(
             day_expr >= day.isoformat(),
             day_expr < end_day.isoformat(),
             status_clause,
+            Fixture.league_id.in_(competition_ids),
         )
         .group_by(Fixture.league_id)
     )
