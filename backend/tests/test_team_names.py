@@ -55,6 +55,28 @@ def test_italian_and_spanish_ids_match_official_clubs() -> None:
         assert BY_ID[team_id] == zh, f"team {team_id} mistranslated"
 
 
+def test_reserve_and_friendly_ids_match_official_clubs() -> None:
+    expected = {
+        535: "马拉加",
+        567: "比尔森胜利",
+        9572: "赫塔费B队",
+        9575: "皇马B队",
+        9691: "埃尔切B队",
+        19045: "亨克B队",
+        19957: "鲁汶B队",
+    }
+    for team_id, zh in expected.items():
+        assert BY_ID[team_id] == zh, f"team {team_id} mistranslated"
+
+
+def test_ambiguous_short_names_resolve_by_id() -> None:
+    # 3396 is AEL Limassol (Cyprus); 953 is AEL Larissa (Greece).
+    assert team_name_zh("AEL", team_id=3396) == "利马索尔AEL"
+    assert team_name_zh("AEL", team_id=953) == "拉里萨"
+    # Al Ahly exists in several countries; the curated row is the Cairo club.
+    assert BY_ID[1577] == "开罗阿赫利"
+
+
 def test_brazilian_ids_are_not_french_clubs() -> None:
     assert BY_ID[129] == "塞阿拉"
     assert BY_ID[130] == "格雷米奥"
