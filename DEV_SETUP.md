@@ -128,14 +128,9 @@ pip install fastapi uvicorn sqlalchemy aiosqlite redis apscheduler httpx python-
 | 文件 | 是否提交 Git | 操作 |
 |------|--------------|------|
 | `.env` | 否（可本地有） | `copy .env.example .env`（Windows）或 `cp .env.example .env` |
-| `secrets.local.env` | **否** | `copy secrets.local.env.example secrets.local.env`，填入 Key |
 | `config/leagues.json` | 是（可按个人改） | 默认可直接用；增删联赛后**重启后端** |
 
-`secrets.local.env` 最少包含：
-
-```env
-API_SPORTS_KEY=你的官方Key
-```
+官方 Key **真源**：`app_settings`（`python manage.py set-api-sports-key …` 或「我的 → 管理员设置」）。
 
 常用可选（见 `.env.example`）：
 
@@ -147,12 +142,13 @@ API_SPORTS_KEY=你的官方Key
 | `API_HISTORY_MODE` | 免费档用 `free`；付费历史用 `full` |
 | `SCHEDULER_TIMEZONE` | `Asia/Shanghai` |
 
-加载顺序：先 `.env`，再 `secrets.local.env`（后者覆盖前者）。**禁止**把真实 Key 写进 `.env.example` 或提交进 Git。
+**禁止**把真实 Key 写进 `.env.example` 或提交进 Git。
 
 ### 初始化数据并启动
 
 ```bash
 python manage.py init-db
+# 若尚无 Key：先启动后端并注册 → set-admin → set-api-sports-key（或管理员 UI）
 python manage.py fetch-leagues
 python manage.py fetch-upcoming
 # 或：python manage.py fetch-today
@@ -219,7 +215,7 @@ npm run dev
 
 - [ ] Python 3.11/3.12 + Node 20+ + Git  
 - [ ] `backend/.venv` 已创建并 `pip install -r requirements.txt`  
-- [ ] `secrets.local.env` 已填 `API_SPORTS_KEY`（且未提交）  
+- [ ] 官方 Key 已写入库（`set-api-sports-key` 或管理员 UI）
 - [ ] `.env` 已从 example 复制（至少确认 `REDIS_ENABLED` / SSL）  
 - [ ] `python manage.py init-db` 成功，`data/football.db` 可生成  
 - [ ] 后端 `:8000/docs` 可开，前端 `:5173` 可开且计算器能拉赛程
@@ -247,6 +243,7 @@ npm run dev
 |------|------|
 | [DEV_SETUP.md](DEV_SETUP.md) | **本文：换机环境标准** |
 | [docs/LOCAL_PROD_DEPLOY.md](docs/LOCAL_PROD_DEPLOY.md) | 本机生产打包与部署 |
+| [docs/API_SPORTS_KEYS.md](docs/API_SPORTS_KEYS.md) | 官方 Key：库内配置 + 多 Key 切换 |
 | [PROJECT_PLAN.md](PROJECT_PLAN.md) | 产品边界与进度 |
 | [backend/README.md](backend/README.md) | API、调度、联赛配置 |
 | [frontend/README.md](frontend/README.md) | 前端路由与对接 |

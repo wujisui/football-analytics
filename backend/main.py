@@ -28,6 +28,28 @@ async def lifespan(app: FastAPI):
     await init_db()
     # Warm cache once so the first API request does not pay Redis connect latency.
     await get_cache_service().connect()
+    # Load the administrator-managed API-Sports key list.
+    from app.services.api_key_pool import hydrate_key_pool
+    from app.services.runtime_settings import hydrate_api_sports_keys
+
+    await hydrate_api_sports_keys()
+    await hydrate_key_pool()
+    from app.services.api_key_pool import describe_pool_for_logs, official_keys
+
+    pool = describe_pool_for_logs()
+    key_n = len(official_keys())
+    if key_n:
+        logger.info(
+            "API-Sports keys ready: count=%s source_pool_day=%s active=#%s",
+            key_n,
+            pool.get("day"),
+            int(pool.get("active_index") or 0) + 1,
+        )
+    else:
+        logger.warning(
+            "No API-Sports key configured yet. "
+            "Set via Mine admin UI or: python manage.py set-api-sports-key key1,key2"
+        )
     start_scheduler()
     # Re-apply free-quota cron from app_settings (env default until admin overrides).
     await refresh_fixture_sync_jobs()

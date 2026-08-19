@@ -56,11 +56,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Official API-Sports key (preferred). Keep it in secrets.local.env only.
-    API_SPORTS_KEY: str = ""
-    # RapidAPI fallback (optional)
-    RAPIDAPI_KEY: str = ""
-    RAPIDAPI_HOST: str = "v3.football.api-sports.io"
     API_BASE_HOST: str = "v3.football.api-sports.io"
 
     API_PROVIDER: ApiProvider = "api_football"
@@ -270,7 +265,7 @@ class Settings(BaseSettings):
 
     @property
     def api_host(self) -> str:
-        return (self.API_BASE_HOST or self.RAPIDAPI_HOST).strip()
+        return self.API_BASE_HOST.strip()
 
     @property
     def api_base_url(self) -> str:
@@ -291,8 +286,14 @@ class Settings(BaseSettings):
         return fallback
 
     @property
+    def official_api_sports_keys(self) -> list[str]:
+        from app.services.api_key_pool import official_keys
+
+        return official_keys(self)
+
+    @property
     def uses_api_sports_direct(self) -> bool:
-        return bool(self.API_SPORTS_KEY.strip())
+        return bool(self.official_api_sports_keys)
 
     @property
     def uses_full_history(self) -> bool:
@@ -305,17 +306,15 @@ class Settings(BaseSettings):
 
     @property
     def football_api_key(self) -> str:
-        return self.API_SPORTS_KEY.strip() or self.RAPIDAPI_KEY.strip()
+        from app.services.api_key_pool import active_official_key
+
+        return active_official_key(self) or ""
 
     def football_api_headers(self) -> dict[str, str]:
-        if self.uses_api_sports_direct:
-            return {
-                "x-apisports-key": self.API_SPORTS_KEY.strip(),
-                "Content-Type": "application/json",
-            }
+        from app.services.api_key_pool import active_official_key
+
         return {
-            "X-RapidAPI-Key": self.RAPIDAPI_KEY.strip(),
-            "X-RapidAPI-Host": self.api_host,
+            "x-apisports-key": active_official_key(self) or "",
             "Content-Type": "application/json",
         }
 

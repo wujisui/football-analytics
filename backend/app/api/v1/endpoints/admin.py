@@ -11,8 +11,10 @@ from app.core.database import get_db
 from app.services import auth as auth_service
 from app.services.data_cleanup import reset_match_history
 from app.services.runtime_settings import (
+    get_api_sports_keys_setting,
     get_enable_free_quota,
     get_enable_scheduled_full_detail,
+    set_api_sports_keys_setting,
     set_enable_free_quota,
     set_enable_scheduled_full_detail,
 )
@@ -62,6 +64,19 @@ class FreeQuotaSetting(BaseModel):
 
 class FreeQuotaUpdate(BaseModel):
     enabled: bool
+
+
+class ApiSportsKeySetting(BaseModel):
+    key_count: int
+    masked_keys: str = Field(description="仅末 4 位预览，完整 Key 不回传")
+
+
+class ApiSportsKeyUpdate(BaseModel):
+    password: str = Field(..., min_length=1, description="当前管理员登录密码")
+    keys: str = Field(
+        default="",
+        description="逗号分隔的官方 Key；空字符串表示删除库内覆盖、改回 env",
+    )
 
 
 class ResetMatchHistoryRequest(BaseModel):
@@ -189,6 +204,47 @@ async def patch_free_quota_setting(
         asyncio.create_task(run_scheduled_fixtures_sync())
 
     return _free_quota_payload(enabled, "db", catch_up_started=catch_up_started)
+
+
+def _api_sports_key_payload(
+    blob: str | None,
+) -> ApiSportsKeySetting:
+    from app.services.api_key_pool import (
+        mask_api_sports_keys_blob,
+        parse_api_sports_keys,
+    )
+
+    return ApiSportsKeySetting(
+        key_count=len(parse_api_sports_keys(blob or "")),
+        masked_keys=mask_api_sports_keys_blob(blob),
+    )
+
+
+@router.get("/settings/api-sports-key", response_model=ApiSportsKeySetting)
+async def get_api_sports_key_setting(
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ApiSportsKeySetting:
+    blob = await get_api_sports_keys_setting(db)
+    return _api_sports_key_payload(blob)
+
+
+@router.put("/settings/api-sports-key", response_model=ApiSportsKeySetting)
+async def put_api_sports_key_setting(
+    body: ApiSportsKeyUpdate,
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> ApiSportsKeySetting:
+    """Save comma-separated official keys to ``app_settings``.
+
+    Empty ``keys`` removes all configured official keys. Requires the logged-in
+    admin password.
+    """
+    if not auth_service.verify_password(body.password, admin.password_hash):
+        raise HTTPException(status_code=403, detail="管理员密码不正确")
+
+    blob = await set_api_sports_keys_setting(db, body.keys)
+    return _api_sports_key_payload(blob)
 
 
 @router.get(

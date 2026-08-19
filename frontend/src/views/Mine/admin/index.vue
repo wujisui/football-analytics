@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   FlashOutline,
+  KeyOutline,
   RefreshOutline,
   SettingsOutline,
   TrashOutline,
@@ -9,11 +10,14 @@ import { useMessage, useModal } from 'naive-ui'
 import { computed, onMounted, ref } from 'vue'
 
 import {
+  fetchApiSportsKeySetting,
   fetchFreeQuotaSetting,
   fetchScheduledFullDetailSetting,
   previewResetMatchHistory,
   resetMatchHistory,
+  type ApiSportsKeySetting,
   type ResetMatchHistoryReport,
+  updateApiSportsKeySetting,
   updateFreeQuotaSetting,
   updateScheduledFullDetailSetting,
 } from '@/api/admin'
@@ -44,6 +48,13 @@ const resetModalShow = ref(false)
 const resetPassword = ref('')
 const resetSubmitting = ref(false)
 
+const apiKeySetting = ref<ApiSportsKeySetting | null>(null)
+const apiKeyLoading = ref(false)
+const apiKeyModalShow = ref(false)
+const apiKeyDraft = ref('')
+const apiKeyPassword = ref('')
+const apiKeySaving = ref(false)
+
 const resetSummary = computed(() => {
   const report = resetPreview.value
   if (!report) return ''
@@ -58,6 +69,12 @@ const resetSummary = computed(() => {
   ].join(' · ')
 })
 
+const apiKeyDescription = computed(() => {
+  const setting = apiKeySetting.value
+  if (!setting) return '加载中…'
+  return setting.key_count > 0 ? `已配置 ${setting.key_count} 枚 Key` : '未配置'
+})
+
 function formatSyncHours(hours: number[]): string {
   if (!hours.length) return '—'
   return hours.map((h) => `${String(h).padStart(2, '0')}:00`).join('、')
@@ -66,10 +83,12 @@ function formatSyncHours(hours: number[]): string {
 async function loadSetting() {
   loading.value = true
   freeQuotaLoading.value = true
+  apiKeyLoading.value = true
   try {
-    const [detail, freeQuota] = await Promise.all([
+    const [detail, freeQuota, apiKey] = await Promise.all([
       fetchScheduledFullDetailSetting(),
       fetchFreeQuotaSetting(),
+      fetchApiSportsKeySetting(),
     ])
     enabled.value = detail.enabled
     source.value = detail.source
@@ -77,11 +96,13 @@ async function loadSetting() {
     freeQuotaEnabled.value = freeQuota.enabled
     freeQuotaSource.value = freeQuota.source
     freeQuotaHours.value = freeQuota.sync_hours?.length ? freeQuota.sync_hours : [11, 22]
+    apiKeySetting.value = apiKey
   } catch (err) {
     message.error(err instanceof Error ? err.message : '读取管理员设置失败')
   } finally {
     loading.value = false
     freeQuotaLoading.value = false
+    apiKeyLoading.value = false
   }
 }
 
@@ -198,6 +219,56 @@ function onFreeQuotaToggle(next: boolean) {
 
 function syncOfficialData() {
   void runSync()
+}
+
+function openApiKeyModal() {
+  apiKeyDraft.value = ''
+  apiKeyPassword.value = ''
+  apiKeyModalShow.value = true
+}
+
+function closeApiKeyModal() {
+  if (apiKeySaving.value) return
+  apiKeyModalShow.value = false
+  apiKeyDraft.value = ''
+  apiKeyPassword.value = ''
+}
+
+async function saveApiSportsKeys() {
+  const password = apiKeyPassword.value.trim()
+  if (!password) {
+    message.warning('请输入管理员登录密码')
+    return
+  }
+  apiKeySaving.value = true
+  try {
+    apiKeySetting.value = await updateApiSportsKeySetting({
+      password,
+      keys: apiKeyDraft.value.trim(),
+    })
+    apiKeyModalShow.value = false
+    apiKeyDraft.value = ''
+    apiKeyPassword.value = ''
+    message.success(
+      apiKeySetting.value.key_count > 0
+        ? `已保存 ${apiKeySetting.value.key_count} 枚 Key`
+        : '已清除全部 Key，官方同步将暂停',
+    )
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : '保存失败')
+  } finally {
+    apiKeySaving.value = false
+  }
+}
+
+async function clearApiSportsKeysOverride() {
+  const password = apiKeyPassword.value.trim()
+  if (!password) {
+    message.warning('清除覆盖也需输入管理员登录密码')
+    return
+  }
+  apiKeyDraft.value = ''
+  await saveApiSportsKeys()
 }
 
 async function openResetModal() {
@@ -326,6 +397,24 @@ onMounted(() => {
 
         <n-list-item>
           <template #prefix>
+            <n-icon :component="KeyOutline" :size="20" />
+          </template>
+          <n-thing title="API-Sports 官方 Key" :description="apiKeyDescription" />
+          <template #suffix>
+            <n-button
+              size="small"
+              secondary
+              :disabled="apiKeyLoading || apiKeySaving"
+              :loading="apiKeyLoading"
+              @click="openApiKeyModal"
+            >
+              配置
+            </n-button>
+          </template>
+        </n-list-item>
+
+        <n-list-item>
+          <template #prefix>
             <n-icon :component="TrashOutline" :size="20" />
           </template>
           <n-thing
@@ -346,6 +435,69 @@ onMounted(() => {
         </n-list-item>
       </n-list>
     </n-card>
+
+    <n-modal
+      v-model:show="apiKeyModalShow"
+      preset="card"
+      title="配置 API-Sports Key"
+      :mask-closable="!apiKeySaving"
+      :close-on-esc="!apiKeySaving"
+      style="width: min(480px, 92vw)"
+      @update:show="(show: boolean) => !show && closeApiKeyModal()"
+    >
+      <n-alert type="info" :bordered="false" style="margin-bottom: 12px">
+        多个 Key 用英文逗号分隔；当前 Key 当天配额耗尽后，会自动切换下一枚。
+      </n-alert>
+      <p
+        v-if="apiKeySetting"
+        style="margin: 0 0 12px; font-size: 13px; line-height: 1.5; opacity: 0.85"
+      >
+        当前：{{ apiKeyDescription }}<span v-if="apiKeySetting.masked_keys"
+          >；末 4 位：{{ apiKeySetting.masked_keys }}</span
+        >
+      </p>
+      <n-form-item label="官方 Key（可逗号分隔多枚）" :show-feedback="false">
+        <n-input
+          v-model:value="apiKeyDraft"
+          type="textarea"
+          :autosize="{ minRows: 2, maxRows: 4 }"
+          placeholder="key_one,key_two"
+          :disabled="apiKeySaving"
+        />
+      </n-form-item>
+      <n-form-item label="管理员登录密码" :show-feedback="false" style="margin-top: 8px">
+        <n-input
+          v-model:value="apiKeyPassword"
+          type="password"
+          show-password-on="click"
+          placeholder="当前登录管理员的密码"
+          autocomplete="current-password"
+          :disabled="apiKeySaving"
+          @keyup.enter="saveApiSportsKeys"
+        />
+      </n-form-item>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap">
+          <n-button :disabled="apiKeySaving" @click="closeApiKeyModal">取消</n-button>
+          <n-button
+            secondary
+            :disabled="apiKeySaving || !apiKeyPassword.trim()"
+            :loading="apiKeySaving"
+            @click="clearApiSportsKeysOverride"
+          >
+            清除全部 Key
+          </n-button>
+          <n-button
+            type="primary"
+            :disabled="apiKeySaving || !apiKeyPassword.trim() || !apiKeyDraft.trim()"
+            :loading="apiKeySaving"
+            @click="saveApiSportsKeys"
+          >
+            保存
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
 
     <n-modal
       v-model:show="resetModalShow"

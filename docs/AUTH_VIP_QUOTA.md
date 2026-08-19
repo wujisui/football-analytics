@@ -85,7 +85,7 @@
 - 后端：`users` + `user_sessions`（30 天 opaque token）；token 只走 **httpOnly cookie**（`fa_session`）；收藏/方案按 `user_id` 隔离；游客桶 `user_id=""`。  
 - 运维：`users.is_admin`（非 VIP）；「我的 → 管理员设置」仅管理员可见；`/admin/*` 认会话 `is_admin`，兼容 `X-Admin-Key` 给脚本。授予：`python manage.py set-admin <账号>`；取消：`python manage.py unset-admin <账号>`。  
 - 首登认领：登录/注册时把游客桶**手动收藏**与**方案**迁到账号；`source=auto` 每日推荐留在游客桶，登录后列表合并可见。  
-- 官方 Key：仅后端 `secrets.local.env`。
+- 官方 Key：只用管理员库内配置（见 [API_SPORTS_KEYS.md](./API_SPORTS_KEYS.md)）。
 
 ### 4.2 密码与传输（已定，勿再改方案）
 

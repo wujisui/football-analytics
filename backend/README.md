@@ -1,6 +1,6 @@
 # Football Analytics
 
-足球数据分析后端服务。从 [API-Football](https://www.api-football.com/)（通过 RapidAPI）拉取联赛、球队与赛程数据，结合赛前统计做概率分析，并通过 REST API 对外提供。
+足球数据分析后端服务。使用管理员配置的官方 Key 从 [API-Football](https://www.api-football.com/) 拉取联赛、球队与赛程数据，结合赛前统计做概率分析，并通过 REST API 对外提供。
 
 ## 功能概览
 
@@ -82,36 +82,33 @@ pip install -r requirements.txt
 
 > Python 3.13 下 `pandas` 可能安装失败。若仅需运行 API，可先安装核心依赖：`fastapi uvicorn sqlalchemy aiosqlite redis apscheduler httpx python-dotenv pydantic-settings fakeredis`。
 
-### 2. 配置环境变量
-
-1. 复制非密钥配置（可选）：`copy .env.example .env`
-2. **密钥单独放本地文件**（不会进 Git）：
+### 2. 配置官方 Key
 
 ```bash
-copy secrets.local.env.example secrets.local.env
+python manage.py init-db
+# 启动后端 → 注册账号 →
+python manage.py set-admin 你的账号
+python manage.py set-api-sports-key keyA,keyB
+# 或前端「我的 → 管理员设置 → API-Sports 官方 Key」
 ```
 
-编辑 `secrets.local.env`，填入官方 Key：
+详见 [docs/API_SPORTS_KEYS.md](../docs/API_SPORTS_KEYS.md)。多枚 Key 逗号分隔，当天配额耗尽自动切换。
 
-```env
-API_SPORTS_KEY=你的官方Key
-```
+可选非密钥配置：`copy .env.example .env`
 
 | 变量                                | 说明                                          |
 |-----------------------------------|---------------------------------------------|
-| `API_SPORTS_KEY`                  | API-Sports 官方密钥（推荐，放在 `secrets.local.env`）  |
-| `RAPIDAPI_KEY`                    | RapidAPI 备用密钥（仅当未配置官方 Key 时使用）              |
-| `API_BASE_HOST` / `RAPIDAPI_HOST` | 默认 `v3.football.api-sports.io`              |
+| `API_BASE_HOST`                   | 默认 `v3.football.api-sports.io`              |
 | `DATABASE_URL`                    | 默认 `sqlite+aiosqlite:///./data/football.db` |
 | `REDIS_URL`                       | Redis 地址，不可用时会用 fakeredis                   |
-| `ADMIN_API_KEY`                   | 管理接口鉴权密钥（可放 `secrets.local.env`）            |
+| `ADMIN_API_KEY`                   | 管理接口兼容鉴权（脚本用；日常用管理员会话）                    |
 | `HTTP_VERIFY_SSL`                 | 公司代理拦截 SSL 时设为 `false`                      |
 | `SCHEDULER_TIMEZONE`              | 调度器时区，默认 `Asia/Shanghai`                    |
 | `LOCAL_FIRST`                     | `true` 时优先读本地库/缓存，再打官方                      |
 | `ENABLE_FREE_QUOTA`               | `true`（默认）=每天 11:00 全量 + 22:00 盘口轻刷；管理员 UI 可覆盖 |
 | `API_HISTORY_MODE`                | `free`（默认）=免费套餐日期/赛季夹紧；`full`=付费不限年份与赛程窗口 |
 
-> 不要把真实 Key 写进 `.env.example` 或提交到 Git。本地运行时会先读 `.env`，再读 `secrets.local.env`（后者覆盖前者）。
+> 官方 Key 只通过管理员配置写入数据库，不要写进前端或提交到 Git。
 
 ### 3. 初始化并启动
 
@@ -240,10 +237,11 @@ GET /api/v1/fixtures/today?league_id=39
 | PATCH | `/admin/settings/scheduled-full-detail` | 写入开关到 `app_settings`（body: `{"enabled": true\|false}`） |
 | GET  | `/admin/settings/free-quota` | 读取「免费配额模式」开关（默认 ON；只改同步整点） |
 | PATCH | `/admin/settings/free-quota` | 写入并立刻重排 cron；若从关→开且已过今日 11:00 则后台补跑一次同步 |
-| GET  | `/admin/reset-match-history` | 预览清空比赛历史将影响的行数（管理员会话或 Admin Key） |
+| GET  | `/admin/settings/api-sports-key` | 读取官方 Key 配置（数量 + 每枚末 4 位） |
+| PUT  | `/admin/settings/api-sports-key` | 管理员密码确认后写入；body `{"password","keys"}`，`keys` 可逗号分隔多枚；空字符串清除库覆盖改回 env |
 | POST | `/admin/reset-match-history` | 需**管理员账号登录** + body `{"password","apply"}`；`apply=true` 时物理清空 |
 
-前端「我的 → 管理员设置」可用管理员会话切换开关，并用登录密码一键清空比赛历史；详见 [docs/RESET_MATCH_HISTORY.md](../docs/RESET_MATCH_HISTORY.md)。
+前端「我的 → 管理员设置」可配置官方 Key、切换免费配额/详情预拉，并用登录密码一键清空比赛历史。密钥见 [docs/API_SPORTS_KEYS.md](../docs/API_SPORTS_KEYS.md)；清空见 [docs/RESET_MATCH_HISTORY.md](../docs/RESET_MATCH_HISTORY.md)。
 
 ### 常用联赛 ID
 

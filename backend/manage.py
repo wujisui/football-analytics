@@ -70,15 +70,22 @@ async def run_fetch_upcoming(days: int | None) -> None:
 
 
 async def run_check_quota() -> None:
+    from app.services.api_key_pool import describe_pool_for_logs
     from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
 
     try:
         async with FootballFetcher() as fetcher:
             remaining = await fetcher.check_quota()
+            pool = describe_pool_for_logs(fetcher.settings)
+            print(
+                f"Key pool: count={pool['key_count']} "
+                f"active=#{pool['active_index'] + 1}(…{pool['active_suffix']}) "
+                f"exhausted={pool['exhausted_indexes']} day={pool['day']}"
+            )
             if remaining is None:
                 print("API call succeeded, but remaining quota header was not returned.")
             else:
-                print(f"Remaining API requests: {remaining}")
+                print(f"Remaining API requests (active key): {remaining}")
     except ApiKeyNotConfiguredError as exc:
         print(f"Skipped: {exc}")
         sys.exit(1)
@@ -361,6 +368,24 @@ async def run_reset_match_history(*, apply: bool) -> None:
             "Done. Re-sync fixtures/odds (admin「立即同步」or wait for 11:00), "
             "then accumulate new samples before train-model."
         )
+
+
+async def run_set_api_sports_key(keys_blob: str) -> None:
+    """Set the administrator-managed official key list."""
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.api_key_pool import mask_api_sports_keys_blob, parse_api_sports_keys
+    from app.services.runtime_settings import set_api_sports_keys_setting
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        blob = await set_api_sports_keys_setting(session, keys_blob)
+    if not blob:
+        print("Cleared all API-Sports keys; official synchronization is disabled.")
+        return
+    parsed = parse_api_sports_keys(blob)
+    print(f"Saved {len(parsed)} API-Sports key(s) to app_settings.")
+    print(f"Masked: {mask_api_sports_keys_blob(blob)}")
+    print("Restart is not required; next official call uses the new pool.")
 
 
 async def run_train_model() -> None:
@@ -671,6 +696,15 @@ def main() -> None:
         help="Username or email",
     )
 
+    set_key_parser = subparsers.add_parser(
+        "set-api-sports-key",
+        help="Save comma-separated API-Sports keys into app_settings",
+    )
+    set_key_parser.add_argument(
+        "keys",
+        help="One or more keys: keyA,keyB — pass empty string \"\" to clear all keys",
+    )
+
     args = parser.parse_args()
 
     if args.command == "trigger-task":
@@ -683,6 +717,10 @@ def main() -> None:
 
     if args.command == "unset-admin":
         asyncio.run(run_set_admin(args.account, revoke=True))
+        return
+
+    if args.command == "set-api-sports-key":
+        asyncio.run(run_set_api_sports_key(args.keys))
         return
 
     if args.command == "fetch-upcoming":

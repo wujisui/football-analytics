@@ -103,20 +103,22 @@ class ApiKeyNotConfiguredError(RuntimeError):
 
 def ensure_api_key_configured(settings: Settings | None = None) -> str:
     settings = settings or get_settings()
-    key = settings.football_api_key
+    from app.services.api_key_pool import official_keys
+
+    keys = official_keys(settings)
+    key = keys[0] if keys else ""
     placeholders = {
         "",
         "your_api_key_here",
         "your-api-key-here",
         "your_api_sports_key_here",
-        "your_rapidapi_key_here",
     }
 
     if key in placeholders:
         raise ApiKeyNotConfiguredError(
             "Football API key is not configured. "
-            "Copy secrets.local.env.example to secrets.local.env, "
-            "set API_SPORTS_KEY (recommended) or RAPIDAPI_KEY, then retry."
+            "Set keys in「我的 → 管理员设置 → API-Sports 官方 Key」, "
+            "or run `python manage.py set-api-sports-key key1,key2`."
         )
     return key
 
@@ -167,9 +169,31 @@ class FootballFetcher:
         self.last_remaining_requests: int | None = None
         # Once the free-tier daily limit is hit, skip further official calls
         # in this fetcher session so the rest of the batch does not burn empty.
+        # May clear after a successful API-Sports key failover.
         self.quota_exhausted: bool = False
         # AsyncSession is not safe for concurrent awaitables; package gather must serialize DB I/O.
         self._db_lock = asyncio.Lock()
+
+    def _apply_client_headers(self) -> None:
+        if self._client is None:
+            return
+        for key, value in self.settings.football_api_headers().items():
+            self._client.headers[key] = value
+
+    async def _failover_official_key(self, *, reason: str) -> bool:
+        """Mark current official key exhausted and switch headers to the next."""
+        from app.services.api_key_pool import mark_active_exhausted_and_rotate
+
+        next_key = await mark_active_exhausted_and_rotate(
+            self.session,
+            self.settings,
+            reason=reason,
+        )
+        if not next_key:
+            return False
+        self._apply_client_headers()
+        self.quota_exhausted = False
+        return True
 
     def _note_upstream_payload(self, payload: dict[str, Any] | None) -> None:
         errors = _api_payload_errors(payload)
@@ -178,15 +202,20 @@ class FootballFetcher:
         if api_errors_quota_exhausted(errors):
             self.quota_exhausted = True
             logger.error(
-                "Official API daily quota exhausted; skipping further calls "
-                "in this sync session: %s",
+                "Official API daily quota exhausted on active key; "
+                "will try failover before further calls: %s",
                 errors,
             )
 
     async def __aenter__(self) -> "FootballFetcher":
+        from app.services.api_key_pool import hydrate_key_pool
+        from app.services.runtime_settings import hydrate_api_sports_keys
+
+        await hydrate_api_sports_keys(self.session)
         ensure_api_key_configured(self.settings)
         if self.session is None:
             self.session = AsyncSessionLocal()
+        await hydrate_key_pool(self.session, self.settings)
         await self.cache.connect()
         self._client = httpx.AsyncClient(
             base_url=self.settings.api_base_url,
@@ -217,6 +246,16 @@ class FootballFetcher:
                         self.provider.last_response
                     )
                     self.cache.last_api_remaining = self.last_remaining_requests
+                    if (
+                        self.last_remaining_requests is not None
+                        and self.last_remaining_requests <= 0
+                        and self.settings.uses_api_sports_direct
+                    ):
+                        switched = await self._failover_official_key(
+                            reason="remaining=0"
+                        )
+                        if not switched:
+                            self.quota_exhausted = True
                 return result
             except Exception as exc:
                 last_error = exc
@@ -256,17 +295,20 @@ class FootballFetcher:
         later syncs.
         """
         if self.quota_exhausted:
-            return {
-                "get": operation,
-                "errors": {
-                    "requests": (
-                        "Official API daily quota already exhausted in this "
-                        "sync session; call skipped."
-                    )
-                },
-                "results": 0,
-                "response": [],
-            }
+            if await self._failover_official_key(reason="quota_error"):
+                logger.info("Retrying official call after API-Sports key failover")
+            else:
+                return {
+                    "get": operation,
+                    "errors": {
+                        "requests": (
+                            "Official API daily quota already exhausted in this "
+                            "sync session; call skipped."
+                        )
+                    },
+                    "results": 0,
+                    "response": [],
+                }
 
         if not force:
             cached = await self.cache.get(cache_key)
@@ -319,12 +361,22 @@ class FootballFetcher:
         payload = await self._run_with_retry(operation, fetch_callback)
         if _api_payload_unusable(payload):
             self._note_upstream_payload(payload)
-            logger.warning(
-                "Not caching unusable API payload for %s: %s",
-                cache_key,
-                _api_payload_errors(payload),
-            )
-            return payload
+            if self.quota_exhausted and await self._failover_official_key(
+                reason="quota_error"
+            ):
+                logger.info(
+                    "Re-fetching %s after API-Sports key failover",
+                    cache_key,
+                )
+                payload = await self._run_with_retry(operation, fetch_callback)
+            if _api_payload_unusable(payload):
+                self._note_upstream_payload(payload)
+                logger.warning(
+                    "Not caching unusable API payload for %s: %s",
+                    cache_key,
+                    _api_payload_errors(payload),
+                )
+                return payload
 
         await self.cache.set(cache_key, payload, ttl)
 
@@ -1618,7 +1670,7 @@ class FootballFetcher:
         )
         return {
             "provider": self.provider.provider_name,
-            "auth_mode": "api_sports" if self.settings.uses_api_sports_direct else "rapidapi",
+            "auth_mode": "api_sports",
             "host": self.settings.api_host,
             "remaining_requests": self.last_remaining_requests,
             "sample_keys": list(payload.keys()) if isinstance(payload, dict) else [],

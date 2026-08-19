@@ -13,6 +13,11 @@ export type FreeQuotaSetting = {
   catch_up_started?: boolean
 }
 
+export type ApiSportsKeySetting = {
+  key_count: number
+  masked_keys: string
+}
+
 export type TriggerTaskResult = {
   status: string
   message: string
@@ -69,6 +74,22 @@ export async function updateFreeQuotaSetting(enabled: boolean): Promise<FreeQuot
   const { data } = await apiClient.patch<FreeQuotaSetting>('/admin/settings/free-quota', {
     enabled,
   })
+  return data
+}
+
+export async function fetchApiSportsKeySetting(): Promise<ApiSportsKeySetting> {
+  const { data } = await apiClient.get<ApiSportsKeySetting>('/admin/settings/api-sports-key')
+  return data
+}
+
+export async function updateApiSportsKeySetting(params: {
+  password: string
+  keys: string
+}): Promise<ApiSportsKeySetting> {
+  const { data } = await apiClient.put<ApiSportsKeySetting>(
+    '/admin/settings/api-sports-key',
+    params,
+  )
   return data
 }
 

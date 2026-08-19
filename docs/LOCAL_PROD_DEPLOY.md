@@ -22,8 +22,8 @@
 
 - Python 3.11 / 3.12，`backend/.venv` 已 `pip install -r requirements.txt`
 - Node.js 20+，`frontend` 已 `npm install`
-- `backend/secrets.local.env` 已配置 `API_SPORTS_KEY`
 - 可选：`backend/.env`（从 `.env.example` 复制）
+- 官方 Key：用管理员配置写入库（见下节）
 
 数据库：
 
@@ -34,6 +34,20 @@ python manage.py init-db
 ```
 
 若需在本机清空旧比赛/盘口样本（换盘口后从零训练），见 [RESET_MATCH_HISTORY.md](./RESET_MATCH_HISTORY.md)。
+
+---
+
+## 官方 API Key
+
+Key **以管理员配置写入数据库为准**（多枚用逗号分隔，配额耗尽自动切换）。详见 [API_SPORTS_KEYS.md](./API_SPORTS_KEYS.md)。
+
+```powershell
+# 启动服务并注册账号后：
+python manage.py set-admin 你的账号
+python manage.py set-api-sports-key keyA,keyB
+# 或：前端「我的 → 管理员设置 → API-Sports 官方 Key」
+python manage.py check-quota
+```
 
 ---
 
@@ -273,7 +287,7 @@ Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127
 
 ## 8. 安全提醒（本机预览即可）
 
-- 不要把 `secrets.local.env`、真实 API Key 打进前端或提交 Git。
+- 不要把真实 API Key 打进前端或提交 Git；只通过管理员配置写入数据库。
 - `CORS allow_origins=["*"]` 便于本机联调；真正上公网时应收紧来源并加鉴权（见 [AUTH_VIP_QUOTA.md](AUTH_VIP_QUOTA.md)）。
 - 对局域网开放端口时，仅在受信网络使用。
 

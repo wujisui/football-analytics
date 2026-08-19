@@ -69,12 +69,28 @@ async def run_scheduled_fixtures_sync(
     sync_hour: int | None = None,
 ) -> None:
     """Run one fixed daily fixtures/odds/results synchronization batch."""
+    from app.services.fetcher import ApiKeyNotConfiguredError
+
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
     logger.info("Task %s started (sync_hour=%s).", task_name, sync_hour)
     try:
         await scheduled_fixtures_sync(sync_hour=sync_hour)
         _set_task_status(task_name, "completed", finished_at=_utc_now().isoformat())
         logger.info("Task %s completed.", task_name)
+    except ApiKeyNotConfiguredError as exc:
+        # Deploy may start without keys; admin configures later. Do not crash the process.
+        _set_task_status(
+            task_name,
+            "skipped",
+            error=str(exc),
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.warning(
+            "Task %s skipped (no API key): %s. "
+            "Configure via Mine admin or: python manage.py set-api-sports-key …",
+            task_name,
+            exc,
+        )
     except Exception as exc:
         _set_task_status(
             task_name,

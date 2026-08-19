@@ -13,8 +13,78 @@ from app.models.app_setting import AppSetting
 
 KEY_ENABLE_SCHEDULED_FULL_DETAIL = "enable_scheduled_full_detail"
 KEY_ENABLE_FREE_QUOTA = "enable_free_quota"
+KEY_API_SPORTS_KEY = "api_sports_key"
 
 SettingSource = Literal["db", "env"]
+
+# Process cache for official keys stored in app_settings.
+_runtime_api_sports_keys_blob: str | None = None
+_runtime_api_sports_keys_loaded: bool = False
+
+
+def get_runtime_api_sports_keys_blob() -> tuple[str | None, bool]:
+    """Return the DB-backed key blob and whether it has been loaded."""
+    return _runtime_api_sports_keys_blob, _runtime_api_sports_keys_loaded
+
+
+def set_runtime_api_sports_keys_blob(blob: str | None) -> None:
+    global _runtime_api_sports_keys_blob, _runtime_api_sports_keys_loaded
+    _runtime_api_sports_keys_blob = blob
+    _runtime_api_sports_keys_loaded = True
+
+
+async def hydrate_api_sports_keys(
+    session: AsyncSession | None = None,
+) -> str | None:
+    """Load the administrator-managed key list into process memory."""
+
+    async def _read(db: AsyncSession) -> str | None:
+        row = await get_setting_row(db, KEY_API_SPORTS_KEY)
+        if row is None or not (row.value or "").strip():
+            set_runtime_api_sports_keys_blob(None)
+            return None
+        value = row.value.strip()
+        set_runtime_api_sports_keys_blob(value)
+        return value
+
+    if session is not None:
+        return await _read(session)
+    async with AsyncSessionLocal() as db:
+        return await _read(db)
+
+
+async def get_api_sports_keys_setting(
+    session: AsyncSession | None = None,
+) -> str | None:
+    """Return the administrator-managed key list. Does not mask."""
+    return await hydrate_api_sports_keys(session)
+
+
+async def set_api_sports_keys_setting(
+    session: AsyncSession,
+    keys_blob: str,
+) -> str | None:
+    """Persist comma-separated keys. Empty input removes all official keys."""
+    from app.services.api_key_pool import parse_api_sports_keys, reset_pool_state_for_key_change
+
+    cleaned = ",".join(parse_api_sports_keys(keys_blob))
+    row = await get_setting_row(session, KEY_API_SPORTS_KEY)
+    if not cleaned:
+        if row is not None:
+            await session.delete(row)
+            await session.commit()
+        set_runtime_api_sports_keys_blob(None)
+        await reset_pool_state_for_key_change(session)
+        return None
+
+    if row is None:
+        session.add(AppSetting(key=KEY_API_SPORTS_KEY, value=cleaned))
+    else:
+        row.value = cleaned
+    await session.commit()
+    set_runtime_api_sports_keys_blob(cleaned)
+    await reset_pool_state_for_key_change(session)
+    return cleaned
 
 
 def _parse_bool(raw: str | None) -> bool | None:

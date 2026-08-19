@@ -33,7 +33,7 @@
 | 实时比分 / 滚球直播   | 产品不是直播站，配额与架构都不按此设计                      |
 | 开赛后轮询官方比分     | 赛果按日一次性回写；未完场比分只在用户点开详情时补一次，不做滚球                            |
 | 开赛后改写赛前预测快照   | 预测审计字段冻结；展示包可按详情点击补缺落库                      |
-| 前端直连官方并暴露 Key | Key 放后端 / `secrets.local.env`，前端只调自有 API |
+| 前端直连官方并暴露 Key | Key 只放后端库内（管理员配置）；前端只调自有 API |
 
 ### 1.3 数据与配额原则
 
@@ -60,7 +60,7 @@
 
 读取顺序：`Redis` → `SQLite（api_snapshots / pre_match_data）` → `API-Sports`（本地缺展示数据时，含完场复盘详情）。
 
-鉴权：优先 **API-Sports 官方 Key**（`API_SPORTS_KEY`），RapidAPI 仅作备用。
+鉴权：只用 **API-Sports 官方 Key**（库内管理员配置）。
 
 ### 1.4 用户 · VIP · 配额（规划中）
 
@@ -85,7 +85,7 @@
 | 赛前概率分析           | 🟡 持续优化 | 训练只使用冻结赛前特征/盘口与终场标签；1X2 必须优于盘口基线才启用，否则直接采用盘口隐含概率；比分/大小球/BTTS 使用独立 Poisson 进球分布模型；让球独立训练并受基线门禁 |
 | 业务 API           | ✅ MVP   | leagues / today / sync（含按日批量赔率） / results / analysis / admin |
 | 定时任务             | ✅ 完成    | **每日 00:00 / 06:00 / 11:00 / 16:00 / 19:00 / 22:00** 统一同步赛程、盘口、赛果；窗口内有赛联赛积分榜按自然日各拉一次 |
-| 密钥管理             | ✅ 完成    | `secrets.local.env`（不进 Git）                 |
+| 密钥管理             | ✅ 完成    | 管理员库内配置；多 Key 自动切换 |
 | 前端展示             | 🟡 持续完善 | 日期赛程、联赛筛选、详情、收藏、赛果复盘与命中统计已接；模型来源标注及管理页面仍缺 |
 | 赛前详情页（赔率/阵容/伤病等） | ✅ 主链路完成 | API `package` + 前端分区已接；官方 `/predictions`→「赛前简报」Tab；空态取决于官方开盘/公布阵容/简报覆盖 |
 | 官方 Widgets       | ❌ 未做    | 可选增强，非必须                                    |
@@ -104,9 +104,9 @@
 - [x] FastAPI 应用入口、CORS、生命周期内启动调度器
 - [x] SQLAlchemy 异步 + SQLite（`data/football.db`）
 - [x] Redis 缓存，不可用时降级 fakeredis
-- [x] 本地密钥：`secrets.local.env` + `.gitignore`（避免 Key 进仓库）
-- [x] API-Sports 直连鉴权（`x-apisports-key`），兼容 RapidAPI 回退
-- [x] 根目录 / 后端 / 前端 README
+- [x] 官方 Key：只用管理员库内配置（`app_settings`）+ 多 Key 配额切换
+- [x] API-Sports 直连鉴权（`x-apisports-key`）
+- [x] 根目录 / 后端 / 前端 README；密钥说明见 [docs/API_SPORTS_KEYS.md](docs/API_SPORTS_KEYS.md)
 
 ### 3.2 数据与联赛覆盖
 
@@ -447,7 +447,6 @@
 |------|------|------------|
 | `backend/data/football.db` | 联赛/赛程/`pre_match_data`/`match_features`/`api_snapshots` | ❌（gitignore） |
 | `backend/data/models/` | 1X2 / AH / 进球分布三套模型的权重与元数据 | ❌（gitignore） |
-| `backend/secrets.local.env` | API Key / Admin Key | ❌（严禁提交） |
 | `backend/logs/` | 运行日志 | ❌ |
 
 热缓存默认 `REDIS_ENABLED=false`（内存），**不落盘**，迁云时不必拷。
@@ -456,8 +455,8 @@
 
 | 方案 | 做法 | 适用 |
 |------|------|------|
-| A. 整库 + 模型拷贝 | 停写后同时拷 `football.db` 与整个 `data/models/` 到服务器同路径；服务器单独配置 `secrets.local.env` | 首发需与本机模型、历史推荐基线和推断结果对齐 |
-| B. 云上重拉 | 只部署代码 + Key；`init-db` → fetch/sync → 调度自行积累 | 干净环境；本机标签不迁移 |
+| A. 整库 + 模型拷贝 | 停写后同时拷 `football.db` 与整个 `data/models/` 到服务器同路径；Key 用管理员配置 | 首发需与本机模型、历史推荐基线和推断结果对齐 |
+| B. 云上重拉 | 只部署代码；`init-db` → 管理员配置 Key → fetch/sync → 调度自行积累 | 干净环境；本机标签不迁移 |
 
 约束：
 
@@ -501,7 +500,7 @@
 |-----|---------------------------------------------------------------------------|
 | 后端  | FastAPI · SQLAlchemy · SQLite · Redis/fakeredis · APScheduler · httpx     |
 | 前端  | Vue 3 · Vite · TypeScript · Naive UI · ECharts · Axios                    |
-| 数据源 | API-Sports（`v3.football.api-sports.io`），Key 存 `backend/secrets.local.env` |
+| 数据源 | API-Sports（`v3.football.api-sports.io`），Key 存库内管理员配置 |
 
 本地启动见根目录 [README.md](README.md)；后端细节见 [backend/README.md](backend/README.md)；前端见 [frontend/README.md](frontend/README.md)。
 
@@ -512,7 +511,7 @@
 | 风险           | 应对                                   |
 |--------------|--------------------------------------|
 | 官方 API 日配额有限 | 每天六个固定公共批次 + 全前端只读本地；见 [docs/AUTH_VIP_QUOTA.md](docs/AUTH_VIP_QUOTA.md) |
-| Key 泄露       | 仅本地 `secrets.local.env`；勿提交 Git；勿写前端 |
+| Key 泄露       | 库内管理员配置（界面只显示末 4 位）；勿提交 Git；勿写前端 |
 | 阵容/赔率临场才稳定   | 临场窗口提高刷新频率，但仍在开赛前停止                  |
 | 分析模型过简       | 1X2 设盘口基线门禁；比分/O-U/BTTS 使用独立进球分布；让球单独训练 |
 | 串关过早上线       | 门禁见 M.5：须 `source=ml` 且样本充足后再做；乘积假设偏乐观 |

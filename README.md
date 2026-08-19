@@ -1,6 +1,6 @@
 # Football Analytics
 
-足球数据分析全栈项目。后端对接 [API-Sports](https://www.api-football.com/)（官方 Key，RapidAPI 仅备用），做**赛前**概率分析并通过 REST API 对外提供；前端用 Vue 展示联赛、今日比赛与分析结果。
+足球数据分析全栈项目。后端使用管理员配置的官方 Key 对接 [API-Sports](https://www.api-football.com/)，做**赛前**概率分析并通过 REST API 对外提供；前端用 Vue 展示联赛、今日比赛与分析结果。
 
 > 产品定位、已完成 / 未完成 / 后续规划见 **[PROJECT_PLAN.md](PROJECT_PLAN.md)**。  
 > 用户鉴权 / VIP / API 配额设计见 **[docs/AUTH_VIP_QUOTA.md](docs/AUTH_VIP_QUOTA.md)**（规划中，代码未落地）。  
@@ -45,14 +45,18 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 pip install -r requirements.txt
-copy .env.example .env            # 非密钥配置；密钥放 secrets.local.env
+copy .env.example .env            # 配置（可选）
 python manage.py init-db
-python manage.py fetch-leagues
+# 启动后注册账号，再配置官方 Key：
+#   python manage.py set-admin 你的账号
+#   python manage.py set-api-sports-key keyA,keyB
+# 或前端「我的 → 管理员设置」
+python manage.py fetch-leagues    # 需已配置 Key
 python manage.py fetch-today
 uvicorn main:app --reload
 ```
 
-启动前请先配置 `backend/secrets.local.env` 中的 `API_SPORTS_KEY`（见 [backend/README.md](backend/README.md)）。
+官方 Key 配置与多 Key 切换见 [docs/API_SPORTS_KEYS.md](docs/API_SPORTS_KEYS.md)。
 
 ```bash
 # 终端 2 - 前端
