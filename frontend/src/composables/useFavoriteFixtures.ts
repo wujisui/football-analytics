@@ -1,4 +1,6 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+
+import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 
 import type { FixtureResponse } from '@/api/types'
 import type { ResultFixture } from '@/api/fixtures'
@@ -130,6 +132,12 @@ async function refreshFavorites(): Promise<void> {
   loadPromise = null
   await ensureLoaded()
 }
+
+const { ruleset: handicapRuleset } = useHandicapRuleset()
+watch(handicapRuleset, () => {
+  loadPromise = null
+  void refreshFavorites()
+})
 
 void ensureLoaded()
 

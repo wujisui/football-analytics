@@ -9,6 +9,7 @@ import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
 import PreMatchOddsModal from '@/components/PreMatchOddsModal.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import { buildMarketRows, type CalcCell } from '@/utils/betCalculator'
@@ -26,9 +27,13 @@ const isPhone = useIsPhone()
 const showOddsModal = ref(false)
 const openingDetail = ref(false)
 const { isSelected, toggleCell } = useBetCalculator()
+const { ruleset } = useHandicapRuleset()
 
 const rows = computed(() =>
-  buildMarketRows(props.fixture, { combineOuBtts: isPhone.value }),
+  buildMarketRows(props.fixture, {
+    combineOuBtts: isPhone.value,
+    handicapRuleset: ruleset.value,
+  }),
 )
 const prediction = computed(() => snapshotFromAnalysis(props.fixture.analysis))
 const marketGap = computed(() => (isPhone.value ? 8 : 6))

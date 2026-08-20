@@ -7,6 +7,7 @@ import {
   type ParlayCombo,
 } from '@/utils/betCalculator'
 import { parseApiDate } from '@/utils/format'
+import { jcHandicapLine, type HandicapRuleset } from '@/utils/handicapRuleset'
 
 export type FixtureScoreSnap = {
   fixture_id: number
@@ -137,6 +138,7 @@ function splitMarginVerdict(
 export function settleSelection(
   pick: CalcSelection,
   snap: FixtureScoreSnap | undefined,
+  ruleset: HandicapRuleset = 'asian',
 ): { verdict: LegVerdict; scoreText: string | null } {
   if (!snap) return { verdict: 'pending', scoreText: null }
   if (isCancelledStatus(snap.status)) {
@@ -166,19 +168,33 @@ export function settleSelection(
   }
 
   if (pick.market === 'ah') {
-    const line = parseLine(pick.line)
-    if (line == null) return { verdict: 'pending', scoreText }
+    const rawLine = parseLine(pick.line)
+    if (rawLine == null) return { verdict: 'pending', scoreText }
+    if (ruleset === 'jc') {
+      // 竞彩先把盘口向上取整，再判三项；没有赢半 / 输半。
+      const line = jcHandicapLine(rawLine)
+      const margin = h + line - a
+      if (Math.abs(margin) < 1e-9) {
+        if (Math.abs(line) < 1e-9) return { verdict: 'void', scoreText }
+        return {
+          verdict: pick.outcome === 'draw' ? 'hit' : 'miss',
+          scoreText,
+        }
+      }
+      return {
+        verdict:
+          pick.outcome === (margin > 0 ? 'home' : 'away') ? 'hit' : 'miss',
+        scoreText,
+      }
+    }
+    const line = rawLine
     const margin = h + line - a
     const integerLine = Math.abs(line - Math.round(line)) < 1e-9
     if (integerLine) {
-      // Product rule: level score on line 0 walks; other integer lines retain 让平.
-      if (Math.abs(line) < 1e-9 && Math.abs(margin) < 1e-9) {
-        return { verdict: 'void', scoreText }
-      }
-      const actual: CalcOutcome =
-        Math.abs(margin) < 1e-9 ? 'draw' : margin > 0 ? 'home' : 'away'
+      if (Math.abs(margin) < 1e-9) return { verdict: 'void', scoreText }
       return {
-        verdict: pick.outcome === actual ? 'hit' : 'miss',
+        verdict:
+          pick.outcome === (margin > 0 ? 'home' : 'away') ? 'hit' : 'miss',
         scoreText,
       }
     }
@@ -295,11 +311,12 @@ export function settleBetPlan(
   fold: FoldMode,
   multiplier: number,
   scores: ReadonlyMap<number, FixtureScoreSnap>,
+  ruleset: HandicapRuleset = 'asian',
 ): PlanSettlement {
   const parlay = calculateParlay(selections, fold, multiplier)
   const legs: SettledLeg[] = selections.map((pick) => {
     const snap = scores.get(pick.fixtureId)
-    const { verdict, scoreText } = settleSelection(pick, snap)
+    const { verdict, scoreText } = settleSelection(pick, snap, ruleset)
     return {
       pick,
       verdict,

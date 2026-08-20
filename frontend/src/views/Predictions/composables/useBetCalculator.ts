@@ -18,6 +18,7 @@ import {
 } from '@/utils/betCalculator'
 import { formatDate, formatTime, parseApiDate } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
+import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 
 /** Survive tab discard / cold reload within the same browser session. */
 const STORAGE_KEY = 'fa-bet-calculator'
@@ -134,6 +135,15 @@ watch(matchCount, (n) => {
   const modes = availableFoldModes(n)
   if (!modes.length) return
   fold.value = modes[modes.length - 1]
+})
+
+const { ruleset: handicapRuleset } = useHandicapRuleset()
+watch(handicapRuleset, (mode) => {
+  if (mode !== 'asian') return
+  const next = selections.value.filter(
+    (pick) => !(pick.market === 'ah' && pick.outcome === 'draw'),
+  )
+  if (next.length !== selections.value.length) selections.value = next
 })
 
 watch(

@@ -1,6 +1,11 @@
 import type { FixtureResponse, LineOdds } from '@/api/types'
 import { hasKickedOff, parseApiDate, toScheduleDayKey } from '@/utils/format'
 import { scheduleTodayDate } from '@/utils/homeDateStrip'
+import {
+  formatSignedHandicapLine,
+  jcHandicapLine,
+  type HandicapRuleset,
+} from '@/utils/handicapRuleset'
 import { ahLinesOf, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 
 export type CalcMarket = 'spf' | 'ah' | 'ou' | 'btts'
@@ -115,7 +120,7 @@ function isIntegerHandicapLine(line?: string | null): boolean {
 /** Build selectable rows for one fixture from available odds. */
 export function buildMarketRows(
   fixture: FixtureResponse,
-  options?: { combineOuBtts?: boolean },
+  options?: { combineOuBtts?: boolean; handicapRuleset?: HandicapRuleset },
 ): CalcMarketRow[] {
   const odds = oddsSnippetFromFixture(fixture)
   const rows: CalcMarketRow[] = []
@@ -134,28 +139,36 @@ export function buildMarketRows(
   const ahMarket = odds?.asian_handicap
   const ah = ahLinesOf(ahMarket)[0]
   const ahLine = ah?.line != null ? String(ah.line) : undefined
-  const ahPlay = ahLine ? `让球 ${formatSignedLine(ahLine)}` : '让球胜平负'
-  const ahDraw = resolveAhDrawOdd(ahMarket, ahLine, parseOddNumber(ah?.home), parseOddNumber(ah?.away))
+  const ruleset = options?.handicapRuleset ?? 'asian'
+  const asianHandicap = ruleset === 'asian'
+  // 盘口原值随选项落库；标签给出当前口径实际结算的那条线。
+  const shownAhLine = effectiveHandicapLine(ahLine, ruleset)
+  const ahPlay = shownAhLine
+    ? `让球 ${shownAhLine}`
+    : asianHandicap
+      ? '让球'
+      : '让球胜平负'
+  const ahCells: CalcCell[] = [
+    cell('ah', 'home', ahPlay, parseOddNumber(ah?.home), ahLine),
+  ]
+  if (!asianHandicap) {
+    const ahDraw = resolveAhDrawOdd(
+      ahMarket,
+      ahLine,
+      shownAhLine,
+      parseOddNumber(ah?.home),
+      parseOddNumber(ah?.away),
+    )
+    ahCells.push(
+      cell('ah', 'draw', ahPlay, ahDraw, ahLine, ahDraw == null ? '暂无让平赔率' : undefined),
+    )
+  }
+  ahCells.push(cell('ah', 'away', ahPlay, parseOddNumber(ah?.away), ahLine))
   rows.push({
     market: 'ah',
     playLabel: ahPlay,
     line: ahLine,
-    cells: [
-      cell('ah', 'home', ahPlay, parseOddNumber(ah?.home), ahLine),
-      cell(
-        'ah',
-        'draw',
-        ahPlay,
-        ahDraw,
-        ahLine,
-        ahDraw == null
-          ? isIntegerHandicapLine(ahLine)
-            ? '暂无让平赔率'
-            : '非整数盘口无让平'
-          : undefined,
-      ),
-      cell('ah', 'away', ahPlay, parseOddNumber(ah?.away), ahLine),
-    ],
+    cells: ahCells,
   })
 
   const ou = odds?.goals_ou
@@ -198,13 +211,16 @@ export function buildMarketRows(
 function resolveAhDrawOdd(
   market: LineOdds | null | undefined,
   line: string | undefined,
+  effectiveLine: string | undefined,
   homeOdd: number | null,
   awayOdd: number | null,
 ): number | null {
   const fromValues = parseAhDrawFromValues(market, line)
   if (fromValues != null) return fromValues
   // 整数盘口下亚洲盘为两路，竞彩「让平」可估一个参考赔供计算器使用
-  if (!isIntegerHandicapLine(line) || homeOdd == null || awayOdd == null) return null
+  if (!isIntegerHandicapLine(effectiveLine) || homeOdd == null || awayOdd == null) {
+    return null
+  }
   return round2(Math.max(2.2, (homeOdd + awayOdd) * 0.95))
 }
 
@@ -267,11 +283,18 @@ function cell(
   }
 }
 
-function formatSignedLine(line: string): string {
-  const n = Number(line)
-  if (!Number.isFinite(n)) return line
-  if (n > 0) return `+${n}`
-  return String(n)
+/**
+ * Signed line text for the ruleset that actually settles the pick:
+ * 竞彩 rounds away from zero（-0.5 → -1），亚盘 uses the book line as is.
+ */
+export function effectiveHandicapLine(
+  line: string | null | undefined,
+  ruleset: HandicapRuleset,
+): string | undefined {
+  if (line == null || line === '') return undefined
+  const n = Number(String(line).replace(',', '.').trim())
+  if (!Number.isFinite(n)) return String(line)
+  return formatSignedHandicapLine(ruleset === 'jc' ? jcHandicapLine(n) : n)
 }
 
 export function selectedFixtureIds(selections: CalcSelection[]): number[] {

@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import { storedHandicapRuleset } from '@/utils/handicapRuleset'
 import type {
   FixtureResponse,
   TodayFixturesResponse,
@@ -134,7 +135,12 @@ export interface ResultsResponse {
 /** Finished/cancelled fixtures for a calendar day or contiguous span (local DB only). */
 export async function fetchResults(
   date: string,
-  options?: { leagueId?: number; leagueIds?: number[]; days?: number },
+  options?: {
+    leagueId?: number
+    leagueIds?: number[]
+    days?: number
+    handicapRuleset?: string
+  },
 ): Promise<ResultsResponse> {
   const { data } = await apiClient.get<ResultsResponse>('/fixtures/results', {
     params: {
@@ -142,6 +148,7 @@ export async function fetchResults(
       days: options?.days ?? 1,
       league_id: options?.leagueId,
       league_ids: options?.leagueIds,
+      handicap_ruleset: options?.handicapRuleset ?? storedHandicapRuleset(),
     },
   })
   return data
@@ -154,12 +161,14 @@ export async function fetchResultsHistory(options?: {
   /** Series cutoff date YYYY-MM-DD; defaults to today on backend */
   endDate?: string
   leagueId?: number
+  handicapRuleset?: string
 }): Promise<ResultsHistoryResponse> {
   const { data } = await apiClient.get<ResultsHistoryResponse>('/fixtures/results/history', {
     params: {
       days: options?.days ?? 0,
       end_date: options?.endDate,
       league_id: options?.leagueId,
+      handicap_ruleset: options?.handicapRuleset ?? storedHandicapRuleset(),
     },
   })
   return data

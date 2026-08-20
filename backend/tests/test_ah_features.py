@@ -16,6 +16,8 @@ from app.services.ah_features import (
     handicap_line_from_lean,
     handicap_pick_from_lean,
     handicap_picks_from_lean,
+    adapt_handicap_lean_for_ruleset,
+    jc_handicap_line,
     settle_ah_label,
     settle_asian_total,
     settle_handicap_pick,
@@ -72,14 +74,27 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(mirrored_integer.pick, "cover/push")
 
     def test_settle_three_way_handicap_result(self) -> None:
-        # Home gives one: 1-0 pushes, 2-0 wins, any level score loses.
-        self.assertEqual(settle_handicap_result(1, 0, -1.0), "让平")
-        self.assertEqual(settle_handicap_result(2, 0, -1.0), "让胜")
-        self.assertEqual(settle_handicap_result(1, 1, -1.0), "让负")
-        # Away gives one (home receives +1): 0-1 pushes; 1-1 wins.
-        self.assertEqual(settle_handicap_result(0, 1, 1.0), "让平")
-        self.assertEqual(settle_handicap_result(1, 1, 1.0), "让胜")
-        self.assertEqual(settle_handicap_result(0, 2, 1.0), "让负")
+        # Jingcai keeps 让平 on integer non-zero lines.
+        self.assertEqual(settle_handicap_result(1, 0, -1.0, ruleset="jc"), "让平")
+        self.assertEqual(settle_handicap_result(2, 0, -1.0, ruleset="jc"), "让胜")
+        self.assertEqual(settle_handicap_result(1, 1, -1.0, ruleset="jc"), "让负")
+        self.assertEqual(settle_handicap_result(0, 1, 1.0, ruleset="jc"), "让平")
+        self.assertEqual(settle_handicap_result(1, 1, 1.0, ruleset="jc"), "让胜")
+        self.assertEqual(settle_handicap_result(0, 2, 1.0, ruleset="jc"), "让负")
+
+    def test_asian_integer_exact_is_a_walk(self) -> None:
+        self.assertEqual(settle_handicap_result(2, 1, -1.0), "走水")
+        self.assertEqual(settle_handicap_pick(2, 1, -1.0, "让胜"), ASIAN_PUSH)
+        self.assertEqual(settle_handicap_pick(2, 1, -1.0, "让负"), ASIAN_PUSH)
+        self.assertEqual(settle_handicap_pick(2, 1, -1.0, "让平"), ASIAN_PUSH)
+        self.assertEqual(
+            settle_handicap_pick(2, 1, -1.0, "让胜", ruleset="jc"),
+            ASIAN_LOSS,
+        )
+        self.assertEqual(
+            settle_handicap_pick(1, 0, -1.0, "让平", ruleset="jc"),
+            ASIAN_WIN,
+        )
 
     def test_settle_quarter_handicap_split(self) -> None:
         # Home -0.25 at a draw: half stake pushes, half loses.
@@ -97,8 +112,67 @@ class AhFeaturesTests(unittest.TestCase):
         for pick in ("让胜", "让平", "让负"):
             self.assertEqual(settle_handicap_pick(2, 2, 0.0, pick), ASIAN_PUSH)
         self.assertEqual(settle_handicap_result(2, 2, 0.0), "走水")
-        self.assertEqual(settle_handicap_pick(1, 0, -1.0, "让平"), ASIAN_WIN)
-        self.assertEqual(settle_handicap_pick(1, 0, -1.0, "让胜"), ASIAN_LOSS)
+        self.assertEqual(
+            settle_handicap_pick(1, 0, -1.0, "让平", ruleset="jc"), ASIAN_WIN
+        )
+        self.assertEqual(
+            settle_handicap_pick(1, 0, -1.0, "让胜", ruleset="jc"), ASIAN_LOSS
+        )
+        self.assertEqual(settle_handicap_pick(1, 0, -1.0, "让平"), ASIAN_PUSH)
+
+    def test_jc_rounds_line_away_from_zero(self) -> None:
+        self.assertEqual(jc_handicap_line(-0.25), -1.0)
+        self.assertEqual(jc_handicap_line(-0.5), -1.0)
+        self.assertEqual(jc_handicap_line(-0.75), -1.0)
+        self.assertEqual(jc_handicap_line(-1.0), -1.0)
+        self.assertEqual(jc_handicap_line(-1.25), -2.0)
+        self.assertEqual(jc_handicap_line(1.5), 2.0)
+        self.assertEqual(jc_handicap_line(0.0), 0.0)
+
+    def test_jc_settles_rounded_line_three_way_without_halves(self) -> None:
+        # 主让 0.5 在竞彩按 1 球算：1:0 是让平，不是让胜。
+        self.assertEqual(
+            settle_handicap_pick(1, 0, -0.5, "让胜", ruleset="jc"), ASIAN_LOSS
+        )
+        self.assertEqual(
+            settle_handicap_pick(1, 0, -0.5, "让平", ruleset="jc"), ASIAN_WIN
+        )
+        self.assertEqual(settle_handicap_pick(1, 0, -0.5, "让胜"), ASIAN_WIN)
+        # 四分盘在竞彩不拆盘，没有赢半 / 输半。
+        self.assertEqual(
+            settle_handicap_pick(3, 3, -0.25, "让胜", ruleset="jc"), ASIAN_LOSS
+        )
+        self.assertEqual(settle_handicap_pick(3, 3, -0.25, "让胜"), ASIAN_HALF_LOSS)
+        self.assertEqual(settle_handicap_result(1, 0, -0.75, ruleset="jc"), "让平")
+        self.assertEqual(settle_handicap_result(2, 0, -0.5, ruleset="jc"), "让胜")
+        # 客让 1.25 在竞彩按主队受让 2 球算。
+        self.assertEqual(settle_handicap_result(0, 2, 1.25, ruleset="jc"), "让平")
+        self.assertEqual(settle_handicap_result(0, 3, 1.25, ruleset="jc"), "让负")
+
+    def test_adapt_lean_shows_rounded_line_for_jc(self) -> None:
+        self.assertEqual(
+            adapt_handicap_lean_for_ruleset("让胜(-0.5)", ruleset="jc"), "让胜(-1)"
+        )
+        self.assertEqual(
+            adapt_handicap_lean_for_ruleset("让负(+0.25)", ruleset="jc"), "让负(+1)"
+        )
+        self.assertEqual(
+            adapt_handicap_lean_for_ruleset("让胜(-0.5)", ruleset="asian"), "让胜(-0.5)"
+        )
+
+    def test_adapt_lean_drops_draw_on_asian_dual_picks(self) -> None:
+        self.assertEqual(
+            adapt_handicap_lean_for_ruleset("让负/平(-1)", ruleset="asian"),
+            "让负(-1)",
+        )
+        self.assertEqual(
+            adapt_handicap_lean_for_ruleset("让负/平(-1)", ruleset="jc"),
+            "让负/平(-1)",
+        )
+        self.assertEqual(
+            adapt_handicap_lean_for_ruleset("让平(-1)", ruleset="asian"),
+            "让平(-1)",
+        )
 
     def test_settle_quarter_total_split(self) -> None:
         self.assertEqual(settle_asian_total(3, 2.75, over=True), ASIAN_HALF_WIN)

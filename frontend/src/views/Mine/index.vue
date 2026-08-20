@@ -59,7 +59,7 @@ const menuOptions = computed<MenuOption[]>(() => [
     children: [
       {
         key: 'theme',
-        label: '主题设置',
+        label: '主题与玩法',
         icon: renderIcon(sectionMeta.theme.icon),
       },
     ],
@@ -244,6 +244,14 @@ watch(
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--fa-text-secondary);
+}
+
+/* 【我的】设置项统一用「标题 → 次级说明」两层，避免说明与标题抢层级。 */
+.mine-outlet :deep(.n-thing-main__description) {
+  color: var(--fa-text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .mine-header :deep(.n-breadcrumb-item:first-child .n-breadcrumb-item__link) {

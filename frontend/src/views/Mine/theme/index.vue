@@ -11,28 +11,41 @@ const { isDark, toggleTheme } = useTheme()
 
 <template>
   <MineSectionBody>
-    <n-card size="small" title="主题" :bordered="false">
-      <n-list>
-        <n-list-item>
-          <template #prefix>
-            <n-icon
-              :component="isDark ? MoonOutline : SunnyOutline"
-              :size="20"
+    <n-flex vertical :size="12">
+      <n-card size="small" title="主题" :bordered="false">
+        <n-list>
+          <n-list-item>
+            <template #prefix>
+              <n-icon
+                :component="isDark ? MoonOutline : SunnyOutline"
+                :size="20"
+              />
+            </template>
+            <n-thing
+              title="深色模式"
+              description="偏好保存在本机，下次打开沿用"
             />
-          </template>
-          <n-thing
-            title="深色模式"
-            description="与顶栏主题开关同步，偏好保存在本机"
-          />
-          <template #suffix>
-            <n-switch
-              :value="isDark"
-              aria-label="深色模式"
-              @update:value="toggleTheme"
+            <template #suffix>
+              <n-switch
+                :value="isDark"
+                aria-label="深色模式"
+                @update:value="toggleTheme"
+              />
+            </template>
+          </n-list-item>
+        </n-list>
+      </n-card>
+
+      <n-card size="small" title="让球玩法" :bordered="false">
+        <n-list>
+          <n-list-item>
+            <n-thing
+              title="结算口径"
+              description="只对让球胜平负生效。亚盘：让胜 / 让负，整数盘打成让球平走水，四分盘出赢半 / 输半。竞彩：盘口按绝对值向上取整成整数（-0.5 → -1）后判让胜 / 让平 / 让负，不出半结果。大小球、双进等其余玩法一律按亚盘拆盘。只改展示与结算，不回写已保存方案和冻结预测。"
             />
-          </template>
-        </n-list-item>
-      </n-list>
-    </n-card>
+          </n-list-item>
+        </n-list>
+      </n-card>
+    </n-flex>
   </MineSectionBody>
 </template>

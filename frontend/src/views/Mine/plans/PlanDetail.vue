@@ -6,12 +6,15 @@ import { fetchFixtureScores } from '@/api/fixtures'
 import { useBetPlans } from '@/composables/useBetPlans'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import {
+  effectiveHandicapLine,
   foldModeLabel,
   outcomeTitle,
   selectedFixtureIds,
   type CalcOutcome,
+  type CalcSelection,
 } from '@/utils/betCalculator'
 import { formatDate, formatTime, leagueTagColor } from '@/utils/format'
+import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import {
   planStatusLabel,
   settleBetPlan,
@@ -29,6 +32,7 @@ const props = defineProps<{
 
 const message = useMessage()
 const { getPlan, ensureLoaded } = useBetPlans()
+const { ruleset } = useHandicapRuleset()
 
 const loadingScores = ref(false)
 const scores = ref<Map<number, FixtureScoreSnap>>(new Map())
@@ -43,6 +47,7 @@ const settlement = computed((): PlanSettlement | null => {
     current.fold,
     current.multiplier,
     scores.value,
+    ruleset.value,
   )
 })
 
@@ -134,6 +139,13 @@ type FixtureLegGroup = {
   }[]
 }
 
+/** 让球标签跟当前口径走：方案存的是原始盘口，竞彩显示实际结算的整数盘。 */
+function playLabelForRuleset(pick: CalcSelection): string {
+  if (pick.market !== 'ah') return pick.playLabel
+  const line = effectiveHandicapLine(pick.line, ruleset.value)
+  return line ? `让球 ${line}` : pick.playLabel
+}
+
 /** Group legs by fixture (matchup shown once); combine same-market dual picks. */
 const legGroups = computed((): FixtureLegGroup[] => {
   const legs = settlement.value?.legs ?? []
@@ -163,7 +175,7 @@ const legGroups = computed((): FixtureLegGroup[] => {
       )
       return {
         key,
-        playLabel: sorted[0].pick.playLabel,
+        playLabel: playLabelForRuleset(sorted[0].pick),
         picks: sorted.map((l) => ({
           key: `${l.pick.market}-${l.pick.outcome}`,
           label: `${outcomeTitle(l.pick.market, l.pick.outcome)}(${l.pick.odd})`,

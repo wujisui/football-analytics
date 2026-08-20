@@ -13,11 +13,12 @@ from app.models.auto_pick_snapshot import AutoPickSnapshot
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.services.ah_features import (
+    adapt_handicap_lean_for_ruleset,
     asian_result_counts_as_hit,
-    display_handicap_lean,
     extract_main_ah_line,
     handicap_line_from_lean,
     handicap_picks_from_lean,
+    parse_handicap_ruleset,
     settle_handicap_pick,
     settle_handicap_result,
 )
@@ -58,6 +59,7 @@ def settle_auto_pick_hit(
     home_goals: int | None,
     away_goals: int | None,
     handicap_line: float | None = None,
+    handicap_ruleset: str | None = None,
 ) -> bool | None:
     """Grade one frozen daily auto pick against full-time score."""
     if home_goals is None or away_goals is None:
@@ -84,7 +86,13 @@ def settle_auto_pick_hit(
         if len(picks) != 1:
             return None
         line = handicap_line if handicap_line is not None else handicap_line_from_lean(lean_text)
-        settled = settle_handicap_pick(home_goals, away_goals, line, next(iter(picks)))
+        settled = settle_handicap_pick(
+            home_goals,
+            away_goals,
+            line,
+            next(iter(picks)),
+            ruleset=parse_handicap_ruleset(handicap_ruleset),
+        )
         return asian_result_counts_as_hit(settled)
 
     if market_key == "ou":
@@ -117,6 +125,7 @@ def evaluate_fixture_prediction(
     stored: PreMatchData | None,
     *,
     auto_pick: Any | None = None,
+    handicap_ruleset: str | None = None,
 ) -> dict[str, Any]:
     """Build prediction snapshot + hit flags for one fixture."""
     payload: dict[str, Any] = {
@@ -139,6 +148,7 @@ def evaluate_fixture_prediction(
         # Unsettled rows (feed still live) carry provisional scores — show, never grade.
         "evaluable": fixture_ready_to_grade(fixture),
     }
+    ruleset = parse_handicap_ruleset(handicap_ruleset)
 
     def _attach_auto_pick(*, grade: bool) -> None:
         if auto_pick is None:
@@ -162,6 +172,7 @@ def evaluate_fixture_prediction(
             home_goals=fixture.home_goals,
             away_goals=fixture.away_goals,
             handicap_line=ah_line,
+            handicap_ruleset=ruleset,
         )
 
     if (
@@ -190,6 +201,9 @@ def evaluate_fixture_prediction(
     if line_f is None:
         line_f = handicap_line_from_lean(handicap_lean)
 
+    display_lean = adapt_handicap_lean_for_ruleset(
+        handicap_lean, line_f, ruleset=ruleset
+    )
     payload.update(
         {
             "has_prediction": True,
@@ -197,7 +211,7 @@ def evaluate_fixture_prediction(
             "score_hint": canonical_score_hint(score_hint) or None,
             "goal_lean": canonical_goal_lean(goal_lean) or None,
             "both_score_lean": canonical_btts_lean(both_score_lean) or None,
-            "handicap_lean": display_handicap_lean(handicap_lean, line_f),
+            "handicap_lean": display_lean,
         }
     )
     if not payload["evaluable"]:
@@ -208,8 +222,9 @@ def evaluate_fixture_prediction(
         fixture.home_goals,
         fixture.away_goals,
         line_f,
+        ruleset=ruleset,
     )
-    predicted_handicaps = handicap_picks_from_lean(handicap_lean)
+    predicted_handicaps = handicap_picks_from_lean(display_lean)
     payload["handicap_result"] = handicap_result
     if predicted_handicaps:
         settled_picks = [
@@ -218,6 +233,7 @@ def evaluate_fixture_prediction(
                 fixture.away_goals,
                 line_f,
                 pick,
+                ruleset=ruleset,
             )
             for pick in predicted_handicaps
         ]
@@ -252,6 +268,7 @@ def evaluate_fixture_prediction(
             home_goals=fixture.home_goals,
             away_goals=fixture.away_goals,
             handicap_line=ah_line,
+            handicap_ruleset=ruleset,
         )
     return payload
 
@@ -326,6 +343,7 @@ async def build_history_accuracy(
     days: int,
     league_ids: list[int],
     end_day: date | None = None,
+    handicap_ruleset: str | None = None,
 ) -> dict[str, Any]:
     """
     Overall + per-day accuracy for finished fixtures with scores.
@@ -356,6 +374,7 @@ async def build_history_accuracy(
             fx,
             stored_by_id.get(fx.id),
             auto_pick=auto_by_id.get(fx.id),
+            handicap_ruleset=handicap_ruleset,
         )
         row = {
             "has_prediction": evaluated["has_prediction"],

@@ -3,9 +3,10 @@ import { computed } from 'vue'
 
 import type { AutoFavoriteMarket } from '@/api/favorites'
 import RecommendationQualityRate from '@/components/RecommendationQualityRate.vue'
+import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
+import { adaptHandicapLean, handicapLeanLabel } from '@/utils/handicapDisplay'
 import { hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
-import { handicapLeanLabel } from '@/utils/handicapDisplay'
 
 const props = withDefaults(
   defineProps<{
@@ -26,6 +27,12 @@ const props = withDefaults(
 const emit = defineEmits<{
   filterHit: [key: ResultsHitKey]
 }>()
+
+const { ruleset } = useHandicapRuleset()
+
+const handicapTagLabel = computed(() =>
+  handicapLeanLabel(adaptHandicapLean(props.fixture.handicap_lean, ruleset.value)),
+)
 
 const showTags = computed(() => !!props.fixture.has_prediction)
 
@@ -118,7 +125,7 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       @click.stop="onTagClick('handicap', fixture.handicap_hit)"
     >
       <span v-if="isPick('ah')" class="hit-pick-mark">[荐]</span>
-      {{ handicapLeanLabel(fixture.handicap_lean) }}
+      {{ handicapTagLabel }}
     </n-tag>
     <RecommendationQualityRate
       class="hit-rate"

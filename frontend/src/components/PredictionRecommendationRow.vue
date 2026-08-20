@@ -4,7 +4,8 @@ import { computed } from 'vue'
 import type { AutoFavoriteMarket } from '@/api/favorites'
 import { autoFavoriteMarket } from '@/composables/useFavoriteFixtures'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
-import { isPredictionPending } from '@/utils/handicapDisplay'
+import { isPredictionPending, adaptHandicapLean } from '@/utils/handicapDisplay'
+import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 
 const props = withDefaults(
   defineProps<{
@@ -43,10 +44,14 @@ const recommendationTagColor = computed(() =>
     ? undefined
     : wdlTagColor(leanWdlTone(props.recommendation)),
 )
-const handicapLabel = computed(() => (props.handicapLean || '').trim())
+const { ruleset } = useHandicapRuleset()
+
+const handicapLabel = computed(() =>
+  adaptHandicapLean(props.handicapLean, ruleset.value),
+)
 const showHandicap = computed(() => !isPredictionPending(props.handicapLean))
 const handicapTagColor = computed(() =>
-  wdlTagColor(leanWdlTone(props.handicapLean)),
+  wdlTagColor(leanWdlTone(handicapLabel.value)),
 )
 const showGoal = computed(() => !isPredictionPending(props.goalLean))
 const showBothScore = computed(() => !isPredictionPending(props.bothScore))

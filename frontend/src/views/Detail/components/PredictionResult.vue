@@ -6,7 +6,8 @@ import type { FixtureResponse } from '@/api/types'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { buildPredictionExplanation } from '@/utils/predictionExplanation'
 import { toPercent } from '@/utils/format'
-import { HANDICAP_MISSING_LABEL } from '@/utils/handicapDisplay'
+import { adaptHandicapLean, HANDICAP_MISSING_LABEL } from '@/utils/handicapDisplay'
+import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
 
 /** echarts is heavy; load the pie only when a prediction renders. */
@@ -26,12 +27,18 @@ const original = computed(() => snapshotFromAnalysis(props.fixture.analysis))
 const explanation = computed(() =>
   buildPredictionExplanation(props.fixture.analysis),
 )
+const { ruleset } = useHandicapRuleset()
+const handicapLabel = computed(
+  () =>
+    adaptHandicapLean(original.value.handicap_lean, ruleset.value) ||
+    HANDICAP_MISSING_LABEL,
+)
 
 const recommendationTagColor = computed(() =>
   wdlTagColor(leanWdlTone(original.value.recommendation)),
 )
 const handicapTagColor = computed(() =>
-  wdlTagColor(leanWdlTone(original.value.handicap_lean)),
+  wdlTagColor(leanWdlTone(handicapLabel.value)),
 )
 
 </script>
@@ -74,7 +81,7 @@ const handicapTagColor = computed(() =>
                 :type="handicapTagColor ? undefined : 'default'"
                 :color="handicapTagColor"
               >
-                {{ original.handicap_lean || HANDICAP_MISSING_LABEL }}
+                {{ handicapLabel }}
               </n-tag>
             </div>
             <p v-if="handicapMarketNote" class="handicap-note">{{ handicapMarketNote }}</p>

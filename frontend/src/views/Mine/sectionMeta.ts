@@ -27,8 +27,8 @@ export const sectionMeta: Record<
   },
   theme: {
     routeName: 'mine-theme',
-    title: '主题设置',
-    hint: '设置界面的显示主题',
+    title: '主题与玩法',
+    hint: '显示主题与让球结算口径',
     icon: ColorPaletteOutline,
   },
   admin: {

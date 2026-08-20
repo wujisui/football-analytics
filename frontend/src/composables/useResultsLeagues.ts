@@ -1,4 +1,6 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+
+import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 
 import type { ResultFixture, ResultsHistoryResponse } from '@/api/fixtures'
 import {
@@ -174,6 +176,16 @@ export function invalidateCachedResultsDay(day: string, schedule: boolean) {
   if (schedule) scheduleByDay.delete(day)
   else resultsByDay.delete(day)
 }
+
+export function invalidateFinishedResultsCache() {
+  resultsByDay.clear()
+  resultsHistory.value = null
+}
+
+const { ruleset: handicapRuleset } = useHandicapRuleset()
+watch(handicapRuleset, () => {
+  invalidateFinishedResultsCache()
+})
 
 function detailHasFinishedScore(detail: FixtureResponse): boolean {
   return (

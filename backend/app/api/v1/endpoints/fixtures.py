@@ -469,6 +469,10 @@ async def get_fixture_results(
         default=None,
         description="按多个联赛 ID 过滤；与 league_id 同时传时取交集",
     ),
+    handicap_ruleset: Literal["asian", "jc"] = Query(
+        default="asian",
+        description="asian=亚洲盘整数盘走水；jc=竞彩让胜/让平/让负",
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> ResultsResponse:
     """按日期（或连续多日）查看本地已落库赛果，并对照赛前预测计算命中（只读本地）。"""
@@ -531,6 +535,7 @@ async def get_fixture_results(
             fx,
             stored_by_id.get(fx.id),
             auto_pick=auto_by_id.get(fx.id),
+            handicap_ruleset=handicap_ruleset,
         )
         home_rank, away_rank = _ranks_from_maps(fx, standings_maps, stored_by_id.get(fx.id))
         home_goals, away_goals = results_list_score(
@@ -607,6 +612,10 @@ async def get_results_accuracy_history(
         description="序列截止日 YYYY-MM-DD；默认今天，且不晚于今天",
     ),
     league_id: int | None = Query(default=None, description="按联赛 ID 过滤"),
+    handicap_ruleset: Literal["asian", "jc"] = Query(
+        default="asian",
+        description="asian=亚洲盘整数盘走水；jc=竞彩让胜/让平/让负",
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> ResultsHistoryResponse:
     """历史预测准确率汇总 + 按日序列（供折线图）。只读本地库。"""
@@ -625,7 +634,11 @@ async def get_results_accuracy_history(
         # match-day; clamp instead of 422 so all-history charts stay available.
         end_day = min(parsed, today)
     payload = await build_history_accuracy(
-        db, days=days, league_ids=league_ids, end_day=end_day
+        db,
+        days=days,
+        league_ids=league_ids,
+        end_day=end_day,
+        handicap_ruleset=handicap_ruleset,
     )
     set_no_store_headers(response)
     return ResultsHistoryResponse.model_validate(payload)

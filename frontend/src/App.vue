@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import {
   CalendarOutline,
-  MoonOutline,
   PersonOutline,
   StarOutline,
   StatsChartOutline,
-  SunnyOutline,
 } from '@vicons/ionicons5'
 import {
   NButton,
@@ -26,6 +24,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthSession } from '@/composables/useAuthSession'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
+import HandicapRulesetSwitch from '@/components/HandicapRulesetSwitch.vue'
 import LoginModal from '@/views/Mine/components/LoginModal.vue'
 import { parseDetailFrom } from '@/utils/detailNav'
 import { fixturesRouteWithLeague } from '@/utils/fixturesLeagueFilter'
@@ -35,7 +34,7 @@ type NavKey = 'predictions' | 'results' | 'favorites' | 'mine'
 const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
-const { naiveTheme, themeOverrides, isDark, toggleTheme } = useTheme()
+const { naiveTheme, themeOverrides } = useTheme()
 const { verifySession } = useAuthSession()
 
 onMounted(() => {
@@ -156,16 +155,7 @@ const bottomItems: {
                   </n-button>
                 </n-button-group>
 
-                <n-button
-                  size="small"
-                  quaternary
-                  :aria-label="isDark ? '切换到浅色' : '切换到深色'"
-                  @click="toggleTheme"
-                >
-                  <template #icon>
-                    <n-icon :component="isDark ? MoonOutline : SunnyOutline" />
-                  </template>
-                </n-button>
+                <HandicapRulesetSwitch class="ruleset-switch" />
               </div>
             </div>
           </n-layout-header>
@@ -271,6 +261,10 @@ const bottomItems: {
   flex-shrink: 0;
   gap: 4px;
   margin-left: 8px;
+}
+
+.ruleset-switch {
+  margin-left: 4px;
 }
 
 .app-body {
