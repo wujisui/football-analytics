@@ -202,7 +202,6 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 0 var(--fa-content-inline);
   box-sizing: border-box;
 }
 
@@ -236,7 +235,7 @@ onMounted(() => {
 }
 
 :deep(.n-list.n-list--hoverable .n-list-item) {
-  padding: 12px 0;
+  padding: 12px;
 }
 
 /* 手机：行内容对齐卡片头的左右留白，不贴卡片边 */
