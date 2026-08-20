@@ -46,17 +46,35 @@ const settlement = computed((): PlanSettlement | null => {
   )
 })
 
-/** 同场多选属于覆盖玩法；任一选项命中即计为该场命中。 */
+/** 产品口径：全赢、赢半、输半均计入命中场次；走水单列。 */
 const hitFixtureCount = computed(() => {
   const hitIds = new Set<number>()
   for (const leg of settlement.value?.legs ?? []) {
-    if (leg.verdict === 'hit') hitIds.add(leg.pick.fixtureId)
+    if (
+      leg.verdict === 'hit' ||
+      leg.verdict === 'half_win' ||
+      leg.verdict === 'half_loss'
+    ) {
+      hitIds.add(leg.pick.fixtureId)
+    }
   }
   return hitIds.size
 })
 
+const voidFixtureCount = computed(() => {
+  const verdicts = new Map<number, Set<LegVerdict>>()
+  for (const leg of settlement.value?.legs ?? []) {
+    const values = verdicts.get(leg.pick.fixtureId) ?? new Set<LegVerdict>()
+    values.add(leg.verdict)
+    verdicts.set(leg.pick.fixtureId, values)
+  }
+  return [...verdicts.values()].filter((values) => values.has('void')).length
+})
+
 function verdictLabel(v: LegVerdict): string {
   if (v === 'hit') return '中'
+  if (v === 'half_win') return '赢半'
+  if (v === 'half_loss') return '输半'
   if (v === 'miss') return '未中'
   if (v === 'void') return '走水'
   return '待定'
@@ -82,7 +100,8 @@ const actualPrizeTextType = computed(() =>
 )
 
 function verdictType(v: LegVerdict): 'success' | 'error' | 'warning' | 'default' {
-  if (v === 'hit') return 'success'
+  if (v === 'hit' || v === 'half_win') return 'success'
+  if (v === 'half_loss') return 'warning'
   if (v === 'miss') return 'error'
   if (v === 'void') return 'warning'
   return 'default'
@@ -225,6 +244,9 @@ watch(
         </n-descriptions-item>
         <n-descriptions-item label="场次">
           <n-text type="success" strong>命中 {{ hitFixtureCount }}</n-text>
+          <template v-if="voidFixtureCount">
+            · <n-text type="warning" strong>走水 {{ voidFixtureCount }}</n-text>
+          </template>
           / {{ selectedFixtureIds(plan.selections).length }} 场
         </n-descriptions-item>
         <n-descriptions-item label="状态">

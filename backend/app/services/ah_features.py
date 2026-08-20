@@ -145,6 +145,102 @@ def _line_tier_flags(line_f: float) -> tuple[float, float, float]:
     return 0.0, 0.0, 1.0
 
 
+ASIAN_WIN = "win"
+ASIAN_HALF_WIN = "half_win"
+ASIAN_PUSH = "push"
+ASIAN_HALF_LOSS = "half_loss"
+ASIAN_LOSS = "loss"
+
+
+def _split_quarter_line(line_f: float) -> tuple[float, ...]:
+    """Split x.25/x.75 into the two adjacent half-goal boards."""
+    quarters = round(float(line_f) * 4)
+    if abs(float(line_f) * 4 - quarters) > 1e-7 or quarters % 2 == 0:
+        return (float(line_f),)
+    lower = (quarters - 1) / 4
+    upper = (quarters + 1) / 4
+    return (lower, upper)
+
+
+def _combine_split_results(parts: list[int]) -> str:
+    """Combine split-board wins (1), pushes (0), and losses (-1)."""
+    if all(part > 0 for part in parts):
+        return ASIAN_WIN
+    if any(part > 0 for part in parts) and any(part == 0 for part in parts):
+        return ASIAN_HALF_WIN
+    if all(part == 0 for part in parts):
+        return ASIAN_PUSH
+    if any(part < 0 for part in parts) and any(part == 0 for part in parts):
+        return ASIAN_HALF_LOSS
+    return ASIAN_LOSS
+
+
+def settle_asian_total(
+    total_goals: int | None,
+    line_f: float | None,
+    *,
+    over: bool,
+) -> str | None:
+    """Settle an O/U selection, including x.25/x.75 split boards."""
+    if total_goals is None or line_f is None:
+        return None
+    parts: list[int] = []
+    for split_line in _split_quarter_line(line_f):
+        margin = float(total_goals) - split_line
+        if not over:
+            margin = -margin
+        parts.append(0 if abs(margin) < 1e-9 else (1 if margin > 0 else -1))
+    return _combine_split_results(parts)
+
+
+def settle_handicap_pick(
+    home_goals: int | None,
+    away_goals: int | None,
+    line_f: float | None,
+    pick: str,
+) -> str | None:
+    """Settle one 让胜/让平/让负 selection using this product's rules.
+
+    Integer non-zero lines retain the three-way 让平 market. A level score on
+    line 0 is a walk for every selection. Quarter lines use true Asian split
+    settlement; half wins and half losses remain live outcomes rather than
+    killing a parlay.
+    """
+    if home_goals is None or away_goals is None or line_f is None:
+        return None
+    line = float(line_f)
+    margin = float(home_goals) + line - float(away_goals)
+    integer_line = abs(line - round(line)) < 1e-9
+    if integer_line:
+        if abs(line) < 1e-9 and abs(margin) < 1e-9:
+            return ASIAN_PUSH
+        actual = "让平" if abs(margin) < 1e-9 else ("让胜" if margin > 0 else "让负")
+        return ASIAN_WIN if pick == actual else ASIAN_LOSS
+    if pick == "让平":
+        return ASIAN_LOSS
+
+    parts: list[int] = []
+    for split_line in _split_quarter_line(line):
+        split_margin = float(home_goals) + split_line - float(away_goals)
+        if pick == "让负":
+            split_margin = -split_margin
+        elif pick != "让胜":
+            return None
+        parts.append(
+            0
+            if abs(split_margin) < 1e-9
+            else (1 if split_margin > 0 else -1)
+        )
+    return _combine_split_results(parts)
+
+
+def asian_result_counts_as_hit(result: str | None) -> bool | None:
+    """Product accuracy: full/half win and half loss count; pushes are separate."""
+    if result is None or result == ASIAN_PUSH:
+        return None
+    return result in {ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_HALF_LOSS}
+
+
 def settle_ah_label(
     home_goals: int | None,
     away_goals: int | None,
@@ -164,7 +260,17 @@ def settle_handicap_result(
     away_goals: int | None,
     line_f: float | None,
 ) -> str | None:
-    """Settle the home-side handicap as 让胜 / 让平 / 让负."""
+    """Display the handicap result, including split-board outcomes."""
+    if home_goals is None or away_goals is None or line_f is None:
+        return None
+    line = float(line_f)
+    if abs(line) < 1e-9 and home_goals == away_goals:
+        return "走水"
+    home_result = settle_handicap_pick(home_goals, away_goals, line, "让胜")
+    if home_result == ASIAN_HALF_WIN:
+        return "让胜赢半 / 让负输半"
+    if home_result == ASIAN_HALF_LOSS:
+        return "让胜输半 / 让负赢半"
     label = settle_ah_label(home_goals, away_goals, line_f)
     if label is None:
         return None

@@ -17,8 +17,14 @@ export type FixtureScoreSnap = {
   away_goals?: number | null
 }
 
-/** hit | miss | void(走水作废) | pending(未完场/无比分) */
-export type LegVerdict = 'hit' | 'miss' | 'void' | 'pending'
+/** Full/partial Asian settlement plus void and pending. */
+export type LegVerdict =
+  | 'hit'
+  | 'half_win'
+  | 'half_loss'
+  | 'miss'
+  | 'void'
+  | 'pending'
 
 export type SettledLeg = {
   pick: CalcSelection
@@ -99,14 +105,33 @@ function parseLine(line?: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function settleAhLabel(
-  home: number,
-  away: number,
+function splitQuarterLine(line: number): number[] {
+  const quarters = Math.round(line * 4)
+  if (Math.abs(line * 4 - quarters) > 1e-7 || quarters % 2 === 0) return [line]
+  return [(quarters - 1) / 4, (quarters + 1) / 4]
+}
+
+function combineSplitResults(parts: number[]): LegVerdict {
+  if (parts.every((part) => part > 0)) return 'hit'
+  if (parts.some((part) => part > 0) && parts.some((part) => part === 0)) {
+    return 'half_win'
+  }
+  if (parts.every((part) => part === 0)) return 'void'
+  if (parts.some((part) => part < 0) && parts.some((part) => part === 0)) {
+    return 'half_loss'
+  }
+  return 'miss'
+}
+
+function splitMarginVerdict(
   line: number,
-): 'cover' | 'no_cover' | 'push' {
-  const margin = home + line - away
-  if (Math.abs(margin) < 1e-9) return 'push'
-  return margin > 0 ? 'cover' : 'no_cover'
+  marginForLine: (splitLine: number) => number,
+): LegVerdict {
+  const parts = splitQuarterLine(line).map((splitLine) => {
+    const margin = marginForLine(splitLine)
+    return Math.abs(margin) < 1e-9 ? 0 : margin > 0 ? 1 : -1
+  })
+  return combineSplitResults(parts)
 }
 
 export function settleSelection(
@@ -143,35 +168,44 @@ export function settleSelection(
   if (pick.market === 'ah') {
     const line = parseLine(pick.line)
     if (line == null) return { verdict: 'pending', scoreText }
-    const label = settleAhLabel(h, a, line)
-    if (pick.outcome === 'home') {
-      return { verdict: label === 'cover' ? 'hit' : 'miss', scoreText }
+    const margin = h + line - a
+    const integerLine = Math.abs(line - Math.round(line)) < 1e-9
+    if (integerLine) {
+      // Product rule: level score on line 0 walks; other integer lines retain 让平.
+      if (Math.abs(line) < 1e-9 && Math.abs(margin) < 1e-9) {
+        return { verdict: 'void', scoreText }
+      }
+      const actual: CalcOutcome =
+        Math.abs(margin) < 1e-9 ? 'draw' : margin > 0 ? 'home' : 'away'
+      return {
+        verdict: pick.outcome === actual ? 'hit' : 'miss',
+        scoreText,
+      }
     }
-    if (pick.outcome === 'away') {
-      return { verdict: label === 'no_cover' ? 'hit' : 'miss', scoreText }
+    if (pick.outcome === 'draw') return { verdict: 'miss', scoreText }
+    return {
+      verdict: splitMarginVerdict(line, (splitLine) => {
+        const homeMargin = h + splitLine - a
+        return pick.outcome === 'home' ? homeMargin : -homeMargin
+      }),
+      scoreText,
     }
-    if (pick.outcome === 'draw') {
-      return { verdict: label === 'push' ? 'hit' : 'miss', scoreText }
-    }
-    return { verdict: 'miss', scoreText }
   }
 
   if (pick.market === 'ou') {
     const line = parseLine(pick.line)
     if (line == null) return { verdict: 'pending', scoreText }
     const total = h + a
-    // Integer line exact total → void (option B).
-    if (Math.abs(total - line) < 1e-9) {
-      return { verdict: 'void', scoreText }
+    if (pick.outcome !== 'over' && pick.outcome !== 'under') {
+      return { verdict: 'miss', scoreText }
     }
-    const over = total > line
-    if (pick.outcome === 'over') {
-      return { verdict: over ? 'hit' : 'miss', scoreText }
+    return {
+      verdict: splitMarginVerdict(line, (splitLine) => {
+        const overMargin = total - splitLine
+        return pick.outcome === 'over' ? overMargin : -overMargin
+      }),
+      scoreText,
     }
-    if (pick.outcome === 'under') {
-      return { verdict: over ? 'miss' : 'hit', scoreText }
-    }
-    return { verdict: 'miss', scoreText }
   }
 
   if (pick.market === 'btts') {
@@ -219,7 +253,8 @@ function settleCombo(
     }
   }
 
-  // Void legs pass through as odd=1; all-void → refund stake for this bet.
+  // Void legs pass through as 1. Half outcomes use their exact split-stake return:
+  // half win=(odd+1)/2; half loss=0.5.
   const active = combo.picks.filter((_, i) => legVerdicts[i] !== 'void')
   if (!active.length) {
     return {
@@ -232,7 +267,18 @@ function settleCombo(
     }
   }
 
-  const oddsProduct = round2(active.reduce((acc, s) => acc * s.odd, 1))
+  const returnFactor = (pick: CalcSelection, verdict: LegVerdict): number => {
+    if (verdict === 'half_win') return (pick.odd + 1) / 2
+    if (verdict === 'half_loss') return 0.5
+    if (verdict === 'void') return 1
+    return pick.odd
+  }
+  const oddsProduct = round2(
+    combo.picks.reduce(
+      (acc, pick, i) => acc * returnFactor(pick, legVerdicts[i]),
+      1,
+    ),
+  )
   const actualPrize = round2(oddsProduct * STAKE_PER_BET * multiplier)
   return {
     picks: combo.picks,

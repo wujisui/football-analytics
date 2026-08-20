@@ -13,10 +13,12 @@ from app.models.auto_pick_snapshot import AutoPickSnapshot
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.services.ah_features import (
+    asian_result_counts_as_hit,
     display_handicap_lean,
     extract_main_ah_line,
     handicap_line_from_lean,
     handicap_picks_from_lean,
+    settle_handicap_pick,
     settle_handicap_result,
 )
 from app.services.prematch_package import package_from_record
@@ -82,10 +84,8 @@ def settle_auto_pick_hit(
         if len(picks) != 1:
             return None
         line = handicap_line if handicap_line is not None else handicap_line_from_lean(lean_text)
-        settled = settle_handicap_result(home_goals, away_goals, line)
-        if settled is None:
-            return None
-        return settled in picks
+        settled = settle_handicap_pick(home_goals, away_goals, line, next(iter(picks)))
+        return asian_result_counts_as_hit(settled)
 
     if market_key == "ou":
         hits = evaluate_prediction_vs_score(
@@ -211,8 +211,21 @@ def evaluate_fixture_prediction(
     )
     predicted_handicaps = handicap_picks_from_lean(handicap_lean)
     payload["handicap_result"] = handicap_result
-    if handicap_result is not None and predicted_handicaps:
-        payload["handicap_hit"] = handicap_result in predicted_handicaps
+    if predicted_handicaps:
+        settled_picks = [
+            settle_handicap_pick(
+                fixture.home_goals,
+                fixture.away_goals,
+                line_f,
+                pick,
+            )
+            for pick in predicted_handicaps
+        ]
+        graded = [asian_result_counts_as_hit(result) for result in settled_picks]
+        if any(hit is True for hit in graded):
+            payload["handicap_hit"] = True
+        elif any(hit is False for hit in graded):
+            payload["handicap_hit"] = False
 
     hits = evaluate_prediction_vs_score(
         home_goals=fixture.home_goals,

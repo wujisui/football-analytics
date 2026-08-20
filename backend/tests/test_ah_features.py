@@ -6,11 +6,19 @@ from unittest.mock import patch
 
 from app.services.ah_features import (
     AH_FEATURE_VERSION,
+    ASIAN_HALF_LOSS,
+    ASIAN_HALF_WIN,
+    ASIAN_LOSS,
+    ASIAN_PUSH,
+    ASIAN_WIN,
+    asian_result_counts_as_hit,
     build_ah_features,
     handicap_line_from_lean,
     handicap_pick_from_lean,
     handicap_picks_from_lean,
     settle_ah_label,
+    settle_asian_total,
+    settle_handicap_pick,
     settle_handicap_result,
 )
 from app.services.ah_predictor import (
@@ -72,6 +80,39 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(settle_handicap_result(0, 1, 1.0), "让平")
         self.assertEqual(settle_handicap_result(1, 1, 1.0), "让胜")
         self.assertEqual(settle_handicap_result(0, 2, 1.0), "让负")
+
+    def test_settle_quarter_handicap_split(self) -> None:
+        # Home -0.25 at a draw: half stake pushes, half loses.
+        self.assertEqual(settle_handicap_pick(3, 3, -0.25, "让胜"), ASIAN_HALF_LOSS)
+        self.assertEqual(settle_handicap_pick(3, 3, -0.25, "让负"), ASIAN_HALF_WIN)
+        # Home -0.75 winning by one: -0.5 wins and -1 pushes.
+        self.assertEqual(settle_handicap_pick(1, 0, -0.75, "让胜"), ASIAN_HALF_WIN)
+        self.assertEqual(settle_handicap_pick(1, 0, -0.75, "让负"), ASIAN_HALF_LOSS)
+        self.assertEqual(
+            settle_handicap_result(3, 3, -0.25),
+            "让胜输半 / 让负赢半",
+        )
+
+    def test_zero_line_draw_walks_but_other_integer_draw_can_hit(self) -> None:
+        for pick in ("让胜", "让平", "让负"):
+            self.assertEqual(settle_handicap_pick(2, 2, 0.0, pick), ASIAN_PUSH)
+        self.assertEqual(settle_handicap_result(2, 2, 0.0), "走水")
+        self.assertEqual(settle_handicap_pick(1, 0, -1.0, "让平"), ASIAN_WIN)
+        self.assertEqual(settle_handicap_pick(1, 0, -1.0, "让胜"), ASIAN_LOSS)
+
+    def test_settle_quarter_total_split(self) -> None:
+        self.assertEqual(settle_asian_total(3, 2.75, over=True), ASIAN_HALF_WIN)
+        self.assertEqual(settle_asian_total(3, 2.75, over=False), ASIAN_HALF_LOSS)
+        self.assertEqual(settle_asian_total(2, 2.25, over=False), ASIAN_HALF_WIN)
+        self.assertEqual(settle_asian_total(2, 2.25, over=True), ASIAN_HALF_LOSS)
+        self.assertEqual(settle_asian_total(2, 2.0, over=True), ASIAN_PUSH)
+
+    def test_product_accuracy_counts_partial_results_but_excludes_walks(self) -> None:
+        self.assertTrue(asian_result_counts_as_hit(ASIAN_WIN))
+        self.assertTrue(asian_result_counts_as_hit(ASIAN_HALF_WIN))
+        self.assertTrue(asian_result_counts_as_hit(ASIAN_HALF_LOSS))
+        self.assertFalse(asian_result_counts_as_hit(ASIAN_LOSS))
+        self.assertIsNone(asian_result_counts_as_hit(ASIAN_PUSH))
 
     def test_parse_frozen_handicap_lean(self) -> None:
         # Legacy 「让球X」 snapshots must still resolve to the current tokens.

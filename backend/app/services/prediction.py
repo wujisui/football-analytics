@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.services.ah_features import asian_result_counts_as_hit, settle_asian_total
+
 DEFAULT_PROB = 1 / 3
 # Only treat as "no real model output" when all three sit on the flat prior.
 _FLAT_EPS = 0.02
@@ -1151,13 +1153,8 @@ def evaluate_prediction_vs_score(
     parsed_ou = _parse_goal_lean(goal_lean)
     if parsed_ou is not None:
         side, line = parsed_ou
-        # Half-lines never push; integer lines push when total == line.
-        if abs(total - line) < 1e-9:
-            result["ou_hit"] = None
-        elif side == "over":
-            result["ou_hit"] = total > line
-        else:
-            result["ou_hit"] = total < line
+        settlement = settle_asian_total(total, line, over=side == "over")
+        result["ou_hit"] = asian_result_counts_as_hit(settlement)
 
     lean = (both_score_lean or "").strip()
     if lean.endswith("：是") or lean.endswith(":是"):

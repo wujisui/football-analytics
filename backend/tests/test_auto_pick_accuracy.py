@@ -56,6 +56,25 @@ class AutoPickAccuracyTests(unittest.TestCase):
                 handicap_line=-0.5,
             )
         )
+        # Product accuracy keeps a half-loss alive; line 0 at a draw is a walk.
+        self.assertTrue(
+            settle_auto_pick_hit(
+                market="ah",
+                lean="让胜(-0.25)",
+                home_goals=3,
+                away_goals=3,
+                handicap_line=-0.25,
+            )
+        )
+        self.assertIsNone(
+            settle_auto_pick_hit(
+                market="ah",
+                lean="让胜(0)",
+                home_goals=2,
+                away_goals=2,
+                handicap_line=0.0,
+            )
+        )
 
     def test_ou_and_btts(self) -> None:
         self.assertTrue(
@@ -70,6 +89,30 @@ class AutoPickAccuracyTests(unittest.TestCase):
             settle_auto_pick_hit(
                 market="ou",
                 lean="小(2.5)",
+                home_goals=2,
+                away_goals=1,
+            )
+        )
+        self.assertTrue(
+            settle_auto_pick_hit(
+                market="ou",
+                lean="大(2.75)",
+                home_goals=2,
+                away_goals=1,
+            )
+        )
+        self.assertTrue(
+            settle_auto_pick_hit(
+                market="ou",
+                lean="小(2.75)",
+                home_goals=2,
+                away_goals=1,
+            )
+        )
+        self.assertIsNone(
+            settle_auto_pick_hit(
+                market="ou",
+                lean="大(3)",
                 home_goals=2,
                 away_goals=1,
             )
