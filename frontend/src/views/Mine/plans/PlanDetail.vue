@@ -13,7 +13,7 @@ import {
   type CalcOutcome,
   type CalcSelection,
 } from '@/utils/betCalculator'
-import { formatDate, formatTime, leagueTagColor } from '@/utils/format'
+import { formatDate, formatLocalDateMinute, formatTime, leagueTagColor } from '@/utils/format'
 import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import {
   planStatusLabel,
@@ -249,7 +249,7 @@ watch(
         label-placement="left"
         :column="2"
         size="small"
-        :label-style="{ width: '56px' }"
+        :label-style="{ width: '72px' }"
       >
         <n-descriptions-item label="过关">
           {{ foldModeLabel(plan.fold) }} · {{ plan.multiplier }} 倍
@@ -266,8 +266,8 @@ watch(
             {{ settlement ? planStatusLabel(settlement.status) : '—' }}
           </n-tag>
         </n-descriptions-item>
-        <n-descriptions-item label="投入">
-          {{ settlement?.stakeYuan ?? '—' }} 元
+        <n-descriptions-item label="保存日期">
+          {{ plan.savedAt ? formatLocalDateMinute(plan.savedAt) : '—' }}
         </n-descriptions-item>
         <n-descriptions-item label="预计奖金">
           {{ settlement?.estimatedPrize ?? '—' }} 元

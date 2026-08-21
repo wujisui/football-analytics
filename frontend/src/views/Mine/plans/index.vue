@@ -7,7 +7,7 @@ import PlanDetail from '@/views/Mine/plans/PlanDetail.vue'
 import {useAuthSession} from '@/composables/useAuthSession'
 import {useBetPlans} from '@/composables/useBetPlans'
 import {useIsPhone} from '@/composables/useMediaQuery'
-import {formatScheduleDay, parseApiDate} from '@/utils/format'
+import {formatLocalDateMinute, formatScheduleDay} from '@/utils/format'
 import type {SavedBetPlan} from '@/utils/betPlans'
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 
@@ -34,14 +34,6 @@ const dayPlanCountLabel = computed(
 
 let detailModal: ModalReactive | null = null
 let detailPlanId: string | null = null
-
-/** yyyy-MM-dd HH:mm in local timezone. */
-function formatPlanSavedAt(savedAt: string): string {
-  const d = parseApiDate(savedAt)
-  if (Number.isNaN(d.getTime())) return savedAt
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
 
 function openPlan(id: string) {
   detailModal?.destroy()
@@ -167,7 +159,7 @@ onMounted(() => {
           <n-thing :title="plan.name">
             <template #header-extra>
               <n-flex :size="10" align="center">
-                <span class="plan-saved-at">{{ formatPlanSavedAt(plan.savedAt) }}</span>
+                <span class="plan-saved-at">{{ formatLocalDateMinute(plan.savedAt) }}</span>
                 <n-flex :size="8" align="center" @click.stop>
                   <n-button size="tiny" tertiary @click="openRename(plan)">
                     编辑
