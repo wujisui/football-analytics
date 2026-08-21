@@ -60,6 +60,20 @@ export async function fetchFavorites(options?: {
   return data
 }
 
+export async function fetchAutoPicks(options?: {
+  handicapRuleset?: string
+}): Promise<FavoriteFixturesResponse> {
+  const { data } = await apiClient.get<FavoriteFixturesResponse>(
+    '/favorites/auto-picks',
+    {
+      params: {
+        handicap_ruleset: options?.handicapRuleset ?? storedHandicapRuleset(),
+      },
+    },
+  )
+  return data
+}
+
 export async function addFavorite(fixtureId: number): Promise<FavoriteFixtureRecord> {
   const { data } = await apiClient.post<FavoriteFixtureRecord>('/favorites', {
     fixture_id: fixtureId,

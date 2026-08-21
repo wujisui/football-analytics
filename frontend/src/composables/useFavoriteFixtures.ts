@@ -7,6 +7,7 @@ import type { ResultFixture } from '@/api/fixtures'
 import {
   addFavorite,
   deleteFavorite,
+  fetchAutoPicks,
   fetchFavorites,
   type FavoriteFixtureRecord,
 } from '@/api/favorites'
@@ -18,6 +19,7 @@ import { normalizeQualityRating } from '@/utils/qualityRating'
 export type { FavoriteFixtureRecord }
 
 const favorites = ref<FavoriteFixtureRecord[]>([])
+const autoPicks = ref<FavoriteFixtureRecord[]>([])
 let loadPromise: Promise<void> | null = null
 let loading = false
 
@@ -104,8 +106,12 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
 }
 
 async function loadFavorites(): Promise<void> {
-  const data = await fetchFavorites()
-  favorites.value = data.favorites
+  const [manualData, autoData] = await Promise.all([
+    fetchFavorites(),
+    fetchAutoPicks(),
+  ])
+  favorites.value = manualData.favorites
+  autoPicks.value = autoData.favorites
 }
 
 async function ensureLoaded(): Promise<void> {
@@ -144,30 +150,25 @@ void ensureLoaded()
 /** Drop the previous account's favorites before guest reload / login refresh. */
 export function clearPrivateFavorites() {
   favorites.value = []
+  autoPicks.value = []
   loadPromise = null
   loading = false
 }
 
+/**
+ * 【关注】只承载用户主动点亮星标、并经收藏接口落库的记录。
+ * 自动推荐仍保留在内部缓存，为比赛/赛果列表提供 [荐]、质量星和置顶依据。
+ */
 const favoriteList = computed<FavoriteFixtureRecord[]>(() => favorites.value)
 
 /** Manual stars only — daily auto picks are not user favorites. */
 const favoriteIds = computed(
-  () =>
-    new Set(
-      favorites.value
-        .filter((item) => item.source !== 'auto')
-        .map((item) => item.fixture_id),
-    ),
+  () => new Set(favorites.value.map((item) => item.fixture_id)),
 )
 
 /** Daily recommendation fixture ids (`source=auto`), used for list sort only. */
 const dailyPickIds = computed(
-  () =>
-    new Set(
-      favorites.value
-        .filter((item) => item.source === 'auto')
-        .map((item) => item.fixture_id),
-    ),
+  () => new Set(autoPicks.value.map((item) => item.fixture_id)),
 )
 
 function isFavorite(fixtureId: number): boolean {
@@ -282,7 +283,11 @@ async function toggleResultFixture(fixture: ResultFixture): Promise<boolean> {
 export function findFavoriteListFixture(
   fixtureId: number,
 ): FavoriteFixtureRecord | null {
-  return favorites.value.find((f) => f.fixture_id === fixtureId) ?? null
+  return (
+    favorites.value.find((f) => f.fixture_id === fixtureId)
+    ?? autoPicks.value.find((f) => f.fixture_id === fixtureId)
+    ?? null
+  )
 }
 
 /** Auto-pick market for highlight, or null when not an algorithm favorite. */
@@ -290,8 +295,8 @@ export function autoFavoriteMarket(
   fixtureId: number | null | undefined,
 ): string | null {
   if (fixtureId == null) return null
-  const item = findFavoriteListFixture(fixtureId)
-  if (!item || item.source !== 'auto') return null
+  const item = autoPicks.value.find((row) => row.fixture_id === fixtureId)
+  if (!item) return null
   const market = (item.auto_market || '').trim()
   return market || null
 }
@@ -301,8 +306,8 @@ export function favoriteQualityRating(
   fixtureId: number | null | undefined,
 ): number | null {
   if (fixtureId == null) return null
-  const item = findFavoriteListFixture(fixtureId)
-  if (!item || item.source !== 'auto') return null
+  const item = autoPicks.value.find((row) => row.fixture_id === fixtureId)
+  if (!item) return null
   return normalizeQualityRating(item.quality_rating)
 }
 

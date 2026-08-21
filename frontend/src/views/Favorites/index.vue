@@ -46,8 +46,7 @@ function writeSavedFilterDate(date: string) {
 
 const router = useRouter()
 const isPhone = useIsPhone()
-const { favorites, favoriteIds, dailyPickIds, ensureLoaded, refresh } =
-  useFavoriteFixtures()
+const { favorites, favoriteIds, ensureLoaded, refresh } = useFavoriteFixtures()
 
 const filterDate = ref<string>(readSavedFilterDate())
 const selectedLeagueId = ref<number | null>(null)
@@ -70,7 +69,7 @@ const dayFavorites = computed(() => {
   const list = favorites.value.filter(
     (item) => toScheduleDayKey(item.fixture_date) === day,
   )
-  return sortFixturesFavoritesFirst(list, favoriteIds.value, dailyPickIds.value)
+  return sortFixturesFavoritesFirst(list, favoriteIds.value)
 })
 
 const favoriteCountByLeague = computed(() => {

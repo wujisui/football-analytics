@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -174,38 +174,51 @@ async def list_favorite_responses(
 ) -> list[FavoriteFixtureResponse]:
     owner = normalize_owner_id(user_id)
     if owner == ANON_OWNER_ID:
-        scope = owner_is(FavoriteFixture.user_id, None)
-    else:
-        # Logged-in: own rows + shared daily auto tips in the guest bucket.
-        scope = or_(
-            FavoriteFixture.user_id == owner,
-            (
-                (FavoriteFixture.user_id == ANON_OWNER_ID)
-                & (FavoriteFixture.source == FAVORITE_SOURCE_AUTO)
-            ),
-        )
+        return []
     fav_rows = (
         await db.execute(
             select(FavoriteFixture)
-            .where(scope)
+            .where(
+                FavoriteFixture.user_id == owner,
+                FavoriteFixture.source == FAVORITE_SOURCE_MANUAL,
+            )
             .order_by(FavoriteFixture.saved_at.desc())
         )
     ).scalars().all()
+    return await _hydrate_favorite_responses(
+        db, fav_rows, handicap_ruleset=handicap_ruleset
+    )
+
+
+async def list_auto_pick_responses(
+    db: AsyncSession,
+    *,
+    handicap_ruleset: str | None = None,
+) -> list[FavoriteFixtureResponse]:
+    """List shared algorithm picks without mixing them into user favorites."""
+    fav_rows = (
+        await db.execute(
+            select(FavoriteFixture)
+            .where(
+                owner_is(FavoriteFixture.user_id, None),
+                FavoriteFixture.source == FAVORITE_SOURCE_AUTO,
+            )
+            .order_by(FavoriteFixture.saved_at.desc())
+        )
+    ).scalars().all()
+    return await _hydrate_favorite_responses(
+        db, fav_rows, handicap_ruleset=handicap_ruleset
+    )
+
+
+async def _hydrate_favorite_responses(
+    db: AsyncSession,
+    fav_rows: list[FavoriteFixture],
+    *,
+    handicap_ruleset: str | None = None,
+) -> list[FavoriteFixtureResponse]:
     if not fav_rows:
         return []
-
-    # Prefer the owner's row when both personal and shared-auto exist.
-    by_fixture: dict[int, FavoriteFixture] = {}
-    for fav in fav_rows:
-        prev = by_fixture.get(fav.fixture_id)
-        if prev is None:
-            by_fixture[fav.fixture_id] = fav
-            continue
-        if prev.user_id != owner and fav.user_id == owner:
-            by_fixture[fav.fixture_id] = fav
-
-    fav_rows = list(by_fixture.values())
-    fav_rows.sort(key=lambda row: row.saved_at, reverse=True)
 
     ids = [row.fixture_id for row in fav_rows]
     fixtures = await _load_fixtures_map(db, ids)
@@ -254,16 +267,6 @@ async def get_favorite_response(
             )
         )
     ).scalar_one_or_none()
-    if fav is None and owner != ANON_OWNER_ID:
-        fav = (
-            await db.execute(
-                select(FavoriteFixture).where(
-                    FavoriteFixture.fixture_id == fixture_id,
-                    FavoriteFixture.user_id == ANON_OWNER_ID,
-                    FavoriteFixture.source == FAVORITE_SOURCE_AUTO,
-                )
-            )
-        ).scalar_one_or_none()
     if fav is None:
         return None
     fixtures = await _load_fixtures_map(db, [fixture_id])

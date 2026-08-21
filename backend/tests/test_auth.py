@@ -1,11 +1,11 @@
-"""Auth: password hashing, sessions, anonymous claim, favorites merge."""
+"""Auth: password hashing, sessions, anonymous claim, favorite ownership."""
 
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base
@@ -261,7 +261,7 @@ def test_private_writes_require_login() -> None:
     asyncio.run(_run())
 
 
-def test_list_favorites_merges_guest_auto_for_user() -> None:
+def test_manual_favorites_and_shared_auto_picks_are_separate() -> None:
     async def _run() -> None:
         db, engine = await _session()
         try:
@@ -295,21 +295,24 @@ def test_list_favorites_merges_guest_auto_for_user() -> None:
             await db.commit()
 
             owner = user.id
-            rows = (
+            manual_rows = (
                 await db.execute(
                     select(FavoriteFixture).where(
-                        or_(
-                            FavoriteFixture.user_id == owner,
-                            (
-                                (FavoriteFixture.user_id == ANON_OWNER_ID)
-                                & (FavoriteFixture.source == FAVORITE_SOURCE_AUTO)
-                            ),
-                        )
+                        FavoriteFixture.user_id == owner,
+                        FavoriteFixture.source == FAVORITE_SOURCE_MANUAL,
                     )
                 )
             ).scalars().all()
-            ids = {r.fixture_id for r in rows}
-            assert ids == {1, 2}
+            auto_rows = (
+                await db.execute(
+                    select(FavoriteFixture).where(
+                        FavoriteFixture.user_id == ANON_OWNER_ID,
+                        FavoriteFixture.source == FAVORITE_SOURCE_AUTO,
+                    )
+                )
+            ).scalars().all()
+            assert {r.fixture_id for r in manual_rows} == {1}
+            assert {r.fixture_id for r in auto_rows} == {2}
         finally:
             await db.close()
             await engine.dispose()

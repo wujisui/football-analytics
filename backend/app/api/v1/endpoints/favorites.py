@@ -25,10 +25,27 @@ async def list_favorites(
     ),
     db: AsyncSession = Depends(get_db),
 ) -> FavoriteFixturesResponse:
-    """List favorites for the current session (guest sees shared auto tips only)."""
+    """List only the current user's manually starred fixtures."""
     set_no_store_headers(response)
     items = await favorites_service.list_favorite_responses(
         db, user_id=user_id, handicap_ruleset=handicap_ruleset
+    )
+    return FavoriteFixturesResponse(total=len(items), favorites=items)
+
+
+@router.get("/auto-picks", response_model=FavoriteFixturesResponse)
+async def list_auto_picks(
+    response: Response,
+    handicap_ruleset: Literal["asian", "jc"] = Query(
+        default="asian",
+        description="asian=亚洲盘整数盘走水；jc=竞彩让胜/让平/让负",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FavoriteFixturesResponse:
+    """List shared daily recommendations for list markers and ordering."""
+    set_no_store_headers(response)
+    items = await favorites_service.list_auto_pick_responses(
+        db, handicap_ruleset=handicap_ruleset
     )
     return FavoriteFixturesResponse(total=len(items), favorites=items)
 

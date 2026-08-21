@@ -123,7 +123,7 @@ DevTools 的 Network 面板挂在 TLS 之上，展示的是加密**之前**的�
 
 已挂钩的表/接口：`favorite_fixtures.user_id`、`bet_plans.user_id`，以及 `/favorites`、`/bet-plans`、`/auth/*`。
 
-**原则**：未登录时**不假装**做云同步或跨设备私有；私有写路径必须过 `RequiredUserId`；列表只读（如自动关注星标）仍可用 `CurrentUserId`。
+**原则**：未登录时**不假装**做云同步或跨设备私有；私有写路径必须过 `RequiredUserId`；【关注】只返回当前账号的手动星标，公共自动推荐走独立只读接口。
 
 ---
 

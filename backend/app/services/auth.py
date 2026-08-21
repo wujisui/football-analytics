@@ -166,8 +166,8 @@ async def claim_anonymous_private_data(
 ) -> dict[str, int]:
     """Move pre-auth bucket rows onto ``user_id`` once (manual favorites + plans).
 
-    Shared ``source=auto`` favorites stay in the anonymous bucket so每日推荐
-    remains visible to every session via the favorites list merge.
+    Shared ``source=auto`` picks stay in the anonymous bucket and are read
+    through the separate auto-picks endpoint, never as user favorites.
     """
     owner = normalize_owner_id(user_id)
     claimed_favs = 0

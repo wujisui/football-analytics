@@ -48,7 +48,7 @@ export function useAdminSync() {
       }
       lastOutcome.value = { ok: true, at: Date.now(), detail: '' }
       await refreshFavorites()
-      notifySuccess('同步官方 API 数据完成', '赛程、盘口、赛果与自动关注已更新')
+      notifySuccess('同步官方 API 数据完成', '赛程、盘口、赛果与自动推荐已更新')
     } catch (err) {
       const detail = err instanceof Error ? err.message : '请求失败'
       lastOutcome.value = { ok: false, at: Date.now(), detail }
