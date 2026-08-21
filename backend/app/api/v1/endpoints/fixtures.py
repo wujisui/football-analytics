@@ -33,9 +33,10 @@ from app.services.analyzer import (
     DEFAULT_PROB,
     AnalyzerService,
 )
-from app.services.calendar_tz import utc_span_range, utc_today
+from app.services.calendar_tz import utc_today
 from app.services.competition_scope import allowed_competition_ids
 from app.services.fetcher import FootballFetcher
+from app.services.match_day import fixture_match_day_expr
 from app.services.prediction import (
     OPINION_FACTORS,
     adjust_probabilities_with_factors,
@@ -278,7 +279,7 @@ async def get_today_fixtures(
     db: AsyncSession = Depends(get_db),
 ) -> TodayFixturesResponse:
     """按后端已定稿的场地当地比赛日查询（只读本地库）。"""
-    match_day_expr = func.coalesce(Fixture.match_day, func.date(Fixture.date))
+    match_day_expr = fixture_match_day_expr()
     competition_ids = allowed_competition_ids(get_settings())
 
     if league_ids is not None:
@@ -456,7 +457,7 @@ async def get_fixture_results(
     date_str: str = Query(
         ...,
         alias="date",
-        description="起始比赛日 YYYY-MM-DD（开赛时刻的 UTC 日期 / API 赛程日）",
+        description="起始比赛日 YYYY-MM-DD（场地当地比赛日）",
     ),
     days: int = Query(
         default=1,
@@ -486,7 +487,8 @@ async def get_fixture_results(
     if end_date < base_date:
         end_date = base_date
 
-    start_dt, end_dt = utc_span_range(base_date, end_date)
+    match_day_expr = fixture_match_day_expr()
+    end_exclusive = end_date + timedelta(days=1)
 
     if league_ids is not None:
         allowed = {int(x) for x in league_ids}
@@ -498,8 +500,8 @@ async def get_fixture_results(
     stmt = (
         select(Fixture)
         .where(
-            Fixture.date >= start_dt,
-            Fixture.date < end_dt,
+            match_day_expr >= base_date.isoformat(),
+            match_day_expr < end_exclusive.isoformat(),
             results_list_clause(),
         )
         .options(

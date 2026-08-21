@@ -19,6 +19,7 @@ from app.schemas.response import (
 )
 from app.services.competition_scope import allowed_competition_ids
 from app.services.league_names import league_name_zh
+from app.services.match_day import fixture_match_day_expr
 from app.services.results_capture import prematch_list_clause, results_list_clause
 from app.services.runtime_settings import get_hot_league_ids
 
@@ -87,7 +88,7 @@ async def get_league_filter_options(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
     elif scope_key == "prematch":
-        match_day_expr = func.coalesce(Fixture.match_day, func.date(Fixture.date))
+        match_day_expr = fixture_match_day_expr()
         earliest = (
             await db.execute(
                 select(func.min(match_day_expr)).where(
@@ -117,11 +118,10 @@ async def get_league_filter_options(
     )
 
     local_counts: dict[int, int] = {}
-    day_expr = (
-        func.coalesce(Fixture.match_day, func.date(Fixture.date))
-        if scope_key == "prematch"
-        else func.date(Fixture.date)
-    )
+    # Both lists use the persisted venue-local match day. A US evening fixture
+    # must stay on the same day before and after kickoff instead of moving to
+    # the following UTC date in the results checklist.
+    day_expr = fixture_match_day_expr()
     local_stmt = (
         select(Fixture.league_id, func.count())
         .where(

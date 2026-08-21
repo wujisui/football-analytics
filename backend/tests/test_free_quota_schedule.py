@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from app.tasks.scheduler import (
+    FREE_QUOTA_ROLLOVER_JOB_ID,
     FREE_QUOTA_SYNC_HOUR,
     SYNC_HOURS_FREE_QUOTA,
     SYNC_HOURS_FULL,
@@ -124,6 +125,39 @@ def test_free_quota_skips_standings_but_full_keeps_them() -> None:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
 
+def test_free_quota_rollover_uses_exactly_one_fixture_call() -> None:
+    """UTC rollover ingests the new official day without odds or other calls."""
+    import asyncio
+
+    from app.services import fixtures_sync as fs
+
+    fetcher = MagicMock()
+    fetcher.fetch_fixtures_for_date = AsyncMock(return_value=12)
+    fetcher.sync_odds_for_dates = AsyncMock()
+    fetcher.__aenter__ = AsyncMock(return_value=fetcher)
+    fetcher.__aexit__ = AsyncMock(return_value=False)
+
+    async def _run() -> int:
+        with (
+            patch.object(fs, "FootballFetcher", return_value=fetcher),
+            patch.object(
+                fs, "get_enable_free_quota", AsyncMock(return_value=(True, "db"))
+            ),
+        ):
+            return await fs.sync_free_quota_rollover_fixtures()
+
+    try:
+        assert asyncio.run(_run()) == 12
+        fetcher.fetch_fixtures_for_date.assert_awaited_once()
+        assert fetcher.fetch_fixtures_for_date.await_args.kwargs == {
+            "force": True,
+            "league_ids": None,
+        }
+        fetcher.sync_odds_for_dates.assert_not_awaited()
+    finally:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
 def test_free_quota_evening_only_refreshes_odds() -> None:
     """22:00 free slot skips results/fixtures/standings; odds + auto picks only."""
     import asyncio
@@ -224,9 +258,14 @@ def test_register_jobs_free_quota_keeps_11_and_22() -> None:
                 "scheduled_fixtures_sync_11",
                 "scheduled_fixtures_sync_22",
             ]
+            rollover = scheduler.get_job(FREE_QUOTA_ROLLOVER_JOB_ID)
+            assert rollover is not None
+            assert "hour='0'" in str(rollover.trigger)
+            assert "minute='5'" in str(rollover.trigger)
             assert scheduler.get_job("clean_old_data") is None
 
             register_jobs(free_quota=False)
+            assert scheduler.get_job(FREE_QUOTA_ROLLOVER_JOB_ID) is None
             sync_ids = sorted(
                 job.id
                 for job in scheduler.get_jobs()

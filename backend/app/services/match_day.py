@@ -19,9 +19,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import geonamescache
 import pytz
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql import ColumnElement
 
 UTC_ZONE = "UTC"
 
@@ -45,6 +46,13 @@ class MatchDayResolution:
     match_day: str
     timezone: str
     source: str
+
+
+def fixture_match_day_expr() -> ColumnElement[str]:
+    """SQL expression for the persisted venue-local day, with legacy fallback."""
+    from app.models.fixture import Fixture
+
+    return func.coalesce(Fixture.match_day, func.date(Fixture.date))
 
 
 def _norm(value: str | None) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.core.config import get_settings
@@ -46,6 +46,39 @@ def sync_dates(
     fixture_days = [today + timedelta(days=offset) for offset in range(window)]
     result_days = [today - timedelta(days=offset) for offset in range(3, -1, -1)]
     return fixture_days, result_days
+
+
+async def sync_free_quota_rollover_fixtures() -> int:
+    """At official UTC-day rollover, ingest today's worldwide schedule in one call.
+
+    The free API plan cannot request tomorrow. Running just after the official
+    UTC date rolls over makes that date legal early enough for 08:30+ Beijing
+    American fixtures to enter 【比赛】 before kickoff. This path deliberately skips
+    odds, standings, details, training, and recommendations.
+    """
+    if _sync_lock.locked():
+        logger.info("Fixture rollover sync already running elsewhere; skipping overlap")
+        return 0
+
+    today = datetime.now(timezone.utc).date()
+    free_quota, _ = await get_enable_free_quota()
+    if not free_quota:
+        logger.info("Fixture rollover sync skipped because free quota is disabled")
+        return 0
+
+    async with _sync_lock:
+        async with FootballFetcher() as fetcher:
+            saved = await fetcher.fetch_fixtures_for_date(
+                today,
+                force=True,
+                league_ids=None,
+            )
+    logger.info(
+        "Fixture rollover sync done date=%s fixtures_saved=%s official_calls=1",
+        today,
+        saved,
+    )
+    return saved
 
 
 async def scheduled_fixtures_sync(*, sync_hour: int | None = None) -> None:

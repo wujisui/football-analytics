@@ -11,7 +11,10 @@ from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.services.api_quota import FREE_QUOTA_EVENING_HOUR
 from app.services.data_cleanup import prune_low_value_data, slim_expired_packages
-from app.services.fixtures_sync import scheduled_fixtures_sync
+from app.services.fixtures_sync import (
+    scheduled_fixtures_sync,
+    sync_free_quota_rollover_fixtures,
+)
 from app.services.runtime_settings import get_enable_free_quota
 
 logger = logging.getLogger(__name__)
@@ -25,6 +28,7 @@ SYNC_HOURS_FULL = (0, 6, 11, 16, 19, 22)
 # 11:00 = full free batch (results + today fixtures/odds); 22:00 = odds refresh only.
 SYNC_HOURS_FREE_QUOTA = (11, FREE_QUOTA_EVENING_HOUR)
 FREE_QUOTA_SYNC_HOUR = 11
+FREE_QUOTA_ROLLOVER_JOB_ID = "free_quota_fixture_rollover"
 
 
 def _utc_now() -> datetime:
@@ -108,6 +112,38 @@ async def run_scheduled_fixtures_sync(
             task_name,
             exc,
         )
+    except Exception as exc:
+        _set_task_status(
+            task_name,
+            "failed",
+            error=str(exc),
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.error("Task %s failed: %s", task_name, exc, exc_info=True)
+
+
+async def run_free_quota_fixture_rollover() -> None:
+    """One-call UTC-day schedule ingest; no odds or enrichment."""
+    from app.services.fetcher import ApiAccountBlockedError, ApiKeyNotConfiguredError
+
+    task_name = FREE_QUOTA_ROLLOVER_JOB_ID
+    _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
+    try:
+        saved = await sync_free_quota_rollover_fixtures()
+        _set_task_status(
+            task_name,
+            "completed",
+            fixtures_saved=saved,
+            finished_at=_utc_now().isoformat(),
+        )
+    except (ApiAccountBlockedError, ApiKeyNotConfiguredError) as exc:
+        _set_task_status(
+            task_name,
+            "skipped",
+            error=str(exc),
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.warning("Task %s skipped: %s", task_name, exc)
     except Exception as exc:
         _set_task_status(
             task_name,
@@ -262,7 +298,7 @@ async def trigger_task(task_name: str) -> None:
 
 
 def register_jobs(*, free_quota: bool | None = None) -> None:
-    """Register cron jobs. Free-quota mode keeps 11:00 full + 22:00 odds refresh."""
+    """Register full slots plus free-mode UTC rollover schedule ingest."""
     settings = get_settings()
     timezone = settings.SCHEDULER_TIMEZONE
     if free_quota is None:
@@ -287,6 +323,19 @@ def register_jobs(*, free_quota: bool | None = None) -> None:
             id=job_id,
             name=job_id,
             kwargs={"sync_hour": hour},
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+
+    if scheduler.get_job(FREE_QUOTA_ROLLOVER_JOB_ID) is not None:
+        scheduler.remove_job(FREE_QUOTA_ROLLOVER_JOB_ID)
+    if free_quota:
+        scheduler.add_job(
+            run_free_quota_fixture_rollover,
+            CronTrigger(hour=0, minute=5, timezone="UTC"),
+            id=FREE_QUOTA_ROLLOVER_JOB_ID,
+            name=FREE_QUOTA_ROLLOVER_JOB_ID,
             replace_existing=True,
             max_instances=1,
             coalesce=True,

@@ -1,6 +1,9 @@
 from datetime import datetime
 
+from sqlalchemy import select
+
 from app.services.match_day import (
+    fixture_match_day_expr,
     infer_team_timezone,
     resolve_match_day,
     timezone_for_city,
@@ -21,6 +24,15 @@ def test_south_american_utc_next_day_stays_on_local_previous_day() -> None:
     assert resolution.match_day == "2026-08-18"
     assert resolution.timezone == "America/Sao_Paulo"
     assert resolution.source == "home_team"
+
+
+def test_fixture_match_day_sql_prefers_persisted_local_day() -> None:
+    sql = str(
+        select(fixture_match_day_expr()).compile(
+            compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "coalesce(fixtures.match_day, date(fixtures.date))" in sql.lower()
 
 
 def test_shanghai_and_glasgow_keep_their_own_august_19_match_day() -> None:
