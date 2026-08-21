@@ -246,7 +246,12 @@ onActivated(() => {
                   </div>
                 </div>
               </n-scrollbar>
-              <ListBackTop :shell="favoritesShellRef" :right="12" :bottom="12" />
+              <ListBackTop
+                :shell="favoritesShellRef"
+                :content-key="filteredFavorites.length"
+                :right="12"
+                :bottom="12"
+              />
             </div>
           </n-card>
         </div>

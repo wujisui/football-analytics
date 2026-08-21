@@ -11,7 +11,6 @@ import PredictionRecommendationRow from '@/components/PredictionRecommendationRo
 import RecommendationQualityRate from '@/components/RecommendationQualityRate.vue'
 import WdlProbabilityBars from '@/components/WdlProbabilityBars.vue'
 import { favoriteQualityRating } from '@/composables/useFavoriteFixtures'
-import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import {
   formatOdd,
   formatTime,
@@ -19,6 +18,11 @@ import {
   leagueTagColor,
 } from '@/utils/format'
 import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
+import {
+  fixturesShellContext,
+  parseFixturesLeagueFilter,
+  writeFixturesLeagueFilter,
+} from '@/utils/fixturesLeagueFilter'
 import { leagueLabel } from '@/utils/leagueNames'
 import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import { ahLinesOf, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
@@ -58,7 +62,9 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const route = useRoute()
-const { selectedLeagueId, selectLeague } = useFixturesShell()
+const selectedLeagueId = computed(() =>
+  parseFixturesLeagueFilter(route.query.league),
+)
 
 const resolvedFixtureId = computed(
   () => props.fixture?.fixture_id ?? props.fixtureId ?? null,
@@ -136,13 +142,17 @@ function onLeagueClick(e: Event) {
   const id = leagueId.value
   if (id == null || !Number.isFinite(id)) return
   const next = selectedLeagueId.value === id ? null : id
-  selectLeague(next)
-  if (FIXTURES_ROUTES.has(String(route.name))) return
   const target = props.from === 'results' ? 'results' : 'predictions'
-  void router.push({
-    name: target,
+  const routeName = FIXTURES_ROUTES.has(String(route.name))
+    ? String(route.name)
+    : target
+  writeFixturesLeagueFilter(next, fixturesShellContext(routeName))
+  const location = {
+    name: FIXTURES_ROUTES.has(String(route.name)) ? route.name : target,
     query: next == null ? {} : { league: String(next) },
-  })
+  }
+  if (FIXTURES_ROUTES.has(String(route.name))) void router.replace(location)
+  else void router.push(location)
 }
 
 function goStats() {

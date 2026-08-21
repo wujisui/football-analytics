@@ -7,6 +7,13 @@ const LEGACY_KEY = 'fa-home-selected-league'
 export type FixturesRouteName = 'predictions' | 'results'
 export type FixturesShellContext = 'prematch' | 'results'
 
+export function parseFixturesLeagueFilter(raw: unknown): number | null {
+  const value = Array.isArray(raw) ? raw[0] : raw
+  if (value == null || value === '' || value === 'all') return null
+  const id = Number(value)
+  return Number.isFinite(id) ? id : null
+}
+
 export function fixturesShellContext(
   routeName: FixturesRouteName | string | undefined,
 ): FixturesShellContext {
@@ -25,9 +32,7 @@ export function readFixturesLeagueFilter(
     if (context === 'prematch' && (raw == null || raw === '')) {
       raw = sessionStorage.getItem(LEGACY_KEY)
     }
-    if (raw == null || raw === '' || raw === 'all') return null
-    const id = Number(raw)
-    return Number.isFinite(id) ? id : null
+    return parseFixturesLeagueFilter(raw)
   } catch {
     return null
   }

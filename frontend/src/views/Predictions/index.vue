@@ -77,6 +77,7 @@ onActivated(() => {
           </FixtureList>
           <ListBackTop
             :shell="phoneCalcShellRef"
+            :content-key="prematchDisplayedFixtures.length"
             :bottom="matchCount ? 100 : 12"
             :right="12"
           />
@@ -121,7 +122,12 @@ onActivated(() => {
                   </div>
                 </template>
               </FixtureList>
-              <ListBackTop :shell="listShellRef" :bottom="12" :right="12" />
+              <ListBackTop
+                :shell="listShellRef"
+                :content-key="prematchDisplayedFixtures.length"
+                :bottom="12"
+                :right="12"
+              />
             </div>
           </n-card>
         </n-gi>

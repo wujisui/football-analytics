@@ -21,6 +21,11 @@ import {
 } from '@/utils/format'
 import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
 import { isFixtureCardMarkClickIgnored } from '@/utils/fixtureCardMark'
+import {
+  fixturesShellContext,
+  parseFixturesLeagueFilter,
+  writeFixturesLeagueFilter,
+} from '@/utils/fixturesLeagueFilter'
 import { leagueLabel } from '@/utils/leagueNames'
 import {
   resultExtraScoreLine,
@@ -28,7 +33,6 @@ import {
 } from '@/utils/resultsDisplay'
 import type { PredictionSnapshot } from '@/utils/opinionAdjust'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
-import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 
 const props = withDefaults(defineProps<{
   fixture: FixtureResponse | ResultFixture | FavoriteFixtureRecord
@@ -69,7 +73,9 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const route = useRoute()
-const { selectedLeagueId, selectLeague } = useFixturesShell()
+const selectedLeagueId = computed(() =>
+  parseFixturesLeagueFilter(route.query.league),
+)
 const isPrematch = computed(() => props.prematch || 'analysis' in props.fixture)
 const prematchFixture = computed(() =>
   'analysis' in props.fixture ? (props.fixture as FixtureResponse) : undefined,
@@ -143,13 +149,17 @@ function onLeagueClick(e: Event) {
   const id = Number(props.fixture.league_id)
   if (!Number.isFinite(id)) return
   const next = selectedLeagueId.value === id ? null : id
-  selectLeague(next)
-  if (FIXTURES_ROUTES.has(String(route.name))) return
   const target = props.from === 'results' ? 'results' : 'predictions'
-  void router.push({
-    name: target,
+  const routeName = FIXTURES_ROUTES.has(String(route.name))
+    ? String(route.name)
+    : target
+  writeFixturesLeagueFilter(next, fixturesShellContext(routeName))
+  const location = {
+    name: FIXTURES_ROUTES.has(String(route.name)) ? route.name : target,
     query: next == null ? {} : { league: String(next) },
-  })
+  }
+  if (FIXTURES_ROUTES.has(String(route.name))) void router.replace(location)
+  else void router.push(location)
 }
 </script>
 

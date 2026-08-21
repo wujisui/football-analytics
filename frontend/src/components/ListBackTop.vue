@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { ArrowDownOutline, ArrowUpOutline } from '@vicons/ionicons5'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  ref,
+  watch,
+} from 'vue'
 
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { findScrollContainer } from '@/utils/scrollContainer'
@@ -12,6 +20,8 @@ const props = withDefaults(
     visibilityHeight?: number
     right?: number
     bottom?: number
+    /** Rebind when empty/data or list implementations switch. */
+    contentKey?: string | number
   }>(),
   {
     visibilityHeight: 240,
@@ -32,8 +42,9 @@ const showGroup = computed(() => showTop.value || showBottom.value)
 
 let listenEl: HTMLElement | null = null
 let resizeObserver: ResizeObserver | null = null
-let mutationObserver: MutationObserver | null = null
 let visibilityRaf = 0
+let attachRaf = 0
+let active = true
 
 function scrollTargets(): HTMLElement[] {
   const el = findScrollContainer(props.shell)
@@ -98,9 +109,11 @@ function detach() {
   }
   resizeObserver?.disconnect()
   resizeObserver = null
-  mutationObserver?.disconnect()
-  mutationObserver = null
   listenEl = null
+  if (attachRaf) {
+    cancelAnimationFrame(attachRaf)
+    attachRaf = 0
+  }
   if (visibilityRaf) {
     cancelAnimationFrame(visibilityRaf)
     visibilityRaf = 0
@@ -111,29 +124,40 @@ function detach() {
 
 function attach(shell: HTMLElement | null) {
   detach()
-  if (!shell) return
-
-  // Virtual list mounts/unmounts with empty↔data; keep watching the shell.
-  mutationObserver = new MutationObserver(() => {
-    const next = findScrollContainer(shell)
-    if (next !== listenEl) bindListenEl(next)
-  })
-  mutationObserver.observe(shell, { childList: true, subtree: true })
+  if (!active || !shell) return
   bindListenEl(findScrollContainer(shell))
-  // n-virtual-list may mount a tick after the shell ref.
-  if (!listenEl) {
-    requestAnimationFrame(() => {
-      if (props.shell === shell) bindListenEl(findScrollContainer(shell))
-    })
-  }
+}
+
+function scheduleAttach() {
+  const shell = props.shell
+  if (!active || !shell) return
+  void nextTick(() => {
+    if (!active || props.shell !== shell) return
+    attach(shell)
+    // Virtual list may mount one frame after the shell/content switch.
+    if (!listenEl) {
+      attachRaf = requestAnimationFrame(() => {
+        attachRaf = 0
+        if (active && props.shell === shell) attach(shell)
+      })
+    }
+  })
 }
 
 watch(
-  () => props.shell,
-  (shell) => attach(shell),
+  () => [props.shell, props.contentKey] as const,
+  scheduleAttach,
   { immediate: true },
 )
 
+onActivated(() => {
+  active = true
+  scheduleAttach()
+})
+onDeactivated(() => {
+  active = false
+  detach()
+})
 onBeforeUnmount(detach)
 </script>
 

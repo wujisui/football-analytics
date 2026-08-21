@@ -38,6 +38,7 @@ function rowFixture(item: unknown): ResultFixture {
     v-else
     :items="items"
     :item-size="128"
+    :item-resizable="false"
     :padding-top="paddingTop ?? 4"
     :padding-bottom="paddingBottom ?? 12"
     :items-style="itemsStyle"

@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import {
+  computed,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  ref,
+  watch,
+} from 'vue'
 
 import { findScrollContainer } from '@/utils/scrollContainer'
 
@@ -26,6 +33,8 @@ let startY = 0
 let startX = 0
 let tracking = false
 let pulling = false
+let attachRaf = 0
+let active = true
 
 const label = computed(() => {
   if (props.refreshing) return '刷新中…'
@@ -110,6 +119,10 @@ function onTouchEnd() {
 }
 
 function detach() {
+  if (attachRaf) {
+    cancelAnimationFrame(attachRaf)
+    attachRaf = 0
+  }
   if (!listenEl) return
   listenEl.removeEventListener('touchstart', onTouchStart)
   listenEl.removeEventListener('touchmove', onTouchMove)
@@ -120,6 +133,7 @@ function detach() {
 
 function attach(shell: HTMLElement | null) {
   detach()
+  if (!active) return
   const el = scrollListenTo(shell)
   if (!el) return
   listenEl = el
@@ -135,7 +149,10 @@ watch(
     attach(shell)
     // n-scrollbar container may mount a tick after the shell ref.
     if (shell && !listenEl) {
-      requestAnimationFrame(() => attach(shell))
+      attachRaf = requestAnimationFrame(() => {
+        attachRaf = 0
+        if (props.shell === shell) attach(shell)
+      })
     }
   },
   { immediate: true },
@@ -149,6 +166,17 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  detach()
+  resetPull()
+})
+
+onActivated(() => {
+  active = true
+  attach(props.shell)
+})
+
+onDeactivated(() => {
+  active = false
   detach()
   resetPull()
 })

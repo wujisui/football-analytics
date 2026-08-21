@@ -644,7 +644,12 @@ onActivated(() => {
                   @filter-hit="onFilterHit"
                   @toggle-select="toggleMarked"
               />
-              <ListBackTop :shell="phoneListShellRef" :right="12" :bottom="12"/>
+              <ListBackTop
+                  :shell="phoneListShellRef"
+                  :content-key="listedFixtures.length"
+                  :right="12"
+                  :bottom="12"
+              />
             </div>
           </div>
         </n-tab-pane>
@@ -746,7 +751,10 @@ onActivated(() => {
             markable
         />
       </n-spin>
-      <ListBackTop :shell="desktopListShellRef" />
+      <ListBackTop
+          :shell="desktopListShellRef"
+          :content-key="scheduleDisplayedFixtures.length"
+      />
     </div>
 
     <!-- Desktop: results day — list on the left, stats/chart on the right -->
@@ -796,7 +804,11 @@ onActivated(() => {
               @filter-hit="onFilterHit"
               @toggle-select="toggleMarked"
           />
-          <ListBackTop :shell="desktopListShellRef" :bottom="16"/>
+          <ListBackTop
+              :shell="desktopListShellRef"
+              :content-key="listedFixtures.length"
+              :bottom="16"
+          />
         </div>
       </n-layout-sider>
 

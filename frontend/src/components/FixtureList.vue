@@ -3,7 +3,9 @@ import type { DataTableColumns } from 'naive-ui'
 import {
   computed,
   h,
+  onActivated,
   onBeforeUnmount,
+  onDeactivated,
   onMounted,
   provide,
   ref,
@@ -152,17 +154,24 @@ function syncExpandMaxHeight() {
   expandMaxHeight.value = Math.max(200, Math.floor(height - DAY_ROW_RESERVE_PX))
 }
 
-onMounted(() => {
+function startResizeObserver() {
+  listResizeObserver?.disconnect()
+  listResizeObserver = null
   syncExpandMaxHeight()
   if (!listEl.value || typeof ResizeObserver === 'undefined') return
   listResizeObserver = new ResizeObserver(() => syncExpandMaxHeight())
   listResizeObserver.observe(listEl.value)
-})
+}
 
-onBeforeUnmount(() => {
+function stopResizeObserver() {
   listResizeObserver?.disconnect()
   listResizeObserver = null
-})
+}
+
+onMounted(startResizeObserver)
+onActivated(startResizeObserver)
+onDeactivated(stopResizeObserver)
+onBeforeUnmount(stopResizeObserver)
 
 const flatVirtualItems = computed(() =>
   props.fixtures.map((fixture) => ({
