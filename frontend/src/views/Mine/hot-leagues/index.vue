@@ -15,24 +15,86 @@ defineOptions({ name: 'MineHotLeagues' })
 const message = useMessage()
 const loading = ref(false)
 const saving = ref(false)
-const source = ref('')
 const leagues = ref<HotLeagueItem[]>([])
 const selectedIds = ref<number[]>([])
 const defaultIds = ref<number[]>([])
 
+const GROUP_ORDER = [
+  '五大联赛',
+  '欧洲杯赛',
+  '其他欧洲',
+  '国际赛事',
+  '洲际杯赛',
+  '美洲',
+  '亚洲及大洋洲',
+  '其他',
+] as const
+
+type LeagueGroup = (typeof GROUP_ORDER)[number]
+
+const LEAGUE_GROUP: Record<number, Exclude<LeagueGroup, '其他'>> = {
+  39: '五大联赛',
+  140: '五大联赛',
+  78: '五大联赛',
+  135: '五大联赛',
+  61: '五大联赛',
+  2: '欧洲杯赛',
+  3: '欧洲杯赛',
+  848: '欧洲杯赛',
+  40: '其他欧洲',
+  79: '其他欧洲',
+  62: '其他欧洲',
+  88: '其他欧洲',
+  89: '其他欧洲',
+  94: '其他欧洲',
+  179: '其他欧洲',
+  103: '其他欧洲',
+  113: '其他欧洲',
+  1: '国际赛事',
+  4: '国际赛事',
+  5: '国际赛事',
+  9: '国际赛事',
+  6: '国际赛事',
+  7: '国际赛事',
+  22: '国际赛事',
+  10: '洲际杯赛',
+  17: '洲际杯赛',
+  13: '洲际杯赛',
+  11: '洲际杯赛',
+  16: '洲际杯赛',
+  71: '美洲',
+  128: '美洲',
+  253: '美洲',
+  169: '亚洲及大洋洲',
+  98: '亚洲及大洋洲',
+  292: '亚洲及大洋洲',
+  188: '亚洲及大洋洲',
+  307: '亚洲及大洋洲',
+}
+
 const selectedCount = computed(() => selectedIds.value.length)
-const catalogCount = computed(() => leagues.value.length)
-const sourceLabel = computed(() => {
-  if (source.value === 'db') return '管理员覆盖（库）'
-  if (source.value === 'env') return '内置默认勾选'
-  return source.value || '—'
+
+const leagueGroups = computed(() => {
+  const buckets = new Map<LeagueGroup, HotLeagueItem[]>()
+  for (const item of leagues.value) {
+    const group = LEAGUE_GROUP[item.league_id] ?? '其他'
+    const list = buckets.get(group)
+    if (list) list.push(item)
+    else buckets.set(group, [item])
+  }
+  return GROUP_ORDER.flatMap((title) => {
+    const items = buckets.get(title)
+    if (!items?.length) return []
+    const selectedSet = new Set(selectedIds.value.map(Number))
+    const selected = items.filter((item) => selectedSet.has(item.league_id)).length
+    return [{ title, items, selected }]
+  })
 })
 
 function applySetting(data: Awaited<ReturnType<typeof fetchHotLeaguesSetting>>) {
   leagues.value = data.leagues
   selectedIds.value = [...data.league_ids]
   defaultIds.value = [...data.default_league_ids]
-  source.value = data.source
 }
 
 async function loadSetting() {
@@ -85,23 +147,47 @@ onMounted(() => {
               :description="
                 loading
                   ? '加载中…'
-                  : `目录来自 leagues.json（${catalogCount} 项），勾选后进侧栏「热门」并由定时任务拉赛前盘口；未勾选进「其他」，仍入库赛程但不打官方盘口。当前来源：${sourceLabel}；已勾选 ${selectedCount} 项。`
+                  : `已勾选 ${selectedCount} 项。勾选进侧栏「热门」并定时拉盘；未勾选进「其他」，只入库赛程。`
               "
             />
           </n-list-item>
         </n-list>
       </n-card>
 
-      <n-card size="small" title="勾选" :bordered="false">
+      <n-card size="small" title="拉盘联赛" :bordered="false">
+        <template #header-extra>
+          <n-flex :size="8">
+            <n-button size="small" secondary :disabled="loading || saving" @click="restoreDefault">
+              恢复默认
+            </n-button>
+            <n-button
+              size="small"
+              type="primary"
+              :disabled="loading"
+              :loading="saving"
+              @click="save"
+            >
+              保存
+            </n-button>
+          </n-flex>
+        </template>
         <n-spin :show="loading">
           <n-checkbox-group v-model:value="selectedIds">
-            <div class="hot-league-grid">
-              <n-checkbox
-                v-for="item in leagues"
-                :key="item.league_id"
-                :value="item.league_id"
-                :label="item.league_name"
-              />
+            <div class="hot-league-groups">
+              <section v-for="group in leagueGroups" :key="group.title" class="hot-league-group">
+                <h3 class="hot-league-group-title">
+                  {{ group.title }}
+                  <span class="hot-league-group-count">{{ group.selected }}/{{ group.items.length }}</span>
+                </h3>
+                <div class="hot-league-grid">
+                  <n-checkbox
+                    v-for="item in group.items"
+                    :key="item.league_id"
+                    :value="item.league_id"
+                    :label="item.league_name"
+                  />
+                </div>
+              </section>
             </div>
           </n-checkbox-group>
           <n-empty
@@ -110,35 +196,40 @@ onMounted(() => {
             style="padding: 16px 0;"
           />
         </n-spin>
-        <n-flex justify="end" :size="8" style="margin-top: 16px;">
-          <n-button size="small" secondary :disabled="loading || saving" @click="restoreDefault">
-            恢复默认
-          </n-button>
-          <n-button
-            size="small"
-            type="primary"
-            :disabled="loading"
-            :loading="saving"
-            @click="save"
-          >
-            保存
-          </n-button>
-        </n-flex>
       </n-card>
     </n-flex>
   </MineSectionBody>
 </template>
 
 <style scoped>
+.hot-league-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hot-league-group-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.hot-league-group-count {
+  margin-left: 8px;
+  font-weight: 400;
+  opacity: 0.65;
+}
+
 .hot-league-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px 12px;
 }
 
 @media (min-width: 768px) {
   .hot-league-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 }
 
