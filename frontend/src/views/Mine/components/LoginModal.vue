@@ -125,23 +125,27 @@ async function onSubmit(e?: Event) {
   } catch {
     return
   }
+  // login/register closes the modal before its private-cache refresh resolves.
+  // Capture fields first: after-leave clears the form while that await is pending.
+  const submittedAccount = model.value.username.trim()
+  const submittedMode = mode.value
   submitting.value = true
   try {
     const result =
-      mode.value === 'register'
-        ? await register(model.value.username, model.value.password)
-        : await login(model.value.username, model.value.password)
+      submittedMode === 'register'
+        ? await register(submittedAccount, model.value.password)
+        : await login(submittedAccount, model.value.password)
     if (!result.ok) {
       message.error(result.error)
       return
     }
-    if (mode.value === 'register' || rememberAccount.value) {
-      writeRememberedAccount(model.value.username)
+    if (submittedMode === 'register' || rememberAccount.value) {
+      writeRememberedAccount(submittedAccount)
       rememberAccount.value = true
     } else {
       clearRememberedAccount()
     }
-    const verb = mode.value === 'register' ? '注册并登录成功' : '登录成功'
+    const verb = submittedMode === 'register' ? '注册并登录成功' : '登录成功'
     message.success(`${verb}${claimedHint(result.claimed)}`)
   } finally {
     submitting.value = false
