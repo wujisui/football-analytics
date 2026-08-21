@@ -101,8 +101,7 @@ onActivated(() => {
       </n-layout-sider>
 
       <n-layout
-        class="shell-main"
-        style="height: 100%; flex: 1; min-height: 0; min-width: 0;"
+        class="shell-main fa-page-main"
         content-style="display: flex; flex-direction: column; height: 100%; overflow: hidden;"
       >
         <n-layout-header
@@ -235,8 +234,6 @@ onActivated(() => {
 
 .shell-main {
   background: var(--fa-bg);
-  min-width: 0;
-  overflow: hidden;
 }
 
 .league-sider {

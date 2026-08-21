@@ -158,7 +158,7 @@ watch(
       </n-layout-sider>
 
       <n-layout
-        class="mine-main"
+        class="mine-main fa-page-main"
         content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden;"
       >
         <n-layout-header
@@ -241,7 +241,6 @@ watch(
 }
 
 .mine-main {
-  min-width: 0;
   background: var(--fa-bg);
 }
 

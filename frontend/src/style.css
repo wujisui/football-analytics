@@ -158,6 +158,16 @@ button {
   background: var(--fa-bg);
 }
 
+/* 页面主区（顶栏 + 内容）：父级在 PC 是 has-sider 的 flex 行，在手机是普通块，
+   所以必须写死 height 而不能只靠 flex，否则手机上高度跟着内容长，顶栏被一起滚走 */
+.fa-page-main {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
 /* Shared in-page toolbar (calculator / Results / etc.) */
 .fa-page-toolbar {
   flex-shrink: 0;

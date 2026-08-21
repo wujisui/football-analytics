@@ -801,7 +801,7 @@ onActivated(() => {
       </n-layout-sider>
 
       <n-layout
-          class="results-main"
+          class="results-main fa-page-main"
           content-style="display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--fa-bg); box-sizing: border-box;"
       >
         <div class="desktop-results-date-toolbar fa-page-toolbar">
@@ -897,13 +897,6 @@ onActivated(() => {
 
 <style scoped>
 .results-layout {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
-}
-
-.results-main {
   flex: 1;
   min-height: 0;
   height: 100%;

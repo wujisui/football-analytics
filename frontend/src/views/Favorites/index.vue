@@ -182,7 +182,7 @@ onActivated(() => {
         />
       </n-layout-sider>
 
-      <section class="favorites-main">
+      <section class="favorites-main fa-page-main">
         <!-- 标题行：手机居中标题（对齐我的方案），PC 面包屑 + 统计/日期同一块顶栏 -->
         <div class="favorites-header fa-page-toolbar">
           <div
@@ -271,11 +271,7 @@ onActivated(() => {
 
 .favorites-main {
   display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .favorites-header {
