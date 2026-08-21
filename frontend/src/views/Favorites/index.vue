@@ -15,8 +15,9 @@ import {
   useFavoriteFixtures,
 } from '@/composables/useFavoriteFixtures'
 import type { LeagueSummaryResponse } from '@/api/types'
-import { parseApiDate, toScheduleDayKey } from '@/utils/format'
+import { toScheduleDayKey } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'
+import { sortFixturesFavoritesFirst } from '@/utils/fixtureSort'
 import { scheduleTodayDate, todayDate } from '@/utils/homeDateStrip'
 import { leagueLabel } from '@/utils/leagueNames'
 
@@ -45,7 +46,8 @@ function writeSavedFilterDate(date: string) {
 
 const router = useRouter()
 const isPhone = useIsPhone()
-const { favorites, ensureLoaded, refresh } = useFavoriteFixtures()
+const { favorites, favoriteIds, dailyPickIds, ensureLoaded, refresh } =
+  useFavoriteFixtures()
 
 const filterDate = ref<string>(readSavedFilterDate())
 const selectedLeagueId = ref<number | null>(null)
@@ -65,13 +67,10 @@ const favoriteDays = computed(() => favoriteFixtureDays(favorites.value))
 
 const dayFavorites = computed(() => {
   const day = filterDate.value
-  return favorites.value
-    .filter((item) => toScheduleDayKey(item.fixture_date) === day)
-    .sort(
-      (a, b) =>
-        parseApiDate(a.fixture_date).getTime() -
-        parseApiDate(b.fixture_date).getTime(),
-    )
+  const list = favorites.value.filter(
+    (item) => toScheduleDayKey(item.fixture_date) === day,
+  )
+  return sortFixturesFavoritesFirst(list, favoriteIds.value, dailyPickIds.value)
 })
 
 const favoriteCountByLeague = computed(() => {

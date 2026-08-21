@@ -100,7 +100,7 @@ const phoneSwipeHandlers = useHorizontalSwipe({
 
 const route = useRoute()
 const router = useRouter()
-const {favoriteIds} = useFavoriteFixtures()
+const {favoriteIds, dailyPickIds: autoFavoriteIds} = useFavoriteFixtures()
 const {ruleset: handicapRuleset} = useHandicapRuleset()
 const {
   resultsTrackedIds,
@@ -172,6 +172,7 @@ const scheduleDisplayedFixtures = computed(() => {
   return sortFixturesFavoritesFirst(
       filterByTeamQuery(list, teamSearch.value),
       favoriteIds.value,
+      autoFavoriteIds.value,
   )
 })
 
@@ -183,13 +184,13 @@ const leagueScopedFixtures = computed(() => {
   return list
 })
 
-const dailyPickIds = computed(
-    () => new Set(
-        fixtures.value
-            .filter((fx) => !!fx.auto_pick_market)
-            .map((fx) => fx.fixture_id),
-    ),
-)
+const listedDailyPickIds = computed(() => {
+  const ids = new Set(autoFavoriteIds.value)
+  for (const fx of fixtures.value) {
+    if (fx.auto_pick_market) ids.add(fx.fixture_id)
+  }
+  return ids
+})
 
 const listedFixtures = computed(() => {
   let list = leagueScopedFixtures.value
@@ -201,7 +202,7 @@ const listedFixtures = computed(() => {
   return sortFixturesFavoritesFirst(
       filterByTeamQuery(list, teamSearch.value),
       favoriteIds.value,
-      dailyPickIds.value,
+      listedDailyPickIds.value,
   )
 })
 

@@ -148,8 +148,27 @@ export function clearPrivateFavorites() {
   loading = false
 }
 
-const favoriteIds = computed(() => new Set(favorites.value.map((f) => f.fixture_id)))
 const favoriteList = computed<FavoriteFixtureRecord[]>(() => favorites.value)
+
+/** Manual stars only — daily auto picks are not user favorites. */
+const favoriteIds = computed(
+  () =>
+    new Set(
+      favorites.value
+        .filter((item) => item.source !== 'auto')
+        .map((item) => item.fixture_id),
+    ),
+)
+
+/** Daily recommendation fixture ids (`source=auto`), used for list sort only. */
+const dailyPickIds = computed(
+  () =>
+    new Set(
+      favorites.value
+        .filter((item) => item.source === 'auto')
+        .map((item) => item.fixture_id),
+    ),
+)
 
 function isFavorite(fixtureId: number): boolean {
   return favoriteIds.value.has(fixtureId)
@@ -291,6 +310,7 @@ export function useFavoriteFixtures() {
   return {
     favorites: favoriteList,
     favoriteIds,
+    dailyPickIds,
     isFavorite,
     toggleFixture,
     toggleResultFixture,

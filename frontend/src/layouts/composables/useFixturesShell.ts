@@ -99,7 +99,7 @@ export function useFixturesShell() {
     loadHomeFixtures,
   } = useHomeFixtures()
 
-  const { favoriteIds } = useFavoriteFixtures()
+  const { favoriteIds, dailyPickIds } = useFavoriteFixtures()
 
   const {
     trackedIds: prematchTrackedIds,
@@ -240,7 +240,7 @@ export function useFixturesShell() {
   function sortFixtures<T extends { fixture_id: number; fixture_date: string }>(
     list: T[],
   ) {
-    return sortFixturesFavoritesFirst(list, favoriteIds.value)
+    return sortFixturesFavoritesFirst(list, favoriteIds.value, dailyPickIds.value)
   }
 
   const prematchDisplayedFixtures = computed(() =>
