@@ -28,6 +28,15 @@ const { isLoggedIn, isAdmin, username, openLogin, logout } = useAuthSession()
 const profileTitle = computed(() =>
   isLoggedIn.value ? username.value : '未登录',
 )
+const roleLabel = computed(() => {
+  if (!isLoggedIn.value) return '游客'
+  return isAdmin.value ? '管理员' : '普通用户'
+})
+const inactiveVipTagColor = {
+  color: 'rgba(128, 128, 128, 0.14)',
+  borderColor: 'rgba(128, 128, 128, 0.32)',
+  textColor: 'rgba(128, 128, 128, 0.9)',
+}
 
 const mobileSections = computed(() => {
   const keys: MineSection[] = ['plans', 'theme']
@@ -58,16 +67,19 @@ function onLogout() {
       <n-thing
         class="mobile-profile-thing"
         :title="profileTitle"
-        :description="
-          isLoggedIn
-            ? '收藏与方案按当前账号保存'
-            : '登录后可保存个人收藏与方案'
-        "
       >
         <template #avatar>
           <n-avatar :size="52" round>
             <n-icon :component="PersonOutline" :size="26" />
           </n-avatar>
+        </template>
+        <template #description>
+          <n-space :size="6">
+            <n-tag size="small" :type="isAdmin ? 'error' : 'info'">
+              {{ roleLabel }}
+            </n-tag>
+            <n-tag size="small" :color="inactiveVipTagColor">VIP 未开通</n-tag>
+          </n-space>
         </template>
       </n-thing>
       <n-button
@@ -119,7 +131,14 @@ function onLogout() {
               <n-icon :component="PersonOutline" :size="25" />
             </n-avatar>
           </template>
-          <template #description>收藏与方案按当前账号保存</template>
+          <template #description>
+            <n-space :size="6">
+              <n-tag size="small" :type="isAdmin ? 'error' : 'info'">
+                {{ roleLabel }}
+              </n-tag>
+              <n-tag size="small" :color="inactiveVipTagColor">VIP 未开通</n-tag>
+            </n-space>
+          </template>
           <template #header-extra>
             <n-button size="small" type="error" secondary @click="onLogout">
               <template #icon>
@@ -131,11 +150,17 @@ function onLogout() {
         </n-thing>
       </template>
       <template v-else>
-        <n-thing title="未登录" description="登录后可保存个人收藏与方案">
+        <n-thing title="未登录">
           <template #avatar>
             <n-avatar :size="52" round>
               <n-icon :component="PersonOutline" :size="25" />
             </n-avatar>
+          </template>
+          <template #description>
+            <n-space :size="6">
+              <n-tag size="small" type="info">{{ roleLabel }}</n-tag>
+              <n-tag size="small" :color="inactiveVipTagColor">VIP 未开通</n-tag>
+            </n-space>
           </template>
           <template #header-extra>
             <n-button size="small" type="primary" @click="openLogin">
