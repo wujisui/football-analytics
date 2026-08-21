@@ -11,6 +11,7 @@ const Mine = () => import('@/views/Mine/index.vue')
 const MineAccount = () => import('@/views/Mine/account/index.vue')
 const MinePlans = () => import('@/views/Mine/plans/index.vue')
 const MineTheme = () => import('@/views/Mine/theme/index.vue')
+const MineHotLeagues = () => import('@/views/Mine/hot-leagues/index.vue')
 const MineAdmin = () => import('@/views/Mine/admin/index.vue')
 const MineAbout = () => import('@/views/Mine/about/index.vue')
 
@@ -76,6 +77,11 @@ const router = createRouter({
           path: 'theme',
           name: 'mine-theme',
           component: MineTheme,
+        },
+        {
+          path: 'hot-leagues',
+          name: 'mine-hot-leagues',
+          component: MineHotLeagues,
         },
         {
           path: 'session',

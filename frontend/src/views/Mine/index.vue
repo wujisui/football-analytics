@@ -72,6 +72,11 @@ const menuOptions = computed<MenuOption[]>(() => [
       ...(isAdmin.value
         ? [
             {
+              key: 'hotLeagues',
+              label: '热门联赛',
+              icon: renderIcon(sectionMeta.hotLeagues.icon),
+            } satisfies MenuOption,
+            {
               key: 'admin',
               label: '管理员设置',
               icon: renderIcon(sectionMeta.admin.icon),
@@ -103,9 +108,13 @@ const showSectionHeader = computed(
     (isPhone.value && activeSection.value !== 'account') || !isPhone.value,
 )
 
+function isAdminSection(section: string): boolean {
+  return section === 'admin' || section === 'hotLeagues'
+}
+
 function openSection(section: string) {
   if (!(section in sectionMeta)) return
-  if (section === 'admin' && !isAdmin.value) return
+  if (isAdminSection(section) && !isAdmin.value) return
   const mineSection = section as MineSection
   const target = sectionMeta[mineSection].routeName
   if (route.name !== target) void router.push({ name: target })
@@ -114,7 +123,7 @@ function openSection(section: string) {
 watch(
   () => [activeSection.value, isAdmin.value] as const,
   ([section, admin]) => {
-    if (section === 'admin' && !admin) {
+    if (isAdminSection(section) && !admin) {
       void router.replace({ name: 'mine-account' })
     }
   },

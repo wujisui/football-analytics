@@ -37,12 +37,12 @@ from app.services.prematch_package import (
 )
 from app.services.ttl_policy import (
     PREDICTION_EXAM_FIELDS,
-    detail_package_frozen,
     is_finished_status,
     is_prediction_exam_locked,
     refresh_ttl_seconds,
     should_stop_api_refresh,
 )
+from app.services.runtime_settings import get_enable_free_quota, get_hot_league_ids
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +234,16 @@ class AnalyzerService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.cache = get_cache_service()
+        self._hot_league_ids: set[int] | None = None
+
+    async def _hot_league_id_set(self) -> set[int]:
+        if self._hot_league_ids is None:
+            ids, _ = await get_hot_league_ids(self.session)
+            self._hot_league_ids = set(ids)
+        return self._hot_league_ids
+
+    async def _league_allows_official_odds(self, league_id: int) -> bool:
+        return int(league_id) in await self._hot_league_id_set()
 
     async def _load_fixture(self, fixture_id: int) -> Fixture | None:
         stmt = (
@@ -502,6 +512,32 @@ class AnalyzerService:
             leans_frozen=has_frozen,
         )
 
+    def _local_fixture_result(
+        self,
+        fixture: Fixture,
+        home_name: str,
+        away_name: str,
+        league_name: str,
+    ) -> AnalysisResult:
+        """Public detail shell when no local prediction package exists."""
+        return AnalysisResult(
+            fixture_id=fixture.id,
+            home_team_name=home_name,
+            away_team_name=away_name,
+            league_name=league_name,
+            fixture_date=fixture.date,
+            status=fixture.status,
+            home_win_prob=DEFAULT_PROB,
+            draw_prob=DEFAULT_PROB,
+            away_win_prob=DEFAULT_PROB,
+            confidence="低",
+            recommendation="待分析",
+            data_source="database",
+            analyzed_at=datetime.now(timezone.utc),
+            cache_status="miss",
+            package=self._empty_prematch_package(),
+        )
+
     def _empty_prematch_package(self) -> dict[str, Any]:
         return {
             "odds": {"available": False},
@@ -537,6 +573,13 @@ class AnalyzerService:
             return
         if local.get("fetched"):
             package["odds"] = {"available": False, "fetched": True}
+            return
+        if should_stop_api_refresh(fixture.date, fixture.status):
+            package["odds"] = local if isinstance(local, dict) else {"available": False}
+            return
+        if not await self._league_allows_official_odds(fixture.league_id):
+            # 非热门：不打官方盘口、也不标 fetched，勾选热门后仍可补拉。
+            package["odds"] = local if isinstance(local, dict) else {"available": False}
             return
         raw = await fetcher.fetch_odds(fixture.id, ttl=ttl)
         parsed = rehydrate_odds_markets(parse_odds_payload(raw))
@@ -823,13 +866,14 @@ class AnalyzerService:
         *,
         include_package: bool = True,
     ) -> AnalysisResult:
+        free_quota, _ = await get_enable_free_quota(self.session)
         cache_key = analysis_cache_key(fixture_id)
         cached = await self.cache.get(cache_key)
         if cached is not None and "payload" in cached:
             payload = cached["payload"]
             package = payload.get("package") if include_package else None
             fixture_date = datetime.fromisoformat(payload["fixture_date"])
-            need_refresh = include_package and (
+            need_refresh = include_package and not free_quota and (
                 not isinstance(package, dict)
                 or prematch_package_needs_refresh(
                     package,
@@ -875,11 +919,37 @@ class AnalyzerService:
         settings = get_settings()
         refresh_ttl = self._analysis_refresh_ttl(fixture) or TTL_ANALYSIS
 
-        # 已开赛且赛前已冻结过预测：展示包只读本地。这一趟对官方的唯一请求是端点侧
-        # 的比分 + 状态补拉（``score_refresh_ttl``），把配额留给结算。
+        # 免费配额下，详情点击完全只读本地。盘口由固定批次按热门勾选统一拉取；
+        # 点击不补盘口，也不拉交锋、近况、积分榜、阵容、伤病、简报或球队统计。
+        if free_quota:
+            stored = await self._get_stored_pre_match_row(fixture_id)
+            if stored is not None:
+                result = await self._result_from_pre_match(
+                    fixture, home_name, away_name, league_name, stored, confidence="中"
+                )
+                if not include_package:
+                    result.package = None
+                logger.info(
+                    "Analysis served local-only for fixture %s (free-quota mode)",
+                    fixture_id,
+                )
+                return result
+            result = self._local_fixture_result(
+                fixture, home_name, away_name, league_name
+            )
+            if not include_package:
+                result.package = None
+            logger.info(
+                "Analysis served as local public shell for fixture %s "
+                "(free-quota mode; no stored package)",
+                fixture_id,
+            )
+            return result
+
+        # 已开赛：展示包只读本地。这一趟对官方的唯一请求是端点侧的比分 + 状态。
         if should_stop_api_refresh(fixture.date, fixture.status):
             frozen = await self._get_stored_pre_match_row(fixture_id)
-            if detail_package_frozen(fixture.date, fixture.status, frozen):
+            if frozen is not None:
                 result = await self._result_from_pre_match(
                     fixture, home_name, away_name, league_name, frozen, confidence="中"
                 )
@@ -888,11 +958,12 @@ class AnalyzerService:
                 await self.cache.set(cache_key, result.to_dict(), TTL_ANALYSIS)
                 logger.info(
                     "Analysis served local-only for started fixture %s (status=%s): "
-                    "package frozen, official call limited to score refresh",
+                    "package frozen or kickoff-local, official call limited to score refresh",
                     fixture_id,
                     fixture.status,
                 )
                 return result
+            include_package = False
 
         if include_package:
             # Persist odds ASAP for list cards, but do not short-circuit detail
@@ -960,6 +1031,8 @@ class AnalyzerService:
 
         async def _enrich_from_api() -> None:
             nonlocal package, home_form, away_form, sources_ok, data_source
+            if should_stop_api_refresh(fixture.date, fixture.status):
+                return
             async with FootballFetcher(session=self.session, cache=self.cache) as fetcher:
                 if include_package:
                     package = await self._collect_prematch_package(

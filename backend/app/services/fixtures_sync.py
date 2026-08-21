@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.core.config import get_settings
@@ -19,6 +19,7 @@ from app.services.league_standings import sync_league_standings_for_dates
 from app.services.runtime_settings import (
     get_enable_free_quota,
     get_enable_scheduled_full_detail,
+    get_hot_league_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ async def scheduled_fixtures_sync(*, sync_hour: int | None = None) -> None:
     # Free plan cannot request far-future / old dates — clip before any call.
     days = clip_fixture_dates_for_plan(days, today)
     result_days = clip_fixture_dates_for_plan(result_days, today)
-    primary_league_ids = list(settings.LEAGUE_IDS.values())
+    primary_league_ids, _ = await get_hot_league_ids()
     # Standings cover the same upcoming window plus recent result days so list
     # ranks work for both pending and finished cards. Free quota skips standings
     # entirely: 积分榜 per-league calls can drain the daily budget before odds
@@ -165,34 +166,22 @@ async def scheduled_fixtures_sync(*, sync_hour: int | None = None) -> None:
                         "(official quota exhausted earlier in this batch)"
                     )
 
-        # Optional: pre-pull detail packages for catalog prematch fixtures that
+        # Optional: pre-pull detail packages for hot prematch fixtures that
         # still lack a display package. Same path as GET /fixtures/{id}/analysis.
-        # Default off — burns official quota; admin toggles via Mine UI / env.
+        # Default off and always suppressed by free-quota mode.
         full_detail_enabled, full_detail_source = await get_enable_scheduled_full_detail()
         full_detail_stats: dict = {
             "enabled": full_detail_enabled,
             "source": full_detail_source,
         }
-        # Evening free slot must not burn leftover quota on detail enrich.
-        if full_detail_enabled and not evening_odds_only:
+        if full_detail_enabled and not free_quota:
             try:
                 from app.services.scheduled_detail_enrich import (
                     run_scheduled_full_detail_enrich,
                 )
 
-                detail_before = None
-                if free_quota:
-                    local_midnight = datetime.combine(
-                        today + timedelta(days=1),
-                        datetime.min.time(),
-                        tzinfo=ZoneInfo(settings.SCHEDULER_TIMEZONE),
-                    )
-                    detail_before = (
-                        local_midnight.astimezone(timezone.utc)
-                        .replace(tzinfo=None)
-                    )
                 full_detail_stats.update(
-                    await run_scheduled_full_detail_enrich(before=detail_before)
+                    await run_scheduled_full_detail_enrich()
                 )
             except Exception as exc:
                 logger.warning(
@@ -200,8 +189,8 @@ async def scheduled_fixtures_sync(*, sync_hour: int | None = None) -> None:
                     exc,
                 )
                 full_detail_stats["error"] = str(exc)
-        elif evening_odds_only and full_detail_enabled:
-            full_detail_stats["skipped"] = "evening_odds_light"
+        elif free_quota and full_detail_enabled:
+            full_detail_stats["skipped"] = "free_quota_local_detail"
 
         if not evening_odds_only:
             for module_path, function_name, label in (

@@ -4,10 +4,17 @@ import {
   InformationCircleOutline,
   PersonOutline,
   SettingsOutline,
+  TrophyOutline,
 } from '@vicons/ionicons5'
 import type { Component } from 'vue'
 
-export type MineSection = 'account' | 'plans' | 'theme' | 'admin' | 'about'
+export type MineSection =
+  | 'account'
+  | 'plans'
+  | 'theme'
+  | 'hotLeagues'
+  | 'admin'
+  | 'about'
 
 export const sectionMeta: Record<
   MineSection,
@@ -30,6 +37,12 @@ export const sectionMeta: Record<
     title: '主题与玩法',
     hint: '显示主题与让球结算口径',
     icon: ColorPaletteOutline,
+  },
+  hotLeagues: {
+    routeName: 'mine-hot-leagues',
+    title: '热门联赛',
+    hint: '勾选定时任务拉取赛前盘口的联赛，未勾选进侧栏「其他」',
+    icon: TrophyOutline,
   },
   admin: {
     routeName: 'mine-admin',

@@ -10,13 +10,17 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.services import auth as auth_service
 from app.services.data_cleanup import reset_match_history
+from app.services.league_names import league_name_zh
 from app.services.runtime_settings import (
+    default_hot_league_ids,
     get_api_sports_keys_setting,
     get_enable_free_quota,
     get_enable_scheduled_full_detail,
+    get_hot_league_ids,
     set_api_sports_keys_setting,
     set_enable_free_quota,
     set_enable_scheduled_full_detail,
+    set_hot_league_ids,
 )
 from app.tasks.scheduler import (
     SYNC_HOURS_FREE_QUOTA,
@@ -77,6 +81,24 @@ class ApiSportsKeyUpdate(BaseModel):
         default="",
         description="逗号分隔的官方 Key；空字符串表示删除库内覆盖、改回 env",
     )
+
+
+class HotLeagueItem(BaseModel):
+    league_id: int
+    league_name: str
+    country: str | None = None
+    selected: bool
+
+
+class HotLeaguesSetting(BaseModel):
+    league_ids: list[int]
+    default_league_ids: list[int] = Field(description="内置默认勾选（五大联赛+欧战+中日韩）")
+    source: str = Field(description="db = 管理员已覆盖；env = 内置默认勾选")
+    leagues: list[HotLeagueItem] = Field(default_factory=list)
+
+
+class HotLeaguesUpdate(BaseModel):
+    league_ids: list[int] = Field(default_factory=list)
 
 
 class ResetMatchHistoryRequest(BaseModel):
@@ -204,6 +226,53 @@ async def patch_free_quota_setting(
         asyncio.create_task(run_scheduled_fixtures_sync())
 
     return _free_quota_payload(enabled, "db", catch_up_started=catch_up_started)
+
+
+def _hot_leagues_payload(
+    league_ids: list[int],
+    source: str,
+) -> HotLeaguesSetting:
+    settings = get_settings()
+    selected = set(league_ids)
+    items: list[HotLeagueItem] = []
+    for name, league_id in settings.LEAGUE_IDS.items():
+        lid = int(league_id)
+        country = settings.LEAGUE_COUNTRIES.get(lid)
+        items.append(
+            HotLeagueItem(
+                league_id=lid,
+                league_name=league_name_zh(
+                    name, league_id=lid, country=country, settings=settings
+                ),
+                country=country,
+                selected=lid in selected,
+            )
+        )
+    return HotLeaguesSetting(
+        league_ids=league_ids,
+        default_league_ids=default_hot_league_ids(),
+        source=source,
+        leagues=items,
+    )
+
+
+@router.get("/settings/hot-leagues", response_model=HotLeaguesSetting)
+async def get_hot_leagues_setting(
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> HotLeaguesSetting:
+    league_ids, source = await get_hot_league_ids(db)
+    return _hot_leagues_payload(league_ids, source)
+
+
+@router.patch("/settings/hot-leagues", response_model=HotLeaguesSetting)
+async def patch_hot_leagues_setting(
+    body: HotLeaguesUpdate,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> HotLeaguesSetting:
+    league_ids = await set_hot_league_ids(db, body.league_ids)
+    return _hot_leagues_payload(league_ids, "db")
 
 
 def _api_sports_key_payload(

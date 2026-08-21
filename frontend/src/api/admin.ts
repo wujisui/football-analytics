@@ -13,6 +13,20 @@ export type FreeQuotaSetting = {
   catch_up_started?: boolean
 }
 
+export type HotLeagueItem = {
+  league_id: number
+  league_name: string
+  country: string | null
+  selected: boolean
+}
+
+export type HotLeaguesSetting = {
+  league_ids: number[]
+  default_league_ids: number[]
+  source: 'db' | 'env' | string
+  leagues: HotLeagueItem[]
+}
+
 export type ApiSportsKeySetting = {
   key_count: number
   masked_keys: string
@@ -74,6 +88,21 @@ export async function updateFreeQuotaSetting(enabled: boolean): Promise<FreeQuot
   const { data } = await apiClient.patch<FreeQuotaSetting>('/admin/settings/free-quota', {
     enabled,
   })
+  return data
+}
+
+export async function fetchHotLeaguesSetting(): Promise<HotLeaguesSetting> {
+  const { data } = await apiClient.get<HotLeaguesSetting>('/admin/settings/hot-leagues')
+  return data
+}
+
+export async function updateHotLeaguesSetting(
+  leagueIds: number[],
+): Promise<HotLeaguesSetting> {
+  const { data } = await apiClient.patch<HotLeaguesSetting>(
+    '/admin/settings/hot-leagues',
+    { league_ids: leagueIds },
+  )
   return data
 }
 

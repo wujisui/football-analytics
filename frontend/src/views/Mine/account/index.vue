@@ -31,7 +31,9 @@ const profileTitle = computed(() =>
 
 const mobileSections = computed(() => {
   const keys: MineSection[] = ['plans', 'theme']
-  if (isAdmin.value) keys.push('admin')
+  if (isAdmin.value) {
+    keys.push('hotLeagues', 'admin')
+  }
   keys.push('about')
   return keys.map((key) => ({
     key,
@@ -40,7 +42,7 @@ const mobileSections = computed(() => {
 })
 
 function openSection(section: MineSection) {
-  if (section === 'admin' && !isAdmin.value) return
+  if ((section === 'admin' || section === 'hotLeagues') && !isAdmin.value) return
   void router.push({ name: sectionMeta[section].routeName })
 }
 

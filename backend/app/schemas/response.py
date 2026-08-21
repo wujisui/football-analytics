@@ -573,6 +573,10 @@ class LeagueCatalogItemResponse(BaseModel):
     league_name: str = Field(..., description="展示名（中文）")
     country: str | None = Field(default=None, description="国家/地区")
     season: str | None = Field(default=None, description="目录中的赛季提示（可选）")
+    hot: bool = Field(
+        default=False,
+        description="管理员勾选的热门：定时任务默认拉赛前盘口；侧栏「热门」分组",
+    )
 
 
 class LeagueCatalogResponse(BaseModel):
@@ -599,7 +603,7 @@ class LeagueFilterOptionResponse(BaseModel):
     fixtures_count: int = Field(0, description="当日场次（发现或本地）")
     tier: Literal["configured", "extra"] = Field(
         ...,
-        description="configured=leagues.json 默认勾选；extra=当日有赛但未列入目录（勾选后才补盘）",
+        description="configured=管理员勾选的热门；extra=当日有赛但不在热门勾选（含目录未勾选）",
     )
     default_checked: bool = Field(
         ...,

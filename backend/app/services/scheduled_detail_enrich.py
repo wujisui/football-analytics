@@ -1,7 +1,7 @@
 """Optional scheduled prematch display-package enrich (admin toggle).
 
 Default off. When enabled, each ``scheduled_fixtures_sync`` batch fills missing
-detail packages for catalog-league prematch fixtures via the same
+detail packages for hot-league prematch fixtures via the same
 ``AnalyzerService.analyze_fixture`` path used by detail clicks — then stops on
 quota exhaustion or the per-batch budget.
 """
@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
+from app.services.runtime_settings import get_hot_league_ids
 from app.services.analyzer import (
     AnalyzerService,
     prematch_package_needs_refresh_from_stored,
@@ -57,10 +58,9 @@ async def list_prematch_fixtures_needing_package(
     before: datetime | None = None,
     limit: int,
 ) -> list[int]:
-    """Catalog-league prematch fixtures whose stored display package is incomplete."""
-    settings = get_settings()
-    catalog_ids = list(settings.LEAGUE_IDS.values())
-    if not catalog_ids or limit <= 0:
+    """Hot-league prematch fixtures whose stored display package is incomplete."""
+    hot_ids, _ = await get_hot_league_ids(session)
+    if not hot_ids or limit <= 0:
         return []
 
     current = now or datetime.utcnow()
@@ -73,7 +73,7 @@ async def list_prematch_fixtures_needing_package(
             selectinload(Fixture.league),
         )
         .where(
-            Fixture.league_id.in_(catalog_ids),
+            Fixture.league_id.in_(hot_ids),
             prematch_list_clause(current),
         )
     )
@@ -81,7 +81,7 @@ async def list_prematch_fixtures_needing_package(
         query = query.where(Fixture.date < before)
     rows = (await session.execute(query.order_by(Fixture.date, Fixture.id))).all()
 
-    history_tag = settings.history_source_tag
+    history_tag = get_settings().history_source_tag
     needed: list[int] = []
     for fixture, stored in rows:
         if stored is None or prematch_package_needs_refresh_from_stored(

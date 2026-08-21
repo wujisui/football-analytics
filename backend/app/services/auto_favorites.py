@@ -450,7 +450,8 @@ async def sync_daily_auto_favorites(
 
     Historical hit feedback adjusts candidate scores without eliminating
     candidates. Each venue-local match day gets up to ``limit`` tips (default 4),
-    ranked by final score. The day's best pick anchors 5 quality stars and
+    ranked by final score among prematch fixtures that already have odds.
+    The day's best pick anchors 5 quality stars and
     lower score tiers deduct 0.5 stars.
 
     A 7-day window can therefore yield many more than four auto favorites —
@@ -460,7 +461,6 @@ async def sync_daily_auto_favorites(
     del user_id  # product-wide tips; kept for call-site compat
     owner = ANON_OWNER_ID
     settings = get_settings()
-    catalog_ids = list(settings.LEAGUE_IDS.values())
     current = now or _utc_now()
 
     # Once per scheduler-local day: refresh EMA + soft weights before ranking.
@@ -473,7 +473,6 @@ async def sync_daily_auto_favorites(
             .join(PreMatchData, PreMatchData.fixture_id == Fixture.id)
             .outerjoin(MatchFeature, MatchFeature.fixture_id == Fixture.id)
             .where(
-                Fixture.league_id.in_(catalog_ids),
                 prematch_list_clause(current),
             )
             .order_by(Fixture.date, Fixture.id)

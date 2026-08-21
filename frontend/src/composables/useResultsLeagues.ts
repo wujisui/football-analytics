@@ -34,6 +34,7 @@ const scheduleByDay = new Map<string, FixtureResponse[]>()
  * would incorrectly clear this set if we derived it from there.
  */
 const configuredLeagueIds = ref<Set<number>>(new Set())
+const configuredIdsReady = ref(false)
 let configuredIdsInflight: Promise<void> | null = null
 
 function readStoredResultsTracked(date: string): number[] | null {
@@ -73,14 +74,17 @@ function setResultsConfiguredLeagueIds(ids: Iterable<number>) {
   )
 }
 
-/** Load leagues.json primary catalog once for 热门 grouping on 赛程. */
+/** Load admin 热门 ids once for 热门 grouping on 赛程. */
 export async function ensureResultsConfiguredLeagueIds(): Promise<void> {
-  if (configuredLeagueIds.value.size > 0) return
+  if (configuredIdsReady.value) return
   if (configuredIdsInflight) return configuredIdsInflight
   configuredIdsInflight = (async () => {
     try {
       const data = await fetchLeagueCatalog()
-      setResultsConfiguredLeagueIds(data.leagues.map((l) => l.league_id))
+      setResultsConfiguredLeagueIds(
+        data.leagues.filter((item) => item.hot).map((item) => item.league_id),
+      )
+      configuredIdsReady.value = true
     } catch {
       /* keep empty; filter falls back to 其他 only */
     } finally {

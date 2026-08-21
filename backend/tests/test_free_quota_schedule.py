@@ -94,6 +94,9 @@ def test_free_quota_skips_standings_but_full_keeps_them() -> None:
                 fs, "get_enable_free_quota", AsyncMock(return_value=(free_quota, "db"))
             ),
             patch.object(
+                fs, "get_hot_league_ids", AsyncMock(return_value=([39], "env"))
+            ),
+            patch.object(
                 fs,
                 "get_enable_scheduled_full_detail",
                 AsyncMock(return_value=(False, "env")),
@@ -140,6 +143,7 @@ def test_free_quota_evening_only_refreshes_odds() -> None:
         standings = AsyncMock(
             return_value={"leagues": 0, "fetched": 0, "skipped": 0, "failed": 0}
         )
+        detail_enrich = AsyncMock(return_value={"enriched": 1})
         settings = MagicMock()
         settings.SCHEDULER_TIMEZONE = "Asia/Shanghai"
         settings.FIXTURES_LOOKAHEAD_DAYS = 8
@@ -154,6 +158,9 @@ def test_free_quota_evening_only_refreshes_odds() -> None:
                 fs, "get_enable_free_quota", AsyncMock(return_value=(True, "db"))
             ),
             patch.object(
+                fs, "get_hot_league_ids", AsyncMock(return_value=([39], "env"))
+            ),
+            patch.object(
                 fs,
                 "get_enable_scheduled_full_detail",
                 AsyncMock(return_value=(True, "env")),
@@ -163,6 +170,10 @@ def test_free_quota_evening_only_refreshes_odds() -> None:
             patch(
                 "app.services.auto_favorites.sync_daily_auto_favorites",
                 AsyncMock(return_value={"selected": []}),
+            ),
+            patch(
+                "app.services.scheduled_detail_enrich.run_scheduled_full_detail_enrich",
+                detail_enrich,
             ),
             patch("app.core.database.AsyncSessionLocal"),
         ):
@@ -176,6 +187,8 @@ def test_free_quota_evening_only_refreshes_odds() -> None:
         assert kwargs["budget"] == FREE_QUOTA_EVENING_ODDS_BUDGET
         assert kwargs["set_opening"] is False
         assert kwargs["refresh_existing"] is True
+        assert kwargs["league_ids"] == [39]
+        detail_enrich.assert_not_called()
         return fetcher
 
     try:

@@ -20,22 +20,34 @@ from app.schemas.response import (
 from app.services.competition_scope import allowed_competition_ids
 from app.services.league_names import league_name_zh
 from app.services.results_capture import prematch_list_clause, results_list_clause
+from app.services.runtime_settings import get_hot_league_ids
 
 router = APIRouter(prefix="/leagues", tags=["leagues"])
 
 
 @router.get("/catalog", response_model=LeagueCatalogResponse)
-async def get_league_catalog() -> LeagueCatalogResponse:
+async def get_league_catalog(
+    db: AsyncSession = Depends(get_db),
+) -> LeagueCatalogResponse:
     """Configured leagues only. Use ``/leagues/filter-options`` for sidebar filters."""
     settings = get_settings()
+    hot_ids, _ = await get_hot_league_ids(db)
+    hot = set(hot_ids)
     items: list[LeagueCatalogItemResponse] = []
     for name, league_id in settings.LEAGUE_IDS.items():
+        lid = int(league_id)
         items.append(
             LeagueCatalogItemResponse(
-                league_id=league_id,
-                league_name=name,
-                country=settings.LEAGUE_COUNTRIES.get(league_id),
-                season=settings.configured_season(league_id),
+                league_id=lid,
+                league_name=league_name_zh(
+                    name,
+                    league_id=lid,
+                    country=settings.LEAGUE_COUNTRIES.get(lid),
+                    settings=settings,
+                ),
+                country=settings.LEAGUE_COUNTRIES.get(lid),
+                season=settings.configured_season(lid),
+                hot=lid in hot,
             )
         )
     return LeagueCatalogResponse(leagues=items)
@@ -65,7 +77,8 @@ async def get_league_filter_options(
     scope_key = (scope or "prematch").strip().lower()
     if scope_key not in {"prematch", "results"}:
         raise HTTPException(status_code=400, detail="scope must be prematch or results")
-    configured_ids = set(settings.LEAGUE_IDS.values())
+    catalog_ids = set(settings.LEAGUE_IDS.values())
+    hot_ids = set((await get_hot_league_ids(db))[0])
     competition_ids = allowed_competition_ids(settings)
 
     if date_str:
@@ -79,7 +92,7 @@ async def get_league_filter_options(
             await db.execute(
                 select(func.min(match_day_expr)).where(
                     prematch_list_clause(),
-                    Fixture.league_id.in_(configured_ids),
+                    *([Fixture.league_id.in_(hot_ids)] if hot_ids else []),
                 )
             )
         ).scalar_one_or_none()
@@ -146,7 +159,7 @@ async def get_league_filter_options(
         row = league_rows.get(league_id)
         raw = (
             settings.league_display_name(league_id)
-            if league_id in configured_ids
+            if league_id in catalog_ids
             else (row.name if row else "")
         )
         return league_name_zh(
@@ -159,7 +172,7 @@ async def get_league_filter_options(
     configured: list[LeagueFilterOptionResponse] = []
     extra: list[LeagueFilterOptionResponse] = []
     for league_id in sorted(playing_ids):
-        tier = "configured" if league_id in configured_ids else "extra"
+        tier = "configured" if league_id in hot_ids else "extra"
         option = LeagueFilterOptionResponse(
             league_id=league_id,
             league_name=_name(league_id),

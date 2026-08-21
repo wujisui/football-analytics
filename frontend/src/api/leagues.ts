@@ -20,13 +20,14 @@ export interface LeagueCatalogItem {
   league_name: string
   country: string | null
   season: string | null
+  hot: boolean
 }
 
 export interface LeagueCatalogResponse {
   leagues: LeagueCatalogItem[]
 }
 
-/** Primary leagues from config/leagues.json (热门 / 一级目录). */
+/** Catalog from config/leagues.json, with admin 热门 flags. */
 export async function fetchLeagueCatalog(): Promise<LeagueCatalogResponse> {
   const { data } = await apiClient.get<LeagueCatalogResponse>('/leagues/catalog')
   return data

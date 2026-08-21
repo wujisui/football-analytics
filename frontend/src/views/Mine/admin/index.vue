@@ -165,11 +165,11 @@ async function applyFreeQuotaToggle(next: boolean) {
     if (next) {
       if (data.catch_up_started) {
         message.success(
-          '已开启免费配额模式（每日 11:00 全量 + 22:00 盘口）。今日 11:00 已过，正在后台补跑一次同步',
+          '已开启免费配额模式：详情改为完全只读本地，盘口仅由定时批次获取。今日 11:00 已过，正在后台补跑一次同步',
         )
       } else {
         message.success(
-          `已开启免费配额模式（每日 11:00 全量 + 22:00 盘口）。下次自动同步：${formatSyncHours(freeQuotaHours.value)}`,
+          `已开启免费配额模式：详情完全只读本地，盘口仅由定时批次获取。下次自动同步：${formatSyncHours(freeQuotaHours.value)}`,
         )
       }
     } else {
@@ -193,7 +193,7 @@ function onFreeQuotaToggle(next: boolean) {
       autoFocus: false,
       type: 'warning',
       content:
-        '关闭后将恢复每天 00:00、06:00、11:00、16:00、19:00、22:00 共 6 次官方同步，配额消耗会明显增加。确定关闭？',
+        '关闭后将恢复每天 00:00、06:00、11:00、16:00、19:00、22:00 共 6 次官方同步，并恢复热门联赛详情的全量按需获取，配额消耗会明显增加。确定关闭？',
       positiveText: '确认关闭',
       negativeText: '取消',
       onPositiveClick: () => {
@@ -208,7 +208,7 @@ function onFreeQuotaToggle(next: boolean) {
     autoFocus: false,
     type: 'warning',
     content:
-      '免费配额模式：开启后立刻重排定时任务，每日 11:00 同步昨天赛果与今天比赛/盘口，22:00 再轻量刷新今天热门联赛盘口并重算每日推荐；跳过积分榜、不拉未来比赛；若今日 11:00 已过会立即补跑一次。「立即同步」不受时间限制，走 11:00 同款全量范围。确定开启？',
+      '免费配额模式：开启后立刻重排定时任务，每日 11:00 同步昨天赛果与今天比赛/热门盘口，22:00 再轻量刷新盘口并重算每日推荐；所有详情点击完全只读本地，不补盘口或其它详情，定时全量详情也暂停；跳过积分榜、不拉未来比赛。若今日 11:00 已过会立即补跑一次。确定开启？',
     positiveText: '确认开启',
     negativeText: '取消',
     onPositiveClick: () => {
@@ -355,10 +355,10 @@ onMounted(() => {
             title="打开免费配额"
             :description="
               freeQuotaSource
-                ? `免费配额模式（每日 11:00 全量 + 22:00 盘口，同步昨天赛果 + 今天比赛，不拉未来）。当前来源：${
+                ? `免费配额模式（每日 11:00 全量 + 22:00 热门盘口；详情完全只读本地，不拉未来）。当前来源：${
                     freeQuotaSource === 'db' ? '管理员覆盖（库）' : '环境变量默认'
                   }；生效整点：${formatSyncHours(freeQuotaHours)}`
-                : '免费配额模式（每日 11:00 全量 + 22:00 盘口，同步昨天赛果 + 今天比赛，不拉未来）；默认开启'
+                : '免费配额模式（每日 11:00 全量 + 22:00 热门盘口；详情完全只读本地，不拉未来）；默认开启'
             "
           />
           <template #suffix>
@@ -379,7 +379,9 @@ onMounted(() => {
           <n-thing
             title="定时全量获取详情"
             :description="
-              source
+              freeQuotaEnabled
+                ? `免费配额开启中，定时详情暂停；关闭免费配额后恢复此设置（每批最多 ${detailBudget} 场）`
+                : source
                 ? `当前来源：${source === 'db' ? '管理员覆盖（库）' : '环境变量默认'}；开关只改设置，真正预拉发生在下一次定时批次或「立即同步」（热门联赛未开赛缺包，每批最多 ${detailBudget} 场）`
                 : '读取并切换；默认关闭。开启会额外消耗官方 API 配额'
             "
@@ -387,7 +389,7 @@ onMounted(() => {
           <template #suffix>
             <n-switch
               :value="enabled"
-              :disabled="loading || saving"
+              :disabled="loading || saving || freeQuotaEnabled"
               :loading="saving"
               aria-label="定时全量获取详情"
               @update:value="onToggle"
