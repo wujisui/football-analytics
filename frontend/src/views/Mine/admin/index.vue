@@ -15,11 +15,14 @@ import {
   previewResetMatchHistory,
   resetMatchHistory,
   type ApiSportsKeySetting,
+  type LastSyncRun,
   type ResetMatchHistoryReport,
   updateApiSportsKeySetting,
   updateSubscriptionEarlyOdds,
   updateSubscriptionSetting,
 } from '@/api/admin'
+import TextSwitch from '@/components/TextSwitch.vue'
+import { formatLocalDateMinute } from '@/utils/format'
 import { useAdminSync } from '@/views/Mine/admin/useAdminSync'
 import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 
@@ -27,13 +30,14 @@ defineOptions({ name: 'MineAdmin' })
 
 const message = useMessage()
 const modal = useModal()
-const { syncing, statusText, runSync, hydrateStatus } = useAdminSync()
+const { syncing, runSync, hydrateStatus } = useAdminSync()
 
 const subscribed = ref(false)
 const subscriptionSource = ref('')
 const earlyOddsEnabled = ref(true)
 const fullSyncCompletedToday = ref(false)
 const apiRemaining = ref<number | null>(null)
+const lastSync = ref<LastSyncRun | null>(null)
 const subscriptionLoading = ref(false)
 const subscriptionSaving = ref(false)
 const earlyOddsSaving = ref(false)
@@ -74,11 +78,25 @@ const apiKeyDescription = computed(() => {
 const settingSourceLabel = (value: string) =>
   value === 'db' ? '管理员覆盖（库）' : value ? '环境变量默认' : ''
 
-const syncDescription = computed(() => {
-  const boundary = subscribed.value
+const syncDescription = computed(() =>
+  subscribed.value
     ? '当天完整批次尚未成功时可手动补跑：回写近 4 天赛果、增量补齐 8 天赛程窗口、更新今天/明天热门盘口与详情、积分榜、训练、日推及清理；成功后当天禁用，避免重复消耗。'
-    : '当天 11:00 完整批次尚未成功时可手动补跑：昨天赛果、今天赛程/热门盘口、训练、日推及清理；成功后当天禁用。08:05 当天赛程是独立任务，不补跑。'
-  return statusText.value ? `${statusText.value}。${boundary}` : boundary
+    : '当天 11:00 完整批次尚未成功时可手动补跑：昨天赛果、今天赛程/热门盘口、训练、日推及清理；成功后当天禁用。08:05 当天赛程是独立任务，不补跑。',
+)
+
+/** 上次同步时刻由后端持久化，重启或换浏览器后仍能看到。 */
+const lastSyncText = computed(() => {
+  if (syncing.value) return '同步进行中，完成后会全局提示'
+  const run = lastSync.value
+  if (!run) return '尚无同步记录'
+  const when = formatLocalDateMinute(run.finished_at)
+  const suffix = run.status === 'failed' ? '失败' : ''
+  return `上次同步${suffix} ${when} · ${run.label}`
+})
+
+const lastSyncQuotaText = computed(() => {
+  const run = lastSync.value
+  return run ? `本次消耗 ${run.quota_used}` : ''
 })
 
 const subscriptionDescription = computed(() => {
@@ -90,10 +108,11 @@ const subscriptionDescription = computed(() => {
   return `${prefix}未订阅每天 08:05 只拉当天赛程，11:00 跑昨天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。`
 })
 
-const earlyOddsDescription = computed(() => {
-  if (!subscribed.value) return '仅已订阅时生效。'
-  return `控制 04:00、06:00、08:00、10:00 是否也刷新今天未开赛热门盘口并重算日推；00:00、02:00 不受此开关影响。当前${earlyOddsEnabled.value ? '开启' : '关闭'}。`
-})
+const earlyOddsDescription = computed(() =>
+  subscribed.value
+    ? '控制 04:00、06:00、08:00、10:00 是否也刷新今天未开赛热门盘口并重算日推；00:00、02:00 不受此开关影响。'
+    : '仅已订阅时生效。',
+)
 
 function applySubscription(data: Awaited<ReturnType<typeof fetchSubscriptionSetting>>) {
   subscribed.value = data.subscribed
@@ -101,6 +120,7 @@ function applySubscription(data: Awaited<ReturnType<typeof fetchSubscriptionSett
   earlyOddsEnabled.value = data.early_odds_enabled
   fullSyncCompletedToday.value = data.full_sync_completed_today
   apiRemaining.value = data.api_remaining
+  lastSync.value = data.last_sync
 }
 
 async function loadSetting() {
@@ -278,19 +298,33 @@ watch(syncing, (value, previous) => {
 <template>
   <MineSectionBody>
     <n-card size="small" title="管理员运维" :bordered="false">
+      <template #header-extra>
+        <n-flex :size="6" align="center">
+          <n-tag v-if="apiRemaining != null" size="small" :bordered="false" type="info">
+            官方剩余 {{ apiRemaining }}
+          </n-tag>
+          <n-tag v-if="lastSyncQuotaText" size="small" :bordered="false">
+            {{ lastSyncQuotaText }}
+          </n-tag>
+        </n-flex>
+      </template>
       <n-list>
         <n-list-item>
           <template #prefix>
             <n-icon :component="RefreshOutline" :size="20" />
           </template>
-          <n-thing
-            title="同步官方 API 数据"
-            :description="syncDescription"
-          >
-            <template v-if="apiRemaining != null" #header-extra>
-              <n-tag size="small" :bordered="false" type="info">
-                官方剩余 {{ apiRemaining }}
-              </n-tag>
+          <n-thing :description="syncDescription">
+            <template #header>
+              <n-flex :size="8" align="baseline" :wrap="true">
+                <span>同步官方 API 数据</span>
+                <n-text
+                  depth="3"
+                  :type="lastSync?.status === 'failed' ? 'error' : undefined"
+                  style="font-size: 12px"
+                >
+                  {{ lastSyncText }}
+                </n-text>
+              </n-flex>
             </template>
           </n-thing>
           <template #suffix>
@@ -315,18 +349,15 @@ watch(syncing, (value, previous) => {
             :description="subscriptionDescription"
           />
           <template #suffix>
-            <n-flex vertical align="end" :size="4">
-              <n-switch
-                :value="subscribed"
-                :disabled="subscriptionLoading || subscriptionSaving"
-                :loading="subscriptionSaving"
-                aria-label="订阅状态"
-                @update:value="onSubscriptionToggle"
-              />
-              <n-text depth="3" style="font-size: 11px;">
-                {{ subscribed ? '已订阅' : '未订阅' }}
-              </n-text>
-            </n-flex>
+            <TextSwitch
+              :value="subscribed"
+              checked-text="已订阅"
+              unchecked-text="未订阅"
+              aria-label="订阅状态"
+              :disabled="subscriptionLoading || subscriptionSaving"
+              :loading="subscriptionSaving"
+              @update:value="onSubscriptionToggle"
+            />
           </template>
         </n-list-item>
 
@@ -339,11 +370,13 @@ watch(syncing, (value, previous) => {
             :description="earlyOddsDescription"
           />
           <template #suffix>
-            <n-switch
+            <TextSwitch
               :value="earlyOddsEnabled"
+              checked-text="已开启"
+              unchecked-text="已关闭"
+              aria-label="早间盘口刷新"
               :disabled="subscriptionLoading || earlyOddsSaving || !subscribed"
               :loading="earlyOddsSaving"
-              aria-label="早间盘口刷新"
               @update:value="applyEarlyOddsToggle"
             />
           </template>

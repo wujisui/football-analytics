@@ -16,6 +16,7 @@ from app.services.runtime_settings import (
     default_hot_league_ids,
     get_api_sports_keys_setting,
     get_hot_league_ids,
+    get_last_sync_run,
     get_subscription_early_odds,
     get_subscription_enabled,
     set_api_sports_keys_setting,
@@ -43,6 +44,15 @@ class TriggerTaskRequest(BaseModel):
     )
 
 
+class LastSyncRun(BaseModel):
+    finished_at: str = Field(description="批次结束时刻（UTC ISO），前端按本地时区展示")
+    status: str = Field(description="completed / failed")
+    label: str = Field(description="批次类型中文名")
+    quota_used: int = Field(description="该批次实际发出的官方请求数")
+    api_remaining: int | None = None
+    error: str | None = None
+
+
 class SubscriptionSetting(BaseModel):
     subscribed: bool
     source: str = Field(description="db = 管理员已覆盖；env = 使用环境变量默认值")
@@ -50,6 +60,7 @@ class SubscriptionSetting(BaseModel):
     sync_times: list[str]
     full_sync_completed_today: bool
     api_remaining: int | None = None
+    last_sync: LastSyncRun | None = None
 
 
 class SubscriptionUpdate(BaseModel):
@@ -114,6 +125,27 @@ class ResetMatchHistoryResponse(BaseModel):
     kept: list[str]
 
 
+SYNC_MODE_LABELS = {
+    "full": "完整批次",
+    "odds": "盘口轻刷",
+    "fixtures": "当天赛程",
+}
+
+
+def _last_sync_payload(run: dict[str, Any] | None) -> LastSyncRun | None:
+    if not run or not run.get("finished_at"):
+        return None
+    mode = str(run.get("mode") or "")
+    return LastSyncRun(
+        finished_at=str(run["finished_at"]),
+        status=str(run.get("status") or "completed"),
+        label=SYNC_MODE_LABELS.get(mode, mode or "同步"),
+        quota_used=int(run.get("quota_used") or 0),
+        api_remaining=run.get("api_remaining"),
+        error=run.get("error"),
+    )
+
+
 async def _subscription_payload(
     subscribed: bool,
     source: str,
@@ -131,7 +163,12 @@ async def _subscription_payload(
         times = ["08:05", "11:00"] + [
             f"{hour:02d}:00" for hour in UNSUBSCRIBED_ODDS_HOURS
         ]
+    last_sync = _last_sync_payload(await get_last_sync_run())
+    # Process memory is empty until this deploy calls the official API again,
+    # so fall back to the remaining count persisted with the last batch.
     remaining = get_cache_service().last_api_remaining
+    if remaining is None and last_sync is not None:
+        remaining = last_sync.api_remaining
     return SubscriptionSetting(
         subscribed=subscribed,
         source=source,
@@ -139,6 +176,7 @@ async def _subscription_payload(
         sync_times=times,
         full_sync_completed_today=await full_sync_completed_today(),
         api_remaining=remaining,
+        last_sync=last_sync,
     )
 
 

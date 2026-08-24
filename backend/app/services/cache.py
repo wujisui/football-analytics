@@ -116,6 +116,13 @@ class CacheService:
         self.misses = 0
         self.last_api_remaining: int | None = None
         self.last_data_update: datetime | None = None
+        # Monotonic official-request counter; batches diff it to report quota spend.
+        self.api_request_count = 0
+
+    def note_api_response(self, remaining: int | None) -> None:
+        """Record one official response: bump the counter, keep latest remaining."""
+        self.api_request_count += 1
+        self.last_api_remaining = remaining
 
     async def _use_fakeredis(self, reason: str) -> None:
         try:

@@ -1,5 +1,14 @@
 import { apiClient } from './client'
 
+export type LastSyncRun = {
+  finished_at: string
+  status: 'completed' | 'failed' | string
+  label: string
+  quota_used: number
+  api_remaining: number | null
+  error: string | null
+}
+
 export type SubscriptionSetting = {
   subscribed: boolean
   source: 'db' | 'env' | string
@@ -7,6 +16,7 @@ export type SubscriptionSetting = {
   sync_times: string[]
   full_sync_completed_today: boolean
   api_remaining: number | null
+  last_sync: LastSyncRun | null
 }
 
 export type HotLeagueItem = {

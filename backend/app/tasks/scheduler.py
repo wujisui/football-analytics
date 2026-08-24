@@ -14,11 +14,13 @@ from app.services.fixtures_sync import (
     scheduled_fixtures_sync,
     sync_free_quota_rollover_fixtures,
 )
+from app.services.cache import get_cache_service
 from app.services.runtime_settings import (
     get_last_full_sync_day,
     get_subscription_early_odds,
     get_subscription_enabled,
     set_last_full_sync_day,
+    set_last_sync_run,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,6 +79,35 @@ async def full_sync_completed_today() -> bool:
     return await get_last_full_sync_day() == scheduler_today()
 
 
+async def _record_sync_run(task_name: str, mode: str, start_count: int) -> None:
+    """Persist a finished official batch so the admin page can show 上次同步.
+
+    Skipped batches (already synced today, no key) burn no quota and must not
+    overwrite the last real run.
+    """
+    entry = active_tasks.get(task_name) or {}
+    status = entry.get("status")
+    if status not in {"completed", "failed"}:
+        return
+    cache = get_cache_service()
+    run: dict[str, Any] = {
+        "task": task_name,
+        "mode": mode,
+        "status": status,
+        "finished_at": entry.get("finished_at") or _utc_now().isoformat(),
+        "quota_used": max(cache.api_request_count - start_count, 0),
+        "api_remaining": cache.last_api_remaining,
+    }
+    error = entry.get("error")
+    if error:
+        run["error"] = str(error)[:300]
+    try:
+        async with AsyncSessionLocal() as session:
+            await set_last_sync_run(session, run)
+    except Exception as exc:
+        logger.warning("Failed to persist last sync run for %s: %s", task_name, exc)
+
+
 async def run_scheduled_fixtures_sync(
     task_name: str = "scheduled_fixtures_sync",
     *,
@@ -87,6 +118,7 @@ async def run_scheduled_fixtures_sync(
 
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
     logger.info("Task %s started (mode=%s).", task_name, mode)
+    start_count = get_cache_service().api_request_count
     try:
         if mode == "full" and await full_sync_completed_today():
             _set_task_status(
@@ -150,6 +182,8 @@ async def run_scheduled_fixtures_sync(
             finished_at=_utc_now().isoformat(),
         )
         logger.error("Task %s failed: %s", task_name, exc, exc_info=True)
+    finally:
+        await _record_sync_run(task_name, mode, start_count)
 
 
 async def run_free_quota_fixture_rollover() -> None:
@@ -158,6 +192,7 @@ async def run_free_quota_fixture_rollover() -> None:
 
     task_name = FREE_QUOTA_ROLLOVER_JOB_ID
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
+    start_count = get_cache_service().api_request_count
     try:
         saved = await sync_free_quota_rollover_fixtures()
         _set_task_status(
@@ -182,6 +217,8 @@ async def run_free_quota_fixture_rollover() -> None:
             finished_at=_utc_now().isoformat(),
         )
         logger.error("Task %s failed: %s", task_name, exc, exc_info=True)
+    finally:
+        await _record_sync_run(task_name, "fixtures", start_count)
 
 
 async def clean_old_data() -> None:

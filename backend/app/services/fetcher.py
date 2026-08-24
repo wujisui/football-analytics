@@ -261,7 +261,7 @@ class FootballFetcher:
                     self.last_remaining_requests = parse_remaining_requests(
                         self.provider.last_response
                     )
-                    self.cache.last_api_remaining = self.last_remaining_requests
+                    self.cache.note_api_response(self.last_remaining_requests)
                     if (
                         self.last_remaining_requests is not None
                         and self.last_remaining_requests <= 0
@@ -1614,7 +1614,7 @@ class FootballFetcher:
                     self.last_remaining_requests = parse_remaining_requests(
                         self.provider.last_response
                     )
-                    self.cache.last_api_remaining = self.last_remaining_requests
+                    self.cache.note_api_response(self.last_remaining_requests)
                 return result
             except Exception as exc:
                 last_error = exc

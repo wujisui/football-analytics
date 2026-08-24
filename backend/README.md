@@ -235,7 +235,7 @@ GET /api/v1/fixtures/today?league_id=39
 |------|------------------------|---------------------------------------|
 | GET  | `/admin/tasks`         | 调度器与任务状态                              |
 | POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"clean_old_data"|"train_model"}` |
-| GET  | `/admin/settings/subscription` | 读取订阅、早间盘口、当天完整批次及官方剩余用量 |
+| GET  | `/admin/settings/subscription` | 读取订阅、早间盘口、当天完整批次、官方剩余用量，以及上次同步（时刻 / 批次类型 / 本次消耗的官方请求数） |
 | PATCH | `/admin/settings/subscription` | 写入订阅状态并立刻重排 cron |
 | PATCH | `/admin/settings/subscription-early-odds` | 控制已订阅 04/06/08/10 盘口轻刷 |
 | GET  | `/admin/settings/api-sports-key` | 读取官方 Key 配置（数量 + 每枚末 4 位） |

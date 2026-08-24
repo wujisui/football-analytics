@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 KEY_ENABLE_FREE_QUOTA = "enable_free_quota"
 KEY_SUBSCRIPTION_EARLY_ODDS = "subscription_early_odds"
 KEY_LAST_FULL_SYNC_DAY = "last_full_sync_day"
+KEY_LAST_SYNC_RUN = "last_sync_run"
 KEY_API_SPORTS_KEY = "api_sports_key"
 KEY_HOT_LEAGUE_IDS = "hot_league_ids"
 
@@ -242,6 +243,40 @@ async def set_last_full_sync_day(session: AsyncSession, day: str) -> str:
         row.value = value
     await session.commit()
     return value
+
+
+async def get_last_sync_run(
+    session: AsyncSession | None = None,
+) -> dict | None:
+    """Last finished official sync batch: time, mode, status, quota spent."""
+
+    async def _read(db: AsyncSession) -> dict | None:
+        row = await get_setting_row(db, KEY_LAST_SYNC_RUN)
+        raw = (row.value if row else "").strip()
+        if not raw:
+            return None
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("Invalid %s JSON; ignoring", KEY_LAST_SYNC_RUN)
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    if session is not None:
+        return await _read(session)
+    async with AsyncSessionLocal() as db:
+        return await _read(db)
+
+
+async def set_last_sync_run(session: AsyncSession, run: dict) -> dict:
+    payload = json.dumps(run, separators=(",", ":"), ensure_ascii=False)
+    row = await get_setting_row(session, KEY_LAST_SYNC_RUN)
+    if row is None:
+        session.add(AppSetting(key=KEY_LAST_SYNC_RUN, value=payload))
+    else:
+        row.value = payload
+    await session.commit()
+    return run
 
 
 def catalog_league_ids(settings=None) -> set[int]:

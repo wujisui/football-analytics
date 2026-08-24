@@ -2,6 +2,7 @@
 import { MoonOutline, SunnyOutline } from '@vicons/ionicons5'
 
 import HandicapRulesetSwitch from '@/components/HandicapRulesetSwitch.vue'
+import TextSwitch from '@/components/TextSwitch.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
 import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
@@ -29,8 +30,10 @@ const isPhone = useIsPhone()
               description="偏好保存在本机，下次打开沿用"
             />
             <template #suffix>
-              <n-switch
+              <TextSwitch
                 :value="isDark"
+                checked-text="深色"
+                unchecked-text="浅色"
                 aria-label="深色模式"
                 @update:value="toggleTheme"
               />
