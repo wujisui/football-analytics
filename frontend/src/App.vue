@@ -294,7 +294,7 @@ const bottomItems: {
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--fa-text-muted, rgba(128, 128, 128, 0.9));
+  color: var(--fa-text-muted);
   display: flex;
   flex-direction: column;
   align-items: center;

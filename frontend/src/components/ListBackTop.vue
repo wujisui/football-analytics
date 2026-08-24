@@ -200,7 +200,7 @@ onBeforeUnmount(detach)
   overflow: hidden;
   border-radius: 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
-  background: var(--fa-bg-elevated, #333);
+  background: var(--fa-bg-elevated);
 }
 
 .list-scroll-fab {
@@ -214,12 +214,12 @@ onBeforeUnmount(detach)
   border: 0;
   border-radius: 0;
   cursor: pointer;
-  color: var(--fa-text-strong, #fff);
+  color: var(--fa-text-strong);
   background: transparent;
 }
 
 .list-scroll-fab-group.has-both .list-scroll-fab + .list-scroll-fab {
-  border-top: 1px solid var(--fa-border, rgba(255, 255, 255, 0.12));
+  border-top: 1px solid var(--fa-border);
 }
 
 .list-scroll-fab:hover,

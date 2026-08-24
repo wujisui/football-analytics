@@ -762,7 +762,7 @@ onActivated(() => {
       <n-layout-sider
           placement="left"
           class="results-list-sider"
-          :width="330"
+          :width="345"
           :native-scrollbar="true"
           content-style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--fa-bg-elevated); box-sizing: border-box;"
       >
