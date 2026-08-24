@@ -31,7 +31,10 @@ from app.services.cache import (
 from app.services.competition_scope import allowed_competition_ids
 from app.services.features import has_match_winner_odds
 from app.services.prematch_package import loads_json, rehydrate_odds_markets
-from app.services.results_capture import POSTPONED_HIDE_AFTER_DAYS
+from app.services.results_capture import (
+    POSTPONED_HIDE_AFTER_DAYS,
+    RESULTS_BROWSABLE_DAYS,
+)
 
 # Statuses whose packages may be slimmed: the match is over as far as we know.
 TERMINAL_STATUSES = ("finished", "cancelled", "postponed")
@@ -132,6 +135,11 @@ def should_prune_fixture(
     Two cases: the match never settles at all, or it settled without a pre-match
     1X2 board. 缺盘口的场次即使库里冻结过预测也删——没有盘口就没有推断依据，
     这种预测属于无效数据，留着只会污染准确率与训练标签。
+
+    但「完场缺盘口」要等【赛程】日期条选不到那天之后再删：准确率与 ML 本来就只
+    收有命中标记的场次，多留几天不影响；立刻删则会让后端漏跑期间的比赛日在赛果
+    页永久空白——赛果回填走全球按日接口，只带比分不带盘口，删掉后每次同步都重新
+    拉一遍再被删，白耗官方配额。
     """
     if fixture.status not in PRUNABLE_STATUSES:
         return False
@@ -140,7 +148,10 @@ def should_prune_fixture(
     if fixture.status != "finished":
         # 未结算且尚未陈旧（含未开赛与刚延期）：盘口可能稍后才开，必须保留。
         return False
-    return not record_has_prematch_1x2(stored, feature)
+    if record_has_prematch_1x2(stored, feature):
+        return False
+    current = now or datetime.utcnow()
+    return fixture.date <= current - timedelta(days=RESULTS_BROWSABLE_DAYS)
 
 
 async def _delete_ids(

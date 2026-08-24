@@ -23,6 +23,10 @@ SETTLE_SCORE_REFRESH_DAYS = 7
 UNFINISHED_STATUSES = frozenset({"pending", "live"})
 # 延期场次：原定开赛已过超过该天数后不再占【赛果】列表（等官方改日再进新比赛日）。
 POSTPONED_HIDE_AFTER_DAYS = 1
+# 【赛程】日期条往前能选到的天数（前端 `HOME_DATE_RADIUS`）。用户还能选到的比赛日，
+# 清理任务不得删掉其中的完场场次，否则后端漏跑期间的日期永久空白：赛果回填只带
+# 比分不带盘口，删掉后每次同步都重新拉、又立刻被删。
+RESULTS_BROWSABLE_DAYS = 7
 
 
 def results_capture_cutoff(now: datetime | None = None) -> datetime:

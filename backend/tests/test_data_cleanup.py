@@ -18,6 +18,7 @@ from app.services.data_cleanup import (
     should_prune_fixture,
     slim_expired_packages,
 )
+from app.services.results_capture import RESULTS_BROWSABLE_DAYS
 
 NOW = datetime(2026, 7, 26, 12, 0, 0)
 
@@ -63,6 +64,12 @@ def _analyzed_stored(*, board: bool = False):
     )
 
 
+def _old_fixture(**kwargs):
+    """完场且已超出【赛程】日期条可选范围 —— 缺盘口才允许删。"""
+    kwargs.setdefault("date", NOW - timedelta(days=RESULTS_BROWSABLE_DAYS + 1))
+    return _fixture(**kwargs)
+
+
 class PruneJudgmentTests(unittest.TestCase):
     def test_flat_probs_alone_do_not_keep_finished_fixture(self) -> None:
         stored = SimpleNamespace(
@@ -83,12 +90,43 @@ class PruneJudgmentTests(unittest.TestCase):
             draw_prob=1 / 3,
             away_win_prob=1 / 3,
         )
-        self.assertTrue(should_prune_fixture(_fixture(), stored, feature))
+        self.assertTrue(
+            should_prune_fixture(_old_fixture(), stored, feature, now=NOW)
+        )
 
     def test_prediction_without_board_is_pruned(self) -> None:
         """有预测但没赛前盘口 = 无依据预测，物理删除，不进历史统计。"""
         self.assertTrue(
-            should_prune_fixture(_fixture(), _analyzed_stored(), None)
+            should_prune_fixture(_old_fixture(), _analyzed_stored(), None, now=NOW)
+        )
+
+    def test_recent_finished_without_board_kept_for_results_page(self) -> None:
+        """后端漏跑那几天的赛果只有比分没有盘口，删了就永久空白。
+
+        赛果回填走全球按日接口，不带盘口，所以这些场次每次同步都会被重新拉回来
+        又立刻删掉，白耗官方配额，而【赛程】日期条上那一天始终是空的。
+        日期条还能选到的比赛日一律保留。
+        """
+        for days_ago in (0, 1, RESULTS_BROWSABLE_DAYS - 1):
+            with self.subTest(days_ago=days_ago):
+                self.assertFalse(
+                    should_prune_fixture(
+                        _fixture(date=NOW - timedelta(days=days_ago)),
+                        None,
+                        None,
+                        now=NOW,
+                    )
+                )
+
+    def test_finished_without_board_pruned_once_out_of_date_strip(self) -> None:
+        """超出日期条范围后恢复删除：准确率与训练标签不收无盘口场次。"""
+        self.assertTrue(
+            should_prune_fixture(
+                _fixture(date=NOW - timedelta(days=RESULTS_BROWSABLE_DAYS + 1)),
+                None,
+                None,
+                now=NOW,
+            )
         )
 
     def test_prediction_with_board_keeps_fixture(self) -> None:
@@ -198,6 +236,8 @@ class PruneAtScaleTests(unittest.TestCase):
 
     def test_prunes_more_fixtures_than_sqlite_variable_limit(self) -> None:
         fixture_count = 6000
+        # 必须落在【赛程】日期条之外，否则按可浏览窗口保留，测不到删除路径。
+        kickoff = datetime.utcnow() - timedelta(days=RESULTS_BROWSABLE_DAYS + 30)
 
         async def run() -> tuple[int, int]:
             engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -217,7 +257,7 @@ class PruneAtScaleTests(unittest.TestCase):
                             "league_id": 1,
                             "home_team_id": 1,
                             "away_team_id": 2,
-                            "date": datetime(2026, 8, 1, 12, 0, 0),
+                            "date": kickoff,
                             "status": "finished",
                             "home_goals": 1,
                             "away_goals": 0,
