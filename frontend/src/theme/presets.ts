@@ -3,7 +3,7 @@ import type { GlobalThemeOverrides } from 'naive-ui'
 /** Only Naive built-in light / dark (no color variants). */
 export type ThemePresetId = 'light' | 'dark'
 
-export const DEFAULT_THEME: ThemePresetId = 'dark'
+export const DEFAULT_THEME: ThemePresetId = 'light'
 
 const SHELL_CSS_KEYS = [
   'bg',
@@ -97,22 +97,22 @@ const darkShell: ThemePreset['shell'] = {
 /** Official themes only: `light` (Naive default) / `dark` (Naive `darkTheme`). */
 export const THEME_PRESETS: ThemePreset[] = [
   {
-    id: 'dark',
-    label: '深色',
-    dark: true,
-    overrides: {},
-    shell: darkShell,
-  },
-  {
     id: 'light',
     label: '浅色',
     dark: false,
     overrides: {},
     shell: lightShell,
   },
+  {
+    id: 'dark',
+    label: '深色',
+    dark: true,
+    overrides: {},
+    shell: darkShell,
+  },
 ]
 
-/** Map legacy color-variant ids → light/dark. Missing → dark default. */
+/** Map legacy color-variant ids → light/dark. Missing → light default. */
 export function normalizePresetId(id: string | null | undefined): ThemePresetId {
   if (!id) return DEFAULT_THEME
   if (id === 'dark' || id.startsWith('dark-')) return 'dark'

@@ -48,21 +48,14 @@ export function useTheme() {
 
   const isDark = computed(() => preset.value.dark)
 
-  function setPreset(id: ThemePresetId) {
-    presetId.value = id
-  }
-
   function toggleTheme() {
     presetId.value = isDark.value ? 'light' : 'dark'
   }
 
   return {
-    presetId,
-    preset,
     naiveTheme,
     themeOverrides,
     isDark,
-    setPreset,
     toggleTheme,
   }
 }
