@@ -104,7 +104,7 @@ export function useFixturesShell() {
   const {
     trackedIds: prematchTrackedIds,
     filterOptionsError,
-    setTrackedIds: setPrematchTrackedIds,
+    commitTrackedIds: commitPrematchTrackedIds,
     allFilterOptions,
     loadFilterOptions,
   } = useTrackedLeagues()
@@ -119,6 +119,7 @@ export function useFixturesShell() {
     resultsLoading,
     confirmFilter: confirmResultsFilter,
     setResultsTrackedIds,
+    commitResultsTrackedIds,
   } = useResultsLeagues()
 
   const pageName = computed(
@@ -360,8 +361,8 @@ export function useFixturesShell() {
         message.warning('请至少勾选一个默认或可选联赛')
         return
       }
-      setPrematchTrackedIds(allowed)
-      setResultsTrackedIds(allowed)
+      commitPrematchTrackedIds(allowed)
+      commitResultsTrackedIds(allowed)
       if (
         resultsSelectedLeagueId.value != null &&
         !allowed.includes(resultsSelectedLeagueId.value)
@@ -395,7 +396,7 @@ export function useFixturesShell() {
       message.warning('请至少勾选一个今日有赛的联赛')
       return
     }
-    setPrematchTrackedIds(allowed)
+    commitPrematchTrackedIds(allowed)
     if (
       prematchSelectedLeagueId.value != null &&
       !allowed.includes(prematchSelectedLeagueId.value)

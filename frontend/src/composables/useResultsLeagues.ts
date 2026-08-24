@@ -13,7 +13,9 @@ import { resolveTrackedSelection } from '@/utils/leagueFilterSelection'
 import { leagueLabel } from '@/utils/leagueNames'
 import { mergeDetailIntoListFixture } from '@/utils/oddsDisplay'
 
-const RESULTS_TRACKED_KEY = 'fa-results-tracked-league-ids-by-date-v1'
+// v2: v1 也存了加载时推导的勾选，本地赛程未同步全的那一天会落下残缺集合，
+// 之后压过默认热门。v2 只存用户确认过的选择，旧键直接作废。
+const RESULTS_TRACKED_KEY = 'fa-results-tracked-league-ids-by-date-v2'
 
 const resultsFixtures = ref<ResultFixture[]>([])
 const scheduleFixtures = ref<FixtureResponse[]>([])
@@ -94,16 +96,29 @@ export async function ensureResultsConfiguredLeagueIds(): Promise<void> {
   return configuredIdsInflight
 }
 
+/**
+ * Derived selection (换日重算 / 未来赛程同步 prematch 勾选)：只更新内存。
+ * 落库的必须是用户确认过的选择，见 `commitResultsTrackedIds`。
+ */
 function setResultsTrackedIds(ids: number[]) {
-  const unique = [...new Set(ids.map(Number).filter((n) => Number.isFinite(n)))]
-  resultsTrackedIds.value = unique
+  resultsTrackedIds.value = [
+    ...new Set(ids.map(Number).filter((n) => Number.isFinite(n))),
+  ]
+}
+
+/** 用户在筛选弹窗点了确认：这才是可以覆盖默认热门的显式选择。 */
+function commitResultsTrackedIds(ids: number[]) {
+  setResultsTrackedIds(ids)
   const day = resultsFilterOptionsDay.value || resultsLoadedDay.value
-  if (day) persistResultsTracked(unique, day)
+  if (day) persistResultsTracked(resultsTrackedIds.value, day)
 }
 
 /**
  * Lightweight league checklist for a results/schedule day (counts only).
- * Sets tracked ids from stored preference ∩ options (defaults = primary).
+ *
+ * 勾选一律从「该日用户确认过的选择」重算，没有就回落默认热门。不能拿上一次
+ * 推导出来的 `resultsTrackedIds` 当依据：赛程还没同步全时那份集合是残缺的，
+ * 沿用下去会把当天新出现的热门联赛留在未勾选状态，列表跟着少比赛。
  */
 export async function loadResultsFilterOptions(options: {
   date: string
@@ -115,19 +130,10 @@ export async function loadResultsFilterOptions(options: {
   })
   const list = [...data.configured, ...data.extra]
   resultsFilterOptions.value = list
-  const allow = new Set(list.map((o) => o.league_id))
-  const sameDay = resultsFilterOptionsDay.value === options.date
-  const kept = sameDay
-    ? resultsTrackedIds.value.filter((id) => allow.has(id))
-    : []
   resultsFilterOptionsDay.value = options.date
-  if (kept.length) {
-    setResultsTrackedIds(kept)
-  } else {
-    setResultsTrackedIds(
-      resolveTrackedSelection(list, readStoredResultsTracked(options.date) ?? []),
-    )
-  }
+  setResultsTrackedIds(
+    resolveTrackedSelection(list, readStoredResultsTracked(options.date) ?? []),
+  )
   return list
 }
 
@@ -446,7 +452,7 @@ export function useResultsLeagues() {
     const allow = new Set(resultsFilterOptions.value.map((o) => o.league_id))
     const allowed = ids.filter((id) => allow.has(id))
     if (!allowed.length) return false
-    setResultsTrackedIds(allowed)
+    commitResultsTrackedIds(allowed)
     return true
   }
 
@@ -458,6 +464,7 @@ export function useResultsLeagues() {
     resultsHistory,
     resultsTrackedIds,
     setResultsTrackedIds,
+    commitResultsTrackedIds,
     resultsLoading,
     resultsFilterOptions,
     menuLeagues,

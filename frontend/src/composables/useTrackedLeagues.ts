@@ -8,7 +8,9 @@ import {
 import { resolveTrackedSelection } from '@/utils/leagueFilterSelection'
 
 // v4: prematch options cover backend-local today + tomorrow, not one UTC day.
-const STORAGE_KEY = 'fa-tracked-league-ids-by-date-v4'
+// v5: v4 也存了加载时推导的勾选，赛程未同步全时会落下残缺集合并压过默认热门。
+// v5 只存用户确认过的选择，旧键直接作废。
+const STORAGE_KEY = 'fa-tracked-league-ids-by-date-v5'
 
 const filterOptions = ref<LeagueFilterOptionsResponse | null>(null)
 const trackedIds = ref<number[]>([])
@@ -60,10 +62,17 @@ function persistTracked(ids: number[], date: string) {
   }
 }
 
+/** Derived selection (filter-options 重算)：只更新内存，不当成用户选择落库。 */
 function setTrackedIds(ids: number[]) {
-  const unique = [...new Set(ids.map(Number).filter((n) => Number.isFinite(n)))]
-  trackedIds.value = unique
-  persistTracked(unique, activeFilterDate)
+  trackedIds.value = [
+    ...new Set(ids.map(Number).filter((n) => Number.isFinite(n))),
+  ]
+}
+
+/** 用户在筛选弹窗点了确认：这才是可以覆盖默认热门的显式选择。 */
+function commitTrackedIds(ids: number[]) {
+  setTrackedIds(ids)
+  persistTracked(trackedIds.value, activeFilterDate)
 }
 
 function allFilterOptions(): LeagueFilterOption[] {
@@ -156,7 +165,7 @@ export function useTrackedLeagues() {
     filterOptions,
     trackedIds,
     filterOptionsError,
-    setTrackedIds,
+    commitTrackedIds,
     allFilterOptions,
     loadFilterOptions,
   }
