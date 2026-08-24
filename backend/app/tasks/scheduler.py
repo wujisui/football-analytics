@@ -9,13 +9,17 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
-from app.services.api_quota import FREE_QUOTA_EVENING_HOUR
 from app.services.data_cleanup import prune_low_value_data, slim_expired_packages
 from app.services.fixtures_sync import (
     scheduled_fixtures_sync,
     sync_free_quota_rollover_fixtures,
 )
-from app.services.runtime_settings import get_enable_free_quota
+from app.services.runtime_settings import (
+    get_last_full_sync_day,
+    get_subscription_early_odds,
+    get_subscription_enabled,
+    set_last_full_sync_day,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +27,11 @@ scheduler = AsyncIOScheduler()
 active_tasks: dict[str, dict[str, Any]] = {}
 _scheduler_started = False
 
-# Paid / full schedule vs free-quota mode (admin toggle, default ON).
-SYNC_HOURS_FULL = (0, 6, 11, 16, 19, 22)
-# 11:00 = full free batch (results + today fixtures/odds); 22:00 = odds refresh only.
-SYNC_HOURS_FREE_QUOTA = (11, FREE_QUOTA_EVENING_HOUR)
-FREE_QUOTA_SYNC_HOUR = 11
+FULL_SYNC_HOUR = 11
+UNSUBSCRIBED_ODDS_HOURS = (22,)
+SUBSCRIBED_ODDS_HOURS = (0, 2, 14, 16, 18, 20, 22)
+SUBSCRIBED_EARLY_ODDS_HOURS = (4, 6, 8, 10)
+SUBSCRIBED_FIRST_ODDS_MINUTE = 55
 FREE_QUOTA_ROLLOVER_JOB_ID = "free_quota_fixture_rollover"
 
 
@@ -64,31 +68,57 @@ def get_task_status() -> dict[str, Any]:
     }
 
 
-def _should_clean_after_sync(sync_hour: int | None) -> bool:
-    """Run low-value cleanup with the morning full batch (11:00 / admin「立即同步」).
+def scheduler_today() -> str:
+    settings = get_settings()
+    return datetime.now(ZoneInfo(settings.SCHEDULER_TIMEZONE)).date().isoformat()
 
-    Skip evening odds-light (22:00) and other free-quota-off slots so prune/retrain
-    does not run multiple times a day.
-    """
-    return sync_hour is None or int(sync_hour) == 11
+
+async def full_sync_completed_today() -> bool:
+    return await get_last_full_sync_day() == scheduler_today()
 
 
 async def run_scheduled_fixtures_sync(
     task_name: str = "scheduled_fixtures_sync",
     *,
-    sync_hour: int | None = None,
+    mode: str = "full",
 ) -> None:
-    """Run one fixed daily fixtures/odds/results synchronization batch."""
+    """Run the daily full batch or a today's-hot-odds light batch."""
     from app.services.fetcher import ApiAccountBlockedError, ApiKeyNotConfiguredError
 
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
-    logger.info("Task %s started (sync_hour=%s).", task_name, sync_hour)
+    logger.info("Task %s started (mode=%s).", task_name, mode)
     try:
-        await scheduled_fixtures_sync(sync_hour=sync_hour)
-        _set_task_status(task_name, "completed", finished_at=_utc_now().isoformat())
-        logger.info("Task %s completed.", task_name)
-        if _should_clean_after_sync(sync_hour):
+        if mode == "full" and await full_sync_completed_today():
+            _set_task_status(
+                task_name,
+                "skipped",
+                reason="full_sync_completed_today",
+                finished_at=_utc_now().isoformat(),
+            )
+            logger.info("Task %s skipped: full batch already completed today.", task_name)
+            return
+        result = await scheduled_fixtures_sync(mode=mode)
+        if result.get("status") != "completed":
+            _set_task_status(
+                task_name,
+                "skipped",
+                reason=result.get("reason", "sync_not_completed"),
+                finished_at=_utc_now().isoformat(),
+            )
+            return
+        if mode == "full":
+            async with AsyncSessionLocal() as session:
+                await set_last_full_sync_day(session, scheduler_today())
+        if mode == "full":
             await clean_old_data()
+        _set_task_status(
+            task_name,
+            "completed",
+            mode=mode,
+            result=result,
+            finished_at=_utc_now().isoformat(),
+        )
+        logger.info("Task %s completed.", task_name)
     except ApiAccountBlockedError as exc:
         # Known account state, not a code fault: no traceback, but never "completed".
         _set_task_status(
@@ -297,32 +327,63 @@ async def trigger_task(task_name: str) -> None:
     await handler()
 
 
-def register_jobs(*, free_quota: bool | None = None) -> None:
-    """Register full slots plus free-mode UTC rollover schedule ingest."""
+def register_jobs(
+    *,
+    subscribed: bool | None = None,
+    early_odds: bool = True,
+) -> None:
+    """Register one 11:00 full batch plus subscription-specific light jobs."""
     settings = get_settings()
     timezone = settings.SCHEDULER_TIMEZONE
-    if free_quota is None:
-        free_quota = bool(settings.ENABLE_FREE_QUOTA)
-    sync_hours = SYNC_HOURS_FREE_QUOTA if free_quota else SYNC_HOURS_FULL
+    if subscribed is None:
+        subscribed = not bool(settings.ENABLE_FREE_QUOTA)
 
-    # Remove legacy 06:00 daily_init if still registered from an older process.
-    if scheduler.get_job("daily_init") is not None:
-        scheduler.remove_job("daily_init")
+    for job in list(scheduler.get_jobs()):
+        if str(job.id).startswith("scheduled_fixtures_sync_"):
+            scheduler.remove_job(job.id)
 
-    # Drop every fixtures-sync slot first so toggling free-quota rewrites cron.
-    for hour in SYNC_HOURS_FULL:
-        job_id = f"scheduled_fixtures_sync_{hour:02d}"
-        if scheduler.get_job(job_id) is not None:
-            scheduler.remove_job(job_id)
+    full_job_id = "scheduled_fixtures_sync_11"
+    scheduler.add_job(
+        run_scheduled_fixtures_sync,
+        CronTrigger(hour=FULL_SYNC_HOUR, minute=0, timezone=timezone),
+        id=full_job_id,
+        name=full_job_id,
+        kwargs={"mode": "full"},
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
 
-    for hour in sync_hours:
-        job_id = f"scheduled_fixtures_sync_{hour:02d}"
+    odds_hours = (
+        SUBSCRIBED_ODDS_HOURS
+        + (SUBSCRIBED_EARLY_ODDS_HOURS if early_odds else ())
+        if subscribed
+        else UNSUBSCRIBED_ODDS_HOURS
+    )
+    for hour in odds_hours:
+        job_id = f"scheduled_fixtures_sync_odds_{hour:02d}"
         scheduler.add_job(
             run_scheduled_fixtures_sync,
             CronTrigger(hour=hour, minute=0, timezone=timezone),
             id=job_id,
             name=job_id,
-            kwargs={"sync_hour": hour},
+            kwargs={"task_name": job_id, "mode": "odds"},
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+    if subscribed:
+        job_id = "scheduled_fixtures_sync_odds_1155"
+        scheduler.add_job(
+            run_scheduled_fixtures_sync,
+            CronTrigger(
+                hour=FULL_SYNC_HOUR,
+                minute=SUBSCRIBED_FIRST_ODDS_MINUTE,
+                timezone=timezone,
+            ),
+            id=job_id,
+            name=job_id,
+            kwargs={"task_name": job_id, "mode": "odds"},
             replace_existing=True,
             max_instances=1,
             coalesce=True,
@@ -330,7 +391,7 @@ def register_jobs(*, free_quota: bool | None = None) -> None:
 
     if scheduler.get_job(FREE_QUOTA_ROLLOVER_JOB_ID) is not None:
         scheduler.remove_job(FREE_QUOTA_ROLLOVER_JOB_ID)
-    if free_quota:
+    if not subscribed:
         scheduler.add_job(
             run_free_quota_fixture_rollover,
             CronTrigger(hour=0, minute=5, timezone="UTC"),
@@ -352,34 +413,24 @@ def register_jobs(*, free_quota: bool | None = None) -> None:
 
 
 async def refresh_fixture_sync_jobs() -> bool:
-    """Re-read free-quota flag from DB/env and rewrite fixtures-sync cron slots."""
-    enabled, source = await get_enable_free_quota()
-    register_jobs(free_quota=enabled)
+    """Re-read subscription flags and rewrite fixture/odds cron slots."""
+    subscribed, source = await get_subscription_enabled()
+    early_odds, _ = await get_subscription_early_odds()
+    register_jobs(subscribed=subscribed, early_odds=early_odds)
     if _scheduler_started:
         for job in scheduler.get_jobs():
             if str(job.id).startswith("scheduled_fixtures_sync_"):
                 logger.info(
                     "Refreshed scheduler job: id=%s trigger=%s next_run=%s "
-                    "(free_quota=%s source=%s)",
+                    "(subscribed=%s early_odds=%s source=%s)",
                     job.id,
                     job.trigger,
                     job.next_run_time,
-                    enabled,
+                    subscribed,
+                    early_odds,
                     source,
                 )
-    return enabled
-
-
-def free_quota_catch_up_due(now: datetime | None = None) -> bool:
-    """True when local clock is past today's 11:00 free-quota sync slot."""
-    settings = get_settings()
-    tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
-    local_now = now or datetime.now(tz)
-    if local_now.tzinfo is None:
-        local_now = local_now.replace(tzinfo=tz)
-    else:
-        local_now = local_now.astimezone(tz)
-    return (local_now.hour, local_now.minute) > (FREE_QUOTA_SYNC_HOUR, 0)
+    return subscribed
 
 
 def start_scheduler() -> None:

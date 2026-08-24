@@ -1,16 +1,12 @@
 import { apiClient } from './client'
 
-export type ScheduledFullDetailSetting = {
-  enabled: boolean
+export type SubscriptionSetting = {
+  subscribed: boolean
   source: 'db' | 'env' | string
-  budget: number
-}
-
-export type FreeQuotaSetting = {
-  enabled: boolean
-  source: 'db' | 'env' | string
-  sync_hours: number[]
-  catch_up_started?: boolean
+  early_odds_enabled: boolean
+  sync_times: string[]
+  full_sync_completed_today: boolean
+  api_remaining: number | null
 }
 
 export type HotLeagueItem = {
@@ -62,32 +58,37 @@ export type ResetMatchHistoryReport = {
 }
 
 /** Admin routes authenticate via the logged-in is_admin session cookie. */
-export async function fetchScheduledFullDetailSetting(): Promise<ScheduledFullDetailSetting> {
-  const { data } = await apiClient.get<ScheduledFullDetailSetting>(
-    '/admin/settings/scheduled-full-detail',
+export async function fetchSubscriptionSetting(): Promise<SubscriptionSetting> {
+  const { data } = await apiClient.get<SubscriptionSetting>('/admin/settings/subscription')
+  return data
+}
+
+export async function updateSubscriptionSetting(
+  subscribed: boolean,
+): Promise<SubscriptionSetting> {
+  const { data } = await apiClient.patch<SubscriptionSetting>(
+    '/admin/settings/subscription',
+    { subscribed },
   )
   return data
 }
 
-export async function updateScheduledFullDetailSetting(
+export async function updateSubscriptionEarlyOdds(
   enabled: boolean,
-): Promise<ScheduledFullDetailSetting> {
-  const { data } = await apiClient.patch<ScheduledFullDetailSetting>(
-    '/admin/settings/scheduled-full-detail',
-    { enabled },
+): Promise<SubscriptionSetting> {
+  const { data } = await apiClient.patch<SubscriptionSetting>(
+    '/admin/settings/subscription-early-odds',
+    {
+      enabled,
+    },
   )
   return data
 }
 
-export async function fetchFreeQuotaSetting(): Promise<FreeQuotaSetting> {
-  const { data } = await apiClient.get<FreeQuotaSetting>('/admin/settings/free-quota')
-  return data
-}
-
-export async function updateFreeQuotaSetting(enabled: boolean): Promise<FreeQuotaSetting> {
-  const { data } = await apiClient.patch<FreeQuotaSetting>('/admin/settings/free-quota', {
-    enabled,
-  })
+export async function fetchAdminTaskStatus(): Promise<{
+  active_tasks: Record<string, { status: string; error?: string }>
+}> {
+  const { data } = await apiClient.get('/admin/tasks')
   return data
 }
 

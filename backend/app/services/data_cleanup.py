@@ -413,6 +413,7 @@ async def reset_match_history(
     from app.models.auto_pick_snapshot import AutoPickSnapshot
     from app.models.league_standing import LeagueStanding
     from app.services.auto_pick_incentive import KEY_INCENTIVE_STATE
+    from app.services.runtime_settings import KEY_LAST_FULL_SYNC_DAY
 
     async def _count(model: type) -> int:
         from sqlalchemy import func
@@ -429,6 +430,11 @@ async def reset_match_history(
     incentive_row = (
         await session.execute(
             select(AppSetting).where(AppSetting.key == KEY_INCENTIVE_STATE)
+        )
+    ).scalar_one_or_none()
+    full_sync_row = (
+        await session.execute(
+            select(AppSetting).where(AppSetting.key == KEY_LAST_FULL_SYNC_DAY)
         )
     ).scalar_one_or_none()
     incentive_count = 1 if incentive_row is not None else 0
@@ -464,6 +470,8 @@ async def reset_match_history(
     await session.execute(delete(ApiSnapshot))
     if incentive_row is not None:
         await session.delete(incentive_row)
+    if full_sync_row is not None:
+        await session.delete(full_sync_row)
     await session.commit()
 
     removed_models = 0

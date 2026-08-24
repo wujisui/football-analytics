@@ -4,12 +4,16 @@ import { computed } from 'vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import PredictionResult from '@/views/Detail/components/PredictionResult.vue'
 import type { FixtureResponse } from '@/api/types'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, hasKickedOff } from '@/utils/format'
+import { useAuthSession } from '@/composables/useAuthSession'
 import { hasOddsMarkets, isDistinctCurrentOdds } from '@/utils/oddsDisplay'
 
 const props = defineProps<{
   fixture: FixtureResponse
+  oddsRefreshing?: boolean
 }>()
+const emit = defineEmits<{ 'refresh-odds': [] }>()
+const { isAdmin } = useAuthSession()
 
 const oddsCurrent = computed(() => props.fixture.analysis.package?.odds ?? null)
 const oddsOpening = computed(() => props.fixture.analysis.package?.odds_opening ?? null)
@@ -29,6 +33,12 @@ const showAnyBoard = computed(() => showCurrent.value || showOpening.value)
 const isFinished = computed(
   () => (props.fixture.status ?? '').toLowerCase() === 'finished',
 )
+const canRefreshOdds = computed(
+  () =>
+    isAdmin.value
+    && (props.fixture.status ?? '').toLowerCase() === 'pending'
+    && !hasKickedOff(props.fixture.fixture_date),
+)
 </script>
 
 <template>
@@ -40,10 +50,22 @@ const isFinished = computed(
         title="即时盘"
         style="background: var(--fa-bg-elevated);"
       >
-        <template v-if="oddsCurrent?.captured_at" #header-extra>
-          <n-text depth="3" style="font-size: 12px;">
-            {{ formatDateTime(oddsCurrent.captured_at) }}
-          </n-text>
+        <template #header-extra>
+          <n-flex align="center" :size="8">
+            <n-text v-if="oddsCurrent?.captured_at" depth="3" style="font-size: 12px;">
+              {{ formatDateTime(oddsCurrent.captured_at) }}
+            </n-text>
+            <n-button
+              v-if="canRefreshOdds"
+              size="tiny"
+              secondary
+              type="primary"
+              :loading="oddsRefreshing"
+              @click="emit('refresh-odds')"
+            >
+              更新盘口
+            </n-button>
+          </n-flex>
         </template>
         <PreMatchOddsTable :odds="oddsCurrent" />
       </n-card>
@@ -54,14 +76,46 @@ const isFinished = computed(
         title="初盘"
         style="background: var(--fa-bg-elevated);"
       >
-        <template v-if="oddsOpening?.captured_at" #header-extra>
-          <n-text depth="3" style="font-size: 12px;">
-            {{ formatDateTime(oddsOpening.captured_at) }}
-          </n-text>
+        <template #header-extra>
+          <n-flex align="center" :size="8">
+            <n-text v-if="oddsOpening?.captured_at" depth="3" style="font-size: 12px;">
+              {{ formatDateTime(oddsOpening.captured_at) }}
+            </n-text>
+            <n-button
+              v-if="canRefreshOdds && !showCurrent"
+              size="tiny"
+              secondary
+              type="primary"
+              :loading="oddsRefreshing"
+              @click="emit('refresh-odds')"
+            >
+              更新盘口
+            </n-button>
+          </n-flex>
         </template>
         <PreMatchOddsTable :odds="oddsOpening" />
       </n-card>
     </template>
+
+    <n-card
+      v-else-if="canRefreshOdds"
+      size="small"
+      title="盘口"
+      style="background: var(--fa-bg-elevated);"
+    >
+      <template #header-extra>
+        <n-button
+          size="tiny"
+          secondary
+          type="primary"
+          :loading="oddsRefreshing"
+          @click="emit('refresh-odds')"
+        >
+          更新盘口
+        </n-button>
+      </template>
+      <n-empty description="暂无官方盘口，可手动更新本场" />
+    </n-card>
 
     <PredictionResult
       :fixture="fixture"

@@ -47,7 +47,7 @@ export const sectionMeta: Record<
   admin: {
     routeName: 'mine-admin',
     title: '管理员设置',
-    hint: '管理定时同步与数据获取开关',
+    hint: '订阅状态决定完整批次、盘口频率与详情获取范围',
     icon: SettingsOutline,
   },
   about: {

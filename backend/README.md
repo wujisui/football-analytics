@@ -105,7 +105,7 @@ python manage.py set-api-sports-key keyA,keyB
 | `HTTP_VERIFY_SSL`                 | 公司代理拦截 SSL 时设为 `false`                      |
 | `SCHEDULER_TIMEZONE`              | 调度器时区，默认 `Asia/Shanghai`                    |
 | `LOCAL_FIRST`                     | `true` 时优先读本地库/缓存，再打官方                      |
-| `ENABLE_FREE_QUOTA`               | `true`（默认）=每天 08:05 单次赛程 + 11:00 全量 + 22:00 盘口轻刷；管理员 UI 可覆盖 |
+| `ENABLE_FREE_QUOTA`               | 兼容旧部署的存储名：`true`（默认）=未订阅；管理员 UI 以「订阅」开关展示 |
 | `API_HISTORY_MODE`                | `free`（默认）=免费套餐日期/赛季夹紧；`full`=付费不限年份与赛程窗口 |
 
 > 官方 Key 只通过管理员配置写入数据库，不要写进前端或提交到 Git。
@@ -235,15 +235,14 @@ GET /api/v1/fixtures/today?league_id=39
 |------|------------------------|---------------------------------------|
 | GET  | `/admin/tasks`         | 调度器与任务状态                              |
 | POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"clean_old_data"|"train_model"}` |
-| GET  | `/admin/settings/scheduled-full-detail` | 读取「定时全量详情」开关（DB 覆盖优先，否则 env） |
-| PATCH | `/admin/settings/scheduled-full-detail` | 写入开关到 `app_settings`（body: `{"enabled": true\|false}`） |
-| GET  | `/admin/settings/free-quota` | 读取「免费配额模式」开关（默认 ON；只改同步整点） |
-| PATCH | `/admin/settings/free-quota` | 写入并立刻重排 cron；若从关→开且已过今日 11:00 则后台补跑一次同步 |
+| GET  | `/admin/settings/subscription` | 读取订阅、早间盘口、当天完整批次及官方剩余用量 |
+| PATCH | `/admin/settings/subscription` | 写入订阅状态并立刻重排 cron |
+| PATCH | `/admin/settings/subscription-early-odds` | 控制已订阅 04/06/08/10 盘口轻刷 |
 | GET  | `/admin/settings/api-sports-key` | 读取官方 Key 配置（数量 + 每枚末 4 位） |
 | PUT  | `/admin/settings/api-sports-key` | 管理员密码确认后写入；body `{"password","keys"}`，`keys` 可逗号分隔多枚；空字符串清除库覆盖改回 env |
 | POST | `/admin/reset-match-history` | 需**管理员账号登录** + body `{"password","apply"}`；`apply=true` 时物理清空 |
 
-前端「我的 → 管理员设置」可配置官方 Key、切换免费配额/详情预拉，并用登录密码一键清空比赛历史；「我的 → 热门联赛」勾选定时拉盘范围。密钥见 [docs/API_SPORTS_KEYS.md](../docs/API_SPORTS_KEYS.md)；清空见 [docs/RESET_MATCH_HISTORY.md](../docs/RESET_MATCH_HISTORY.md)。
+前端「我的 → 管理员设置」可配置官方 Key、切换订阅及早间盘口刷新，并用登录密码一键清空比赛历史；「我的 → 热门联赛」勾选定时拉盘范围。密钥见 [docs/API_SPORTS_KEYS.md](../docs/API_SPORTS_KEYS.md)；清空见 [docs/RESET_MATCH_HISTORY.md](../docs/RESET_MATCH_HISTORY.md)。
 
 ### 常用联赛 ID
 
@@ -264,12 +263,12 @@ API-Sports 没有跨国家统一可靠的“第几级联赛”字段，因此目
 
 | 任务                     | 触发规则      | 作用                                      |
 |------------------------|-----------|-----------------------------------------|
-| `free_quota_fixture_rollover` | 免费配额模式每天 **00:05 UTC / 北京时间 08:05** | 仅用 1 次全球 `fixtures?date=` 请求同步官方当天赛程，覆盖美洲北京时间早场；不拉盘口、积分榜、详情或未来日期 |
-| `scheduled_fixtures_sync` | 默认每天 **11:00** 全量 + **22:00** 盘口（免费配额模式）；关闭后恢复 00/06/11/16/19/22 | 免费模式 11:00 先回写昨天赛果并打标，再拉今天赛程与盘口；22:00 只刷新盘口并重算每日推荐；跳过积分榜、不拉未来比赛；关闭后才拉未来窗口与积分榜 |
+| `free_quota_fixture_rollover` | 未订阅每天 **00:05 UTC / 北京时间 08:05** | 仅用 1 次全球 `fixtures?date=` 请求同步官方当天赛程，覆盖美洲北京时间早场；不拉盘口、积分榜、详情或未来日期 |
+| `scheduled_fixtures_sync` | 11:00 每日唯一完整批次；其余为盘口轻刷 | 未订阅另跑 22:00；已订阅跑 11:55、00/02/14/16/18/20/22，04/06/08/10 可关闭。轻刷只处理今天未开赛热门盘口并重算日推 |
 | `clean_old_data`       | 每天 11:00 全量同步之后（管理员「立即同步」也会带上） | 物理删除「永远无法结算」（取消，或开赛超 1 天仍无比分的完场/延期/pending/live）与「完场且无赛前盘口」（含有预测但无盘口的无依据预测）的场次、空联赛行与孤立球队；**「完场且无赛前盘口」要等开赛超过 `RESULTS_BROWSABLE_DAYS`（7 天，对齐【赛程】日期条可选范围）才删**——后端漏跑期间的比赛日只能靠赛果回填，而回填走全球按日接口只带比分不带盘口，立刻删会让那几天在赛果页永久空白，且每次同步都重新拉一遍再删，白耗官方配额；超过 `CLEANUP_DAYS` 的赛前包只清详情 JSON，长期保留冻结推荐、概率、盘口与训练特征，并清理过期日志 |
 
 时区由 `SCHEDULER_TIMEZONE` 控制（默认 `Asia/Shanghai`）。  
-默认定时在 **08:05** 用 1 次请求只同步当天赛程，**11:00** 跑全量免费批次，**22:00** 盘口轻刷（管理员「打开免费配额」可关，恢复六个整点）。免费模式固定**先拉昨天赛果，再拉今天赛程/热门盘口，跳过积分榜与全部详情获取、不请求未来比赛**；08:05 不拉盘口，22:00 只刷新今天热门联赛盘口并重算每日推荐。赛果列表与筛选按持久化的场地当地 `match_day` 查询，不会把美洲同一比赛日拆到两个 UTC 日期。详情点击完全只读本地，缺盘口也不按点击补拉；定时详情开关即使已开启也暂停。关闭免费配额后，热门联赛详情才恢复全量按需补拉并落库。列表 / F5 / 筛选始终只读本地；无公开 sync、无 SSE、无轮询。
+未订阅固定 **08:05** 当天赛程、**11:00** 完整批次、**22:00** 盘口轻刷，跳过积分榜与详情预拉、不请求未来。已订阅的 11:00 完整批次回写近 4 天赛果，赛程保留 8 天但只拉缺失的未来日期（正常每天新增末端一天），盘口与详情只处理今天、明天；明天首次盘口冻结初盘，成为今天后刷新即时盘。当天完整批次成功后「立即同步」禁用。详情页管理员可显式更新单场未开赛热门盘口。列表 / F5 / 筛选始终只读本地；无公开列表 sync、无 SSE、无轮询。
 手动：`python manage.py trigger-task --name scheduled_fixtures_sync`。
 
 ## 前端对接提示

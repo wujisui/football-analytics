@@ -22,6 +22,15 @@ export async function fetchTodayFixtures(options?: {
   return data
 }
 
+export async function refreshFixtureOdds(fixtureId: number): Promise<{
+  fixture_id: number
+  updated: boolean
+  api_remaining: number | null
+}> {
+  const { data } = await apiClient.post(`/fixtures/${fixtureId}/odds/refresh`)
+  return data
+}
+
 export interface FixtureScoreItem {
   fixture_id: number
   status: string

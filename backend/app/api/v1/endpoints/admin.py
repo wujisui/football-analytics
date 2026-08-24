@@ -10,25 +10,26 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.services import auth as auth_service
 from app.services.data_cleanup import reset_match_history
+from app.services.cache import get_cache_service
 from app.services.league_names import league_name_zh
 from app.services.runtime_settings import (
     default_hot_league_ids,
     get_api_sports_keys_setting,
-    get_enable_free_quota,
-    get_enable_scheduled_full_detail,
     get_hot_league_ids,
+    get_subscription_early_odds,
+    get_subscription_enabled,
     set_api_sports_keys_setting,
-    set_enable_free_quota,
-    set_enable_scheduled_full_detail,
     set_hot_league_ids,
+    set_subscription_early_odds,
+    set_subscription_enabled,
 )
 from app.tasks.scheduler import (
-    SYNC_HOURS_FREE_QUOTA,
-    SYNC_HOURS_FULL,
-    free_quota_catch_up_due,
+    SUBSCRIBED_EARLY_ODDS_HOURS,
+    SUBSCRIBED_ODDS_HOURS,
+    UNSUBSCRIBED_ODDS_HOURS,
+    full_sync_completed_today,
     get_task_status,
     refresh_fixture_sync_jobs,
-    run_scheduled_fixtures_sync,
     trigger_task,
 )
 
@@ -42,31 +43,20 @@ class TriggerTaskRequest(BaseModel):
     )
 
 
-class ScheduledFullDetailSetting(BaseModel):
-    enabled: bool
+class SubscriptionSetting(BaseModel):
+    subscribed: bool
     source: str = Field(description="db = 管理员已覆盖；env = 使用环境变量默认值")
-    budget: int = Field(
-        description="每个定时批次最多预拉的缺包场次数（SCHEDULED_FULL_DETAIL_BUDGET）"
-    )
+    early_odds_enabled: bool
+    sync_times: list[str]
+    full_sync_completed_today: bool
+    api_remaining: int | None = None
 
 
-class ScheduledFullDetailUpdate(BaseModel):
-    enabled: bool
+class SubscriptionUpdate(BaseModel):
+    subscribed: bool
 
 
-class FreeQuotaSetting(BaseModel):
-    enabled: bool
-    source: str = Field(description="db = 管理员已覆盖；env = 使用环境变量默认值")
-    sync_hours: list[int] = Field(
-        description="当前生效的定时同步整点（SCHEDULER_TIMEZONE）"
-    )
-    catch_up_started: bool = Field(
-        default=False,
-        description="本次开启且已过今日 11:00 时，是否已后台补跑一次同步",
-    )
-
-
-class FreeQuotaUpdate(BaseModel):
+class SubscriptionEarlyOddsUpdate(BaseModel):
     enabled: bool
 
 
@@ -124,26 +114,31 @@ class ResetMatchHistoryResponse(BaseModel):
     kept: list[str]
 
 
-def _full_detail_payload(enabled: bool, source: str) -> ScheduledFullDetailSetting:
-    return ScheduledFullDetailSetting(
-        enabled=enabled,
-        source=source,
-        budget=max(0, int(get_settings().SCHEDULED_FULL_DETAIL_BUDGET)),
-    )
-
-
-def _free_quota_payload(
-    enabled: bool,
+async def _subscription_payload(
+    subscribed: bool,
     source: str,
-    *,
-    catch_up_started: bool = False,
-) -> FreeQuotaSetting:
-    hours = list(SYNC_HOURS_FREE_QUOTA if enabled else SYNC_HOURS_FULL)
-    return FreeQuotaSetting(
-        enabled=enabled,
+) -> SubscriptionSetting:
+    early_odds, _ = await get_subscription_early_odds()
+    if subscribed:
+        times = ["11:00", "11:55"] + [
+            f"{hour:02d}:00"
+            for hour in (
+                SUBSCRIBED_ODDS_HOURS
+                + (SUBSCRIBED_EARLY_ODDS_HOURS if early_odds else ())
+            )
+        ]
+    else:
+        times = ["08:05", "11:00"] + [
+            f"{hour:02d}:00" for hour in UNSUBSCRIBED_ODDS_HOURS
+        ]
+    remaining = get_cache_service().last_api_remaining
+    return SubscriptionSetting(
+        subscribed=subscribed,
         source=source,
-        sync_hours=hours,
-        catch_up_started=catch_up_started,
+        early_odds_enabled=early_odds,
+        sync_times=times,
+        full_sync_completed_today=await full_sync_completed_today(),
+        api_remaining=remaining,
     )
 
 
@@ -163,69 +158,69 @@ async def trigger_task_endpoint(
     body: TriggerTaskRequest,
     _: None = Depends(require_admin),
 ) -> dict:
+    if (
+        body.name == "scheduled_fixtures_sync"
+        and await full_sync_completed_today()
+    ):
+        raise HTTPException(status_code=409, detail="今日完整批次已完成，无需重复同步")
+    if (
+        get_task_status()
+        .get("active_tasks", {})
+        .get(body.name, {})
+        .get("status")
+        == "running"
+    ):
+        raise HTTPException(status_code=409, detail="任务正在执行，请勿重复触发")
+    if body.name not in {
+        "scheduled_fixtures_sync",
+        "clean_old_data",
+        "train_model",
+        "daily_auto_favorites",
+    }:
+        raise HTTPException(status_code=400, detail=f"Unknown task: {body.name}")
     try:
-        await trigger_task(body.name)
+        asyncio.create_task(trigger_task(body.name))
+        await asyncio.sleep(0)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {
-        "status": "ok",
-        "message": f"Task '{body.name}' triggered successfully.",
+        "status": "accepted",
+        "message": f"Task '{body.name}' started.",
         "task_status": get_task_status(),
     }
 
 
-@router.get(
-    "/settings/scheduled-full-detail",
-    response_model=ScheduledFullDetailSetting,
-)
-async def get_scheduled_full_detail_setting(
+@router.get("/settings/subscription", response_model=SubscriptionSetting)
+async def get_subscription_setting(
     _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
-) -> ScheduledFullDetailSetting:
-    enabled, source = await get_enable_scheduled_full_detail(db)
-    return _full_detail_payload(enabled, source)
+) -> SubscriptionSetting:
+    subscribed, source = await get_subscription_enabled(db)
+    return await _subscription_payload(subscribed, source)
 
 
-@router.patch(
-    "/settings/scheduled-full-detail",
-    response_model=ScheduledFullDetailSetting,
-)
-async def patch_scheduled_full_detail_setting(
-    body: ScheduledFullDetailUpdate,
+@router.patch("/settings/subscription", response_model=SubscriptionSetting)
+async def patch_subscription_setting(
+    body: SubscriptionUpdate,
     _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
-) -> ScheduledFullDetailSetting:
-    enabled = await set_enable_scheduled_full_detail(db, body.enabled)
-    return _full_detail_payload(enabled, "db")
-
-
-@router.get("/settings/free-quota", response_model=FreeQuotaSetting)
-async def get_free_quota_setting(
-    _: None = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-) -> FreeQuotaSetting:
-    enabled, source = await get_enable_free_quota(db)
-    return _free_quota_payload(enabled, source)
-
-
-@router.patch("/settings/free-quota", response_model=FreeQuotaSetting)
-async def patch_free_quota_setting(
-    body: FreeQuotaUpdate,
-    _: None = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-) -> FreeQuotaSetting:
-    previous, _ = await get_enable_free_quota(db)
-    enabled = await set_enable_free_quota(db, body.enabled)
+) -> SubscriptionSetting:
+    subscribed = await set_subscription_enabled(db, body.subscribed)
     await refresh_fixture_sync_jobs()
+    return await _subscription_payload(subscribed, "db")
 
-    catch_up_started = False
-    # Newly enabled after today's 11:00 slot → run one sync now; skip 16/19/22.
-    if enabled and not previous and free_quota_catch_up_due():
-        catch_up_started = True
-        asyncio.create_task(run_scheduled_fixtures_sync())
 
-    return _free_quota_payload(enabled, "db", catch_up_started=catch_up_started)
+@router.patch("/settings/subscription-early-odds", response_model=SubscriptionSetting)
+async def patch_subscription_early_odds_setting(
+    body: SubscriptionEarlyOddsUpdate,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> SubscriptionSetting:
+    await set_subscription_early_odds(db, body.enabled)
+    subscribed, source = await get_subscription_enabled(db)
+    await refresh_fixture_sync_jobs()
+    return await _subscription_payload(subscribed, source)
 
 
 def _hot_leagues_payload(

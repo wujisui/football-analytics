@@ -96,16 +96,8 @@ class Settings(BaseSettings):
     )
     # Prefer local DB / cache before calling API-Sports (saves quota).
     LOCAL_FIRST: bool = True
-    # Future / paid scale default (env). Runtime override via Mine admin UI
-    # persists in app_settings; scheduled batches read the effective value.
-    ENABLE_SCHEDULED_FULL_DETAIL: bool = False
-    # Max incomplete catalog prematch fixtures to enrich per scheduled batch
-    # when the flag is on. Each fixture may cost several official API calls.
-    SCHEDULED_FULL_DETAIL_BUDGET: int = 10
-    # Free-quota mode (env default ON). Runtime override via Mine admin UI.
-    # When ON: 11:00 full free batch + 22:00 odds-light refresh.
-    # When on, sync runs only at 11:00 and official fixture calls are limited
-    # to yesterday's results plus today's schedule/odds (no future dates).
+    # Legacy storage/env name. Product-facing meaning is the inverse「订阅」switch:
+    # True = 未订阅; False = 已订阅 (at least Pro / 7500 daily calls).
     ENABLE_FREE_QUOTA: bool = True
     # History window for H2H / team form / free-plan date+season clamps:
     # - full: paid plan — no artificial 2022–2024 / ±2-day fixture clip

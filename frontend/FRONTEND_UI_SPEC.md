@@ -256,7 +256,7 @@ frontend/src/
 
 ## 7.1 登录 / VIP / 配额（规划，未落地）
 
-当前登录为前端 stub。后续用户档位与账号权益以根目录 **[docs/AUTH_VIP_QUOTA.md](../docs/AUTH_VIP_QUOTA.md)** 为准；列表不提供「手动刷官方」入口，详情补拉由后端按需完成。运维：`/mine/admin` 可在本机保存 `ADMIN_API_KEY` 后开关「定时全量获取详情」（写入后端 `app_settings`）。
+后续用户档位与账号权益以根目录 **[docs/AUTH_VIP_QUOTA.md](../docs/AUTH_VIP_QUOTA.md)** 为准；列表不提供「手动刷官方」入口。运维：`/mine/admin` 由订阅状态统一控制完整批次与详情预拉，并可配置早间盘口刷新；管理员可在详情「我的预测」显式更新单场未开赛热门盘口。
 
 ---
 

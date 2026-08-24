@@ -15,8 +15,9 @@ from app.models.app_setting import AppSetting
 
 logger = logging.getLogger(__name__)
 
-KEY_ENABLE_SCHEDULED_FULL_DETAIL = "enable_scheduled_full_detail"
 KEY_ENABLE_FREE_QUOTA = "enable_free_quota"
+KEY_SUBSCRIPTION_EARLY_ODDS = "subscription_early_odds"
+KEY_LAST_FULL_SYNC_DAY = "last_full_sync_day"
 KEY_API_SPORTS_KEY = "api_sports_key"
 KEY_HOT_LEAGUE_IDS = "hot_league_ids"
 
@@ -157,24 +158,6 @@ async def _set_bool_setting(session: AsyncSession, key: str, enabled: bool) -> b
     return enabled
 
 
-async def get_enable_scheduled_full_detail(
-    session: AsyncSession | None = None,
-) -> tuple[bool, SettingSource]:
-    """Effective flag: DB row if present, else env ``ENABLE_SCHEDULED_FULL_DETAIL``."""
-    return await _get_bool_setting(
-        KEY_ENABLE_SCHEDULED_FULL_DETAIL,
-        bool(get_settings().ENABLE_SCHEDULED_FULL_DETAIL),
-        session,
-    )
-
-
-async def set_enable_scheduled_full_detail(
-    session: AsyncSession,
-    enabled: bool,
-) -> bool:
-    return await _set_bool_setting(session, KEY_ENABLE_SCHEDULED_FULL_DETAIL, enabled)
-
-
 def cached_enable_free_quota() -> bool:
     """Sync view of the free-quota flag; env default until hydrated."""
     if _runtime_free_quota is not None:
@@ -203,6 +186,61 @@ async def get_enable_free_quota(
 async def set_enable_free_quota(session: AsyncSession, enabled: bool) -> bool:
     value = await _set_bool_setting(session, KEY_ENABLE_FREE_QUOTA, enabled)
     set_cached_enable_free_quota(value)
+    return value
+
+
+async def get_subscription_enabled(
+    session: AsyncSession | None = None,
+) -> tuple[bool, SettingSource]:
+    """Subscription is the product-facing inverse of the legacy free-quota flag."""
+    free_quota, source = await get_enable_free_quota(session)
+    return not free_quota, source
+
+
+async def set_subscription_enabled(
+    session: AsyncSession,
+    subscribed: bool,
+) -> bool:
+    await set_enable_free_quota(session, not subscribed)
+    return bool(subscribed)
+
+
+async def get_subscription_early_odds(
+    session: AsyncSession | None = None,
+) -> tuple[bool, SettingSource]:
+    """Whether subscribed 04/06/08/10 light odds jobs run; defaults on."""
+    return await _get_bool_setting(KEY_SUBSCRIPTION_EARLY_ODDS, True, session)
+
+
+async def set_subscription_early_odds(
+    session: AsyncSession,
+    enabled: bool,
+) -> bool:
+    return await _set_bool_setting(session, KEY_SUBSCRIPTION_EARLY_ODDS, enabled)
+
+
+async def get_last_full_sync_day(
+    session: AsyncSession | None = None,
+) -> str | None:
+    async def _read(db: AsyncSession) -> str | None:
+        row = await get_setting_row(db, KEY_LAST_FULL_SYNC_DAY)
+        value = (row.value if row else "").strip()
+        return value or None
+
+    if session is not None:
+        return await _read(session)
+    async with AsyncSessionLocal() as db:
+        return await _read(db)
+
+
+async def set_last_full_sync_day(session: AsyncSession, day: str) -> str:
+    row = await get_setting_row(session, KEY_LAST_FULL_SYNC_DAY)
+    value = str(day).strip()
+    if row is None:
+        session.add(AppSetting(key=KEY_LAST_FULL_SYNC_DAY, value=value))
+    else:
+        row.value = value
+    await session.commit()
     return value
 
 

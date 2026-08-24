@@ -1,10 +1,8 @@
 """Optional scheduled prematch display-package enrich (admin toggle).
 
-Default off. When enabled, each ``scheduled_fixtures_sync`` batch fills missing
-detail packages for hot-league prematch fixtures via the same
-``AnalyzerService.analyze_fixture`` path used by detail clicks — then stops on
-quota exhaustion. Timed batches keep ``SCHEDULED_FULL_DETAIL_BUDGET``; admin
-「立即同步」has no per-batch cap.
+Subscribed full batches fill missing detail packages for today/tomorrow
+hot-league prematch fixtures via the same ``AnalyzerService.analyze_fixture``
+path used by detail clicks, then stop on quota exhaustion.
 """
 
 from __future__ import annotations
@@ -96,54 +94,23 @@ async def list_prematch_fixtures_needing_package(
     return needed
 
 
-UNLIMITED_DETAIL_BUDGET = -1
-
-
-def resolve_detail_enrich_limit(
-    budget: int | None,
-    env_budget: int,
-) -> int | None:
-    """None → env cap; negative → unlimited; otherwise the explicit cap."""
-    if budget is None:
-        return max(0, int(env_budget))
-    if int(budget) < 0:
-        return None
-    return int(budget)
-
-
 async def run_scheduled_full_detail_enrich(
     *,
-    budget: int | None = None,
     now: datetime | None = None,
     before: datetime | None = None,
 ) -> dict[str, Any]:
-    """Enrich incomplete catalog prematch packages.
-
-    ``budget`` None uses ``SCHEDULED_FULL_DETAIL_BUDGET``. ``-1`` means no
-    per-batch cap (admin「立即同步」); still stops when official quota is gone.
-
-    Returns counts for logging / admin diagnostics. Never raises for per-fixture
-    failures.
-    """
-    settings = get_settings()
-    limit = resolve_detail_enrich_limit(
-        budget,
-        int(settings.SCHEDULED_FULL_DETAIL_BUDGET),
-    )
+    """Enrich subscribed today/tomorrow packages until quota is exhausted."""
     stats: dict[str, Any] = {
         "candidates": 0,
         "enriched": 0,
         "failed": 0,
         "skipped_quota": 0,
-        "budget": limit,
-        "unlimited": limit is None,
+        "unlimited": True,
     }
-    if limit is not None and limit <= 0:
-        return stats
 
     async with AsyncSessionLocal() as session:
         ids = await list_prematch_fixtures_needing_package(
-            session, now=now, before=before, limit=limit
+            session, now=now, before=before, limit=None
         )
         stats["candidates"] = len(ids)
         if not ids:
@@ -182,11 +149,10 @@ async def run_scheduled_full_detail_enrich(
 
     logger.info(
         "scheduled full detail done candidates=%s enriched=%s failed=%s "
-        "skipped_quota=%s budget=%s",
+        "skipped_quota=%s",
         stats["candidates"],
         stats["enriched"],
         stats["failed"],
         stats["skipped_quota"],
-        stats["budget"],
     )
     return stats

@@ -13,9 +13,7 @@ FREE_FIXTURES_LOOKBACK_DAYS = 2
 FREE_FIXTURES_LOOKAHEAD_DAYS = 0
 # Free /standings rejects current domestic seasons; clamp to this year.
 FREE_STANDINGS_MAX_SEASON = 2024
-# Free-quota evening cron (must match scheduler.SYNC_HOURS_FREE_QUOTA).
-FREE_QUOTA_EVENING_HOUR = 22
-# Cap evening odds refresh so morning + evening stay inside a ~100-call free day.
+# Cap unsubscribed 22:00 odds refresh so the day stays near the free allowance.
 FREE_QUOTA_EVENING_ODDS_BUDGET = 40
 
 

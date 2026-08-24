@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useMessage } from 'naive-ui'
 
 import BasicInfo from '@/views/Detail/components/BasicInfo.vue'
 import TabsContainer from '@/views/Detail/components/TabsContainer.vue'
 import { useFixtureAnalysis } from '@/views/Detail/composables/useFixtureAnalysis'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { parseDetailTab, peekDetailCrumb, type DetailTab } from '@/utils/detailNav'
+import { refreshFixtureOdds } from '@/api/fixtures'
 
 const props = defineProps<{
   fixtureId: string
@@ -14,6 +16,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
+const message = useMessage()
 const isPhone = useIsPhone()
 const contentStyle = computed(
   () =>
@@ -26,6 +29,29 @@ const fixtureIdNumber = computed(() => Number(props.fixtureId))
 const { data, loading, error, ensureLoaded, reload, reset } =
   useFixtureAnalysis(fixtureIdNumber)
 const contentLoading = computed(() => loading.value || !data.value)
+const oddsRefreshing = ref(false)
+
+async function onRefreshOdds() {
+  if (oddsRefreshing.value) return
+  oddsRefreshing.value = true
+  try {
+    const result = await refreshFixtureOdds(fixtureIdNumber.value)
+    if (!result.updated) {
+      message.info('官方暂未开放本场盘口')
+      return
+    }
+    await reload()
+    message.success(
+      result.api_remaining == null
+        ? '本场盘口已更新'
+        : `本场盘口已更新，官方剩余 ${result.api_remaining} 次`,
+    )
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : '更新盘口失败')
+  } finally {
+    oddsRefreshing.value = false
+  }
+}
 
 /** Breadcrumb is list-known chrome — never wait on /analysis skeleton. */
 const crumbFixture = computed(
@@ -73,9 +99,11 @@ watch(
           :fixture="data"
           :pkg="data?.analysis.package ?? null"
           :loading="contentLoading"
+          :odds-refreshing="oddsRefreshing"
           :error="error"
           :initial-tab="initialTab"
           @retry="reload"
+          @refresh-odds="onRefreshOdds"
           @tab-change="onTabChange"
         />
       </div>

@@ -18,6 +18,7 @@ const props = defineProps<{
   fixture: FixtureResponse | null
   pkg: PrematchPackage | null
   loading?: boolean
+  oddsRefreshing?: boolean
   error?: string
   /** Deep-link from route query `tab`. */
   initialTab?: TabKey | null
@@ -25,6 +26,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   retry: []
+  'refresh-odds': []
   'tab-change': [tab: TabKey]
 }>()
 
@@ -167,6 +169,8 @@ watch(
                   <PredictionTab
                     v-else-if="tab.name === 'prediction'"
                     :fixture="fixture"
+                    :odds-refreshing="oddsRefreshing"
+                    @refresh-odds="emit('refresh-odds')"
                   />
                 </template>
               </div>
