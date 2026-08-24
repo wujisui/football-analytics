@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { TrophyOutline } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
 import { computed, onMounted, ref } from 'vue'
 
@@ -8,12 +7,12 @@ import {
   updateHotLeaguesSetting,
   type HotLeagueItem,
 } from '@/api/admin'
-import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 
 defineOptions({ name: 'MineHotLeagues' })
 
 const message = useMessage()
 const loading = ref(false)
+const reloading = ref(false)
 const saving = ref(false)
 const leagues = ref<HotLeagueItem[]>([])
 const selectedIds = ref<number[]>([])
@@ -73,6 +72,7 @@ const LEAGUE_GROUP: Record<number, Exclude<LeagueGroup, '其他'>> = {
 }
 
 const selectedCount = computed(() => selectedIds.value.length)
+const busy = computed(() => loading.value || reloading.value || saving.value)
 
 const leagueGroups = computed(() => {
   const buckets = new Map<LeagueGroup, HotLeagueItem[]>()
@@ -108,8 +108,41 @@ async function loadSetting() {
   }
 }
 
+async function restoreLastSaved() {
+  reloading.value = true
+  try {
+    applySetting(await fetchHotLeaguesSetting())
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : '读取热门联赛失败')
+  } finally {
+    reloading.value = false
+  }
+}
+
 function restoreDefault() {
   selectedIds.value = [...defaultIds.value]
+}
+
+const allSelected = computed(
+  () => leagues.value.length > 0 && selectedCount.value === leagues.value.length,
+)
+const toggleSelectLabel = computed(() => (allSelected.value ? '反选' : '全选'))
+const toggleSelectType = computed(() => (allSelected.value ? 'warning' : 'info'))
+
+function toggleSelect() {
+  if (allSelected.value) invertSelection()
+  else selectAll()
+}
+
+function selectAll() {
+  selectedIds.value = leagues.value.map((item) => item.league_id)
+}
+
+function invertSelection() {
+  const selected = new Set(selectedIds.value.map(Number))
+  selectedIds.value = leagues.value
+    .map((item) => item.league_id)
+    .filter((id) => !selected.has(id))
 }
 
 async function save() {
@@ -134,74 +167,137 @@ onMounted(() => {
 </script>
 
 <template>
-  <MineSectionBody>
-    <n-flex vertical :size="12">
-      <n-card size="small" title="热门联赛" :bordered="false">
-        <n-list>
-          <n-list-item>
-            <template #prefix>
-              <n-icon :component="TrophyOutline" :size="20" />
-            </template>
-            <n-thing
-              title="定时拉盘范围"
-              :description="
-                loading
-                  ? '加载中…'
-                  : `已勾选 ${selectedCount} 项。勾选进侧栏「热门」并定时拉盘；未勾选进「其他」，只入库赛程。`
-              "
+  <div class="hot-leagues-panel">
+    <n-card
+      size="small"
+      :bordered="false"
+      class="hot-leagues-card"
+      content-style="padding: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;"
+    >
+      <template #header>
+        <n-flex :size="8" align="baseline">
+          <span>拉盘联赛</span>
+          <n-text depth="3" class="hot-league-total">
+            {{ selectedCount }}/{{ leagues.length }}
+          </n-text>
+        </n-flex>
+      </template>
+      <template #header-extra>
+        <n-flex :size="8" :wrap="true">
+          <n-button
+            size="small"
+            secondary
+            :type="toggleSelectType"
+            :disabled="busy || !leagues.length"
+            @click="toggleSelect"
+          >
+            {{ toggleSelectLabel }}
+          </n-button>
+          <n-button
+            size="small"
+            secondary
+            type="success"
+            :disabled="busy || !leagues.length"
+            :loading="reloading"
+            @click="restoreLastSaved"
+          >
+            恢复
+          </n-button>
+          <n-button size="small" tertiary :disabled="busy" @click="restoreDefault">
+            默认
+          </n-button>
+          <n-button
+            size="small"
+            type="primary"
+            :disabled="loading || reloading"
+            :loading="saving"
+            @click="save"
+          >
+            保存
+          </n-button>
+        </n-flex>
+      </template>
+      <n-spin :show="loading" class="hot-league-spin">
+        <n-scrollbar class="hot-league-scroll" trigger="hover">
+          <div class="hot-league-scroll-inner">
+            <n-checkbox-group v-model:value="selectedIds">
+              <div class="hot-league-groups">
+                <section v-for="group in leagueGroups" :key="group.title" class="hot-league-group">
+                  <h3 class="hot-league-group-title">
+                    {{ group.title }}
+                    <span class="hot-league-group-count">{{ group.selected }}/{{ group.items.length }}</span>
+                  </h3>
+                  <div class="hot-league-grid">
+                    <n-checkbox
+                      v-for="item in group.items"
+                      :key="item.league_id"
+                      :value="item.league_id"
+                      :label="item.league_name"
+                      size="large"
+                    />
+                  </div>
+                </section>
+              </div>
+            </n-checkbox-group>
+            <n-empty
+              v-if="!loading && !leagues.length"
+              description="目录为空"
+              style="padding: 16px 0;"
             />
-          </n-list-item>
-        </n-list>
-      </n-card>
-
-      <n-card size="small" title="拉盘联赛" :bordered="false">
-        <template #header-extra>
-          <n-flex :size="8">
-            <n-button size="small" secondary :disabled="loading || saving" @click="restoreDefault">
-              恢复默认
-            </n-button>
-            <n-button
-              size="small"
-              type="primary"
-              :disabled="loading"
-              :loading="saving"
-              @click="save"
-            >
-              保存
-            </n-button>
-          </n-flex>
-        </template>
-        <n-spin :show="loading">
-          <n-checkbox-group v-model:value="selectedIds">
-            <div class="hot-league-groups">
-              <section v-for="group in leagueGroups" :key="group.title" class="hot-league-group">
-                <h3 class="hot-league-group-title">
-                  {{ group.title }}
-                  <span class="hot-league-group-count">{{ group.selected }}/{{ group.items.length }}</span>
-                </h3>
-                <div class="hot-league-grid">
-                  <n-checkbox
-                    v-for="item in group.items"
-                    :key="item.league_id"
-                    :value="item.league_id"
-                    :label="item.league_name"
-                  />
-                </div>
-              </section>
-            </div>
-          </n-checkbox-group>
-          <n-empty
-            v-if="!loading && !leagues.length"
-            description="目录为空"
-            style="padding: 16px 0;"
-          />
-        </n-spin>
-      </n-card>
-    </n-flex>
-  </MineSectionBody>
+          </div>
+        </n-scrollbar>
+      </n-spin>
+    </n-card>
+  </div>
 </template>
 
 <style scoped>
+/* 卡片填满 mine-outlet 槽位；表头常驻，溢出只在卡片内容区滚动 */
+.hot-leagues-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: var(--fa-content-block-start) var(--fa-content-inline)
+    var(--fa-content-block-end);
+  box-sizing: border-box;
+}
+
+.hot-leagues-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.hot-leagues-card :deep(.n-card-header) {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hot-league-spin {
+  flex: 1;
+  min-height: 0;
+}
+
+.hot-league-spin :deep(.n-spin-content) {
+  height: 100%;
+}
+
+.hot-league-scroll {
+  height: 100%;
+}
+
+.hot-league-scroll-inner {
+  padding: 4px 12px 12px;
+}
+
+.hot-league-total {
+  font-size: 13px;
+  font-weight: 400;
+}
+
 .hot-league-groups {
   display: flex;
   flex-direction: column;
@@ -210,8 +306,8 @@ onMounted(() => {
 
 .hot-league-group-title {
   margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   opacity: 0.85;
 }
 

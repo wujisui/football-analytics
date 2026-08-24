@@ -41,7 +41,7 @@ export const sectionMeta: Record<
   hotLeagues: {
     routeName: 'mine-hot-leagues',
     title: '热门联赛',
-    hint: '勾选定时任务拉取赛前盘口的联赛，未勾选进侧栏「其他」',
+    hint: '勾选进侧栏「热门」并定时拉赛前盘口；未勾选进「其他」，只入库赛程',
     icon: TrophyOutline,
   },
   admin: {
