@@ -355,7 +355,7 @@
 | 项 | 首版 | 样本多后 |
 |----|------|----------|
 | 算法 | **二元 Logistic**（与 1X2 softmax 并列） | 可选 GBDT + Platt 校准 |
-| artifact | `data/models/ah_v1_weights.npz` + `ah_v1_meta.json` | 文件名沿用；`meta.ah_feature_version` 现为 `ah_v2`，不匹配则忽略旧权重 |
+| artifact | `data/models/ah_v2_weights.npz` + `ah_v2_meta.json` | 由 `ah_v1` 升级；旧 v1 文件不再加载 |
 | 阈值 | `ML_AH_MIN_TRAIN_SAMPLES` 默认 **80**（二分类，且需覆盖多档盘口） | 可调 |
 | 切训条件 | `ML_AH_AUTO_TRAIN=true` 且 labeled 行数 ≥ 阈值且较上次训练有新增 | 同 1X2 |
 | 验证 | **按日期 hold-out**（禁止随机打乱同联赛同日） | 分 league_tier、分 line tier 报准确率 / Brier |

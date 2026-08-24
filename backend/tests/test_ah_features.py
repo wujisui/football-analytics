@@ -289,8 +289,8 @@ class AhModelLoadTests(unittest.TestCase):
     def test_load_rejects_feature_version_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            weights = root / "ah_v1_weights.npz"
-            meta = root / "ah_v1_meta.json"
+            weights = root / "ah_v2_weights.npz"
+            meta = root / "ah_v2_meta.json"
             model = _BinaryLogReg(4)
             model.save(weights)
             meta.write_text(
@@ -305,8 +305,8 @@ class AhModelLoadTests(unittest.TestCase):
     def test_load_accepts_matching_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            weights = root / "ah_v1_weights.npz"
-            meta = root / "ah_v1_meta.json"
+            weights = root / "ah_v2_weights.npz"
+            meta = root / "ah_v2_meta.json"
             n = 6
             model = _BinaryLogReg(n)
             model.save(weights)
