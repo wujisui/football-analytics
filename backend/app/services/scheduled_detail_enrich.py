@@ -3,7 +3,8 @@
 Default off. When enabled, each ``scheduled_fixtures_sync`` batch fills missing
 detail packages for hot-league prematch fixtures via the same
 ``AnalyzerService.analyze_fixture`` path used by detail clicks — then stops on
-quota exhaustion or the per-batch budget.
+quota exhaustion. Timed batches keep ``SCHEDULED_FULL_DETAIL_BUDGET``; admin
+「立即同步」has no per-batch cap.
 """
 
 from __future__ import annotations
@@ -56,11 +57,11 @@ async def list_prematch_fixtures_needing_package(
     *,
     now: datetime | None = None,
     before: datetime | None = None,
-    limit: int,
+    limit: int | None,
 ) -> list[int]:
     """Hot-league prematch fixtures whose stored display package is incomplete."""
     hot_ids, _ = await get_hot_league_ids(session)
-    if not hot_ids or limit <= 0:
+    if not hot_ids or (limit is not None and limit <= 0):
         return []
 
     current = now or datetime.utcnow()
@@ -90,9 +91,24 @@ async def list_prematch_fixtures_needing_package(
             standings_overlay=None,
         ):
             needed.append(int(fixture.id))
-            if len(needed) >= limit:
+            if limit is not None and len(needed) >= limit:
                 break
     return needed
+
+
+UNLIMITED_DETAIL_BUDGET = -1
+
+
+def resolve_detail_enrich_limit(
+    budget: int | None,
+    env_budget: int,
+) -> int | None:
+    """None → env cap; negative → unlimited; otherwise the explicit cap."""
+    if budget is None:
+        return max(0, int(env_budget))
+    if int(budget) < 0:
+        return None
+    return int(budget)
 
 
 async def run_scheduled_full_detail_enrich(
@@ -101,16 +117,18 @@ async def run_scheduled_full_detail_enrich(
     now: datetime | None = None,
     before: datetime | None = None,
 ) -> dict[str, Any]:
-    """Enrich up to ``budget`` incomplete catalog prematch packages.
+    """Enrich incomplete catalog prematch packages.
+
+    ``budget`` None uses ``SCHEDULED_FULL_DETAIL_BUDGET``. ``-1`` means no
+    per-batch cap (admin「立即同步」); still stops when official quota is gone.
 
     Returns counts for logging / admin diagnostics. Never raises for per-fixture
-    failures; stops early when official quota looks exhausted.
+    failures.
     """
     settings = get_settings()
-    limit = (
-        budget
-        if budget is not None
-        else max(0, int(settings.SCHEDULED_FULL_DETAIL_BUDGET))
+    limit = resolve_detail_enrich_limit(
+        budget,
+        int(settings.SCHEDULED_FULL_DETAIL_BUDGET),
     )
     stats: dict[str, Any] = {
         "candidates": 0,
@@ -118,8 +136,9 @@ async def run_scheduled_full_detail_enrich(
         "failed": 0,
         "skipped_quota": 0,
         "budget": limit,
+        "unlimited": limit is None,
     }
-    if limit <= 0:
+    if limit is not None and limit <= 0:
         return stats
 
     async with AsyncSessionLocal() as session:

@@ -59,3 +59,23 @@ def test_standings_season_full_keeps_current() -> None:
     with patch("app.services.league_standings.get_settings") as gs:
         gs.return_value.uses_full_history = True
         assert standings_season_for_league("2026") == "2026"
+
+
+def test_uses_full_history_when_free_quota_turned_off() -> None:
+    from app.core.config import Settings
+    from app.services.runtime_settings import set_cached_enable_free_quota
+
+    settings = Settings.model_construct(API_HISTORY_MODE="free")
+    set_cached_enable_free_quota(False)
+    assert settings.uses_full_history is True
+    set_cached_enable_free_quota(True)
+    assert settings.uses_full_history is False
+
+
+def test_uses_full_history_env_full_ignores_free_quota() -> None:
+    from app.core.config import Settings
+    from app.services.runtime_settings import set_cached_enable_free_quota
+
+    settings = Settings.model_construct(API_HISTORY_MODE="full")
+    set_cached_enable_free_quota(True)
+    assert settings.uses_full_history is True

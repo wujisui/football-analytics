@@ -210,11 +210,19 @@ async def scheduled_fixtures_sync(*, sync_hour: int | None = None) -> None:
         if full_detail_enabled and not free_quota:
             try:
                 from app.services.scheduled_detail_enrich import (
+                    UNLIMITED_DETAIL_BUDGET,
                     run_scheduled_full_detail_enrich,
                 )
 
                 full_detail_stats.update(
-                    await run_scheduled_full_detail_enrich()
+                    await run_scheduled_full_detail_enrich(
+                        # Admin「立即同步」has no hour: pull every missing package.
+                        budget=(
+                            None
+                            if sync_hour is not None
+                            else UNLIMITED_DETAIL_BUDGET
+                        ),
+                    )
                 )
             except Exception as exc:
                 logger.warning(

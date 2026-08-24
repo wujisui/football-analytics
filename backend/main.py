@@ -30,9 +30,10 @@ async def lifespan(app: FastAPI):
     await get_cache_service().connect()
     # Load the administrator-managed API-Sports key list.
     from app.services.api_key_pool import hydrate_key_pool
-    from app.services.runtime_settings import hydrate_api_sports_keys
+    from app.services.runtime_settings import get_enable_free_quota, hydrate_api_sports_keys
 
     await hydrate_api_sports_keys()
+    await get_enable_free_quota()
     await hydrate_key_pool()
     from app.services.api_key_pool import describe_pool_for_logs, official_keys
 

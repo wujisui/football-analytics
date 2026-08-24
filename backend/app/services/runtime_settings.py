@@ -41,6 +41,8 @@ SettingSource = Literal["db", "env"]
 # Process cache for official keys stored in app_settings.
 _runtime_api_sports_keys_blob: str | None = None
 _runtime_api_sports_keys_loaded: bool = False
+# Process cache for the admin「免费配额」switch (H2H / date clip read this sync).
+_runtime_free_quota: bool | None = None
 
 
 def get_runtime_api_sports_keys_blob() -> tuple[str | None, bool]:
@@ -173,19 +175,35 @@ async def set_enable_scheduled_full_detail(
     return await _set_bool_setting(session, KEY_ENABLE_SCHEDULED_FULL_DETAIL, enabled)
 
 
+def cached_enable_free_quota() -> bool:
+    """Sync view of the free-quota flag; env default until hydrated."""
+    if _runtime_free_quota is not None:
+        return _runtime_free_quota
+    return bool(get_settings().ENABLE_FREE_QUOTA)
+
+
+def set_cached_enable_free_quota(enabled: bool) -> None:
+    global _runtime_free_quota
+    _runtime_free_quota = bool(enabled)
+
+
 async def get_enable_free_quota(
     session: AsyncSession | None = None,
 ) -> tuple[bool, SettingSource]:
     """Effective flag: DB row if present, else env ``ENABLE_FREE_QUOTA`` (default ON)."""
-    return await _get_bool_setting(
+    enabled, source = await _get_bool_setting(
         KEY_ENABLE_FREE_QUOTA,
         bool(get_settings().ENABLE_FREE_QUOTA),
         session,
     )
+    set_cached_enable_free_quota(enabled)
+    return enabled, source
 
 
 async def set_enable_free_quota(session: AsyncSession, enabled: bool) -> bool:
-    return await _set_bool_setting(session, KEY_ENABLE_FREE_QUOTA, enabled)
+    value = await _set_bool_setting(session, KEY_ENABLE_FREE_QUOTA, enabled)
+    set_cached_enable_free_quota(value)
+    return value
 
 
 def catalog_league_ids(settings=None) -> set[int]:

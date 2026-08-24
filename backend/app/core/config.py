@@ -297,7 +297,16 @@ class Settings(BaseSettings):
 
     @property
     def uses_full_history(self) -> bool:
-        return self.API_HISTORY_MODE == "full"
+        """Paid history fetch: env ``full``, or free-quota mode turned off.
+
+        Closing the admin「免费配额」switch must stop clamping H2H / form /
+        fixture dates to 2022–2024, otherwise detail still shows last year.
+        """
+        if self.API_HISTORY_MODE == "full":
+            return True
+        from app.services.runtime_settings import cached_enable_free_quota
+
+        return not cached_enable_free_quota()
 
     @property
     def history_source_tag(self) -> str:

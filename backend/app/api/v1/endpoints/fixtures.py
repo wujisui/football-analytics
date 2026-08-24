@@ -424,7 +424,7 @@ async def get_fixture_scores(
             continue
         seen.add(fid)
         unique.append(fid)
-        if len(unique) >= 40:
+        if len(unique) >= 200:
             break
     if not unique:
         set_no_store_headers(response)

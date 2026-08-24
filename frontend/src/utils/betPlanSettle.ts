@@ -375,3 +375,30 @@ export function planStatusLabel(status: PlanSettlement['status']): string {
   if (status === 'void') return '走水/作废'
   return '未中'
 }
+
+export function planStatusTagType(
+  status: PlanSettlement['status'],
+): 'success' | 'error' | 'warning' | 'default' {
+  if (status === 'won') return 'success'
+  if (status === 'lost') return 'error'
+  if (status === 'void') return 'warning'
+  return 'default'
+}
+
+export type PlanWinCounts = {
+  won: number
+  settled: number
+  total: number
+}
+
+export function summarizePlanStatuses(
+  statuses: readonly PlanSettlement['status'][],
+): PlanWinCounts {
+  let won = 0
+  let settled = 0
+  for (const status of statuses) {
+    if (status !== 'pending') settled += 1
+    if (status === 'won') won += 1
+  }
+  return { won, settled, total: statuses.length }
+}

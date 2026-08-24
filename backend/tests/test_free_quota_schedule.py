@@ -231,6 +231,102 @@ def test_free_quota_evening_only_refreshes_odds() -> None:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
 
+def test_manual_sync_unlimited_full_detail_when_free_quota_off() -> None:
+    """Admin「立即同步」(no hour) must not cap full-detail enrich at 10."""
+    import asyncio
+
+    from app.services import fixtures_sync as fs
+    from app.services.scheduled_detail_enrich import UNLIMITED_DETAIL_BUDGET
+
+    async def _run() -> None:
+        fetcher = MagicMock()
+        fetcher.quota_exhausted = False
+        fetcher.capture_finished_results = AsyncMock(return_value=0)
+        fetcher.fetch_fixtures_window = AsyncMock(return_value=0)
+        fetcher.sync_odds_for_dates = AsyncMock(return_value=None)
+        fetcher.__aenter__ = AsyncMock(return_value=fetcher)
+        fetcher.__aexit__ = AsyncMock(return_value=False)
+
+        standings = AsyncMock(
+            return_value={"leagues": 0, "fetched": 0, "skipped": 0, "failed": 0}
+        )
+        detail_enrich = AsyncMock(return_value={"enriched": 1, "unlimited": True})
+        settings = MagicMock()
+        settings.SCHEDULER_TIMEZONE = "Asia/Shanghai"
+        settings.FIXTURES_LOOKAHEAD_DAYS = 8
+        settings.LEAGUE_IDS = {"英超": 39}
+        settings.uses_full_history = True
+
+        with (
+            patch.object(fs, "FootballFetcher", return_value=fetcher),
+            patch.object(fs, "sync_league_standings_for_dates", standings),
+            patch.object(fs, "get_settings", return_value=settings),
+            patch.object(
+                fs, "get_enable_free_quota", AsyncMock(return_value=(False, "db"))
+            ),
+            patch.object(
+                fs, "get_hot_league_ids", AsyncMock(return_value=([39], "env"))
+            ),
+            patch.object(
+                fs,
+                "get_enable_scheduled_full_detail",
+                AsyncMock(return_value=(True, "env")),
+            ),
+            patch.object(fs, "clip_fixture_dates_for_plan", lambda days, today: days),
+            patch.object(fs, "importlib", MagicMock()),
+            patch(
+                "app.services.auto_favorites.sync_daily_auto_favorites",
+                AsyncMock(return_value={"selected": []}),
+            ),
+            patch(
+                "app.services.scheduled_detail_enrich.run_scheduled_full_detail_enrich",
+                detail_enrich,
+            ),
+            patch("app.core.database.AsyncSessionLocal"),
+        ):
+            await fs.scheduled_fixtures_sync()
+
+        detail_enrich.assert_awaited_once()
+        assert detail_enrich.await_args.kwargs["budget"] == UNLIMITED_DETAIL_BUDGET
+
+        detail_enrich.reset_mock()
+        with (
+            patch.object(fs, "FootballFetcher", return_value=fetcher),
+            patch.object(fs, "sync_league_standings_for_dates", standings),
+            patch.object(fs, "get_settings", return_value=settings),
+            patch.object(
+                fs, "get_enable_free_quota", AsyncMock(return_value=(False, "db"))
+            ),
+            patch.object(
+                fs, "get_hot_league_ids", AsyncMock(return_value=([39], "env"))
+            ),
+            patch.object(
+                fs,
+                "get_enable_scheduled_full_detail",
+                AsyncMock(return_value=(True, "env")),
+            ),
+            patch.object(fs, "clip_fixture_dates_for_plan", lambda days, today: days),
+            patch.object(fs, "importlib", MagicMock()),
+            patch(
+                "app.services.auto_favorites.sync_daily_auto_favorites",
+                AsyncMock(return_value={"selected": []}),
+            ),
+            patch(
+                "app.services.scheduled_detail_enrich.run_scheduled_full_detail_enrich",
+                detail_enrich,
+            ),
+            patch("app.core.database.AsyncSessionLocal"),
+        ):
+            await fs.scheduled_fixtures_sync(sync_hour=11)
+
+        assert detail_enrich.await_args.kwargs["budget"] is None
+
+    try:
+        asyncio.run(_run())
+    finally:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
 def test_free_quota_catch_up_due_before_and_after_slot() -> None:
     tz = ZoneInfo("Asia/Shanghai")
     before = datetime(2026, 8, 17, 10, 59, tzinfo=tz)
