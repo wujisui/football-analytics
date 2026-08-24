@@ -29,6 +29,7 @@ alwaysApply: false
 | 全局配置 | 根节点 `n-config-provider`（中文 locale + `theme`）+ `n-message-provider` + **`n-modal-provider`**（命令式弹窗） | 各页各自套主题；在组件外调用 `useModal` |
 | 业务模态框 | **`useModal().create(...)`**（见下节） | 页面里堆 `v-model:show` 的 `<n-modal>` |
 | 明暗主题 | `darkTheme` + 「我的 → 主题与玩法」开关，偏好写入 `localStorage` | 手写整站 CSS 变量换肤 |
+| 二元开关 | **`components/TextSwitch.vue`**：状态文案写在轨道内（`#checked` / `#unchecked`），并锁住 `min-width` 防止 `n-list-item` suffix 裁字 | 裸 `n-switch` 无文字；或在开关旁另加一行 `n-text` 说明当前状态 |
 
 按需自动引入已配置 `unplugin-vue-components` + `NaiveUiResolver`；根布局等需显式 import 的除外。
 
@@ -111,7 +112,7 @@ Naive UI **只内置两套全局主题**：默认浅色（`theme=null`）与 `da
 本项目做法：
 
 1. 仅保留 Naive 内置两套：**浅色**（`theme=null`）/ **深色**（`darkTheme`），无 `theme-overrides`
-2. 主题切换只在「我的 → 主题与玩法」；顶栏右上角是**让球玩法 `n-switch`**（亚盘 / 竞彩，`#checked` / `#unchecked` 插槽给文案），真源组件 `components/HandicapRulesetSwitch.vue`
+2. 主题切换只在「我的 → 主题与玩法」；顶栏右上角是**让球玩法开关**（亚盘 / 竞彩），真源组件 `components/HandicapRulesetSwitch.vue`
 3. 自定义页面壳用 `--fa-*`（非 Naive 变量），由预设同步；**禁止**写死 `#fff` / `#f5f6f8`
 4. 偏好键：`fa-theme-preset`（`localStorage`，值为 `light` | `dark`；旧色系 id 会自动归一）
 

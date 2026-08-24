@@ -302,7 +302,7 @@
 - 1X2 主胜，主让 -0.5 但 **主侧水位 > 客侧** → 市场看「难穿盘」  
 - 1X2 客胜，主受让 +0.5 但 **主侧水位 < 客侧** → 市场看「主队不败穿盘」  
 
-#### M-AH.2 特征（`AH_FEATURE_VERSION = ah_v1`）
+#### M-AH.2 特征（`AH_FEATURE_VERSION = ah_v2`）
 
 在现有 `FEATURE_NAMES`（1X2）基础上 **追加** 让球专用列（训练/推断向量分开或拼接，推荐 **拼接同一行** 便于 join）：
 
@@ -317,8 +317,10 @@
 | 交叉 | `mx_vs_ah_gap` | 1X2 主胜概率 − AH 穿盘隐含（市场分歧强度） |
 | 联赛 | `league_tier_top5`, `league_tier_asia`, … | 与 `league_names`/配置 ID 桶一致，避免每联赛 one-hot 过稀 |
 | 元 | `has_ah_market` | 是否有有效 AH（无则 whole-head 不输出） |
+| 副盘 | `ah_has_level_line`, `ah_level_away_hot`, `ah_aux_away_hot_share` | 让 0 / 其它档只作参考：客水更低则压低主盘穿盘倾向；标签仍只结主盘 |
+| 走水 | `ah_home_odd_drift`, `ah_away_odd_drift`, `ah_water_drift`, `ah_away_steam` | 同线初盘→即时盘：主升客降记为客 + 买热 |
 
-**不新增官方 API 调用**；特征全部来自已有赛前包 + 当时 1X2 推断。
+**不新增官方 API 调用**；特征全部来自已有赛前包（含 `odds_opening`）+ 当时 1X2 推断。旧 `ah_v1` 权重因版本不匹配自动忽略，需重新积累训练。
 
 #### M-AH.3 数据与表结构
 
@@ -333,7 +335,7 @@
 | `ah_cover_prob` | Float, nullable | 推断时 P(cover) |
 | `ah_model_source` | String(32), nullable | `rules` / `multifactor` / `ml` |
 
-`feature_version` 仍为 1X2 的 `v1`；让球版本用 **`ah_feature_version=ah_v1`** 独立演进。
+`feature_version` 仍为 1X2 的 `v1`；让球版本用 **`ah_feature_version=ah_v2`** 独立演进。
 
 **写入时机**（与 1X2 对称）：
 
@@ -353,7 +355,7 @@
 | 项 | 首版 | 样本多后 |
 |----|------|----------|
 | 算法 | **二元 Logistic**（与 1X2 softmax 并列） | 可选 GBDT + Platt 校准 |
-| artifact | `data/models/ah_v1_weights.npz` + `ah_v1_meta.json` | 同路径版本递增 |
+| artifact | `data/models/ah_v1_weights.npz` + `ah_v1_meta.json` | 文件名沿用；`meta.ah_feature_version` 现为 `ah_v2`，不匹配则忽略旧权重 |
 | 阈值 | `ML_AH_MIN_TRAIN_SAMPLES` 默认 **80**（二分类，且需覆盖多档盘口） | 可调 |
 | 切训条件 | `ML_AH_AUTO_TRAIN=true` 且 labeled 行数 ≥ 阈值且较上次训练有新增 | 同 1X2 |
 | 验证 | **按日期 hold-out**（禁止随机打乱同联赛同日） | 分 league_tier、分 line tier 报准确率 / Brier |

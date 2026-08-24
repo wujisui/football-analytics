@@ -229,6 +229,61 @@ class AhFeaturesTests(unittest.TestCase):
         market_home = ph / total
         self.assertAlmostEqual(features["mx_home_prob"], market_home, places=5)
 
+    def test_aux_lines_and_opening_drift_feed_main_line_features(self) -> None:
+        package = {
+            "odds_opening": {
+                "available": True,
+                "asian_handicap": {
+                    "line": "-0.5",
+                    "home": 1.84,
+                    "away": 2.08,
+                    "lines": [
+                        {"line": "-0.5", "home": 1.84, "away": 2.08},
+                        {"line": "0", "home": 1.35, "away": 3.42},
+                    ],
+                },
+            },
+            "odds": {
+                "available": True,
+                "asian_handicap": {
+                    "line": "-0.5",
+                    "home": 1.92,
+                    "away": 2.01,
+                    "lines": [
+                        {"line": "-0.5", "home": 1.92, "away": 2.01},
+                        {"line": "0", "home": 1.39, "away": 3.24},
+                        {"line": "-0.25", "home": 1.65, "away": 2.38},
+                    ],
+                },
+            },
+        }
+        features, line_f, home_f, away_f = build_ah_features(package)
+        self.assertEqual(line_f, -0.5)
+        self.assertAlmostEqual(home_f or 0, 1.92)
+        self.assertAlmostEqual(away_f or 0, 2.01)
+        self.assertEqual(features["ah_has_level_line"], 1.0)
+        self.assertEqual(features["ah_level_away_hot"], 0.0)
+        self.assertEqual(features["ah_has_aux_lines"], 1.0)
+        self.assertEqual(features["ah_opening_same_line"], 1.0)
+        self.assertEqual(features["ah_away_steam"], 1.0)
+        self.assertGreater(features["ah_home_odd_drift"], 0.0)
+        self.assertLess(features["ah_away_odd_drift"], 0.0)
+        self.assertGreater(features["ah_water_drift"], 0.0)
+
+        from app.services.ah_predictor import multifactor_cover_prob
+
+        current_only = {
+            "odds": package["odds"],
+            "odds_opening": {"available": False},
+        }
+        baseline, *_ = build_ah_features(current_only)
+        self.assertLess(
+            multifactor_cover_prob(features),
+            multifactor_cover_prob(baseline),
+        )
+        self.assertEqual(settle_ah_label(1, 1, -0.5), "no_cover")
+        self.assertEqual(settle_ah_label(1, 1, 0.0), "push")
+
 
 class AhModelLoadTests(unittest.TestCase):
     def test_load_rejects_feature_version_mismatch(self) -> None:

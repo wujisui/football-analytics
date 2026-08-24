@@ -1,7 +1,10 @@
-"""Tests for free-plan date clipping and standings season clamp."""
+"""Tests for free-plan date clipping, standings season clamp and quota accounting."""
 
+import asyncio
+import importlib
 from datetime import date
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.api_quota import (
     api_errors_plan_blocked,
@@ -79,3 +82,60 @@ def test_uses_full_history_env_full_ignores_free_quota() -> None:
     settings = Settings.model_construct(API_HISTORY_MODE="full")
     set_cached_enable_free_quota(True)
     assert settings.uses_full_history is True
+
+
+def test_cache_counts_official_responses() -> None:
+    from app.services.cache import CacheService
+
+    cache = CacheService()
+    cache.note_api_response(7499)
+    cache.note_api_response(7498)
+    assert cache.api_request_count == 2
+    assert cache.last_api_remaining == 7498
+
+
+def test_record_sync_run_persists_quota_delta_of_finished_batches() -> None:
+    # ``app.tasks.scheduler`` also names an AsyncIOScheduler instance, so grab
+    # the module itself rather than the package attribute.
+    sched = importlib.import_module("app.tasks.scheduler")
+
+    saved: list[dict] = []
+
+    async def _fake_set(_session, run: dict) -> dict:
+        saved.append(run)
+        return run
+
+    session_cm = MagicMock()
+    session_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+    session_cm.__aexit__ = AsyncMock(return_value=False)
+
+    async def _run() -> None:
+        with (
+            patch.object(sched, "set_last_sync_run", _fake_set),
+            patch.object(sched, "AsyncSessionLocal", MagicMock(return_value=session_cm)),
+            patch.object(
+                sched,
+                "get_cache_service",
+                lambda: SimpleNamespace(api_request_count=130, last_api_remaining=7370),
+            ),
+        ):
+            sched.active_tasks["quota_probe"] = {"status": "skipped"}
+            await sched._record_sync_run("quota_probe", "full", 100)
+            sched.active_tasks["quota_probe"] = {
+                "status": "completed",
+                "finished_at": "2026-08-24T03:00:00+00:00",
+            }
+            await sched._record_sync_run("quota_probe", "full", 100)
+
+    try:
+        asyncio.run(_run())
+    finally:
+        sched.active_tasks.pop("quota_probe", None)
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+    # Skipped batches burn nothing and must not overwrite the last real run.
+    assert len(saved) == 1
+    assert saved[0]["status"] == "completed"
+    assert saved[0]["quota_used"] == 30
+    assert saved[0]["api_remaining"] == 7370
+    assert saved[0]["finished_at"] == "2026-08-24T03:00:00+00:00"

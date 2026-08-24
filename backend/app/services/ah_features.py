@@ -9,7 +9,7 @@ from typing import Any
 
 from app.services.features import FEATURE_NAMES, extract_features
 
-AH_FEATURE_VERSION = "ah_v1"
+AH_FEATURE_VERSION = "ah_v2"
 
 TOP5_LEAGUE_IDS = frozenset({39, 140, 78, 135, 61})
 ASIA_LEAGUE_IDS = frozenset({169, 98, 292, 253})
@@ -33,6 +33,18 @@ AH_EXTRA_NAMES: list[str] = [
     "league_tier_top5",
     "league_tier_asia",
     "has_ah_market",
+    # 副盘：让 0 与其它档只作主盘参考，不改训练标签。
+    "ah_has_level_line",
+    "ah_level_water_diff",
+    "ah_level_away_hot",
+    "ah_has_aux_lines",
+    "ah_aux_away_hot_share",
+    # 初盘 → 即时盘：同线升降水。
+    "ah_opening_same_line",
+    "ah_home_odd_drift",
+    "ah_away_odd_drift",
+    "ah_water_drift",
+    "ah_away_steam",
 ]
 
 AH_FEATURE_NAMES: list[str] = [*FEATURE_NAMES, *AH_EXTRA_NAMES]
@@ -107,6 +119,109 @@ def extract_main_ah_line(
     if line_f is None or home_f is None or away_f is None:
         return None, None, None
     return line_f, home_f, away_f
+
+
+def iter_ah_quotes(odds: dict[str, Any] | None) -> list[tuple[float, float, float]]:
+    """Complete AH quotes ``(line, home_odd, away_odd)``; main line first."""
+    if not isinstance(odds, dict) or not odds.get("available", True):
+        return []
+    ah = odds.get("asian_handicap")
+    if not isinstance(ah, dict):
+        return []
+    quotes: list[tuple[float, float, float]] = []
+    seen: set[float] = set()
+
+    def _add(line_raw: Any, home_raw: Any, away_raw: Any) -> None:
+        line_f = _parse_line_float(line_raw)
+        home_f = _odd_float(home_raw)
+        away_f = _odd_float(away_raw)
+        if line_f is None or home_f is None or away_f is None:
+            return
+        key = round(line_f, 2)
+        if key in seen:
+            return
+        seen.add(key)
+        quotes.append((line_f, home_f, away_f))
+
+    _add(ah.get("line"), ah.get("home"), ah.get("away"))
+    lines = ah.get("lines")
+    if isinstance(lines, list):
+        for item in lines:
+            if isinstance(item, dict):
+                _add(item.get("line"), item.get("home"), item.get("away"))
+    return quotes
+
+
+def _find_level_quote(
+    quotes: list[tuple[float, float, float]],
+) -> tuple[float, float, float] | None:
+    for line_f, home_f, away_f in quotes:
+        if abs(line_f) < 0.05:
+            return line_f, home_f, away_f
+    return None
+
+
+def _clip(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def _board_context_features(
+    current: dict[str, Any] | None,
+    opening: dict[str, Any] | None,
+    *,
+    main_line: float,
+    main_home: float,
+    main_away: float,
+) -> dict[str, float]:
+    quotes = iter_ah_quotes(current)
+    level = _find_level_quote(quotes)
+    aux = [(ln, h, a) for ln, h, a in quotes if abs(ln - main_line) > 0.04]
+    if aux:
+        away_hot_n = sum(1 for _, h, a in aux if a < h)
+        aux_share = away_hot_n / len(aux)
+    else:
+        aux_share = 0.5
+
+    open_line, open_home, open_away = extract_main_ah_line(opening)
+    same_line = (
+        open_line is not None
+        and open_home is not None
+        and open_away is not None
+        and abs(open_line - main_line) < 0.04
+    )
+    home_drift = (main_home - open_home) if same_line else 0.0
+    away_drift = (main_away - open_away) if same_line else 0.0
+    open_water = (open_home - open_away) if same_line else (main_home - main_away)
+    water_drift = (main_home - main_away) - open_water if same_line else 0.0
+    steam = 1.0 if same_line and home_drift > 0.02 and away_drift < -0.02 else 0.0
+
+    return {
+        "ah_has_level_line": 1.0 if level else 0.0,
+        "ah_level_water_diff": (level[1] - level[2]) if level else 0.0,
+        "ah_level_away_hot": 1.0 if level and level[2] < level[1] else 0.0,
+        "ah_has_aux_lines": 1.0 if aux else 0.0,
+        "ah_aux_away_hot_share": aux_share,
+        "ah_opening_same_line": 1.0 if same_line else 0.0,
+        "ah_home_odd_drift": _clip(home_drift, -0.8, 0.8),
+        "ah_away_odd_drift": _clip(away_drift, -0.8, 0.8),
+        "ah_water_drift": _clip(water_drift, -0.8, 0.8),
+        "ah_away_steam": steam,
+    }
+
+
+def _empty_board_context() -> dict[str, float]:
+    return {
+        "ah_has_level_line": 0.0,
+        "ah_level_water_diff": 0.0,
+        "ah_level_away_hot": 0.0,
+        "ah_has_aux_lines": 0.0,
+        "ah_aux_away_hot_share": 0.5,
+        "ah_opening_same_line": 0.0,
+        "ah_home_odd_drift": 0.0,
+        "ah_away_odd_drift": 0.0,
+        "ah_water_drift": 0.0,
+        "ah_away_steam": 0.0,
+    }
 
 
 def _league_tier_flags(league_id: int | None) -> tuple[float, float]:
@@ -470,12 +585,18 @@ def build_ah_features(
     package = package or {}
     base = extract_features(package)
     odds = package.get("odds") if isinstance(package.get("odds"), dict) else {}
+    opening = (
+        package.get("odds_opening")
+        if isinstance(package.get("odds_opening"), dict)
+        else {}
+    )
     line_f, home_f, away_f = extract_main_ah_line(odds)
 
     ph, pd, pa = _market_1x2_probs(base)
 
     top5, asia = _league_tier_flags(league_id)
     has_ah = 1.0 if line_f is not None and home_f and away_f else 0.0
+    board = _empty_board_context()
 
     if line_f is None or home_f is None or away_f is None:
         extra = {
@@ -496,12 +617,20 @@ def build_ah_features(
             "league_tier_top5": top5,
             "league_tier_asia": asia,
             "has_ah_market": 0.0,
+            **board,
         }
         return {**base, **extra}, None, None, None
 
     implied = _implied_cover_prob(home_f, away_f)
     shallow, medium, deep = _line_tier_flags(line_f)
     line_norm = max(-1.0, min(1.0, line_f / 2.5))
+    board = _board_context_features(
+        odds,
+        opening,
+        main_line=line_f,
+        main_home=home_f,
+        main_away=away_f,
+    )
     extra = {
         "ah_line_norm": line_norm,
         "ah_home_odd_inv": 1.0 / home_f,
@@ -520,6 +649,7 @@ def build_ah_features(
         "league_tier_top5": top5,
         "league_tier_asia": asia,
         "has_ah_market": has_ah,
+        **board,
     }
     return {**base, **extra}, line_f, home_f, away_f
 

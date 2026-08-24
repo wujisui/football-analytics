@@ -146,8 +146,20 @@ def multifactor_cover_prob(features: dict[str, float]) -> float:
     if deep >= 0.5 and implied < 0.52:
         logit += 0.25
 
+    steam = float(features.get("ah_away_steam", 0.0))
+    water_drift = float(features.get("ah_water_drift", 0.0))
+    level_hot = float(features.get("ah_level_away_hot", 0.0))
+    logit -= 0.55 * steam
+    logit -= 0.45 * _clip_logit_term(water_drift)
+    if shallow >= 0.5:
+        logit -= 0.35 * level_hot
+
     logit = max(-6.0, min(6.0, logit))
     return float(1.0 / (1.0 + math.exp(-logit)))
+
+
+def _clip_logit_term(value: float) -> float:
+    return max(-0.4, min(0.4, value))
 
 
 def _structural_pick(
@@ -470,8 +482,9 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
     seen: set[int] = set()
 
     q = await session.execute(
-        select(MatchFeature, Fixture)
+        select(MatchFeature, Fixture, PreMatchData)
         .join(Fixture, Fixture.id == MatchFeature.fixture_id)
+        .outerjoin(PreMatchData, PreMatchData.fixture_id == Fixture.id)
         .where(
             MatchFeature.feature_version == FEATURE_VERSION,
             MatchFeature.ah_label.in_(("cover", "no_cover")),
@@ -479,11 +492,21 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
         )
         .order_by(Fixture.date.asc())
     )
-    for feat, _fixture in q.all():
-        if not feat.ah_features_json:
-            continue
-        features = loads_ah_features(feat.ah_features_json)
-        if features.get("has_ah_market", 0) < 0.5:
+    for feat, fixture, stored in q.all():
+        features = None
+        if (
+            feat.ah_feature_version == AH_FEATURE_VERSION
+            and feat.ah_features_json
+        ):
+            features = loads_ah_features(feat.ah_features_json)
+        elif stored:
+            pkg = package_from_record(stored) or {
+                "odds": loads_json(stored.odds_json, {"available": False}),
+            }
+            features, _, _, _ = build_ah_features(
+                pkg, league_id=fixture.league_id
+            )
+        if not features or features.get("has_ah_market", 0) < 0.5:
             continue
         label = feat.ah_label
         if label not in TRAIN_LABELS:
