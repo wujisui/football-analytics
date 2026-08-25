@@ -161,7 +161,7 @@ const hasAny = computed(
   min-width: 26px;
   width: 26px;
   height: 26px;
-  border-radius: 4px;
+  border-radius: var(--fa-radius-card);
   display: inline-flex;
   align-items: center;
   justify-content: center;

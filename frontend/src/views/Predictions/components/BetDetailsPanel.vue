@@ -539,7 +539,7 @@ defineExpose({ openFormula, openDetails })
   width: 100%;
   max-height: min(52vh, 420px);
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: var(--fa-radius-card);
   background: var(--fa-bg-soft);
   -webkit-touch-callout: default;
   user-select: none;

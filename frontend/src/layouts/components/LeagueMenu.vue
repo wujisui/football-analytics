@@ -281,7 +281,7 @@ function countOf(leagueId: number): number {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--fa-radius-card);
   font-size: 13px;
   font-weight: 700;
   line-height: 1;

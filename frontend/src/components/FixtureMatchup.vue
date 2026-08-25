@@ -112,7 +112,7 @@ const awayRankText = computed(() => rankBracket(props.awayRank))
 
 .matchup-link:focus-visible {
   outline: none;
-  border-radius: 4px;
+  border-radius: var(--fa-radius-card);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--fa-highlight-text) 35%, transparent);
 }
 

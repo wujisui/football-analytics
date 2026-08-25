@@ -118,6 +118,14 @@ Naive UI **只内置两套全局主题**：默认浅色（`theme=null`）与 `da
 
 **禁止**在页面/卡片上写死 `#fff` / `#f5f6f8`；自定义区域用 `--fa-*`。
 
+### 圆角
+
+卡片 / 面板 / 浮层 / hover 高亮块的圆角唯一真源是 `--fa-radius-card`（`src/style.css` 的 `:root`），值与 Naive `common.borderRadius` 一致，因此自定义表面与 `n-card`（如 `.predict-card`）看起来完全一样。
+
+- **禁止**再写 `border-radius: 6px / 8px / 10px / 12px` 这类字面值；一律 `border-radius: var(--fa-radius-card)`。
+- 要改全站圆角只改这一个 token，不要逐个组件调。
+- 例外只有形状本身决定的：圆点 `50%`、胶囊 `999px` / 半高值、1~2px 宽的指示条，以及显式取消圆角的 `0`。
+
 ## 展示约定
 
 - **格式真源在入库侧**（见 `data-format-at-source`）：盘口符号、队名翻译等由后端解析/落库定稿；前端原样展示接口值，不为后端装饰字符再写一层剥除逻辑

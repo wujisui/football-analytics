@@ -99,7 +99,7 @@ const probabilities = computed(() => {
 .result-prediction-summary.odds-clickable {
   padding: 4px;
   margin: -4px;
-  border-radius: 6px;
+  border-radius: var(--fa-radius-card);
   cursor: pointer;
 }
 

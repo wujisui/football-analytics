@@ -311,7 +311,7 @@ onActivated(() => {
 .favorites-card--mobile {
   margin: 12px 0;
   background: var(--fa-bg-elevated);
-  border-radius: 12px;
+  border-radius: var(--fa-radius-card);
   overflow: hidden;
 }
 

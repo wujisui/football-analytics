@@ -294,7 +294,7 @@ function renderMidCell(row: OddsRow) {
 :deep(.ah-line-trigger:hover),
 :deep(.ah-line-trigger:focus-visible) {
   background: var(--fa-bg-soft);
-  border-radius: 2px;
+  border-radius: var(--fa-radius-card);
   outline: none;
 }
 

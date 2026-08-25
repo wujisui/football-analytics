@@ -71,6 +71,12 @@ html[data-theme='dark'] {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   --fa-page-max-width: 1280px;
+  /*
+   * 卡片 / 面板圆角唯一真源，值取 Naive `common.borderRadius`（项目无 theme-overrides），
+   * 这样自定义表面与 `n-card`（如 .predict-card.standalone）完全一致。
+   * 只有圆点、胶囊、细指示条等形状本身决定的圆角才可以不用它。
+   */
+  --fa-radius-card: 3px;
   --fa-content-inline: 12px;
   --fa-content-block-start: 12px;
   --fa-content-block-end: 20px;
@@ -363,7 +369,7 @@ button {
   align-items: stretch;
   gap: 6px;
   padding: 6px;
-  border-radius: 10px;
+  border-radius: var(--fa-radius-card);
   background: var(--fa-bg-elevated);
   box-shadow: 0 8px 24px var(--fa-hover-shadow);
 }
@@ -389,7 +395,7 @@ button {
 .ah-popover-panel {
   min-width: 280px;
   padding: 10px 12px;
-  border-radius: 6px;
+  border-radius: var(--fa-radius-card);
   background: var(--fa-bg-soft);
   display: flex;
   flex-direction: column;

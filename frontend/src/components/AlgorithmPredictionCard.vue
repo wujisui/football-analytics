@@ -405,7 +405,7 @@ function onOddsClick() {
   align-content: space-between;
   gap: 6px;
   background: var(--fa-bg-soft);
-  border-radius: 4px;
+  border-radius: var(--fa-radius-card);
   padding: 12px;
   height: 100%;
 }
@@ -484,7 +484,7 @@ function onOddsClick() {
 .odds-clickable {
   padding: 4px;
   margin: -4px;
-  border-radius: 6px;
+  border-radius: var(--fa-radius-card);
   cursor: pointer;
 }
 
@@ -501,7 +501,7 @@ function onOddsClick() {
   gap: 8px;
   min-width: 0;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--fa-radius-card);
   background: var(--fa-bg-elevated);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
@@ -556,7 +556,7 @@ function onOddsClick() {
 .handicap-mid:hover,
 .handicap-mid:focus-visible {
   background: var(--fa-bg-elevated);
-  border-radius: 2px;
+  border-radius: var(--fa-radius-card);
   outline: none;
 }
 

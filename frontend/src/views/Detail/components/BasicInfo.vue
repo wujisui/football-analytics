@@ -122,7 +122,7 @@ function goLeague() {
 <style scoped>
 .basic-info {
   background: var(--fa-bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--fa-radius-card);
   padding: 10px 12px;
 }
 

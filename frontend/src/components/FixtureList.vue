@@ -396,6 +396,6 @@ function rowFixture(item: unknown): FixtureResponse {
   padding: 48px 0;
   background: var(--fa-bg-elevated);
   border: 1px dashed var(--fa-border);
-  border-radius: 8px;
+  border-radius: var(--fa-radius-card);
 }
 </style>
