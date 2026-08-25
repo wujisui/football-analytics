@@ -15,6 +15,11 @@ const props = withDefaults(
     opening?: boolean
     ariaLabel?: string
     /**
+     * 队名被截断时是否自带浮层。外层已经套了 `DetailTabHint` 时必须关掉，
+     * 否则同一次 hover 会弹出两个浮层并互相遮挡；全名交给外层那一个显示。
+     */
+    nameTooltip?: boolean
+    /**
      * Equal-width home | mid | away (results with score); home right-aligned,
      * away left-aligned so both names hug the middle score/vs.
      * Default: compact「主 vs 客」group — same as prediction list title.
@@ -27,6 +32,7 @@ const props = withDefaults(
     clickable: false,
     opening: false,
     ariaLabel: '查看详情',
+    nameTooltip: true,
     spread: false,
   },
 )
@@ -51,24 +57,24 @@ const awayRankText = computed(() => rankBracket(props.awayRank))
   >
     <span class="side home">
       <span v-if="homeRankText" class="rank">{{ homeRankText }}</span>
-      <n-ellipsis class="team">{{ homeName }}</n-ellipsis>
+      <n-ellipsis class="team" :tooltip="nameTooltip">{{ homeName }}</n-ellipsis>
     </span>
     <span class="versus">vs</span>
     <span class="side away">
-      <n-ellipsis class="team">{{ awayName }}</n-ellipsis>
+      <n-ellipsis class="team" :tooltip="nameTooltip">{{ awayName }}</n-ellipsis>
       <span v-if="awayRankText" class="rank">{{ awayRankText }}</span>
     </span>
   </button>
   <div v-else class="matchup" :class="{ spread }">
     <span class="side home">
       <span v-if="homeRankText" class="rank">{{ homeRankText }}</span>
-      <n-ellipsis class="team">{{ homeName }}</n-ellipsis>
+      <n-ellipsis class="team" :tooltip="nameTooltip">{{ homeName }}</n-ellipsis>
     </span>
     <slot name="middle">
       <span class="versus">vs</span>
     </slot>
     <span class="side away">
-      <n-ellipsis class="team">{{ awayName }}</n-ellipsis>
+      <n-ellipsis class="team" :tooltip="nameTooltip">{{ awayName }}</n-ellipsis>
       <span v-if="awayRankText" class="rank">{{ awayRankText }}</span>
     </span>
   </div>

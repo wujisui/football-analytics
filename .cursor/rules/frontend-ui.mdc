@@ -21,7 +21,7 @@ alwaysApply: false
 | 层级导航 | `n-breadcrumb` / `n-breadcrumb-item` | 纯文本「返回」代替路径 |
 | 加载 / 空 / 错 | `n-spin`、`n-empty`、`n-alert` + `n-button` 重试 | 自定义转圈或裸文字 |
 | 标签 / 按钮 / 卡片 / Tabs | `n-tag`、`n-button`、`n-card`、`n-tabs` | 重复造轮子 |
-| 悬浮说明 | 仅当产品**明确要求**悬浮提示时用 **`n-tooltip`** | 原生 HTML `title` / `:title` 冒系统气泡；未要求时不要擅自加悬浮文案 |
+| 悬浮说明 | 仅当产品**明确要求**悬浮提示时用 **`n-tooltip`**；同一可点区域**只允许一个浮层**，外层已有 `DetailTabHint` 时把内部 `n-ellipsis` 的 `tooltip` 关掉，全文并进外层那一个 | 原生 HTML `title` / `:title` 冒系统气泡；未要求时不要擅自加悬浮文案；省略号浮层与提示浮层同时弹出互相遮挡 |
 | 区域滚动 | `n-scrollbar`，或 Layout 设 `:native-scrollbar="false"` | 手写 `overflow` + 自定义 `::-webkit-scrollbar` |
 | 表单输入 | `n-input`、`n-form`（需要时） | 原生 textarea 无统一样式 |
 | 数据展示 | `n-descriptions`、`n-progress`、`n-list`、**`n-data-table` / `n-table`** | **禁止**原生 `<table>` / 手写表格网格；对阵列表、赛果表一律 Naive 表格 |

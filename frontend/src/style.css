@@ -354,6 +354,20 @@ button {
 }
 
 /* Shared asian-handicap multi-line popover (PreMatchOddsTable / prediction card). */
+.ah-board-popover {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.ah-board-title {
+  margin: 0 0 6px;
+  color: var(--fa-text-strong);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .ah-popover-panel {
   min-width: 280px;
   padding: 10px 12px;
@@ -397,16 +411,6 @@ button {
 .ah-popover-col.line {
   font-weight: 700;
   color: var(--fa-accent);
-}
-
-/* 弹层已占掉 hover，跳转提示只能写在面板里 */
-.ah-popover-hint {
-  margin: 2px 0 0;
-  padding-top: 6px;
-  border-top: 1px solid var(--fa-border-soft);
-  color: var(--fa-text-faint);
-  font-size: 11px;
-  text-align: center;
 }
 
 .ah-popover-head .ah-popover-col {

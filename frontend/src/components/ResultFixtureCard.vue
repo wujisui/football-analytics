@@ -87,6 +87,7 @@ const settledFixture = computed(() =>
 )
 const homeName = computed(() => props.fixture.home_team_name || '—')
 const awayName = computed(() => props.fixture.away_team_name || '—')
+const matchupText = computed(() => `${homeName.value} vs ${awayName.value}`)
 const homeRank = computed(() =>
   'home_rank' in props.fixture ? props.fixture.home_rank ?? null : null,
 )
@@ -223,10 +224,11 @@ function onLeagueClick(e: Event) {
       </n-tag>
     </header>
 
-    <DetailTabHint v-if="isPrematch" tab="record">
+    <DetailTabHint v-if="isPrematch" tab="record" :text="matchupText">
       <FixtureMatchup
         clickable
         spread
+        :name-tooltip="false"
         :home-name="homeName"
         :away-name="awayName"
         :home-rank="homeRank"
