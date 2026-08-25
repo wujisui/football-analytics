@@ -31,11 +31,41 @@ _scheduler_started = False
 
 FULL_SYNC_HOUR = 11
 UNSUBSCRIBED_ODDS_HOURS = (22,)
-SUBSCRIBED_ODDS_HOURS = (0, 2, 14, 16, 18, 20, 22)
+# Hourly light odds outside the 21:00–24:00 half-hour window.
+SUBSCRIBED_ODDS_HOURS = (2, 14, 16, 18, 20)
 SUBSCRIBED_EARLY_ODDS_HOURS = (4, 6, 8, 10)
 SUBSCRIBED_FIRST_ODDS_MINUTE = 55
+# 21:00 through 24:00 (00:00) every 30 minutes; subscribed only.
+SUBSCRIBED_EVENING_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
+    (21, 0),
+    (21, 30),
+    (22, 0),
+    (22, 30),
+    (23, 0),
+    (23, 30),
+    (0, 0),
+)
 FREE_QUOTA_ROLLOVER_JOB_ID = "free_quota_fixture_rollover"
 RESULTS_SYNC_TASK = "scheduled_results_sync"
+
+
+def odds_job_id(hour: int, minute: int = 0) -> str:
+    if minute:
+        return f"scheduled_fixtures_sync_odds_{hour:02d}{minute:02d}"
+    return f"scheduled_fixtures_sync_odds_{hour:02d}"
+
+
+def subscribed_light_odds_slots(*, early_odds: bool) -> list[tuple[int, int]]:
+    slots = [(hour, 0) for hour in SUBSCRIBED_ODDS_HOURS]
+    if early_odds:
+        slots.extend((hour, 0) for hour in SUBSCRIBED_EARLY_ODDS_HOURS)
+    slots.extend(SUBSCRIBED_EVENING_ODDS_SLOTS)
+    slots.append((FULL_SYNC_HOUR, SUBSCRIBED_FIRST_ODDS_MINUTE))
+    return sorted(set(slots), key=lambda item: (item[0], item[1]))
+
+
+def format_clock(hour: int, minute: int = 0) -> str:
+    return f"{hour:02d}:{minute:02d}"
 
 
 def _utc_now() -> datetime:
@@ -398,33 +428,16 @@ def register_jobs(
         coalesce=True,
     )
 
-    odds_hours = (
-        SUBSCRIBED_ODDS_HOURS
-        + (SUBSCRIBED_EARLY_ODDS_HOURS if early_odds else ())
-        if subscribed
-        else UNSUBSCRIBED_ODDS_HOURS
-    )
-    for hour in odds_hours:
-        job_id = f"scheduled_fixtures_sync_odds_{hour:02d}"
-        scheduler.add_job(
-            run_scheduled_fixtures_sync,
-            CronTrigger(hour=hour, minute=0, timezone=timezone),
-            id=job_id,
-            name=job_id,
-            kwargs={"task_name": job_id, "mode": "odds"},
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
+    odds_slots: list[tuple[int, int]]
     if subscribed:
-        job_id = "scheduled_fixtures_sync_odds_1155"
+        odds_slots = subscribed_light_odds_slots(early_odds=early_odds)
+    else:
+        odds_slots = [(hour, 0) for hour in UNSUBSCRIBED_ODDS_HOURS]
+    for hour, minute in odds_slots:
+        job_id = odds_job_id(hour, minute)
         scheduler.add_job(
             run_scheduled_fixtures_sync,
-            CronTrigger(
-                hour=FULL_SYNC_HOUR,
-                minute=SUBSCRIBED_FIRST_ODDS_MINUTE,
-                timezone=timezone,
-            ),
+            CronTrigger(hour=hour, minute=minute, timezone=timezone),
             id=job_id,
             name=job_id,
             kwargs={"task_name": job_id, "mode": "odds"},

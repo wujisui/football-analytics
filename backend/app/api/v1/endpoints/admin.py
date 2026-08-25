@@ -26,12 +26,12 @@ from app.services.runtime_settings import (
 )
 from app.tasks.scheduler import (
     RESULTS_SYNC_TASK,
-    SUBSCRIBED_EARLY_ODDS_HOURS,
-    SUBSCRIBED_ODDS_HOURS,
     UNSUBSCRIBED_ODDS_HOURS,
+    format_clock,
     full_sync_completed_today,
     get_task_status,
     refresh_fixture_sync_jobs,
+    subscribed_light_odds_slots,
     trigger_task,
 )
 
@@ -157,16 +157,14 @@ async def _subscription_payload(
 ) -> SubscriptionSetting:
     early_odds, _ = await get_subscription_early_odds()
     if subscribed:
-        times = ["11:00", "11:55"] + [
-            f"{hour:02d}:00"
-            for hour in (
-                SUBSCRIBED_ODDS_HOURS
-                + (SUBSCRIBED_EARLY_ODDS_HOURS if early_odds else ())
-            )
+        times = ["11:00"] + [
+            format_clock(hour, minute)
+            for hour, minute in subscribed_light_odds_slots(early_odds=early_odds)
         ]
+        times = sorted(set(times))
     else:
         times = ["08:05", "11:00"] + [
-            f"{hour:02d}:00" for hour in UNSUBSCRIBED_ODDS_HOURS
+            format_clock(hour) for hour in UNSUBSCRIBED_ODDS_HOURS
         ]
     last_sync = _last_sync_payload(await get_last_sync_run())
     # Process memory is empty until this deploy calls the official API again,

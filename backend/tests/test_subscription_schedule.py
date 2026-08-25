@@ -8,9 +8,11 @@ from app.services.fixtures_sync import sync_dates
 from app.tasks.scheduler import (
     FULL_SYNC_HOUR,
     SUBSCRIBED_EARLY_ODDS_HOURS,
+    SUBSCRIBED_EVENING_ODDS_SLOTS,
     SUBSCRIBED_FIRST_ODDS_MINUTE,
     SUBSCRIBED_ODDS_HOURS,
     UNSUBSCRIBED_ODDS_HOURS,
+    odds_job_id,
     register_jobs,
     scheduler,
 )
@@ -19,9 +21,20 @@ from app.tasks.scheduler import (
 def test_subscription_schedule_constants() -> None:
     assert FULL_SYNC_HOUR == 11
     assert SUBSCRIBED_FIRST_ODDS_MINUTE == 55
-    assert SUBSCRIBED_ODDS_HOURS == (0, 2, 14, 16, 18, 20, 22)
+    assert SUBSCRIBED_ODDS_HOURS == (2, 14, 16, 18, 20)
     assert SUBSCRIBED_EARLY_ODDS_HOURS == (4, 6, 8, 10)
+    assert SUBSCRIBED_EVENING_ODDS_SLOTS == (
+        (21, 0),
+        (21, 30),
+        (22, 0),
+        (22, 30),
+        (23, 0),
+        (23, 30),
+        (0, 0),
+    )
     assert UNSUBSCRIBED_ODDS_HOURS == (22,)
+    assert odds_job_id(21, 30) == "scheduled_fixtures_sync_odds_2130"
+    assert odds_job_id(0) == "scheduled_fixtures_sync_odds_00"
 
 
 def test_unsubscribed_full_batch_dates() -> None:
@@ -74,17 +87,24 @@ def test_registered_subscription_jobs_respect_early_switch() -> None:
     assert "scheduled_fixtures_sync_odds_1155" in job_ids
     assert "scheduled_fixtures_sync_odds_02" in job_ids
     assert "scheduled_fixtures_sync_odds_04" not in job_ids
+    assert "scheduled_fixtures_sync_odds_2130" in job_ids
+    assert "scheduled_fixtures_sync_odds_22" in job_ids
+    assert "scheduled_fixtures_sync_odds_2330" in job_ids
+    assert "scheduled_fixtures_sync_odds_00" in job_ids
     assert "free_quota_fixture_rollover" not in job_ids
 
     register_jobs(subscribed=True, early_odds=True)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
     assert "scheduled_fixtures_sync_odds_04" in job_ids
     assert "scheduled_fixtures_sync_odds_10" in job_ids
+    assert "scheduled_fixtures_sync_odds_2130" in job_ids
 
     register_jobs(subscribed=False)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
     assert "scheduled_fixtures_sync_odds_22" in job_ids
     assert "scheduled_fixtures_sync_odds_02" not in job_ids
+    assert "scheduled_fixtures_sync_odds_2130" not in job_ids
+    assert "scheduled_fixtures_sync_odds_00" not in job_ids
     assert "free_quota_fixture_rollover" in job_ids
 
 

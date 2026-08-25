@@ -37,6 +37,7 @@ const { syncing, resultsSyncing, busy, runSync, runResultsSync, hydrateStatus } 
 const subscribed = ref(false)
 const subscriptionSource = ref('')
 const earlyOddsEnabled = ref(true)
+const syncTimes = ref<string[]>([])
 const fullSyncCompletedToday = ref(false)
 const apiRemaining = ref<number | null>(null)
 const lastSync = ref<LastSyncRun | null>(null)
@@ -110,15 +111,21 @@ const lastSyncQuotaText = computed(() => {
 const subscriptionDescription = computed(() => {
   const source = settingSourceLabel(subscriptionSource.value)
   const prefix = source ? `当前来源：${source}。` : ''
+  const clocks = syncTimes.value.length
+    ? `时刻 ${syncTimes.value.join('、')}。`
+    : ''
   if (subscribed.value) {
-    return `${prefix}已订阅按 Pro 日配额 ≥7500 设计。11:00 每日唯一完整批次；11:55、00/02/14/16/18/20/22 只刷新今天未开赛热门盘口并重算日推。赛程保留 8 天滑动窗口，每天只新增末端一天；盘口与详情只处理今天、明天。`
+    const early = earlyOddsEnabled.value
+      ? '早间盘口刷新已开启（04/06/08/10）。'
+      : '早间盘口刷新已关闭，04/06/08/10 不跑。'
+    return `${prefix}${clocks}11:00 为每日唯一完整批次，其余时刻只刷新今天未开赛热门盘口并重算日推；21:00 至 24:00 每隔半小时一次。${early}赛程保留 8 天滑动窗口，每天只新增末端一天；盘口与详情只处理今天、明天。`
   }
-  return `${prefix}未订阅每天 08:05 只拉当天赛程，11:00 跑昨天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。`
+  return `${prefix}${clocks}未订阅每天 08:05 只拉当天赛程，11:00 跑昨天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。晚间半小时刷新仅已订阅生效。`
 })
 
 const earlyOddsDescription = computed(() =>
   subscribed.value
-    ? '控制 04:00、06:00、08:00、10:00 是否也刷新今天未开赛热门盘口并重算日推；00:00、02:00 不受此开关影响。'
+    ? '控制 04:00、06:00、08:00、10:00 是否也刷新今天未开赛热门盘口并重算日推；02:00 与 21:00–24:00 的半小时任务不受此开关影响。'
     : '仅已订阅时生效。',
 )
 
@@ -126,6 +133,7 @@ function applySubscription(data: Awaited<ReturnType<typeof fetchSubscriptionSett
   subscribed.value = data.subscribed
   subscriptionSource.value = data.source
   earlyOddsEnabled.value = data.early_odds_enabled
+  syncTimes.value = data.sync_times
   fullSyncCompletedToday.value = data.full_sync_completed_today
   apiRemaining.value = data.api_remaining
   lastSync.value = data.last_sync
