@@ -28,6 +28,7 @@ import { leagueLabel } from '@/utils/leagueNames'
 import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
 import {
   ahLinesOf,
+  isOpeningDistinct,
   oddsSnippetFromFixture,
   openingOddsSnippetFromFixture,
 } from '@/utils/oddsDisplay'
@@ -129,9 +130,17 @@ const displayAhLines = computed(() =>
   currentAhLines.value.length ? currentAhLines.value : openingAhLines.value,
 )
 const primaryAh = computed(() => displayAhLines.value[0] ?? null)
+const showCurrentBoard = computed(() => currentAhLines.value.length > 0)
+/** Same capture time = 初盘 was just frozen from this board; show it as 即时盘 only. */
+const showOpeningBoard = computed(
+  () =>
+    openingAhLines.value.length > 0
+    && (!showCurrentBoard.value
+      || isOpeningDistinct(openingOdds.value, currentOdds.value)),
+)
 const ahBoards = computed(() => {
   const boards = []
-  if (openingAhLines.value.length) {
+  if (showOpeningBoard.value) {
     boards.push({
       key: 'opening',
       label: '初盘',
@@ -139,7 +148,7 @@ const ahBoards = computed(() => {
       lines: openingAhLines.value,
     })
   }
-  if (currentAhLines.value.length) {
+  if (showCurrentBoard.value) {
     boards.push({
       key: 'current',
       label: '即时盘',
@@ -149,6 +158,9 @@ const ahBoards = computed(() => {
   }
   return boards
 })
+const ahBoardsLabel = computed(() =>
+  ahBoards.value.map((board) => board.label).join('与'),
+)
 
 function capturedAtText(at?: string | null): string {
   return at ? formatLocalMonthDayMinute(at) : ''
@@ -336,7 +348,7 @@ function onOddsClick() {
             <button
               type="button"
               class="handicap-mid"
-              :aria-label="`让球主盘 ${primaryLine}，悬停查看初盘与即时盘，点击查看详情`"
+              :aria-label="`让球主盘 ${primaryLine}，悬停查看${ahBoardsLabel}，点击查看详情`"
               @click="goPredictionDetail"
             >
               {{ primaryLine }}

@@ -23,43 +23,27 @@ export function hasOddsMarkets(odds: OddsLike): boolean {
   )
 }
 
-/** Stable fingerprint of display markets (ignore role / captured_at). */
-export function oddsMarketsFingerprint(odds: OddsLike): string {
-  if (!hasOddsMarkets(odds)) return ''
-  const mw = odds?.match_winner
-  const ou = odds?.goals_ou
-  const btts = odds && 'both_teams_score' in odds ? odds.both_teams_score : null
-  return JSON.stringify({
-    mw: mw ? [mw.home, mw.draw, mw.away] : null,
-    ou: ou
-      ? [ou.line, ou.home, ou.away, (ou.lines ?? []).map((l) => [l.line, l.home, l.away])]
-      : null,
-    ah: ahLinesOf(odds?.asian_handicap).map((l) => [l.line, l.home, l.away]),
-    btts: btts ? [btts.home, btts.away] : null,
-  })
+function capturedAtMs(odds: OddsLike): number | null {
+  const at = odds && 'captured_at' in odds ? odds.captured_at : null
+  if (!at) return null
+  const ms = Date.parse(at)
+  return Number.isFinite(ms) ? ms : null
 }
 
 /**
- * True when 即时盘 is meaningfully later/different than 初盘.
- * Same first-capture board should not render as two identical cards.
+ * 初盘是否值得单独展示，只看采集时间：严格早于即时盘才算两份盘口。
+ *
+ * 初盘可能刚由当前这份冻结或替换（主庄开盘后顶掉次级庄兜底的那份），此时两者
+ * 采集时间相同、内容也相同，按即时盘展示一份即可。判定不逐档比水位：盘口没动
+ * 但确实是后一次采集的，仍然是即时盘。旧行缺采集时间时无从判定，同样只展示一份。
  */
-export function isDistinctCurrentOdds(
-  current: OddsLike,
-  opening: OddsLike,
-): boolean {
-  if (!hasOddsMarkets(current)) return false
-  if (!hasOddsMarkets(opening)) return true
-  if (oddsMarketsFingerprint(current) !== oddsMarketsFingerprint(opening)) {
-    return true
-  }
-  const cAt = current && 'captured_at' in current ? current.captured_at : null
-  const oAt = opening && 'captured_at' in opening ? opening.captured_at : null
-  if (cAt && oAt) {
-    const cMs = Date.parse(cAt)
-    const oMs = Date.parse(oAt)
-    if (Number.isFinite(cMs) && Number.isFinite(oMs) && cMs > oMs) return true
-  }
-  return false
+export function isOpeningDistinct(opening: OddsLike, current: OddsLike): boolean {
+  if (!hasOddsMarkets(opening)) return false
+  if (!hasOddsMarkets(current)) return true
+  const openingMs = capturedAtMs(opening)
+  const currentMs = capturedAtMs(current)
+  if (openingMs == null || currentMs == null) return false
+  return openingMs < currentMs
 }
 
 /** Build list-card snippet from detail odds package. */

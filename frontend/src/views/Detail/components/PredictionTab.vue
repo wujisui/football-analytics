@@ -6,7 +6,7 @@ import PredictionResult from '@/views/Detail/components/PredictionResult.vue'
 import type { FixtureResponse } from '@/api/types'
 import { formatDateTime, hasKickedOff } from '@/utils/format'
 import { useAuthSession } from '@/composables/useAuthSession'
-import { hasOddsMarkets, isDistinctCurrentOdds } from '@/utils/oddsDisplay'
+import { hasOddsMarkets, isOpeningDistinct } from '@/utils/oddsDisplay'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -18,16 +18,11 @@ const { isAdmin } = useAuthSession()
 const oddsCurrent = computed(() => props.fixture.analysis.package?.odds ?? null)
 const oddsOpening = computed(() => props.fixture.analysis.package?.odds_opening ?? null)
 
-const hasCurrent = computed(() => hasOddsMarkets(oddsCurrent.value))
-const hasOpening = computed(() => hasOddsMarkets(oddsOpening.value))
-
-/** First freeze copies current → opening at the same instant; hide duplicate 即时盘. */
-const showCurrent = computed(
-  () =>
-    hasCurrent.value
-    && (!hasOpening.value || isDistinctCurrentOdds(oddsCurrent.value, oddsOpening.value)),
+const showCurrent = computed(() => hasOddsMarkets(oddsCurrent.value))
+/** Same capture time = 初盘 was just frozen from this board; show it as 即时盘 only. */
+const showOpening = computed(() =>
+  isOpeningDistinct(oddsOpening.value, oddsCurrent.value),
 )
-const showOpening = computed(() => hasOpening.value)
 const showAnyBoard = computed(() => showCurrent.value || showOpening.value)
 
 const isFinished = computed(

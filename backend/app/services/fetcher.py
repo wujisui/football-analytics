@@ -1296,7 +1296,12 @@ class FootballFetcher:
         from app.services.cache import analysis_cache_key
         from app.services.ml_predictor import persist_match_features, predict_probabilities
         from app.services.prediction import build_prediction_snapshot, implied_probs_from_odds
-        from app.services.prematch_package import dumps_json, loads_json, rehydrate_odds_markets
+        from app.services.prematch_package import (
+            dumps_json,
+            loads_json,
+            rehydrate_odds_markets,
+            should_write_opening,
+        )
         from app.services.ttl_policy import is_prediction_exam_locked
 
         assert self.session is not None
@@ -1317,17 +1322,21 @@ class FootballFetcher:
                 )
             ).scalar_one_or_none()
 
+            existing_open = (
+                loads_json(getattr(row, "odds_opening_json", None), {})
+                if row is not None
+                else {}
+            )
             opening_text: str | None = None
-            if set_opening and parsed.get("available"):
-                existing_open = (
-                    loads_json(getattr(row, "odds_opening_json", None), {})
-                    if row is not None
-                    else {}
+            if should_write_opening(
+                existing_open,
+                parsed,
+                freeze=set_opening,
+                locked=exam_locked,
+            ):
+                opening_text = dumps_json(
+                    {**parsed, "role": "opening", "captured_at": captured_at}
                 )
-                if not existing_open.get("available"):
-                    opening_text = dumps_json(
-                        {**parsed, "role": "opening", "captured_at": captured_at}
-                    )
 
             # After kickoff: odds board may still update; prediction exam fields must not.
             if exam_locked:
@@ -1458,7 +1467,12 @@ class FootballFetcher:
         from sqlalchemy import select
 
         from app.models.pre_match_data import PreMatchData
-        from app.services.prematch_package import dumps_json, loads_json
+        from app.services.prematch_package import (
+            dumps_json,
+            loads_json,
+            should_write_opening,
+        )
+        from app.services.ttl_policy import is_prediction_exam_locked
 
         assert self.session is not None
         allowed_filter: set[int] | None = None
@@ -1561,7 +1575,8 @@ class FootballFetcher:
                 await asyncio.sleep(0.35)
 
         # Midday: promote existing 即时盘 → 初盘 when opening was never frozen
-        # (e.g. board first arrived via manual sync).
+        # (e.g. board first arrived via manual sync), or when the frozen opening
+        # still comes from a fallback book that the current board has outranked.
         if set_opening:
             promoted = 0
             fresh_rows = (
@@ -1574,7 +1589,11 @@ class FootballFetcher:
             for stored in fresh_rows:
                 current = loads_json(getattr(stored, "odds_json", None), {}) or {}
                 opening = loads_json(getattr(stored, "odds_opening_json", None), {}) or {}
-                if current.get("available") and not opening.get("available"):
+                fx = fixtures_by_id.get(stored.fixture_id)
+                locked = fx is None or is_prediction_exam_locked(fx.date, fx.status)
+                if should_write_opening(
+                    opening, current, freeze=True, locked=locked
+                ):
                     # Keep the board's original capture time as 初盘 clock.
                     captured_at = current.get("captured_at") or (
                         datetime.now(timezone.utc)

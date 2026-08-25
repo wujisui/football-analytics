@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
@@ -243,15 +243,14 @@ def _list_analysis_from_fixture(
     )
 
 
-def _odds_snippet_from_stored(
-    stored: PreMatchData | None,
-    *,
-    opening: bool = False,
+def _odds_snippet_from_package(
+    odds: dict[str, Any] | None,
 ) -> FixtureOddsSnippetResponse | None:
-    if stored is None:
-        return None
-    raw = stored.odds_opening_json if opening else stored.odds_json
-    odds = rehydrate_odds_markets(loads_json(raw, {"available": False}))
+    """Single builder for list-card odds摘要.
+
+    详情与列表都走这里：``captured_at`` 是前端区分初盘 / 即时盘的唯一依据，详情
+    曾另建一份不带该字段的摘要，回列表合并时会把时间戳抹成空、两份盘口并成一份。
+    """
     if not isinstance(odds, dict) or not odds.get("available"):
         return None
     return FixtureOddsSnippetResponse(
@@ -261,6 +260,19 @@ def _odds_snippet_from_stored(
         goals_ou=odds.get("goals_ou"),
         both_teams_score=odds.get("both_teams_score"),
         captured_at=odds.get("captured_at"),
+    )
+
+
+def _odds_snippet_from_stored(
+    stored: PreMatchData | None,
+    *,
+    opening: bool = False,
+) -> FixtureOddsSnippetResponse | None:
+    if stored is None:
+        return None
+    raw = stored.odds_opening_json if opening else stored.odds_json
+    return _odds_snippet_from_package(
+        rehydrate_odds_markets(loads_json(raw, {"available": False}))
     )
 
 
@@ -778,26 +790,8 @@ async def get_fixture_analysis(
     set_no_store_headers(response, analysis.data_source)
     package = analysis.package if isinstance(analysis.package, dict) else {}
     standings = package.get("standings") or {}
-    odds = package.get("odds") or {}
-    odds_opening = package.get("odds_opening") or {}
-    odds_snippet = None
-    if odds.get("available"):
-        odds_snippet = FixtureOddsSnippetResponse(
-            available=True,
-            match_winner=odds.get("match_winner"),
-            asian_handicap=odds.get("asian_handicap"),
-            goals_ou=odds.get("goals_ou"),
-            both_teams_score=odds.get("both_teams_score"),
-        )
-    odds_opening_snippet = None
-    if odds_opening.get("available"):
-        odds_opening_snippet = FixtureOddsSnippetResponse(
-            available=True,
-            match_winner=odds_opening.get("match_winner"),
-            asian_handicap=odds_opening.get("asian_handicap"),
-            goals_ou=odds_opening.get("goals_ou"),
-            both_teams_score=odds_opening.get("both_teams_score"),
-        )
+    odds_snippet = _odds_snippet_from_package(package.get("odds"))
+    odds_opening_snippet = _odds_snippet_from_package(package.get("odds_opening"))
     return FixtureResponse(
         fixture_id=fixture.id,
         league_id=fixture.league_id,

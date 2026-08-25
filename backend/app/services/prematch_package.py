@@ -29,12 +29,19 @@ _BOOKMAKER_RANK = {
     for index, bookmaker in enumerate(BOOKMAKER_PRIORITY)
 }
 
+# 初盘与即时盘要并排对比，整份盘口必须尽量出自同一家庄家，否则「初盘 0 → 即时盘 -1」
+# 只是换庄，不是真实的盘口移动。
+_CORE_MARKETS = ("match_winner", "asian_handicap", "goals_ou")
+_ALL_MARKETS = _CORE_MARKETS + ("both_teams_score",)
+
+
+def _name_rank(name: Any) -> int:
+    """Priority rank of a bookmaker name; lower is sharper, unknown ranks last."""
+    return _BOOKMAKER_RANK.get(str(name or "").casefold(), len(_BOOKMAKER_RANK))
+
 
 def _bookmaker_priority(bookmaker: dict[str, Any]) -> int:
-    name = str(
-        first_value(bookmaker, [["name"], ["bookmaker", "name"]], "")
-    ).casefold()
-    return _BOOKMAKER_RANK.get(name, len(_BOOKMAKER_RANK))
+    return _name_rank(first_value(bookmaker, [["name"], ["bookmaker", "name"]], ""))
 
 
 # Labels that scope a board to a period, a single team, a side event or a combo.
@@ -363,21 +370,42 @@ def _parse_line_market(
     }
 
 
+def _pick_primary_bookmaker(
+    order: list[str],
+    by_book: dict[str, dict[str, Any]],
+) -> str | None:
+    """Book covering the most core markets; ties go to the sharper book."""
+    best: str | None = None
+    best_key: tuple[int, int] | None = None
+    for name in order:
+        coverage = sum(1 for market in _CORE_MARKETS if by_book[name].get(market))
+        if not coverage:
+            continue
+        key = (-coverage, _name_rank(name))
+        if best_key is None or key < best_key:
+            best, best_key = name, key
+    return best
+
+
 def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Extract core markets from the highest-priority available bookmaker."""
+    """Extract core markets, preferring one bookmaker for the whole board.
+
+    Every bookmaker is parsed first, then the book covering the most core markets
+    wins the board (ties broken by ``BOOKMAKER_PRIORITY``). Only markets the
+    winner does not offer fall back to the next-sharpest book, so a board is not
+    silently stitched together from 1xBet 让球 plus William Hill 胜平负.
+    """
     bookmakers_out: list[dict[str, Any]] = []
-    match_winner: dict[str, Any] | None = None
-    asian_handicap: dict[str, Any] | None = None
-    goals_ou: dict[str, Any] | None = None
-    both_teams_score: dict[str, Any] | None = None
+    by_book: dict[str, dict[str, Any]] = {}
 
     for item in extract_items(payload):
-        bookmakers = sorted(
-            item.get("bookmakers") or [],
-            key=_bookmaker_priority,
-        )
-        for book in bookmakers:
-            book_name = first_value(book, [["name"], ["bookmaker", "name"]], "unknown")
+        # Keep ``bookmakers_out`` priority-ordered: truncation there decides which
+        # bets survive for ``rehydrate_odds_markets`` to re-pick from on read.
+        for book in sorted(item.get("bookmakers") or [], key=_bookmaker_priority):
+            book_name = str(
+                first_value(book, [["name"], ["bookmaker", "name"]], "unknown")
+            )
+            slot = by_book.setdefault(book_name, {})
             bets = book.get("bets") or []
             for bet in bets:
                 bet_label = first_value(bet, [["name"], ["label"]], "") or ""
@@ -402,7 +430,7 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 if not _is_full_match_bet(bet_name):
                     continue
 
-                if match_winner is None and (
+                if slot.get("match_winner") is None and (
                     "match winner" in bet_name
                     or bet_name in {"1x2", "winner", "full time result"}
                 ):
@@ -422,12 +450,13 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                             match_winner["draw"] = odd
                         elif label in {"away", "2"}:
                             match_winner["away"] = odd
+                    slot["match_winner"] = match_winner
 
-                if asian_handicap is None and (
+                if slot.get("asian_handicap") is None and (
                     "asian handicap" in bet_name
                     or bet_name in {"handicap", "asian handi", "ah"}
                 ):
-                    asian_handicap = _parse_line_market(
+                    slot["asian_handicap"] = _parse_line_market(
                         bet_label,
                         book_name,
                         parsed_values,
@@ -435,12 +464,12 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                         away_labels={"away", "2"},
                     )
 
-                if goals_ou is None and (
+                if slot.get("goals_ou") is None and (
                     "goals over/under" in bet_name
                     or "over/under" in bet_name
                     or bet_name in {"total goals", "totals", "ou"}
                 ):
-                    goals_ou = _parse_line_market(
+                    slot["goals_ou"] = _parse_line_market(
                         bet_label,
                         book_name,
                         parsed_values,
@@ -448,7 +477,7 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                         away_labels={"under", "u"},
                     )
 
-                if both_teams_score is None and (
+                if slot.get("both_teams_score") is None and (
                     # 前缀匹配：Total Goals/Both Teams To Score 等组合盘不是纯双进。
                     bet_name.startswith("both teams score")
                     or bet_name.startswith("both teams to score")
@@ -463,7 +492,7 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                             yes_odd = odd
                         elif label in {"no", "ng", "n"}:
                             no_odd = odd
-                    both_teams_score = {
+                    slot["both_teams_score"] = {
                         "bookmaker": book_name,
                         "bet": bet_label,
                         # home = 是, away = 否（与 LineOdds 两路约定一致）
@@ -471,46 +500,89 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
                         "away": no_odd,
                         "values": parsed_values,
                     }
-            if (
-                match_winner
-                and asian_handicap
-                and goals_ou
-                and both_teams_score
-            ):
-                break
-        if (
-            match_winner
-            and asian_handicap
-            and goals_ou
-            and both_teams_score
-        ):
-            break
+
+    order = sorted(by_book, key=_name_rank)
+    primary = _pick_primary_bookmaker(order, by_book)
+    markets: dict[str, Any] = {}
+    for market in _ALL_MARKETS:
+        chosen = by_book.get(primary or "", {}).get(market)
+        if chosen is None:
+            for name in order:
+                chosen = by_book[name].get(market)
+                if chosen is not None:
+                    break
+        markets[market] = chosen
 
     return {
-        "match_winner": match_winner,
-        "asian_handicap": asian_handicap,
-        "goals_ou": goals_ou,
-        "both_teams_score": both_teams_score,
-        "bookmakers": _prefer_core_bookmaker_bets(bookmakers_out, limit=12),
-        "available": any(
-            x is not None
-            for x in (
-                match_winner,
-                asian_handicap,
-                goals_ou,
-                both_teams_score,
-            )
-        )
+        "bookmaker": primary,
+        "match_winner": markets["match_winner"],
+        "asian_handicap": markets["asian_handicap"],
+        "goals_ou": markets["goals_ou"],
+        "both_teams_score": markets["both_teams_score"],
+        "bookmakers": _prefer_core_bookmaker_bets(
+            bookmakers_out, primary=primary, limit=12
+        ),
+        "available": any(markets[market] is not None for market in _ALL_MARKETS)
         or bool(bookmakers_out),
     }
+
+
+def _package_bookmaker_rank(package: dict[str, Any] | None) -> int:
+    """Priority rank of a stored board's bookmaker; lower is sharper."""
+    if not isinstance(package, dict):
+        return len(_BOOKMAKER_RANK)
+    name = package.get("bookmaker")
+    if not name:
+        # Rows written before boards carried a top-level bookmaker.
+        for market in _CORE_MARKETS:
+            block = package.get(market)
+            if isinstance(block, dict) and block.get("bookmaker"):
+                name = block["bookmaker"]
+                break
+    return _name_rank(name)
+
+
+def _board_outranks(
+    candidate: dict[str, Any] | None,
+    existing: dict[str, Any] | None,
+) -> bool:
+    """True when ``candidate`` comes from a sharper bookmaker than ``existing``."""
+    return _package_bookmaker_rank(candidate) < _package_bookmaker_rank(existing)
+
+
+def should_write_opening(
+    existing: dict[str, Any] | None,
+    candidate: dict[str, Any] | None,
+    *,
+    freeze: bool,
+    locked: bool,
+) -> bool:
+    """Decide whether ``candidate`` should become the stored 初盘.
+
+    Only a ``freeze`` batch may create an opening. Replacing one is allowed on any
+    pre-kickoff refresh once a sharper bookmaker opens its board: an opening left
+    on a fallback book makes 初盘 and 即时盘 different sources, so the side-by-side
+    comparison shows a bookmaker swap dressed up as a line move.
+    """
+    if not (candidate or {}).get("available"):
+        return False
+    if not (existing or {}).get("available"):
+        return freeze
+    return not locked and _board_outranks(candidate, existing)
 
 
 def _prefer_core_bookmaker_bets(
     entries: list[dict[str, Any]],
     *,
+    primary: str | None = None,
     limit: int = 12,
 ) -> list[dict[str, Any]]:
-    """Keep 1X2 / AH / O-U / BTTS when truncating stored bookmaker rows."""
+    """Keep 1X2 / AH / O-U / BTTS when truncating stored bookmaker rows.
+
+    The primary book's core bets are kept first: ``rehydrate_odds_markets``
+    re-parses from whatever survives here, so dropping them would let a read
+    stitch the board back together out of two bookmakers.
+    """
     if len(entries) <= limit:
         return entries
     priority = (
@@ -526,15 +598,22 @@ def _prefer_core_bookmaker_bets(
     def _is_main_line(bet_name: str, key: str) -> bool:
         return key in bet_name and _is_full_match_bet(bet_name)
 
-    for key in priority:
+    def _take(key: str, book: str | None) -> bool:
         for idx, entry in enumerate(entries):
             if idx in used:
                 continue
-            name = str(entry.get("bet") or "").lower()
-            if _is_main_line(name, key):
+            if book is not None and entry.get("bookmaker") != book:
+                continue
+            if _is_main_line(str(entry.get("bet") or "").lower(), key):
                 picked.append(entry)
                 used.add(idx)
-                break
+                return True
+        return False
+
+    for key in priority:
+        if primary and _take(key, primary):
+            continue
+        _take(key, None)
     for idx, entry in enumerate(entries):
         if len(picked) >= limit:
             break

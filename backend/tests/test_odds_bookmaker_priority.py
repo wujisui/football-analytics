@@ -2,7 +2,34 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from app.services.prematch_package import parse_odds_payload, rehydrate_odds_markets
+from app.services.prematch_package import (
+    parse_odds_payload,
+    rehydrate_odds_markets,
+    should_write_opening,
+)
+
+_MATCH_WINNER = {
+    "name": "Match Winner",
+    "values": [
+        {"value": "Home", "odd": "2.50"},
+        {"value": "Draw", "odd": "2.90"},
+        {"value": "Away", "odd": "2.88"},
+    ],
+}
+_ASIAN_HANDICAP = {
+    "name": "Asian Handicap",
+    "values": [
+        {"value": "Home 0", "odd": "1.80"},
+        {"value": "Away 0", "odd": "2.06"},
+    ],
+}
+_GOALS_OU = {
+    "name": "Goals Over/Under",
+    "values": [
+        {"value": "Over 2.25", "odd": "2.05"},
+        {"value": "Under 2.25", "odd": "1.81"},
+    ],
+}
 
 
 def _bookmaker(name: str, home_odd: str) -> dict:
@@ -79,6 +106,143 @@ class OddsBookmakerPriorityTests(unittest.TestCase):
 
         self.assertEqual(parsed["match_winner"]["bookmaker"], "SBO")
         self.assertEqual(parsed["match_winner"]["home"], "2.20")
+
+
+class SingleBookmakerBoardTests(unittest.TestCase):
+    """一份盘口只能出自一家庄：混庄会让「初盘 0 → 即时盘 -1」看起来像假的盘口移动。"""
+
+    def _payload(self, books: list[dict]) -> dict:
+        return {"response": [{"bookmakers": books}]}
+
+    def test_sharper_book_with_only_1x2_does_not_split_the_board(self) -> None:
+        # 开赛前一周 Pinnacle 未开盘，William Hill 只挂胜平负，1xBet 三个玩法都有。
+        parsed = parse_odds_payload(
+            self._payload(
+                [
+                    {"name": "William Hill", "bets": [_MATCH_WINNER]},
+                    {
+                        "name": "1xBet",
+                        "bets": [_MATCH_WINNER, _ASIAN_HANDICAP, _GOALS_OU],
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(parsed["bookmaker"], "1xBet")
+        self.assertEqual(parsed["match_winner"]["bookmaker"], "1xBet")
+        self.assertEqual(parsed["asian_handicap"]["bookmaker"], "1xBet")
+        self.assertEqual(parsed["goals_ou"]["bookmaker"], "1xBet")
+
+    def test_market_missing_from_the_primary_book_still_falls_back(self) -> None:
+        parsed = parse_odds_payload(
+            self._payload(
+                [
+                    {"name": "Pinnacle", "bets": [_MATCH_WINNER, _ASIAN_HANDICAP]},
+                    {"name": "1xBet", "bets": [_GOALS_OU]},
+                ]
+            )
+        )
+
+        self.assertEqual(parsed["bookmaker"], "Pinnacle")
+        self.assertEqual(parsed["asian_handicap"]["bookmaker"], "Pinnacle")
+        self.assertEqual(parsed["goals_ou"]["bookmaker"], "1xBet")
+
+    def test_truncated_bookmaker_rows_do_not_re_mix_the_board_on_read(self) -> None:
+        """存储只留 12 条明细，主庄的核心玩法必须在里面，否则每次读又拼回两家。"""
+        filler = {
+            "name": "10Bet",
+            "bets": [
+                {
+                    "name": f"Filler Market {i}",
+                    "values": [{"value": "Yes", "odd": "1.50"}],
+                }
+                for i in range(12)
+            ],
+        }
+        parsed = parse_odds_payload(
+            self._payload(
+                [
+                    {"name": "William Hill", "bets": [_MATCH_WINNER]},
+                    {
+                        "name": "1xBet",
+                        "bets": [_MATCH_WINNER, _ASIAN_HANDICAP, _GOALS_OU],
+                    },
+                    filler,
+                ]
+            )
+        )
+        self.assertEqual(parsed["bookmaker"], "1xBet")
+        self.assertEqual(len(parsed["bookmakers"]), 12)
+
+        reread = rehydrate_odds_markets(parsed)
+        self.assertEqual(reread["match_winner"]["bookmaker"], "1xBet")
+        self.assertEqual(reread["asian_handicap"]["bookmaker"], "1xBet")
+        self.assertEqual(reread["goals_ou"]["bookmaker"], "1xBet")
+
+
+class OpeningUpgradeTests(unittest.TestCase):
+    """初盘可由次级庄兜底，但主庄一开盘就要替换，否则两份盘口不同源。"""
+
+    def _board(self, bookmaker: str) -> dict:
+        return {"available": True, "bookmaker": bookmaker}
+
+    def test_only_a_freeze_batch_creates_the_first_opening(self) -> None:
+        candidate = self._board("Pinnacle")
+        self.assertTrue(
+            should_write_opening({}, candidate, freeze=True, locked=False)
+        )
+        self.assertFalse(
+            should_write_opening({}, candidate, freeze=False, locked=False)
+        )
+
+    def test_sharper_book_replaces_a_fallback_opening_on_any_refresh(self) -> None:
+        opening = self._board("1xBet")
+        self.assertTrue(
+            should_write_opening(
+                opening, self._board("Pinnacle"), freeze=False, locked=False
+            )
+        )
+        # 同庄或更次级的盘口不动初盘。
+        self.assertFalse(
+            should_write_opening(
+                opening, self._board("1xBet"), freeze=True, locked=False
+            )
+        )
+        self.assertFalse(
+            should_write_opening(
+                opening, self._board("10Bet"), freeze=True, locked=False
+            )
+        )
+
+    def test_opening_is_never_rewritten_after_kickoff(self) -> None:
+        self.assertFalse(
+            should_write_opening(
+                self._board("1xBet"),
+                self._board("Pinnacle"),
+                freeze=True,
+                locked=True,
+            )
+        )
+
+    def test_legacy_openings_without_a_top_level_bookmaker_still_upgrade(self) -> None:
+        legacy = {"available": True, "match_winner": {"bookmaker": "William Hill"}}
+        self.assertTrue(
+            should_write_opening(
+                legacy, self._board("Pinnacle"), freeze=False, locked=False
+            )
+        )
+        self.assertFalse(
+            should_write_opening(
+                legacy, self._board("10Bet"), freeze=False, locked=False
+            )
+        )
+
+    def test_empty_board_never_becomes_the_opening(self) -> None:
+        self.assertFalse(
+            should_write_opening(
+                {}, {"available": False}, freeze=True, locked=False
+            )
+        )
 
 
 class FullMatchBoardTests(unittest.TestCase):
@@ -191,6 +355,23 @@ class FullMatchBoardTests(unittest.TestCase):
         # List cards label each board with its own capture time.
         self.assertEqual(current.captured_at, "2026-08-25T01:00:00Z")
         self.assertEqual(opening.captured_at, "2026-08-23T03:00:00Z")
+
+    def test_detail_snippet_keeps_captured_at_for_the_list_merge(self) -> None:
+        """详情摘要会覆盖列表行；漏掉 captured_at 会让列表把两份盘口并成一份。"""
+        from app.api.v1.endpoints.fixtures import _odds_snippet_from_package
+
+        snippet = _odds_snippet_from_package(
+            {
+                "available": True,
+                "asian_handicap": {"line": "-1", "home": "2.03", "away": "1.85"},
+                "captured_at": "2026-08-25T06:06:25Z",
+            }
+        )
+
+        assert snippet is not None
+        self.assertEqual(snippet.captured_at, "2026-08-25T06:06:25Z")
+        self.assertIsNone(_odds_snippet_from_package({"available": False}))
+        self.assertIsNone(_odds_snippet_from_package(None))
 
 
 if __name__ == "__main__":
