@@ -1,9 +1,12 @@
 import {
   BookmarkOutline,
   ColorPaletteOutline,
+  ConstructOutline,
+  DocumentTextOutline,
   InformationCircleOutline,
+  PeopleOutline,
   PersonOutline,
-  SettingsOutline,
+  ServerOutline,
   TrophyOutline,
 } from '@vicons/ionicons5'
 import type { Component } from 'vue'
@@ -13,7 +16,10 @@ export type MineSection =
   | 'plans'
   | 'theme'
   | 'hotLeagues'
-  | 'admin'
+  | 'adminOps'
+  | 'adminBackend'
+  | 'vipMembers'
+  | 'vipRecords'
   | 'about'
 
 export const sectionMeta: Record<
@@ -44,11 +50,29 @@ export const sectionMeta: Record<
     hint: '勾选进侧栏「热门」并定时拉赛前盘口；未勾选进「其他」，只入库赛程',
     icon: TrophyOutline,
   },
-  admin: {
-    routeName: 'mine-admin',
-    title: '管理员设置',
-    hint: '订阅状态决定完整批次、盘口频率与详情获取范围',
-    icon: SettingsOutline,
+  adminOps: {
+    routeName: 'mine-admin-ops',
+    title: '运维',
+    hint: '同步官方数据、赛果回写、订阅与早间盘口调度',
+    icon: ConstructOutline,
+  },
+  adminBackend: {
+    routeName: 'mine-admin-backend',
+    title: '后台管理',
+    hint: '官方 Key 与比赛历史清空等高危操作',
+    icon: ServerOutline,
+  },
+  vipMembers: {
+    routeName: 'mine-vip-members',
+    title: '会员管理',
+    hint: '查询账号并授予或调整 VIP 权益',
+    icon: PeopleOutline,
+  },
+  vipRecords: {
+    routeName: 'mine-vip-records',
+    title: '订阅记录',
+    hint: 'VIP 开通、续费与到期流水',
+    icon: DocumentTextOutline,
   },
   about: {
     routeName: 'mine-about',
@@ -56,6 +80,19 @@ export const sectionMeta: Record<
     hint: 'Football Analytics 产品说明与版本信息',
     icon: InformationCircleOutline,
   },
+}
+
+/** Admin-only sections: redirect non-admins away from these routes. */
+export const adminOnlySections = new Set<MineSection>([
+  'hotLeagues',
+  'adminOps',
+  'adminBackend',
+  'vipMembers',
+  'vipRecords',
+])
+
+export function isAdminOnlySection(section: string): boolean {
+  return adminOnlySections.has(section as MineSection)
 }
 
 export function sectionFromRouteName(name: unknown): MineSection {

@@ -14,6 +14,7 @@ import { useIsPhone } from '@/composables/useMediaQuery'
 import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 import { confirmLogout } from '@/views/Mine/confirmLogout'
 import {
+  isAdminOnlySection,
   sectionMeta,
   type MineSection,
 } from '@/views/Mine/sectionMeta'
@@ -41,7 +42,13 @@ const inactiveVipTagColor = {
 const mobileSections = computed(() => {
   const keys: MineSection[] = ['plans', 'theme']
   if (isAdmin.value) {
-    keys.push('hotLeagues', 'admin')
+    keys.push(
+      'adminOps',
+      'adminBackend',
+      'hotLeagues',
+      'vipMembers',
+      'vipRecords',
+    )
   }
   keys.push('about')
   return keys.map((key) => ({
@@ -51,7 +58,7 @@ const mobileSections = computed(() => {
 })
 
 function openSection(section: MineSection) {
-  if ((section === 'admin' || section === 'hotLeagues') && !isAdmin.value) return
+  if (isAdminOnlySection(section) && !isAdmin.value) return
   void router.push({ name: sectionMeta[section].routeName })
 }
 

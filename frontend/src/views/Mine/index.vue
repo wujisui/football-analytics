@@ -10,6 +10,7 @@ import { useIsPhone } from '@/composables/useMediaQuery'
 import ShellBreadcrumb from '@/layouts/components/ShellBreadcrumb.vue'
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import {
+  isAdminOnlySection,
   sectionFromRouteName,
   sectionMeta,
   type MineSection,
@@ -29,60 +30,68 @@ function renderIcon(icon: Component) {
 
 const menuOptions = computed<MenuOption[]>(() => [
   {
-    type: 'group',
-    key: 'group-mine',
-    label: '我的',
-    children: [
-      {
-        key: 'account',
-        label: '个人主页',
-        icon: renderIcon(sectionMeta.account.icon),
-      },
-    ],
+    key: 'account',
+    label: '个人主页',
+    icon: renderIcon(sectionMeta.account.icon),
   },
   {
-    type: 'group',
-    key: 'group-data',
-    label: '本地数据',
-    children: [
-      {
-        key: 'plans',
-        label: '我的方案',
-        icon: renderIcon(sectionMeta.plans.icon),
-      },
-    ],
+    key: 'plans',
+    label: '我的方案',
+    icon: renderIcon(sectionMeta.plans.icon),
   },
   {
-    type: 'group',
-    key: 'group-preferences',
-    label: '账号与偏好',
-    children: [
-      {
-        key: 'theme',
-        label: '主题与玩法',
-        icon: renderIcon(sectionMeta.theme.icon),
-      },
-    ],
+    key: 'theme',
+    label: '主题与玩法',
+    icon: renderIcon(sectionMeta.theme.icon),
   },
+  ...(isAdmin.value
+    ? [
+        {
+          type: 'group',
+          key: 'group-admin',
+          label: '管理员设置',
+          children: [
+            {
+              key: 'adminOps',
+              label: '运维',
+              icon: renderIcon(sectionMeta.adminOps.icon),
+            },
+            {
+              key: 'adminBackend',
+              label: '后台管理',
+              icon: renderIcon(sectionMeta.adminBackend.icon),
+            },
+            {
+              key: 'hotLeagues',
+              label: '热门联赛',
+              icon: renderIcon(sectionMeta.hotLeagues.icon),
+            },
+          ],
+        } satisfies MenuOption,
+        {
+          type: 'group',
+          key: 'group-vip',
+          label: 'VIP',
+          children: [
+            {
+              key: 'vipMembers',
+              label: '会员管理',
+              icon: renderIcon(sectionMeta.vipMembers.icon),
+            },
+            {
+              key: 'vipRecords',
+              label: '订阅记录',
+              icon: renderIcon(sectionMeta.vipRecords.icon),
+            },
+          ],
+        } satisfies MenuOption,
+      ]
+    : []),
   {
     type: 'group',
     key: 'group-other',
     label: '其他',
     children: [
-      ...(isAdmin.value
-        ? [
-            {
-              key: 'hotLeagues',
-              label: '热门联赛',
-              icon: renderIcon(sectionMeta.hotLeagues.icon),
-            } satisfies MenuOption,
-            {
-              key: 'admin',
-              label: '管理员设置',
-              icon: renderIcon(sectionMeta.admin.icon),
-            } satisfies MenuOption,
-          ]
-        : []),
       {
         key: 'about',
         label: '关于',
@@ -108,13 +117,9 @@ const showSectionHeader = computed(
     (isPhone.value && activeSection.value !== 'account') || !isPhone.value,
 )
 
-function isAdminSection(section: string): boolean {
-  return section === 'admin' || section === 'hotLeagues'
-}
-
 function openSection(section: string) {
   if (!(section in sectionMeta)) return
-  if (isAdminSection(section) && !isAdmin.value) return
+  if (isAdminOnlySection(section) && !isAdmin.value) return
   const mineSection = section as MineSection
   const target = sectionMeta[mineSection].routeName
   if (route.name !== target) void router.push({ name: target })
@@ -123,7 +128,7 @@ function openSection(section: string) {
 watch(
   () => [activeSection.value, isAdmin.value] as const,
   ([section, admin]) => {
-    if (isAdminSection(section) && !admin) {
+    if (isAdminOnlySection(section) && !admin) {
       void router.replace({ name: 'mine-account' })
     }
   },

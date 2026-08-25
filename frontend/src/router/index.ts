@@ -12,7 +12,10 @@ const MineAccount = () => import('@/views/Mine/account/index.vue')
 const MinePlans = () => import('@/views/Mine/plans/index.vue')
 const MineTheme = () => import('@/views/Mine/theme/index.vue')
 const MineHotLeagues = () => import('@/views/Mine/hot-leagues/index.vue')
-const MineAdmin = () => import('@/views/Mine/admin/index.vue')
+const MineAdminOps = () => import('@/views/Mine/admin/ops/index.vue')
+const MineAdminBackend = () => import('@/views/Mine/admin/backend/index.vue')
+const MineVipMembers = () => import('@/views/Mine/vip/members/index.vue')
+const MineVipRecords = () => import('@/views/Mine/vip/records/index.vue')
 const MineAbout = () => import('@/views/Mine/about/index.vue')
 
 const router = createRouter({
@@ -89,8 +92,27 @@ const router = createRouter({
         },
         {
           path: 'admin',
-          name: 'mine-admin',
-          component: MineAdmin,
+          redirect: { name: 'mine-admin-ops' },
+        },
+        {
+          path: 'admin/ops',
+          name: 'mine-admin-ops',
+          component: MineAdminOps,
+        },
+        {
+          path: 'admin/backend',
+          name: 'mine-admin-backend',
+          component: MineAdminBackend,
+        },
+        {
+          path: 'vip/members',
+          name: 'mine-vip-members',
+          component: MineVipMembers,
+        },
+        {
+          path: 'vip/records',
+          name: 'mine-vip-records',
+          component: MineVipRecords,
         },
         {
           path: 'about',
