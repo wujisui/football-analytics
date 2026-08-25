@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.services import auth as auth_service
 from app.services.data_cleanup import reset_match_history
 from app.services.cache import get_cache_service
-from app.services.league_names import league_name_zh
+from app.services.fixtures_sync import official_sync_busy
 from app.services.runtime_settings import (
     default_hot_league_ids,
     get_api_sports_keys_setting,
@@ -25,6 +25,7 @@ from app.services.runtime_settings import (
     set_subscription_enabled,
 )
 from app.tasks.scheduler import (
+    RESULTS_SYNC_TASK,
     SUBSCRIBED_EARLY_ODDS_HOURS,
     SUBSCRIBED_ODDS_HOURS,
     UNSUBSCRIBED_ODDS_HOURS,
@@ -40,7 +41,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 class TriggerTaskRequest(BaseModel):
     name: str = Field(
         ...,
-        description="任务名称：scheduled_fixtures_sync / clean_old_data / train_model / daily_auto_favorites",
+        description=(
+            "任务名称：scheduled_fixtures_sync / scheduled_results_sync / "
+            "clean_old_data / train_model / daily_auto_favorites"
+        ),
     )
 
 
@@ -129,6 +133,7 @@ SYNC_MODE_LABELS = {
     "full": "完整批次",
     "odds": "盘口轻刷",
     "fixtures": "当天赛程",
+    "results": "赛果回写",
 }
 
 
@@ -196,26 +201,31 @@ async def trigger_task_endpoint(
     body: TriggerTaskRequest,
     _: None = Depends(require_admin),
 ) -> dict:
+    allowed = {
+        "scheduled_fixtures_sync",
+        RESULTS_SYNC_TASK,
+        "clean_old_data",
+        "train_model",
+        "daily_auto_favorites",
+    }
+    if body.name not in allowed:
+        raise HTTPException(status_code=400, detail=f"Unknown task: {body.name}")
     if (
         body.name == "scheduled_fixtures_sync"
         and await full_sync_completed_today()
     ):
         raise HTTPException(status_code=409, detail="今日完整批次已完成，无需重复同步")
-    if (
+    if official_sync_busy():
+        raise HTTPException(status_code=409, detail="官方同步正在执行，请稍后再试")
+    running = (
         get_task_status()
         .get("active_tasks", {})
-        .get(body.name, {})
-        .get("status")
-        == "running"
+    )
+    if any(
+        (running.get(name) or {}).get("status") == "running"
+        for name in ("scheduled_fixtures_sync", RESULTS_SYNC_TASK, body.name)
     ):
         raise HTTPException(status_code=409, detail="任务正在执行，请勿重复触发")
-    if body.name not in {
-        "scheduled_fixtures_sync",
-        "clean_old_data",
-        "train_model",
-        "daily_auto_favorites",
-    }:
-        raise HTTPException(status_code=400, detail=f"Unknown task: {body.name}")
     try:
         asyncio.create_task(trigger_task(body.name))
         await asyncio.sleep(0)

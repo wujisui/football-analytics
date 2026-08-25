@@ -46,11 +46,36 @@ def sync_dates(
     result lookback.
     """
     if free_quota:
-        return [today], [today - timedelta(days=1)]
+        return [today], result_days_for_batch(today, free_quota=True)
     window = max(1, min(int(lookahead_days), 14))
     fixture_days = [today + timedelta(days=offset) for offset in range(window)]
-    result_days = [today - timedelta(days=offset) for offset in range(3, -1, -1)]
-    return fixture_days, result_days
+    return fixture_days, result_days_for_batch(today, free_quota=False)
+
+
+def result_days_for_batch(
+    today: date,
+    *,
+    free_quota: bool,
+    include_today: bool = False,
+) -> list[date]:
+    """Calendar days whose worldwide ``date=`` call backfills FT scores.
+
+    Unsubscribed 11:00 only closes yesterday. The admin「只更新赛果」button
+    also includes today so afternoon/evening finishes can land after the
+    full batch has already succeeded. Subscription always looks back 4 days
+    (including today). Callers clip with ``clip_fixture_dates_for_plan``.
+    """
+    if free_quota:
+        days = [today - timedelta(days=1)]
+        if include_today:
+            days.append(today)
+        return days
+    return [today - timedelta(days=offset) for offset in range(3, -1, -1)]
+
+
+def official_sync_busy() -> bool:
+    """True while any full / odds-light / results batch holds the official lock."""
+    return _sync_lock.locked()
 
 
 async def missing_subscribed_fixture_days(
@@ -131,11 +156,11 @@ async def sync_free_quota_rollover_fixtures() -> int:
 
 
 async def scheduled_fixtures_sync(*, mode: str = "full") -> dict:
-    """Run one full batch or one today's-hot-odds light batch."""
+    """Run one full batch, today's-hot-odds light batch, or results-only backfill."""
     if _sync_lock.locked():
         logger.info("Scheduled fixtures sync already running; skipping overlap")
         return {"status": "skipped", "reason": "locked", "mode": mode}
-    if mode not in {"full", "odds"}:
+    if mode not in {"full", "odds", "results"}:
         raise ValueError(f"Unknown sync mode: {mode}")
 
     settings = get_settings()
@@ -144,12 +169,14 @@ async def scheduled_fixtures_sync(*, mode: str = "full") -> dict:
     subscribed = not free_quota
     primary_league_ids, _ = await get_hot_league_ids()
     tomorrow = today + timedelta(days=1)
-    result_days = (
-        [today - timedelta(days=1)]
-        if free_quota
-        else [today - timedelta(days=offset) for offset in range(3, -1, -1)]
+    result_days = clip_fixture_dates_for_plan(
+        result_days_for_batch(
+            today,
+            free_quota=free_quota,
+            include_today=(mode == "results"),
+        ),
+        today,
     )
-    result_days = clip_fixture_dates_for_plan(result_days, today)
 
     async with _sync_lock:
         async with FootballFetcher() as fetcher:
@@ -163,7 +190,18 @@ async def scheduled_fixtures_sync(*, mode: str = "full") -> dict:
                 "failed": 0,
             }
 
-            if mode == "odds":
+            if mode == "results":
+                if result_days and not fetcher.quota_exhausted:
+                    results_saved = await fetcher.capture_finished_results(
+                        on_days=result_days,
+                        today=today,
+                    )
+                logger.info(
+                    "scheduled_fixtures_sync results-only subscribed=%s day=%s",
+                    subscribed,
+                    today,
+                )
+            elif mode == "odds":
                 if not fetcher.quota_exhausted:
                     odds_updated = await fetcher.sync_odds_for_dates(
                         [today],
@@ -285,21 +323,23 @@ async def scheduled_fixtures_sync(*, mode: str = "full") -> dict:
                     )
 
         # Odds just refreshed — recompute auto favorites so picks track lines.
-        try:
-            from app.core.database import AsyncSessionLocal
-            from app.services.auto_favorites import sync_daily_auto_favorites
+        # Results-only does not touch boards, so skip the pick rewrite.
+        if mode != "results":
+            try:
+                from app.core.database import AsyncSessionLocal
+                from app.services.auto_favorites import sync_daily_auto_favorites
 
-            async with AsyncSessionLocal() as session:
-                auto_result = await sync_daily_auto_favorites(session)
-            logger.info(
-                "scheduled_fixtures_sync auto-favorites selected=%s",
-                len(auto_result.get("selected") or []),
-            )
-        except Exception as exc:
-            logger.warning(
-                "scheduled_fixtures_sync auto-favorites skipped: %s",
-                exc,
-            )
+                async with AsyncSessionLocal() as session:
+                    auto_result = await sync_daily_auto_favorites(session)
+                logger.info(
+                    "scheduled_fixtures_sync auto-favorites selected=%s",
+                    len(auto_result.get("selected") or []),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "scheduled_fixtures_sync auto-favorites skipped: %s",
+                    exc,
+                )
 
     logger.info(
         "scheduled_fixtures_sync done fixtures_saved=%s results_saved=%s "

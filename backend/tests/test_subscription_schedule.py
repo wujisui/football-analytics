@@ -35,6 +35,22 @@ def test_unsubscribed_full_batch_dates() -> None:
     assert result_days == [date(2026, 8, 16)]
 
 
+def test_result_days_admin_results_include_today_when_unsubscribed() -> None:
+    from app.services.fixtures_sync import result_days_for_batch
+
+    today = date(2026, 8, 17)
+    assert result_days_for_batch(today, free_quota=True) == [date(2026, 8, 16)]
+    assert result_days_for_batch(
+        today, free_quota=True, include_today=True
+    ) == [date(2026, 8, 16), today]
+    assert result_days_for_batch(today, free_quota=False, include_today=True) == [
+        date(2026, 8, 14),
+        date(2026, 8, 15),
+        date(2026, 8, 16),
+        today,
+    ]
+
+
 def test_subscribed_window_and_result_lookback() -> None:
     today = date(2026, 8, 17)
     fixture_days, result_days = sync_dates(
@@ -177,5 +193,55 @@ def test_light_batch_only_refreshes_today_odds() -> None:
         fetcher.sync_odds_for_dates.assert_awaited_once()
         assert fetcher.sync_odds_for_dates.await_args.kwargs["refresh_existing"] is True
         assert fetcher.sync_odds_for_dates.await_args.kwargs["set_opening"] is False
+    finally:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
+def test_results_batch_only_captures_scores() -> None:
+    from app.services import fixtures_sync as fs
+
+    fetcher = MagicMock()
+    fetcher.quota_exhausted = False
+    fetcher.capture_finished_results = AsyncMock(return_value=6)
+    fetcher.fetch_fixtures_for_date = AsyncMock()
+    fetcher.sync_odds_for_dates = AsyncMock()
+    fetcher.__aenter__ = AsyncMock(return_value=fetcher)
+    fetcher.__aexit__ = AsyncMock(return_value=False)
+    settings = MagicMock(
+        SCHEDULER_TIMEZONE="Asia/Shanghai",
+        FIXTURES_LOOKAHEAD_DAYS=8,
+    )
+    auto_fav = AsyncMock(return_value={"selected": []})
+
+    async def _run() -> dict:
+        with (
+            patch.object(fs, "FootballFetcher", return_value=fetcher),
+            patch.object(fs, "get_settings", return_value=settings),
+            patch.object(
+                fs, "get_enable_free_quota", AsyncMock(return_value=(True, "db"))
+            ),
+            patch.object(
+                fs, "get_hot_league_ids", AsyncMock(return_value=([39], "db"))
+            ),
+            patch(
+                "app.services.auto_favorites.sync_daily_auto_favorites",
+                auto_fav,
+            ),
+            patch("app.core.database.AsyncSessionLocal"),
+        ):
+            return await fs.scheduled_fixtures_sync(mode="results")
+
+    try:
+        result = asyncio.run(_run())
+        assert result["status"] == "completed"
+        assert result["mode"] == "results"
+        assert result["results_saved"] == 6
+        assert result["odds_updated"] == 0
+        fetcher.capture_finished_results.assert_awaited_once()
+        on_days = fetcher.capture_finished_results.await_args.kwargs["on_days"]
+        assert len(on_days) == 2
+        fetcher.fetch_fixtures_for_date.assert_not_awaited()
+        fetcher.sync_odds_for_dates.assert_not_awaited()
+        auto_fav.assert_not_awaited()
     finally:
         asyncio.set_event_loop(asyncio.new_event_loop())

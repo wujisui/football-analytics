@@ -142,6 +142,15 @@ export async function triggerScheduledFixturesSync(): Promise<TriggerTaskResult>
   return data
 }
 
+export async function triggerScheduledResultsSync(): Promise<TriggerTaskResult> {
+  const { data } = await apiClient.post<TriggerTaskResult>(
+    '/admin/tasks/trigger',
+    { name: 'scheduled_results_sync' },
+    { timeout: 5 * 60_000 },
+  )
+  return data
+}
+
 export async function previewResetMatchHistory(): Promise<ResetMatchHistoryReport> {
   const { data } = await apiClient.get<ResetMatchHistoryReport>('/admin/reset-match-history')
   return data

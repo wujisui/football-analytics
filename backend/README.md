@@ -234,7 +234,7 @@ GET /api/v1/fixtures/today?league_id=39
 | 方法   | 路径                     | 说明                                    |
 |------|------------------------|---------------------------------------|
 | GET  | `/admin/tasks`         | 调度器与任务状态                              |
-| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"clean_old_data"|"train_model"}` |
+| POST | `/admin/tasks/trigger` | 手动触发任务，body: `{"name": "scheduled_fixtures_sync"|"scheduled_results_sync"|"clean_old_data"|"train_model"}` |
 | GET  | `/admin/settings/subscription` | 读取订阅、早间盘口、当天完整批次、官方剩余用量，以及上次同步（时刻 / 批次类型 / 本次消耗的官方请求数） |
 | PATCH | `/admin/settings/subscription` | 写入订阅状态并立刻重排 cron |
 | PATCH | `/admin/settings/subscription-early-odds` | 控制已订阅 04/06/08/10 盘口轻刷 |
@@ -268,8 +268,8 @@ API-Sports 没有跨国家统一可靠的“第几级联赛”字段，因此目
 | `clean_old_data`       | 每天 11:00 全量同步之后（管理员「立即同步」也会带上） | 物理删除「永远无法结算」（取消，或开赛超 1 天仍无比分的完场/延期/pending/live）与「完场且无赛前盘口」（含有预测但无盘口的无依据预测）的场次、空联赛行与孤立球队；**「完场且无赛前盘口」要等开赛超过 `RESULTS_BROWSABLE_DAYS`（7 天，对齐【赛程】日期条可选范围）才删**——后端漏跑期间的比赛日只能靠赛果回填，而回填走全球按日接口只带比分不带盘口，立刻删会让那几天在赛果页永久空白，且每次同步都重新拉一遍再删，白耗官方配额；超过 `CLEANUP_DAYS` 的赛前包只清详情 JSON，长期保留冻结推荐、概率、盘口与训练特征，并清理过期日志 |
 
 时区由 `SCHEDULER_TIMEZONE` 控制（默认 `Asia/Shanghai`）。  
-未订阅固定 **08:05** 当天赛程、**11:00** 完整批次、**22:00** 盘口轻刷，跳过积分榜与详情预拉、不请求未来。已订阅的 11:00 完整批次回写近 4 天赛果，赛程保留 8 天但只拉缺失的未来日期（正常每天新增末端一天），盘口与详情只处理今天、明天；明天首次盘口冻结初盘，成为今天后刷新即时盘。当天完整批次成功后「立即同步」禁用。详情页管理员可显式更新单场未开赛热门盘口。列表 / F5 / 筛选始终只读本地；无公开列表 sync、无 SSE、无轮询。
-手动：`python manage.py trigger-task --name scheduled_fixtures_sync`。
+未订阅固定 **08:05** 当天赛程、**11:00** 完整批次、**22:00** 盘口轻刷，跳过积分榜与详情预拉、不请求未来。已订阅的 11:00 完整批次回写近 4 天赛果，赛程保留 8 天但只拉缺失的未来日期（正常每天新增末端一天），盘口与详情只处理今天、明天；明天首次盘口冻结初盘，成为今天后刷新即时盘。当天完整批次成功后「立即同步」禁用。管理员可另点「只更新赛果」按日回写终场比分（不占用完整批次当日额度）。详情页管理员可显式更新单场未开赛热门盘口。列表 / F5 / 筛选始终只读本地；无公开列表 sync、无 SSE、无轮询。
+手动：`python manage.py trigger-task --name scheduled_fixtures_sync`（完整批次）或 `--name scheduled_results_sync`（只回写赛果）。
 
 ## 前端对接提示
 

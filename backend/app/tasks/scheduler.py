@@ -35,6 +35,7 @@ SUBSCRIBED_ODDS_HOURS = (0, 2, 14, 16, 18, 20, 22)
 SUBSCRIBED_EARLY_ODDS_HOURS = (4, 6, 8, 10)
 SUBSCRIBED_FIRST_ODDS_MINUTE = 55
 FREE_QUOTA_ROLLOVER_JOB_ID = "free_quota_fixture_rollover"
+RESULTS_SYNC_TASK = "scheduled_results_sync"
 
 
 def _utc_now() -> datetime:
@@ -184,6 +185,11 @@ async def run_scheduled_fixtures_sync(
         logger.error("Task %s failed: %s", task_name, exc, exc_info=True)
     finally:
         await _record_sync_run(task_name, mode, start_count)
+
+
+async def run_scheduled_results_sync() -> None:
+    """Admin-only FT backfill; does not consume the day's full-batch slot."""
+    await run_scheduled_fixtures_sync(task_name=RESULTS_SYNC_TASK, mode="results")
 
 
 async def run_free_quota_fixture_rollover() -> None:
@@ -351,6 +357,7 @@ async def run_daily_auto_favorites() -> None:
 
 TASK_HANDLERS = {
     "scheduled_fixtures_sync": run_scheduled_fixtures_sync,
+    RESULTS_SYNC_TASK: run_scheduled_results_sync,
     "clean_old_data": clean_old_data,
     "train_model": train_model,
     "daily_auto_favorites": run_daily_auto_favorites,

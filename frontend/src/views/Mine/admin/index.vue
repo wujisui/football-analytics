@@ -5,6 +5,7 @@ import {
   RefreshOutline,
   SettingsOutline,
   TrashOutline,
+  TrophyOutline,
 } from '@vicons/ionicons5'
 import { useMessage, useModal } from 'naive-ui'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -30,7 +31,8 @@ defineOptions({ name: 'MineAdmin' })
 
 const message = useMessage()
 const modal = useModal()
-const { syncing, runSync, hydrateStatus } = useAdminSync()
+const { syncing, resultsSyncing, busy, runSync, runResultsSync, hydrateStatus } =
+  useAdminSync()
 
 const subscribed = ref(false)
 const subscriptionSource = ref('')
@@ -80,8 +82,14 @@ const settingSourceLabel = (value: string) =>
 
 const syncDescription = computed(() =>
   subscribed.value
-    ? '当天完整批次尚未成功时可手动补跑：回写近 4 天赛果、增量补齐 8 天赛程窗口、更新今天/明天热门盘口与详情、积分榜、训练、日推及清理；成功后当天禁用，避免重复消耗。'
-    : '当天 11:00 完整批次尚未成功时可手动补跑：昨天赛果、今天赛程/热门盘口、训练、日推及清理；成功后当天禁用。08:05 当天赛程是独立任务，不补跑。',
+    ? '当天完整批次尚未成功时可手动补跑：回写近 4 天赛果、增量补齐 8 天赛程窗口、更新今天/明天热门盘口与详情、积分榜、训练、日推及清理；成功后当天禁用，避免重复消耗。完场比分若还要再刷，用下面的「只更新赛果」。'
+    : '当天 11:00 完整批次尚未成功时可手动补跑：昨天赛果、今天赛程/热门盘口、训练、日推及清理；成功后当天禁用。08:05 当天赛程是独立任务，不补跑。完场比分若还要再刷，用下面的「只更新赛果」。',
+)
+
+const resultsSyncDescription = computed(() =>
+  subscribed.value
+    ? '只按日回写近 4 天（含今天）的终场比分与训练标签，不拉盘口、赛程或详情。当天「立即同步」完成后仍可用。早间盘口刷新只动未开赛盘口，关了也不会挡住赛果。与完整批次共用官方请求锁，不能同时跑。'
+    : '只按日回写昨天和今天的终场比分与训练标签，不拉盘口、赛程或详情。当天「立即同步」完成后仍可用。未订阅的 22:00 轻刷也不回写比分，所以下午完场要靠这一下。与完整批次共用官方请求锁，不能同时跑。',
 )
 
 /** 上次同步时刻由后端持久化，重启或换浏览器后仍能看到。 */
@@ -188,6 +196,11 @@ async function applyEarlyOddsToggle(next: boolean) {
 
 async function syncOfficialData() {
   await runSync()
+  await loadSetting()
+}
+
+async function syncResultsOnly() {
+  await runResultsSync()
   await loadSetting()
 }
 
@@ -331,11 +344,28 @@ watch(syncing, (value, previous) => {
             <n-button
               size="small"
               type="primary"
-              :disabled="syncing || fullSyncCompletedToday"
+              :disabled="busy || fullSyncCompletedToday"
               :loading="syncing"
               @click="syncOfficialData"
             >
               {{ syncing ? '同步中' : fullSyncCompletedToday ? '今日已同步' : '立即同步' }}
+            </n-button>
+          </template>
+        </n-list-item>
+
+        <n-list-item>
+          <template #prefix>
+            <n-icon :component="TrophyOutline" :size="20" />
+          </template>
+          <n-thing title="只更新赛果" :description="resultsSyncDescription" />
+          <template #suffix>
+            <n-button
+              size="small"
+              :disabled="busy"
+              :loading="resultsSyncing"
+              @click="syncResultsOnly"
+            >
+              {{ resultsSyncing ? '更新中' : '更新赛果' }}
             </n-button>
           </template>
         </n-list-item>
