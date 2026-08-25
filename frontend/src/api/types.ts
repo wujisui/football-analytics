@@ -211,6 +211,7 @@ export interface FixtureOddsSnippet {
   asian_handicap?: LineOdds | null
   goals_ou?: LineOdds | null
   both_teams_score?: LineOdds | null
+  captured_at?: string | null
 }
 
 export interface FixtureResponse {
@@ -233,7 +234,10 @@ export interface FixtureResponse {
   analysis: AnalysisResponse
   home_rank?: number | null
   away_rank?: number | null
+  /** 即时盘列表摘要。 */
   odds_snippet?: FixtureOddsSnippet | null
+  /** 首次固定同步后冻结的初盘列表摘要。 */
+  odds_opening_snippet?: FixtureOddsSnippet | null
 }
 
 export interface TodayFixturesResponse {

@@ -269,6 +269,7 @@ class FixtureOddsSnippetResponse(BaseModel):
     asian_handicap: LineOddsResponse | None = None
     goals_ou: LineOddsResponse | None = None
     both_teams_score: LineOddsResponse | None = None
+    captured_at: str | None = None
 
 
 class FixtureResponse(BaseModel):
@@ -296,7 +297,10 @@ class FixtureResponse(BaseModel):
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
     odds_snippet: FixtureOddsSnippetResponse | None = Field(
-        default=None, description="列表用盘口摘要（本地已存）"
+        default=None, description="列表用即时盘摘要（本地已存）"
+    )
+    odds_opening_snippet: FixtureOddsSnippetResponse | None = Field(
+        default=None, description="列表用初盘摘要（首次固定同步后冻结）"
     )
 
     @field_serializer("fixture_date")
@@ -400,6 +404,7 @@ class FavoriteFixtureResponse(BaseModel):
     draw_prob: float | None = None
     away_win_prob: float | None = None
     odds_snippet: FixtureOddsSnippetResponse | None = None
+    odds_opening_snippet: FixtureOddsSnippetResponse | None = None
     home_rank: int | None = None
     away_rank: int | None = None
     # auto = algorithm pick after scheduled sync; manual = user star.

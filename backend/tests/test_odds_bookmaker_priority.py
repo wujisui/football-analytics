@@ -1,4 +1,6 @@
+import json
 import unittest
+from types import SimpleNamespace
 
 from app.services.prematch_package import parse_odds_payload, rehydrate_odds_markets
 
@@ -159,6 +161,36 @@ class FullMatchBoardTests(unittest.TestCase):
         }
 
         self.assertIsNone(rehydrate_odds_markets(stored)["goals_ou"])
+
+    def test_list_snippet_can_read_current_and_frozen_opening_boards(self) -> None:
+        from app.api.v1.endpoints.fixtures import _odds_snippet_from_stored
+
+        def _board(line: str, captured_at: str) -> str:
+            return json.dumps(
+                {
+                    "available": True,
+                    "asian_handicap": {
+                        "line": line,
+                        "home": "1.91",
+                        "away": "1.95",
+                    },
+                    "captured_at": captured_at,
+                }
+            )
+
+        stored = SimpleNamespace(
+            odds_json=_board("-0.5", "2026-08-25T01:00:00Z"),
+            odds_opening_json=_board("-0.25", "2026-08-23T03:00:00Z"),
+        )
+
+        current = _odds_snippet_from_stored(stored)
+        opening = _odds_snippet_from_stored(stored, opening=True)
+
+        self.assertEqual(current.asian_handicap.line, "-0.5")
+        self.assertEqual(opening.asian_handicap.line, "-0.25")
+        # List cards label each board with its own capture time.
+        self.assertEqual(current.captured_at, "2026-08-25T01:00:00Z")
+        self.assertEqual(opening.captured_at, "2026-08-23T03:00:00Z")
 
 
 if __name__ == "__main__":

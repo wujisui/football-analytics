@@ -46,6 +46,7 @@ def _to_favorite_response(
 
     analysis = _list_analysis_from_fixture(fixture, stored)
     odds_snippet = _odds_snippet_from_stored(stored)
+    odds_opening_snippet = _odds_snippet_from_stored(stored, opening=True)
     home_rank, away_rank = _ranks_from_maps(fixture, standings_maps or {}, stored)
     probs = analysis.probabilities
     ready = bool(probs.available)
@@ -124,6 +125,7 @@ def _to_favorite_response(
         draw_prob=probs.draw_prob if ready else None,
         away_win_prob=probs.away_win_prob if ready else None,
         odds_snippet=odds_snippet,
+        odds_opening_snippet=odds_opening_snippet,
         home_rank=home_rank,
         away_rank=away_rank,
         source=fav.source,

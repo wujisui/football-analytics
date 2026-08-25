@@ -73,6 +73,7 @@ export function oddsPackageToSnippet(
     asian_handicap: odds.asian_handicap,
     goals_ou: odds.goals_ou,
     both_teams_score: odds.both_teams_score,
+    captured_at: odds.captured_at ?? null,
   }
 }
 
@@ -86,12 +87,24 @@ export function oddsSnippetFromFixture(
   )
 }
 
+/** Prefer list opening snippet; fall back to detail package frozen opening odds. */
+export function openingOddsSnippetFromFixture(
+  fixture: Pick<FixtureResponse, 'odds_opening_snippet' | 'analysis'>,
+): FixtureOddsSnippet | null {
+  return (
+    fixture.odds_opening_snippet ??
+    oddsPackageToSnippet(fixture.analysis?.package?.odds_opening ?? null)
+  )
+}
+
 /** Merge detail response into a list row, including score refreshed on detail click. */
 export function mergeDetailIntoListFixture(
   prev: FixtureResponse,
   detail: FixtureResponse,
 ): FixtureResponse {
   const snippet = oddsSnippetFromFixture(detail) ?? prev.odds_snippet
+  const openingSnippet =
+    openingOddsSnippetFromFixture(detail) ?? prev.odds_opening_snippet
   return {
     ...prev,
     status: detail.status,
@@ -100,6 +113,7 @@ export function mergeDetailIntoListFixture(
     home_rank: detail.home_rank ?? prev.home_rank,
     away_rank: detail.away_rank ?? prev.away_rank,
     odds_snippet: snippet,
+    odds_opening_snippet: openingSnippet,
     analysis: detail.analysis ?? prev.analysis,
   }
 }

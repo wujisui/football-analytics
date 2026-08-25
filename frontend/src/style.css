@@ -353,27 +353,44 @@ button {
   height: 0;
 }
 
-/* Shared asian-handicap multi-line popover (PreMatchOddsTable / prediction card). */
+/*
+ * Shared asian-handicap multi-line popover (PreMatchOddsTable / prediction card).
+ * One card holds 1~2 boards; the boards sit on a lighter surface so the card
+ * background itself reads as the gap between 初盘 and 即时盘.
+ */
 .ah-board-popover {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--fa-bg-elevated);
+  box-shadow: 0 8px 24px var(--fa-hover-shadow);
 }
 
 .ah-board-title {
   margin: 0 0 6px;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
   color: var(--fa-text-strong);
   font-size: 12px;
   font-weight: 700;
-  text-align: center;
+}
+
+.ah-board-time {
+  color: var(--fa-text-faint);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 .ah-popover-panel {
   min-width: 280px;
   padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--fa-bg-elevated);
-  box-shadow: 0 8px 24px var(--fa-hover-shadow);
+  border-radius: 6px;
+  background: var(--fa-bg-soft);
   display: flex;
   flex-direction: column;
   gap: 6px;

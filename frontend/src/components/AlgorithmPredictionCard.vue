@@ -12,6 +12,7 @@ import RecommendationQualityRate from '@/components/RecommendationQualityRate.vu
 import WdlProbabilityBars from '@/components/WdlProbabilityBars.vue'
 import { favoriteQualityRating } from '@/composables/useFavoriteFixtures'
 import {
+  formatLocalMonthDayMinute,
   formatOdd,
   formatTime,
   hasRealProbabilities,
@@ -25,7 +26,11 @@ import {
 } from '@/utils/fixturesLeagueFilter'
 import { leagueLabel } from '@/utils/leagueNames'
 import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
-import { ahLinesOf, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
+import {
+  ahLinesOf,
+  oddsSnippetFromFixture,
+  openingOddsSnippetFromFixture,
+} from '@/utils/oddsDisplay'
 
 const props = withDefaults(
   defineProps<{
@@ -97,6 +102,7 @@ const predictionReady = computed(() => {
 
 const homeName = computed(() => props.fixture?.home_team_name || '—')
 const awayName = computed(() => props.fixture?.away_team_name || '—')
+const matchupText = computed(() => `${homeName.value} vs ${awayName.value}`)
 const leagueName = computed(() => leagueLabel(props.fixture?.league_name))
 const leagueId = computed(() => props.fixture?.league_id ?? null)
 const leagueActive = computed(
@@ -109,12 +115,44 @@ const kickoffText = computed(() =>
   props.fixture ? formatTime(props.fixture.fixture_date) : '',
 )
 
-const ahLines = computed(() => {
-  if (!props.standalone || !props.fixture) return []
-  return ahLinesOf(oddsSnippetFromFixture(props.fixture)?.asian_handicap)
+const currentOdds = computed(() =>
+  props.standalone && props.fixture ? oddsSnippetFromFixture(props.fixture) : null,
+)
+const openingOdds = computed(() =>
+  props.standalone && props.fixture
+    ? openingOddsSnippetFromFixture(props.fixture)
+    : null,
+)
+const currentAhLines = computed(() => ahLinesOf(currentOdds.value?.asian_handicap))
+const openingAhLines = computed(() => ahLinesOf(openingOdds.value?.asian_handicap))
+const displayAhLines = computed(() =>
+  currentAhLines.value.length ? currentAhLines.value : openingAhLines.value,
+)
+const primaryAh = computed(() => displayAhLines.value[0] ?? null)
+const ahBoards = computed(() => {
+  const boards = []
+  if (openingAhLines.value.length) {
+    boards.push({
+      key: 'opening',
+      label: '初盘',
+      capturedAt: capturedAtText(openingOdds.value?.captured_at),
+      lines: openingAhLines.value,
+    })
+  }
+  if (currentAhLines.value.length) {
+    boards.push({
+      key: 'current',
+      label: '即时盘',
+      capturedAt: capturedAtText(currentOdds.value?.captured_at),
+      lines: currentAhLines.value,
+    })
+  }
+  return boards
 })
-const primaryAh = computed(() => ahLines.value[0] ?? null)
-const ahExtraCount = computed(() => Math.max(0, ahLines.value.length - 1))
+
+function capturedAtText(at?: string | null): string {
+  return at ? formatLocalMonthDayMinute(at) : ''
+}
 const primaryHomeOdd = computed(() =>
   primaryAh.value ? formatOdd(primaryAh.value.home) : '—',
 )
@@ -230,10 +268,11 @@ function onOddsClick() {
           {{ kickoffText }}
         </n-text>
       </div>
-      <DetailTabHint tab="record">
+      <DetailTabHint tab="record" :text="matchupText">
         <FixtureMatchup
           class="head-matchup"
           clickable
+          :name-tooltip="false"
           :home-name="homeName"
           :away-name="awayName"
           :home-rank="fixture?.home_rank"
@@ -287,7 +326,6 @@ function onOddsClick() {
       <div v-if="primaryAh" class="handicap-values">
         <span class="handicap-odd">{{ primaryHomeOdd }}</span>
         <n-popover
-          v-if="ahExtraCount > 0"
           trigger="hover"
           placement="bottom"
           :show-arrow="false"
@@ -298,40 +336,41 @@ function onOddsClick() {
             <button
               type="button"
               class="handicap-mid"
-              :aria-label="`主盘 ${primaryLine}，另有 ${ahExtraCount} 条让球盘，点击查看详情`"
+              :aria-label="`让球主盘 ${primaryLine}，悬停查看初盘与即时盘，点击查看详情`"
               @click="goPredictionDetail"
             >
               {{ primaryLine }}
             </button>
           </template>
-          <div class="ah-popover-panel">
-            <div class="ah-popover-row ah-popover-head">
-              <span class="ah-popover-col">主队</span>
-              <span class="ah-popover-col mid">盘口</span>
-              <span class="ah-popover-col">客队</span>
-            </div>
-            <div
-              v-for="(line, idx) in ahLines"
-              :key="`ah-pop-${line.line}-${idx}`"
-              class="ah-popover-row"
+          <div class="ah-board-popover">
+            <section
+              v-for="board in ahBoards"
+              :key="board.key"
+              class="ah-popover-panel"
             >
-              <span class="ah-popover-col">{{ formatOdd(line.home) }}</span>
-              <span class="ah-popover-col mid line">{{ line.line || '—' }}</span>
-              <span class="ah-popover-col">{{ formatOdd(line.away) }}</span>
-            </div>
-            <p class="ah-popover-hint">点击查看我的预测</p>
+              <h4 class="ah-board-title">
+                {{ board.label }}
+                <span v-if="board.capturedAt" class="ah-board-time">
+                  {{ board.capturedAt }}
+                </span>
+              </h4>
+              <div class="ah-popover-row ah-popover-head">
+                <span class="ah-popover-col">主队</span>
+                <span class="ah-popover-col mid">盘口</span>
+                <span class="ah-popover-col">客队</span>
+              </div>
+              <div
+                v-for="(line, idx) in board.lines"
+                :key="`${board.key}-${line.line}-${idx}`"
+                class="ah-popover-row"
+              >
+                <span class="ah-popover-col">{{ formatOdd(line.home) }}</span>
+                <span class="ah-popover-col mid line">{{ line.line || '—' }}</span>
+                <span class="ah-popover-col">{{ formatOdd(line.away) }}</span>
+              </div>
+            </section>
           </div>
         </n-popover>
-        <DetailTabHint v-else tab="prediction">
-          <button
-            type="button"
-            class="handicap-mid plain"
-            aria-label="查看盘口详情"
-            @click="goPredictionDetail"
-          >
-            {{ primaryLine }}
-          </button>
-        </DetailTabHint>
         <span class="handicap-odd">{{ primaryAwayOdd }}</span>
       </div>
       <span v-else class="handicap-empty">暂无盘口</span>
@@ -512,10 +551,6 @@ function onOddsClick() {
   text-decoration: underline;
   text-decoration-style: dotted;
   text-underline-offset: 3px;
-}
-
-.handicap-mid.plain {
-  text-decoration: none;
 }
 
 .handicap-mid:hover,

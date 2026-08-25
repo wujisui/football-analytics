@@ -249,10 +249,13 @@ def _list_analysis_from_fixture(
 
 def _odds_snippet_from_stored(
     stored: PreMatchData | None,
+    *,
+    opening: bool = False,
 ) -> FixtureOddsSnippetResponse | None:
     if stored is None:
         return None
-    odds = rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
+    raw = stored.odds_opening_json if opening else stored.odds_json
+    odds = rehydrate_odds_markets(loads_json(raw, {"available": False}))
     if not isinstance(odds, dict) or not odds.get("available"):
         return None
     return FixtureOddsSnippetResponse(
@@ -261,6 +264,7 @@ def _odds_snippet_from_stored(
         asian_handicap=odds.get("asian_handicap"),
         goals_ou=odds.get("goals_ou"),
         both_teams_score=odds.get("both_teams_score"),
+        captured_at=odds.get("captured_at"),
     )
 
 
@@ -394,6 +398,7 @@ async def get_today_fixtures(
         stored = stored_by_id.get(fixture.id)
         home_rank, away_rank = _ranks_from_maps(fixture, standings_maps, stored)
         odds_snippet = _odds_snippet_from_stored(stored)
+        odds_opening_snippet = _odds_snippet_from_stored(stored, opening=True)
         fixture_responses.append(
             FixtureResponse(
                 fixture_id=fixture.id,
@@ -427,6 +432,7 @@ async def get_today_fixtures(
                 home_rank=home_rank,
                 away_rank=away_rank,
                 odds_snippet=odds_snippet,
+                odds_opening_snippet=odds_opening_snippet,
             )
         )
 
@@ -777,6 +783,7 @@ async def get_fixture_analysis(
     package = analysis.package if isinstance(analysis.package, dict) else {}
     standings = package.get("standings") or {}
     odds = package.get("odds") or {}
+    odds_opening = package.get("odds_opening") or {}
     odds_snippet = None
     if odds.get("available"):
         odds_snippet = FixtureOddsSnippetResponse(
@@ -785,6 +792,15 @@ async def get_fixture_analysis(
             asian_handicap=odds.get("asian_handicap"),
             goals_ou=odds.get("goals_ou"),
             both_teams_score=odds.get("both_teams_score"),
+        )
+    odds_opening_snippet = None
+    if odds_opening.get("available"):
+        odds_opening_snippet = FixtureOddsSnippetResponse(
+            available=True,
+            match_winner=odds_opening.get("match_winner"),
+            asian_handicap=odds_opening.get("asian_handicap"),
+            goals_ou=odds_opening.get("goals_ou"),
+            both_teams_score=odds_opening.get("both_teams_score"),
         )
     return FixtureResponse(
         fixture_id=fixture.id,
@@ -812,4 +828,5 @@ async def get_fixture_analysis(
         home_rank=standings.get("home_rank"),
         away_rank=standings.get("away_rank"),
         odds_snippet=odds_snippet,
+        odds_opening_snippet=odds_opening_snippet,
     )

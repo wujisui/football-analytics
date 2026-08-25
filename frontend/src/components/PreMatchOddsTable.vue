@@ -163,19 +163,21 @@ function buildColumns(linkMidHeader: boolean): DataTableColumns<OddsRow> {
 const columns = computed(() => buildColumns(middleLinkable()))
 
 function renderAhPopover() {
-  return h('div', { class: 'ah-popover-panel' }, [
-    h('div', { class: 'ah-popover-row ah-popover-head' }, [
-      h('span', { class: 'ah-popover-col' }, '主队'),
-      h('span', { class: 'ah-popover-col mid' }, '盘口'),
-      h('span', { class: 'ah-popover-col' }, '客队'),
-    ]),
-    ...ahLines.value.map((line, idx) =>
-      h('div', { class: 'ah-popover-row', key: `ah-pop-${line.line}-${idx}` }, [
-        h('span', { class: 'ah-popover-col' }, formatOdd(line.home)),
-        h('span', { class: 'ah-popover-col mid line' }, line.line || '—'),
-        h('span', { class: 'ah-popover-col' }, formatOdd(line.away)),
+  return h('div', { class: 'ah-board-popover' }, [
+    h('div', { class: 'ah-popover-panel' }, [
+      h('div', { class: 'ah-popover-row ah-popover-head' }, [
+        h('span', { class: 'ah-popover-col' }, '主队'),
+        h('span', { class: 'ah-popover-col mid' }, '盘口'),
+        h('span', { class: 'ah-popover-col' }, '客队'),
       ]),
-    ),
+      ...ahLines.value.map((line, idx) =>
+        h('div', { class: 'ah-popover-row', key: `ah-pop-${line.line}-${idx}` }, [
+          h('span', { class: 'ah-popover-col' }, formatOdd(line.home)),
+          h('span', { class: 'ah-popover-col mid line' }, line.line || '—'),
+          h('span', { class: 'ah-popover-col' }, formatOdd(line.away)),
+        ]),
+      ),
+    ]),
   ])
 }
 

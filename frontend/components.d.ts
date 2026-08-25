@@ -83,6 +83,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScoreDetailLink: typeof import('./src/components/ScoreDetailLink.vue')['default']
+    TextSwitch: typeof import('./src/components/TextSwitch.vue')['default']
     VirtualCardList: typeof import('./src/components/VirtualCardList.vue')['default']
     WdlProbabilityBars: typeof import('./src/components/WdlProbabilityBars.vue')['default']
   }

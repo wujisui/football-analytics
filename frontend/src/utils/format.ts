@@ -86,6 +86,18 @@ export function formatLocalDateMinute(dateStr: string | Date): string {
   return `${toLocalDayKey(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 
+/** Local wall time without year, for width-tight slots: `08-20 18:03`. */
+export function formatLocalMonthDayMinute(dateStr: string | Date): string {
+  const d = dateStr instanceof Date ? dateStr : parseApiDate(dateStr)
+  if (Number.isNaN(d.getTime())) {
+    return typeof dateStr === 'string' ? dateStr : ''
+  }
+  return (
+    `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  )
+}
+
 /**
  * 场次比赛日 = 开赛时刻的 UTC 日期（与 API ``date=`` / 入库赛程日一致）。
  * 例：巴甲 22:00 UTC 7/26 → 比赛日 7/26；北京已是 7/27 06:00 仍属 7/26。
