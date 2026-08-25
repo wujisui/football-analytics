@@ -66,7 +66,6 @@ from app.services.league_standings import (
     snippet_from_ranks,
 )
 from app.services.team_names import team_name_zh
-from app.services.runtime_settings import get_hot_league_ids
 
 router = APIRouter(prefix="/fixtures", tags=["fixtures"])
 logger = logging.getLogger(__name__)
@@ -78,7 +77,7 @@ async def refresh_fixture_odds(
     _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """One explicit official request: update only this prematch fixture's current odds."""
+    """Admin-only official request: update this prematch fixture's current odds."""
     fixture = await db.get(Fixture, fixture_id)
     if fixture is None:
         raise HTTPException(status_code=404, detail="比赛不存在")
@@ -87,9 +86,6 @@ async def refresh_fixture_odds(
         and fixture.date > datetime.utcnow()
     ):
         raise HTTPException(status_code=409, detail="仅未开赛场次允许更新盘口")
-    hot_ids, _ = await get_hot_league_ids(db)
-    if fixture.league_id not in set(hot_ids):
-        raise HTTPException(status_code=409, detail="仅热门联赛允许请求官方盘口")
     async with FootballFetcher(session=db) as fetcher:
         updated = await fetcher.refresh_odds_for_fixture(
             fixture_id,
