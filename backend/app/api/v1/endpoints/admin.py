@@ -12,6 +12,7 @@ from app.services import auth as auth_service
 from app.services.data_cleanup import reset_match_history
 from app.services.cache import get_cache_service
 from app.services.fixtures_sync import official_sync_busy
+from app.services.league_names import league_name_zh
 from app.services.runtime_settings import (
     default_hot_league_ids,
     get_api_sports_keys_setting,
