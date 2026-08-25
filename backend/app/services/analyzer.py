@@ -542,6 +542,8 @@ class AnalyzerService:
         return {
             "odds": {"available": False},
             "odds_opening": {"available": False},
+            "odds_mid": {"available": False},
+            "odds_late": {"available": False},
             "lineups": {"available": False, "home": None, "away": None},
             "injuries": {"available": False, "home": [], "away": []},
             "head_to_head": {"played": 0, "matches": []},

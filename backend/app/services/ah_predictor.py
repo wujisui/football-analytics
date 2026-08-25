@@ -29,8 +29,8 @@ from app.services.features import FEATURE_VERSION, dumps_features, extract_featu
 logger = logging.getLogger(__name__)
 
 MODEL_DIR = BACKEND_ROOT / "data" / "models"
-MODEL_WEIGHTS_NAME = "ah_v2_weights.npz"
-MODEL_META_NAME = "ah_v2_meta.json"
+MODEL_WEIGHTS_NAME = "ah_v3_weights.npz"
+MODEL_META_NAME = "ah_v3_meta.json"
 
 _LABEL_TO_IDX = {"no_cover": 0, "cover": 1}
 TRAIN_LABELS = frozenset(_LABEL_TO_IDX)

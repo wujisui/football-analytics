@@ -9,7 +9,7 @@ from typing import Any
 
 from app.services.features import FEATURE_NAMES, extract_features
 
-AH_FEATURE_VERSION = "ah_v2"
+AH_FEATURE_VERSION = "ah_v3"
 
 TOP5_LEAGUE_IDS = frozenset({39, 140, 78, 135, 61})
 ASIA_LEAGUE_IDS = frozenset({169, 98, 292, 253})
@@ -45,6 +45,21 @@ AH_EXTRA_NAMES: list[str] = [
     "ah_away_odd_drift",
     "ah_water_drift",
     "ah_away_steam",
+    # 中盘 − 初盘、临场 − 中盘（缺档时 present=0，变化量为 0）。
+    "ah_mid_present",
+    "ah_mid_same_line",
+    "ah_mid_home_odd_drift",
+    "ah_mid_away_odd_drift",
+    "ah_mid_water_drift",
+    "ah_mid_line_shift",
+    "ah_mid_away_steam",
+    "ah_late_present",
+    "ah_late_same_line",
+    "ah_late_home_odd_drift",
+    "ah_late_away_odd_drift",
+    "ah_late_water_drift",
+    "ah_late_line_shift",
+    "ah_late_away_steam",
 ]
 
 AH_FEATURE_NAMES: list[str] = [*FEATURE_NAMES, *AH_EXTRA_NAMES]
@@ -165,6 +180,62 @@ def _clip(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def _pair_drift_features(
+    earlier: dict[str, Any] | None,
+    later: dict[str, Any] | None,
+    *,
+    prefix: str,
+) -> dict[str, float]:
+    """Delta from ``earlier`` to ``later`` (mid−opening or late−mid)."""
+    later_line, later_home, later_away = extract_main_ah_line(later)
+    earlier_line, earlier_home, earlier_away = extract_main_ah_line(earlier)
+    present = (
+        later_line is not None
+        and later_home is not None
+        and later_away is not None
+        and earlier_line is not None
+        and earlier_home is not None
+        and earlier_away is not None
+    )
+    if not present:
+        return {
+            f"{prefix}present": 1.0 if later_line is not None else 0.0,
+            f"{prefix}same_line": 0.0,
+            f"{prefix}home_odd_drift": 0.0,
+            f"{prefix}away_odd_drift": 0.0,
+            f"{prefix}water_drift": 0.0,
+            f"{prefix}line_shift": 0.0,
+            f"{prefix}away_steam": 0.0,
+        }
+    same_line = abs(later_line - earlier_line) < 0.04
+    home_drift = (later_home - earlier_home) if same_line else 0.0
+    away_drift = (later_away - earlier_away) if same_line else 0.0
+    earlier_water = (earlier_home - earlier_away) if same_line else (later_home - later_away)
+    water_drift = (later_home - later_away) - earlier_water if same_line else 0.0
+    steam = 1.0 if same_line and home_drift > 0.02 and away_drift < -0.02 else 0.0
+    return {
+        f"{prefix}present": 1.0,
+        f"{prefix}same_line": 1.0 if same_line else 0.0,
+        f"{prefix}home_odd_drift": _clip(home_drift, -0.8, 0.8),
+        f"{prefix}away_odd_drift": _clip(away_drift, -0.8, 0.8),
+        f"{prefix}water_drift": _clip(water_drift, -0.8, 0.8),
+        f"{prefix}line_shift": _clip(later_line - earlier_line, -2.0, 2.0),
+        f"{prefix}away_steam": steam,
+    }
+
+
+def _empty_stage_drift(prefix: str) -> dict[str, float]:
+    return {
+        f"{prefix}present": 0.0,
+        f"{prefix}same_line": 0.0,
+        f"{prefix}home_odd_drift": 0.0,
+        f"{prefix}away_odd_drift": 0.0,
+        f"{prefix}water_drift": 0.0,
+        f"{prefix}line_shift": 0.0,
+        f"{prefix}away_steam": 0.0,
+    }
+
+
 def _board_context_features(
     current: dict[str, Any] | None,
     opening: dict[str, Any] | None,
@@ -221,6 +292,8 @@ def _empty_board_context() -> dict[str, float]:
         "ah_away_odd_drift": 0.0,
         "ah_water_drift": 0.0,
         "ah_away_steam": 0.0,
+        **_empty_stage_drift("ah_mid_"),
+        **_empty_stage_drift("ah_late_"),
     }
 
 
@@ -590,6 +663,8 @@ def build_ah_features(
         if isinstance(package.get("odds_opening"), dict)
         else {}
     )
+    mid = package.get("odds_mid") if isinstance(package.get("odds_mid"), dict) else {}
+    late = package.get("odds_late") if isinstance(package.get("odds_late"), dict) else {}
     line_f, home_f, away_f = extract_main_ah_line(odds)
 
     ph, pd, pa = _market_1x2_probs(base)
@@ -631,6 +706,8 @@ def build_ah_features(
         main_home=home_f,
         main_away=away_f,
     )
+    board.update(_pair_drift_features(opening, mid, prefix="ah_mid_"))
+    board.update(_pair_drift_features(mid, late, prefix="ah_late_"))
     extra = {
         "ah_line_norm": line_norm,
         "ah_home_odd_inv": 1.0 / home_f,

@@ -1297,10 +1297,13 @@ class FootballFetcher:
         from app.services.ml_predictor import persist_match_features, predict_probabilities
         from app.services.prediction import build_prediction_snapshot, implied_probs_from_odds
         from app.services.prematch_package import (
+            SNAPSHOT_LATE,
+            SNAPSHOT_MID,
             dumps_json,
             loads_json,
             rehydrate_odds_markets,
             should_write_opening,
+            timed_snapshot_json,
         )
         from app.services.ttl_policy import is_prediction_exam_locked
 
@@ -1337,6 +1340,42 @@ class FootballFetcher:
                 opening_text = dumps_json(
                     {**parsed, "role": "opening", "captured_at": captured_at}
                 )
+
+            kickoff = fixture.date if fixture is not None else None
+            existing_mid = (
+                loads_json(getattr(row, "odds_mid_json", None), {})
+                if row is not None
+                else {}
+            )
+            existing_late = (
+                loads_json(getattr(row, "odds_late_json", None), {})
+                if row is not None
+                else {}
+            )
+            mid_text = timed_snapshot_json(
+                existing_mid,
+                parsed,
+                kickoff=kickoff,
+                captured_at=captured_at,
+                stage=SNAPSHOT_MID["stage"],
+                target_hours=SNAPSHOT_MID["target_hours"],
+                min_hours=SNAPSHOT_MID["min_hours"],
+                max_hours=SNAPSHOT_MID["max_hours"],
+                locked=exam_locked,
+                policy=SNAPSHOT_MID["policy"],
+            )
+            late_text = timed_snapshot_json(
+                existing_late,
+                parsed,
+                kickoff=kickoff,
+                captured_at=captured_at,
+                stage=SNAPSHOT_LATE["stage"],
+                target_hours=SNAPSHOT_LATE["target_hours"],
+                min_hours=SNAPSHOT_LATE["min_hours"],
+                max_hours=SNAPSHOT_LATE["max_hours"],
+                locked=exam_locked,
+                policy=SNAPSHOT_LATE["policy"],
+            )
 
             # After kickoff: odds board may still update; prediction exam fields must not.
             if exam_locked:
@@ -1390,6 +1429,8 @@ class FootballFetcher:
                     fixture_id=fixture_id,
                     odds_json=odds_text,
                     odds_opening_json=opening_text,
+                    odds_mid_json=mid_text,
+                    odds_late_json=late_text,
                     home_win_prob=probs["home"],
                     draw_prob=probs["draw"],
                     away_win_prob=probs["away"],
@@ -1404,6 +1445,10 @@ class FootballFetcher:
                 row.odds_json = odds_text
                 if opening_text is not None:
                     row.odds_opening_json = opening_text
+                if mid_text is not None:
+                    row.odds_mid_json = mid_text
+                if late_text is not None:
+                    row.odds_late_json = late_text
                 row.home_win_prob = probs["home"]
                 row.draw_prob = probs["draw"]
                 row.away_win_prob = probs["away"]
@@ -1429,10 +1474,24 @@ class FootballFetcher:
                 pred.features,
                 odds_pkg,
             )
+            def _stage_pkg(text: str | None, attr: str) -> dict[str, Any]:
+                data = loads_json(
+                    text if text is not None else getattr(row, attr, None),
+                    {"available": False},
+                )
+                if isinstance(data, dict) and data.get("available"):
+                    return rehydrate_odds_markets(data)
+                return {"available": False}
+
             await persist_ah_fields(
                 self.session,
                 fixture_id,
-                package,
+                {
+                    **package,
+                    "odds_opening": _stage_pkg(opening_text, "odds_opening_json"),
+                    "odds_mid": _stage_pkg(mid_text, "odds_mid_json"),
+                    "odds_late": _stage_pkg(late_text, "odds_late_json"),
+                },
                 league_id=fixture.league_id if fixture else None,
             )
             # Ensure TTL freshness sees this write (SQLite onupdate can be flaky).

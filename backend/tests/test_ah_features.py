@@ -284,13 +284,52 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(settle_ah_label(1, 1, -0.5), "no_cover")
         self.assertEqual(settle_ah_label(1, 1, 0.0), "push")
 
+    def test_mid_minus_opening_and_late_minus_mid_are_separate_legs(self) -> None:
+        package = {
+            "odds_opening": {
+                "available": True,
+                "asian_handicap": {"line": "-0.5", "home": 1.80, "away": 2.10},
+            },
+            "odds_mid": {
+                "available": True,
+                "asian_handicap": {"line": "-0.5", "home": 1.88, "away": 2.02},
+            },
+            "odds_late": {
+                "available": True,
+                "asian_handicap": {"line": "-0.75", "home": 1.90, "away": 2.00},
+            },
+            "odds": {
+                "available": True,
+                "asian_handicap": {"line": "-0.75", "home": 1.90, "away": 2.00},
+            },
+        }
+        features, *_ = build_ah_features(package)
+        self.assertEqual(features["ah_mid_present"], 1.0)
+        self.assertEqual(features["ah_mid_same_line"], 1.0)
+        self.assertGreater(features["ah_mid_home_odd_drift"], 0.0)
+        self.assertLess(features["ah_mid_away_odd_drift"], 0.0)
+        self.assertEqual(features["ah_late_present"], 1.0)
+        self.assertEqual(features["ah_late_same_line"], 0.0)
+        self.assertEqual(features["ah_late_home_odd_drift"], 0.0)
+        self.assertAlmostEqual(features["ah_late_line_shift"], -0.25)
+
+        missing_mid = {
+            "odds_opening": package["odds_opening"],
+            "odds_late": package["odds_late"],
+            "odds": package["odds"],
+        }
+        empty_mid, *_ = build_ah_features(missing_mid)
+        self.assertEqual(empty_mid["ah_mid_present"], 0.0)
+        self.assertEqual(empty_mid["ah_late_present"], 1.0)
+        self.assertEqual(empty_mid["ah_late_line_shift"], 0.0)
+
 
 class AhModelLoadTests(unittest.TestCase):
     def test_load_rejects_feature_version_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            weights = root / "ah_v2_weights.npz"
-            meta = root / "ah_v2_meta.json"
+            weights = root / "ah_v3_weights.npz"
+            meta = root / "ah_v3_meta.json"
             model = _BinaryLogReg(4)
             model.save(weights)
             meta.write_text(
@@ -305,8 +344,8 @@ class AhModelLoadTests(unittest.TestCase):
     def test_load_accepts_matching_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            weights = root / "ah_v2_weights.npz"
-            meta = root / "ah_v2_meta.json"
+            weights = root / "ah_v3_weights.npz"
+            meta = root / "ah_v3_meta.json"
             n = 6
             model = _BinaryLogReg(n)
             model.save(weights)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from app.core.config import get_settings
@@ -571,6 +572,125 @@ def should_write_opening(
     return not locked and _board_outranks(candidate, existing)
 
 
+# Kickoff-relative boards, tagged from the existing odds refresh schedule (no extra API).
+# Mid: T-10h..T-3h, keep the capture closest to T-6h.
+# Late: T-3h..kickoff, keep the newest capture (evening half-hour slots become the close).
+SNAPSHOT_MID = {
+    "stage": "mid",
+    "policy": "closest",
+    "target_hours": 6.0,
+    "min_hours": 3.0,
+    "max_hours": 10.0,
+}
+SNAPSHOT_LATE = {
+    "stage": "late",
+    "policy": "latest",
+    "target_hours": 0.0,
+    "min_hours": 0.0,
+    "max_hours": 3.0,
+}
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def hours_before_kickoff(
+    kickoff: datetime | None,
+    captured_at: str | None,
+) -> float | None:
+    """Hours from board capture to kickoff; None when either clock is missing."""
+    kick = _as_utc(kickoff)
+    if kick is None or not captured_at:
+        return None
+    try:
+        captured = datetime.fromisoformat(str(captured_at).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    captured = _as_utc(captured)
+    if captured is None:
+        return None
+    return (kick - captured).total_seconds() / 3600.0
+
+
+def should_write_timed_snapshot(
+    existing: dict[str, Any] | None,
+    candidate: dict[str, Any] | None,
+    *,
+    kickoff: datetime | None,
+    captured_at: str | None,
+    target_hours: float,
+    min_hours: float,
+    max_hours: float,
+    locked: bool,
+    policy: str = "closest",
+) -> bool:
+    """Tag a mid/late board from an existing refresh.
+
+    ``closest`` keeps the capture nearest ``target_hours`` (中盘). ``latest``
+    keeps the newest capture in the window (临场 / 封盘). ``min_hours`` is
+    exclusive when > 0 so T-3h belongs to late, not mid.
+    """
+    if locked or not (candidate or {}).get("available"):
+        return False
+    hours = hours_before_kickoff(kickoff, captured_at)
+    if hours is None or hours < 0:
+        return False
+    inside = (
+        hours > min_hours if min_hours > 0 else hours >= min_hours
+    ) and hours <= max_hours
+    if not inside:
+        return False
+    existing_at = (existing or {}).get("captured_at") if isinstance(existing, dict) else None
+    if not (existing or {}).get("available"):
+        return True
+    existing_hours = hours_before_kickoff(kickoff, existing_at)
+    if existing_hours is None:
+        return True
+    if policy == "latest":
+        return hours < existing_hours
+    return abs(hours - target_hours) < abs(existing_hours - target_hours)
+
+
+def timed_snapshot_json(
+    existing: dict[str, Any] | None,
+    candidate: dict[str, Any] | None,
+    *,
+    kickoff: datetime | None,
+    captured_at: str,
+    stage: str,
+    target_hours: float,
+    min_hours: float,
+    max_hours: float,
+    locked: bool,
+    policy: str = "closest",
+) -> str | None:
+    if not should_write_timed_snapshot(
+        existing,
+        candidate,
+        kickoff=kickoff,
+        captured_at=captured_at,
+        target_hours=target_hours,
+        min_hours=min_hours,
+        max_hours=max_hours,
+        locked=locked,
+        policy=policy,
+    ):
+        return None
+    return dumps_json(
+        {
+            **(candidate or {}),
+            "role": stage,
+            "snapshot_stage": stage,
+            "captured_at": captured_at,
+        }
+    )
+
+
 def _prefer_core_bookmaker_bets(
     entries: list[dict[str, Any]],
     *,
@@ -916,9 +1036,18 @@ def package_from_record(record: Any) -> dict[str, Any]:
         if isinstance(odds_opening_raw, dict) and odds_opening_raw.get("available")
         else {"available": False}
     )
+
+    def _stage_board(attr: str) -> dict[str, Any]:
+        raw = loads_json(getattr(record, attr, None), {"available": False})
+        if isinstance(raw, dict) and raw.get("available"):
+            return rehydrate_odds_markets(raw)
+        return {"available": False}
+
     return {
         "odds": odds,
         "odds_opening": odds_opening,
+        "odds_mid": _stage_board("odds_mid_json"),
+        "odds_late": _stage_board("odds_late_json"),
         "lineups": lineups if lineups else {"available": False, "home": None, "away": None},
         "injuries": injuries if injuries else {"available": False, "home": [], "away": []},
         "head_to_head": localize_matches_block(
