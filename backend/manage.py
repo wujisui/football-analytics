@@ -15,6 +15,36 @@ def _setup_cli_logging() -> None:
     setup_logging(settings.LOG_LEVEL, settings.LOG_DIR)
 
 
+def run_export_sqlite(out_rel: str) -> None:
+    """Copy the live SQLite file via the backup API (includes WAL)."""
+    import sqlite3
+    from pathlib import Path
+
+    from app.core.config import BACKEND_ROOT
+
+    src_path = BACKEND_ROOT / "data" / "football.db"
+    dest_path = Path(out_rel)
+    if not dest_path.is_absolute():
+        dest_path = BACKEND_ROOT / dest_path
+    if not src_path.is_file():
+        print(f"Source database not found: {src_path}")
+        sys.exit(1)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    if dest_path.exists():
+        dest_path.unlink()
+    src = sqlite3.connect(f"file:{src_path.as_posix()}?mode=ro", uri=True)
+    try:
+        dest = sqlite3.connect(dest_path.as_posix())
+        try:
+            src.backup(dest)
+        finally:
+            dest.close()
+    finally:
+        src.close()
+    size_mb = dest_path.stat().st_size / (1024 * 1024)
+    print(f"Wrote {dest_path} ({size_mb:.1f} MB)")
+
+
 async def run_init_db() -> None:
     from app.core.database import init_db
 
@@ -705,7 +735,21 @@ def main() -> None:
         help="One or more keys: keyA,keyB — pass empty string \"\" to clear all keys",
     )
 
+    export_parser = subparsers.add_parser(
+        "export-sqlite",
+        help="Consistent SQLite backup for cloud copy (safe while WAL is in use)",
+    )
+    export_parser.add_argument(
+        "--out",
+        default="data/football.export.db",
+        help="Backup path relative to backend/ (default data/football.export.db)",
+    )
+
     args = parser.parse_args()
+
+    if args.command == "export-sqlite":
+        run_export_sqlite(args.out)
+        return
 
     if args.command == "trigger-task":
         asyncio.run(run_trigger_task(args.name))

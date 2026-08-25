@@ -16,3 +16,9 @@ logs/
 
 # Trained model artifacts (regenerate via `python manage.py train-model`)
 backend/data/models/
+
+# Cloud runtime env (copy from deploy/cloud.env.example)
+deploy/cloud.env
+
+# Consistent SQLite export used only for uploading to ECS
+backend/data/football.export.db
