@@ -52,19 +52,19 @@ const menuOptions = computed<MenuOption[]>(() => [
           label: '管理员设置',
           children: [
             {
+              key: 'hotLeagues',
+              label: '热门联赛',
+              icon: renderIcon(sectionMeta.hotLeagues.icon),
+            },
+            {
               key: 'adminOps',
-              label: '运维',
+              label: '运维管理',
               icon: renderIcon(sectionMeta.adminOps.icon),
             },
             {
               key: 'adminBackend',
               label: '后台管理',
               icon: renderIcon(sectionMeta.adminBackend.icon),
-            },
-            {
-              key: 'hotLeagues',
-              label: '热门联赛',
-              icon: renderIcon(sectionMeta.hotLeagues.icon),
             },
           ],
         } satisfies MenuOption,
