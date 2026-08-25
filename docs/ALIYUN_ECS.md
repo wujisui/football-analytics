@@ -1,8 +1,8 @@
 # 阿里云 ECS 部署（含本地 SQLite）
 
-本仓库**没有**本机↔云自动同步。上云走计划书方案 A：把 `football.db` 与 `data/models/` 一起拷到服务器，Docker Compose 挂载同一目录。官方 Key 已在库的 `app_settings` 里，不必再写进环境变量。
+本仓库**没有**设备↔云自动同步。上云走计划书方案 A：从指定的权威设备生成一个包含代码、`football.db` 与 `data/models/` 的迁移包，再部署到服务器。官方 Key 已在库的 `app_settings` 里，不必再写进环境变量。
 
-权威步骤：首次拷库后**以 ECS 为唯一写库端**。本机 `uvicorn` 必须停掉，否则两套定时任务会把官方日配额打双份。
+不要混用不同设备的代码、数据库和模型：数据库中的冻结特征必须由同版本算法读取，Pinnacle 盘口样本也必须与对应模型一起迁移。首次拷库后**以 ECS 为唯一写库端**；其他设备的 `uvicorn` 必须停掉，否则多套定时任务会把官方日配额打双份。
 
 ## 机器要求
 
@@ -27,27 +27,34 @@ sudo mkdir -p /opt/football-analytics
 sudo chown "$USER":"$USER" /opt/football-analytics
 ```
 
-## 本机：导出一致库文件
+## 权威设备：生成单一迁移包
 
-尽量先停掉本机后端，再导出（有 WAL 时命令仍可用）：
+将本仓库的 `scripts/create-migration-package.ps1` 放进权威项目的 `scripts/`。尽量先停止该设备的后端，然后在权威项目根目录执行：
 
 ```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-python manage.py export-sqlite
+.\scripts\create-migration-package.ps1
 ```
 
-产物：`backend/data/football.export.db`。模型在 `backend/data/models/`（约数 KB，必须一起拷）。
+脚本使用 SQLite backup API 生成一致副本并执行 `PRAGMA integrity_check`，不会直接打包可能仍带 WAL 的活动库。输出为：
+
+```text
+football-analytics-migration-YYYYMMDD-HHMMSS.tar.gz
+```
+
+包内包含该设备的完整代码、一致数据库、整个模型目录及 `migration-manifest.json`（数据库/模型 SHA-256）。只需把这一个文件上传网盘。
 
 ## 上传与启动
 
-在仓库根目录（把 `ECS_IP`、用户名换成你的）：
+从网盘下载迁移包后，在这台电脑执行（把路径、`ECS_IP`、用户名换成你的）：
 
 ```powershell
-.\scripts\deploy-aliyun.ps1 -EcsHost ECS_IP -User root
+.\scripts\deploy-aliyun.ps1 `
+  -EcsHost ECS_IP `
+  -User root `
+  -PackagePath "D:\Downloads\football-analytics-migration-20260825-120000.tar.gz"
 ```
 
-脚本会：打包代码（不含 `.venv` / `node_modules` / 原库文件）→ 把导出库写成服务器上的 `backend/data/football.db` → 同步 `models/` → 若没有 `deploy/cloud.env` 则从 example 生成 → `docker compose up -d --build`。
+部署脚本**不会再读取当前电脑的数据库**。它只上传指定迁移包；若 ECS 已有库，会先停后端并保留 `football.db.pre-migration-*`，再解包、生成环境配置并执行 `docker compose up -d --build`。
 
 首次请 SSH 编辑 `/opt/football-analytics/deploy/cloud.env`：
 
@@ -66,8 +73,10 @@ docker compose up -d --force-recreate backend
 
 - http://ECS_IP/ → 前端
 - http://ECS_IP/api/v1/health → 后端
-- 登录后核对【比赛】/【赛果】是否与本机一致
+- 登录后核对【比赛】/【赛果】是否与权威设备一致
 - 服务器执行：`docker compose exec backend python manage.py model-status`
+- 核对 `migration-manifest.json` 中的代码提交、数据库和模型哈希
+- 在数据库中统计盘口来源，确认生产样本确为 Pinnacle；不要只根据前端标签判断
 
 ## 备份与回滚
 

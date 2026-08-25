@@ -1,14 +1,18 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$EcsHost,
+    [Parameter(Mandatory = $true)]
+    [string]$PackagePath,
     [string]$User = "root",
     [string]$RemoteDir = "/opt/football-analytics",
     [string]$IdentityFile = ""
 )
 
 $ErrorActionPreference = "Stop"
-$Root = Split-Path -Parent $PSScriptRoot
-Set-Location $Root
+$PackagePath = (Resolve-Path $PackagePath).Path
+if (-not (Test-Path $PackagePath -PathType Leaf)) {
+    throw "Migration package not found: $PackagePath"
+}
 
 $sshArgs = @("-o", "StrictHostKeyChecking=accept-new")
 if ($IdentityFile) {
@@ -24,70 +28,31 @@ function Invoke-Remote {
     }
 }
 
-Write-Host "Exporting a consistent SQLite copy..."
-Push-Location (Join-Path $Root "backend")
-if (Test-Path ".\.venv\Scripts\python.exe") {
-    & .\.venv\Scripts\python.exe manage.py export-sqlite
-} else {
-    python manage.py export-sqlite
-}
-if ($LASTEXITCODE -ne 0) {
-    throw "export-sqlite failed"
-}
-Pop-Location
-
-$exportDb = Join-Path $Root "backend\data\football.export.db"
-if (-not (Test-Path $exportDb)) {
-    throw "Missing $exportDb"
-}
-
-$archive = Join-Path $env:TEMP "football-analytics-src.tar"
-if (Test-Path $archive) {
-    Remove-Item $archive -Force
-}
-
-Write-Host "Packing source (excluding venv, node_modules, live DB)..."
-& tar -cf $archive `
-    --exclude=.venv `
-    --exclude=node_modules `
-    --exclude=frontend/dist `
-    --exclude=backend/logs `
-    --exclude=backend/data/football.db `
-    --exclude=backend/data/football.export.db `
-    --exclude=backend/data/*.db-wal `
-    --exclude=backend/data/*.db-shm `
-    --exclude=__pycache__ `
-    --exclude=.git `
-    -C $Root .
-
-if ($LASTEXITCODE -ne 0) {
-    throw "tar failed"
-}
-
 Write-Host "Creating $RemoteDir on $target..."
 Invoke-Remote "mkdir -p $RemoteDir/backend/data/models $RemoteDir/backend/logs $RemoteDir/deploy"
 
-Write-Host "Uploading source archive..."
-& scp @sshArgs $archive "${target}:/tmp/football-analytics-src.tar"
+Write-Host "Uploading authoritative migration package..."
+& scp @sshArgs $PackagePath "${target}:/tmp/football-analytics-migration.tar.gz"
 if ($LASTEXITCODE -ne 0) {
-    throw "scp archive failed"
+    throw "scp migration package failed"
 }
 
-Invoke-Remote "tar -xf /tmp/football-analytics-src.tar -C $RemoteDir && rm /tmp/football-analytics-src.tar"
-
-Write-Host "Uploading SQLite and models..."
-& scp @sshArgs $exportDb "${target}:${RemoteDir}/backend/data/football.db"
-if ($LASTEXITCODE -ne 0) {
-    throw "scp database failed"
-}
-
-$modelsDir = Join-Path $Root "backend\data\models"
-if (Test-Path $modelsDir) {
-    & scp @sshArgs -r $modelsDir "${target}:${RemoteDir}/backend/data/"
-    if ($LASTEXITCODE -ne 0) {
-        throw "scp models failed"
-    }
-}
+Write-Host "Stopping any old backend, backing it up, and extracting package..."
+Invoke-Remote @"
+set -e
+if [ -f $RemoteDir/docker-compose.yml ]; then
+  cd $RemoteDir
+  docker compose stop backend 2>/dev/null || true
+fi
+if [ -f $RemoteDir/backend/data/football.db ]; then
+  cp $RemoteDir/backend/data/football.db \
+    $RemoteDir/backend/data/football.db.pre-migration-`$(date +%Y%m%d-%H%M%S)
+fi
+tar -xzf /tmp/football-analytics-migration.tar.gz -C $RemoteDir
+rm /tmp/football-analytics-migration.tar.gz
+test -s $RemoteDir/backend/data/football.db
+test -d $RemoteDir/backend/data/models
+"@
 
 Write-Host "Ensuring deploy/cloud.env exists..."
 Invoke-Remote @"
