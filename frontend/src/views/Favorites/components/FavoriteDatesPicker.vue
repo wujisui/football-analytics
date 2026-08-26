@@ -151,6 +151,7 @@ onBeforeUnmount(() => {
     type="date"
     size="small"
     clearable
+    input-readonly
     :placeholder="placeholder"
     class="favorite-dates-picker"
     @update:formatted-value="onDateUpdate"
