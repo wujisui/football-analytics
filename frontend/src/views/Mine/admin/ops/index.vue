@@ -15,6 +15,7 @@ import {
   updateSubscriptionEarlyOdds,
   updateSubscriptionSetting,
 } from '@/api/admin'
+import HelpTip from '@/components/HelpTip.vue'
 import TextSwitch from '@/components/TextSwitch.vue'
 import { formatLocalDateMinute } from '@/utils/format'
 import { useAdminSync } from '@/views/Mine/admin/useAdminSync'
@@ -51,19 +52,26 @@ const denseOddsSaving = ref(false)
 const settingSourceLabel = (value: string) =>
   value === 'db' ? '管理员覆盖（库）' : value ? '环境变量默认' : ''
 
-const syncDescription = computed(() =>
+const syncSummary = '当天完整批次尚未成功时手动补跑，成功后当天禁用。'
+const syncDetail = computed(() =>
   subscribed.value
-    ? '当天完整批次尚未成功时可手动补跑：回写近 4 天赛果、增量补齐 8 天赛程窗口、更新今天/明天热门盘口与详情、积分榜、训练、日推及清理；成功后当天禁用，避免重复消耗。完场比分若还要再刷，用下面的「只更新赛果」。'
-    : '当天 11:00 完整批次尚未成功时可手动补跑：昨天赛果、今天赛程/热门盘口、训练、日推及清理；成功后当天禁用。08:05 当天赛程是独立任务，不补跑。完场比分若还要再刷，用下面的「只更新赛果」。',
+    ? '回写近 4 天赛果、增量补齐 8 天赛程窗口、更新今天/明天热门盘口与详情、积分榜、训练、日推及清理；成功后当天禁用，避免重复消耗。完场比分若还要再刷，用下面的「只更新赛果」。'
+    : '补跑昨天赛果、今天赛程/热门盘口、训练、日推及清理；成功后当天禁用。08:05 当天赛程是独立任务，不补跑。完场比分若还要再刷，用下面的「只更新赛果」。',
 )
 
-const resultsSyncDescription = computed(() =>
+const resultsSyncSummary = computed(() =>
+  subscribed.value
+    ? '只回写近 4 天终场比分，不动盘口与赛程。'
+    : '只回写昨天和今天的终场比分，不动盘口与赛程。',
+)
+const resultsSyncDetail = computed(() =>
   subscribed.value
     ? '只按日回写近 4 天（含今天）的终场比分与训练标签，不拉盘口、赛程或详情。当天「立即同步」完成后仍可用。早间盘口刷新只动未开赛盘口，关了也不会挡住赛果。与完整批次共用官方请求锁，不能同时跑。'
     : '只按日回写昨天和今天的终场比分与训练标签，不拉盘口、赛程或详情。当天「立即同步」完成后仍可用。未订阅的 22:00 轻刷也不回写比分，所以下午完场要靠这一下。与完整批次共用官方请求锁，不能同时跑。',
 )
 
-const prematchOddsDescription =
+const prematchOddsSummary = '为【比赛】里缺盘的未开赛场次逐场补拉盘口。'
+const prematchOddsDetail =
   '只扫描当前【比赛】默认两个当地比赛日，逐场补拉尚未开赛且本地缺少完整 1X2 的比赛；不限热门勾选，不拉赛程、赛果、积分榜或详情。每个待补场次会消耗一次官方盘口请求，单次最多 250 场，没有开盘的场次仍可能为空。'
 
 const lastSyncText = computed(() => {
@@ -80,35 +88,40 @@ const lastSyncQuotaText = computed(() => {
   return run ? `本次消耗 ${run.quota_used}` : ''
 })
 
-const subscriptionDescription = computed(() => {
+const subscriptionSummary = computed(() => {
   const source = settingSourceLabel(subscriptionSource.value)
-  const prefix = source ? `当前来源：${source}。` : ''
+  const suffix = source ? ` · 来源：${source}` : ''
+  const count = syncTimes.value.length
+  const scale = count ? `每天 ${count} 个定时任务` : '定时任务待读取'
+  const head = subscribed.value
+    ? `按 Pro 配额调度，${scale}`
+    : '每天只跑 08:05、11:00、22:00'
+  return `${head}${suffix}`
+})
+const subscriptionDetail = computed(() => {
   const clocks = syncTimes.value.length
     ? `时刻 ${syncTimes.value.join('、')}。`
     : ''
   if (subscribed.value) {
-    const early = earlyOddsEnabled.value
-      ? '早间盘口刷新已开启（04/06/08/10）。'
-      : '早间盘口刷新已关闭，04/06/08/10 不跑。'
-    const dense = denseOddsEnabled.value
-      ? '当前使用密刷方案：02:00、11:55、14:00、16:00，16:55 至 01:55 按开赛整点/半点前 5 分钟轻刷。'
-      : '当前使用默认方案：02:00、11:55、14:00、16:00、18:00、20:00，21:00 至 00:00 每隔半小时一次。'
-    return `${prefix}${clocks}11:00 为每日唯一完整批次，其余时刻只刷新今天未开赛热门盘口并重算日推。${early}${dense}赛程保留 8 天滑动窗口，每天只新增末端一天；盘口与详情只处理今天、明天。`
+    return `${clocks}11:00 为每日唯一完整批次，其余时刻只刷新今天未开赛热门盘口并重算日推。赛程保留 8 天滑动窗口，每天只新增末端一天；盘口与详情只处理今天、明天。`
   }
-  return `${prefix}${clocks}未订阅每天 08:05 只拉当天赛程，11:00 跑昨天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。晚间半小时刷新仅已订阅生效。`
+  return `${clocks}未订阅每天 08:05 只拉当天赛程，11:00 跑昨天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。晚间密刷仅已订阅生效。`
 })
 
-const earlyOddsDescription = computed(() =>
-  subscribed.value
-    ? '控制 04:00、06:00、08:00、10:00 是否也刷新今天未开赛热门盘口并重算日推；02:00 与晚间任务不受此开关影响。'
-    : '仅已订阅时生效。',
+const earlyOddsSummary = computed(() =>
+  subscribed.value ? '04/06/08/10 是否也轻刷盘口。' : '仅已订阅时生效。',
 )
+const earlyOddsDetail =
+  '控制 04:00、06:00、08:00、10:00 是否也刷新今天未开赛热门盘口并重算日推；这四个时刻会叠加到下面选中的方案上，02:00 与晚间时刻不受此开关影响。'
 
-const denseOddsDescription = computed(() =>
-  subscribed.value
-    ? '打开使用完整密刷方案：02:00、11:55、14:00、16:00、16:55、17:25 … 01:55；关闭使用完整默认方案：02:00、11:55、14:00、16:00、18:00、20:00、21:00、21:30 … 00:00。两套方案均叠加早间开关。'
-    : '仅已订阅时生效。',
-)
+const denseOddsSummary = computed(() => {
+  if (!subscribed.value) return '仅已订阅时生效。'
+  return denseOddsEnabled.value
+    ? '密刷方案：16:55 起每半小时到 01:55。'
+    : '默认方案：21:00 起每半小时到 00:00。'
+})
+const denseOddsDetail =
+  '两套完整方案二选一。默认方案：02:00、11:55、14:00、16:00、18:00、20:00、21:00、21:30、22:00、22:30、23:00、23:30、00:00。密刷方案：02:00、11:55、14:00、16:00、16:55、17:25、17:55、18:25、18:55、19:25、19:55、20:25、20:55、21:25、21:55、22:25、22:55、23:25、23:55、00:25、00:55、01:25、01:55（开赛整点/半点前 5 分钟）。早间开关的四个时刻叠加到任一方案。'
 
 function applySubscription(data: Awaited<ReturnType<typeof fetchSubscriptionSetting>>) {
   subscribed.value = data.subscribed
@@ -252,10 +265,11 @@ watch(syncing, (value, previous) => {
           <template #prefix>
             <n-icon :component="RefreshOutline" :size="20" />
           </template>
-          <n-thing :description="syncDescription">
+          <n-thing :description="syncSummary">
             <template #header>
-              <n-flex :size="8" align="baseline" :wrap="true">
+              <n-flex :size="8" align="center" :wrap="true">
                 <span>同步官方 API 数据</span>
+                <HelpTip :text="syncDetail" />
                 <n-text
                   depth="3"
                   :type="lastSync?.status === 'failed' ? 'error' : undefined"
@@ -283,7 +297,14 @@ watch(syncing, (value, previous) => {
           <template #prefix>
             <n-icon :component="RefreshOutline" :size="20" />
           </template>
-          <n-thing title="补齐比赛盘口" :description="prematchOddsDescription" />
+          <n-thing :description="prematchOddsSummary">
+            <template #header>
+              <n-flex :size="6" align="center">
+                <span>补齐比赛盘口</span>
+                <HelpTip :text="prematchOddsDetail" />
+              </n-flex>
+            </template>
+          </n-thing>
           <template #suffix>
             <n-button
               size="small"
@@ -300,7 +321,14 @@ watch(syncing, (value, previous) => {
           <template #prefix>
             <n-icon :component="TrophyOutline" :size="20" />
           </template>
-          <n-thing title="只更新赛果" :description="resultsSyncDescription" />
+          <n-thing :description="resultsSyncSummary">
+            <template #header>
+              <n-flex :size="6" align="center">
+                <span>只更新赛果</span>
+                <HelpTip :text="resultsSyncDetail" />
+              </n-flex>
+            </template>
+          </n-thing>
           <template #suffix>
             <n-button
               size="small"
@@ -317,7 +345,14 @@ watch(syncing, (value, previous) => {
           <template #prefix>
             <n-icon :component="FlashOutline" :size="20" />
           </template>
-          <n-thing title="订阅" :description="subscriptionDescription" />
+          <n-thing :description="subscriptionSummary">
+            <template #header>
+              <n-flex :size="6" align="center">
+                <span>订阅</span>
+                <HelpTip :text="subscriptionDetail" />
+              </n-flex>
+            </template>
+          </n-thing>
           <template #suffix>
             <TextSwitch
               :value="subscribed"
@@ -335,7 +370,14 @@ watch(syncing, (value, previous) => {
           <template #prefix>
             <n-icon :component="SettingsOutline" :size="20" />
           </template>
-          <n-thing title="早间盘口刷新" :description="earlyOddsDescription" />
+          <n-thing :description="earlyOddsSummary">
+            <template #header>
+              <n-flex :size="6" align="center">
+                <span>早间盘口刷新</span>
+                <HelpTip :text="earlyOddsDetail" />
+              </n-flex>
+            </template>
+          </n-thing>
           <template #suffix>
             <TextSwitch
               :value="earlyOddsEnabled"
@@ -353,7 +395,14 @@ watch(syncing, (value, previous) => {
           <template #prefix>
             <n-icon :component="SettingsOutline" :size="20" />
           </template>
-          <n-thing title="晚间密刷盘口" :description="denseOddsDescription" />
+          <n-thing :description="denseOddsSummary">
+            <template #header>
+              <n-flex :size="6" align="center">
+                <span>晚间密刷盘口</span>
+                <HelpTip :text="denseOddsDetail" />
+              </n-flex>
+            </template>
+          </n-thing>
           <template #suffix>
             <TextSwitch
               :value="denseOddsEnabled"
