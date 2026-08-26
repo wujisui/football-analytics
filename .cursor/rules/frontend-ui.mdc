@@ -112,7 +112,7 @@ Naive UI **只内置两套全局主题**：默认浅色（`theme=null`）与 `da
 本项目做法：
 
 1. 仅保留 Naive 内置两套：**浅色**（`theme=null`）/ **深色**（`darkTheme`），无 `theme-overrides`
-2. 主题切换只在「我的 → 主题与玩法」；顶栏右上角是**让球玩法开关**（亚盘 / 竞彩），真源组件 `components/HandicapRulesetSwitch.vue`
+2. 主题与让球玩法开关都只在「我的 → 主题与玩法」；真源组件 `components/HandicapRulesetSwitch.vue`（亚盘 / 竞彩），顶栏不再放玩法开关
 3. 自定义页面壳用 `--fa-*`（非 Naive 变量），由预设同步；**禁止**写死 `#fff` / `#f5f6f8`
 4. 偏好键：`fa-theme-preset`（`localStorage`，值为 `light` | `dark`；旧色系 id 会自动归一）
 

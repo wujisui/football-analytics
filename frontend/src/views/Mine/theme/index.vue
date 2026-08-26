@@ -3,14 +3,12 @@ import { MoonOutline, SunnyOutline } from '@vicons/ionicons5'
 
 import HandicapRulesetSwitch from '@/components/HandicapRulesetSwitch.vue'
 import TextSwitch from '@/components/TextSwitch.vue'
-import { useIsPhone } from '@/composables/useMediaQuery'
 import { useTheme } from '@/composables/useTheme'
 import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 
 defineOptions({ name: 'MineTheme' })
 
 const { isDark, toggleTheme } = useTheme()
-const isPhone = useIsPhone()
 </script>
 
 <template>
@@ -44,10 +42,10 @@ const isPhone = useIsPhone()
 
       <n-card size="small" title="让球玩法" :bordered="false">
         <n-list>
-          <n-list-item v-if="isPhone">
+          <n-list-item>
             <n-thing
               title="当前口径"
-              description="与桌面端共用本机设置，切换后立即更新展示与结算"
+              description="偏好保存在本机，切换后立即更新展示与结算"
             />
             <template #suffix>
               <HandicapRulesetSwitch />
