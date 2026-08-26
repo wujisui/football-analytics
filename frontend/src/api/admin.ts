@@ -23,14 +23,52 @@ export type HotLeagueItem = {
   league_id: number
   league_name: string
   country: string | null
+  category_id: number
   selected: boolean
+  protected: boolean
+}
+
+export type HotLeagueCategory = {
+  category_id: number
+  category_name: string
+  leagues: HotLeagueItem[]
 }
 
 export type HotLeaguesSetting = {
   league_ids: number[]
   default_league_ids: number[]
-  source: 'db' | 'env' | string
+  source: 'db'
   leagues: HotLeagueItem[]
+  categories: HotLeagueCategory[]
+}
+
+export type CatalogLeagueCreate = {
+  league_id: number
+  league_name: string
+  country: string
+  category_id: number
+  selected: boolean
+}
+
+export type CatalogLeagueUpdate = {
+  league_id?: number
+  league_name?: string
+  country?: string
+  category_id?: number
+}
+
+export type CatalogLeagueDeleteReport = {
+  apply: boolean
+  league_id: number
+  league_name: string
+  fixtures: number
+  pre_match_data: number
+  match_features: number
+  auto_pick_snapshots: number
+  favorite_fixtures: number
+  league_standings: number
+  api_snapshots: number
+  orphan_teams: number
 }
 
 export type ApiSportsKeySetting = {
@@ -113,6 +151,74 @@ export async function updateHotLeaguesSetting(
   const { data } = await apiClient.patch<HotLeaguesSetting>(
     '/admin/settings/hot-leagues',
     { league_ids: leagueIds },
+  )
+  return data
+}
+
+export async function createLeagueCategory(name: string): Promise<HotLeaguesSetting> {
+  const { data } = await apiClient.post<HotLeaguesSetting>(
+    '/admin/settings/league-categories',
+    { name },
+  )
+  return data
+}
+
+export async function deleteLeagueCategory(
+  categoryId: number,
+): Promise<HotLeaguesSetting> {
+  const { data } = await apiClient.delete<HotLeaguesSetting>(
+    `/admin/settings/league-categories/${categoryId}`,
+  )
+  return data
+}
+
+export async function createCatalogLeague(
+  params: CatalogLeagueCreate,
+): Promise<HotLeaguesSetting> {
+  const { data } = await apiClient.post<HotLeaguesSetting>(
+    '/admin/settings/leagues',
+    params,
+  )
+  return data
+}
+
+export async function updateCatalogLeague(
+  leagueId: number,
+  params: CatalogLeagueUpdate,
+): Promise<HotLeaguesSetting> {
+  const { data } = await apiClient.patch<HotLeaguesSetting>(
+    `/admin/settings/leagues/${leagueId}`,
+    params,
+  )
+  return data
+}
+
+export async function updateCatalogLeagueCategory(
+  leagueId: number,
+  categoryId: number,
+): Promise<HotLeaguesSetting> {
+  return updateCatalogLeague(leagueId, { category_id: categoryId })
+}
+
+export async function previewCatalogLeagueDelete(
+  leagueId: number,
+): Promise<CatalogLeagueDeleteReport> {
+  const { data } = await apiClient.get<CatalogLeagueDeleteReport>(
+    `/admin/settings/leagues/${leagueId}/delete-preview`,
+    { timeout: 5 * 60_000 },
+  )
+  return data
+}
+
+export async function deleteCatalogLeague(params: {
+  leagueId: number
+  password: string
+  apply: true
+}): Promise<CatalogLeagueDeleteReport> {
+  const { data } = await apiClient.post<CatalogLeagueDeleteReport>(
+    `/admin/settings/leagues/${params.leagueId}/delete`,
+    { password: params.password, apply: true },
+    { timeout: 5 * 60_000 },
   )
   return data
 }

@@ -5,7 +5,7 @@ alwaysApply: true
 
 # 联赛名称消歧
 
-联赛译名唯一真源是 `backend/app/services/league_names.py`。
+数据库目录联赛直接使用管理员维护的 `leagues.name`；目录外赛事的译名唯一真源是 `backend/app/services/league_names.py`。
 
 ## 固定优先级
 
@@ -20,6 +20,7 @@ alwaysApply: true
 - 将 `Bundesliga` 无条件译为“德甲”
 - 将 `Premier League`、`Serie A`、`League One` 等通用名绑定到某一热门联赛
 - 在前端增加补丁翻译或维护第二份联赛名称表
+- 用 `league_names.py` 覆盖数据库目录联赛已确认的中文显示名
 
 ## 新增译名时
 

@@ -239,22 +239,27 @@ GET /api/v1/fixtures/today?league_id=39
 | GET  | `/admin/settings/subscription` | 读取订阅、早间盘口、当天完整批次、官方剩余用量，以及上次同步（时刻 / 批次类型 / 本次消耗的官方请求数） |
 | PATCH | `/admin/settings/subscription` | 写入订阅状态并立刻重排 cron |
 | PATCH | `/admin/settings/subscription-early-odds` | 控制已订阅 04/06/08/10 盘口轻刷 |
+| GET/PATCH | `/admin/settings/hot-leagues` | 读取分类目录或保存热门勾选 |
+| POST/DELETE | `/admin/settings/league-categories[/{id}]` | 新增分类；仅空分类可删除 |
+| POST/PATCH | `/admin/settings/leagues[/{id}]` | 新增目录联赛；PATCH 可改中文名、国家、分类；后台新增联赛还可改正官方 ID |
+| GET | `/admin/settings/leagues/{id}/delete-preview` | 预览删除非保护联赛的历史影响 |
+| POST | `/admin/settings/leagues/{id}/delete` | 管理员密码确认后删除非保护联赛及全部历史 |
 | GET  | `/admin/settings/api-sports-key` | 读取官方 Key 配置（数量 + 每枚末 4 位） |
 | PUT  | `/admin/settings/api-sports-key` | 管理员密码确认后写入；body `{"password","keys"}`，`keys` 可逗号分隔多枚；空字符串清除库覆盖改回 env |
 | POST | `/admin/reset-match-history` | 需**管理员账号登录** + body `{"password","apply"}`；`apply=true` 时物理清空 |
 
-前端「我的 → 管理员设置」可配置官方 Key、切换订阅及早间盘口刷新，并用登录密码一键清空比赛历史；「我的 → 热门联赛」勾选定时拉盘范围。密钥见 [docs/API_SPORTS_KEYS.md](../docs/API_SPORTS_KEYS.md)；清空见 [docs/RESET_MATCH_HISTORY.md](../docs/RESET_MATCH_HISTORY.md)。
+前端「我的 → 管理员设置」可配置官方 Key、切换订阅及早间盘口刷新，并用登录密码一键清空比赛历史；「管理员设置 → 热门联赛」管理数据库目录、分类与定时拉盘范围。密钥见 [docs/API_SPORTS_KEYS.md](../docs/API_SPORTS_KEYS.md)；清空见 [docs/RESET_MATCH_HISTORY.md](../docs/RESET_MATCH_HISTORY.md)。
 
 ### 常用联赛 ID
 
-**默认目录**：`config/leagues.json`（也可设环境变量 `LEAGUES_JSON`）——可勾选的联赛清单，修改后需**重启后端**。侧栏「热门」与定时盘口范围由管理员「我的 → 热门联赛」勾选（`app_settings.hot_league_ids`），**不**回写该文件。未落库时默认勾选五大联赛、欧冠/欧罗巴/欧协联、中超/日职联/韩K联。  
+**目录真源**：数据库 `leagues` / `league_categories` 保存可勾选目录、分类、热门状态与保护标记。`config/leagues.json`（或 `LEAGUES_JSON`）只在首次建库时导入种子；种子联赛不可通过 UI/API 删除。管理员可直接新增分类和联赛、修改中文名/国家/分类与热门状态，无需重启；后台新增联赛可改正官方 ID（错误 ID 下的赛程会丢弃），也可在密码确认后连同该联赛历史删除并重新添加。种子联赛官方 ID 不可改。默认热门为五大联赛、欧冠/欧罗巴/欧协联、中超/日职联/韩K联。
 **其他赛事**：官方按日响应在入库前由 `app/services/competition_scope.py` 的稳定 ID 白名单过滤，只保留各国顶级联赛、主要足球地区高级别杯赛及俱乐部/国际友谊赛；青年、预备队、乙级及以下和低级别杯赛不落库。白名单内但未勾选热门的赛事进入筛选框（`extra` / 其他）；勾选只影响本地显示，不触发官方盘口请求。新增其他赛事先核对官方 ID，再更新唯一白名单。
 
-API-Sports 没有跨国家统一可靠的“第几级联赛”字段，因此目录与其他赛事白名单都按稳定 `league.id` 人工维护。`leagues.json` 条目字段：`name`（中文显示名）、`id`（API-Sports）、`country`；可选 `season`（如世界杯）、`region`（仅注释用，程序忽略）。
+API-Sports 没有跨国家统一可靠的“第几级联赛”字段，因此目录与其他赛事白名单都按稳定 `league.id` 人工维护。新增表单字段为 `league_id`（API-Sports v3）、中文显示名、官方国家字符串、分类及是否热门；赛季由后端按当前年份维护，世界杯等种子赛事可保留固定届次覆盖。
 
 筛选只展示所选日期在本地已有赛程的联赛，并按热门勾选 / 其他分组。**热门默认勾选**：前端 localStorage 只保存用户在筛选弹窗点过确认的选择，加载时推导出的勾选不落库，否则赛程尚未同步全的那一天会存下残缺集合、之后压过默认热门导致列表漏比赛。固定批次按日**全量入库白名单赛程**，盘口范围固定为热门勾选，不受前端筛选影响。
 
-完整目录覆盖：五大联赛 + 英冠/德乙/法乙/荷甲/荷乙/葡超/苏超/挪超/瑞典超 + 中超/日职联/韩K联/澳超/沙特联 + 美职联/巴甲/阿甲 + 欧冠/欧罗巴/欧协联/亚冠/亚冠精英/解放者杯/南美杯/世俱杯 + 世界杯/欧洲杯/欧国联/美洲杯/非洲杯/亚洲杯/金杯赛。完整 ID 以 `config/leagues.json` 为准。
+初始目录覆盖：五大联赛 + 英冠/德乙/法乙/荷甲/荷乙/葡超/苏超/挪超/瑞典超 + 中超/日职联/韩K联/澳超/沙特联 + 美职联/巴甲/阿甲 + 欧冠/欧罗巴/欧协联/亚冠/亚冠精英/解放者杯/南美杯/世俱杯 + 世界杯/欧洲杯/欧国联/美洲杯/非洲杯/亚洲杯/金杯赛。部署后的完整目录以数据库为准。
 
 赛程同步按官方 `date=` 拉当日全量赛事写入本地；`league_ids` 只约束盘口补全范围（热门勾选）。
 

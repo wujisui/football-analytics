@@ -4,7 +4,7 @@ from app.models.auto_pick_snapshot import AutoPickSnapshot
 from app.models.bet_plan import BetPlan
 from app.models.favorite_fixture import FavoriteFixture
 from app.models.fixture import Fixture
-from app.models.league import League
+from app.models.league import League, LeagueCategory, LeagueCatalogTombstone
 from app.models.league_standing import LeagueStanding
 from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
@@ -19,6 +19,8 @@ __all__ = [
     "BetPlan",
     "FavoriteFixture",
     "League",
+    "LeagueCategory",
+    "LeagueCatalogTombstone",
     "LeagueStanding",
     "Team",
     "Fixture",

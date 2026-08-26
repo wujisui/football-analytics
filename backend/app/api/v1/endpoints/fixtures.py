@@ -35,7 +35,7 @@ from app.services.analyzer import (
     AnalyzerService,
 )
 from app.services.calendar_tz import utc_today
-from app.services.competition_scope import allowed_competition_ids
+from app.services.league_catalog import allowed_league_ids
 from app.services.fetcher import FootballFetcher
 from app.services.match_day import fixture_match_day_expr
 from app.services.prediction import (
@@ -100,6 +100,8 @@ async def refresh_fixture_odds(
 
 
 def _league_name(fixture: Fixture) -> str:
+    if fixture.league and fixture.league.is_catalog:
+        return fixture.league.name
     settings = get_settings()
     fallback = fixture.league.name if fixture.league else ""
     return league_name_zh(
@@ -111,11 +113,11 @@ def _league_name(fixture: Fixture) -> str:
 
 
 def _league_country(fixture: Fixture) -> str | None:
+    if fixture.league and fixture.league.country and fixture.league.country != "Unknown":
+        return fixture.league.country
     settings = get_settings()
     if fixture.league_id in settings.LEAGUE_COUNTRIES:
         return settings.LEAGUE_COUNTRIES[fixture.league_id]
-    if fixture.league and fixture.league.country and fixture.league.country != "Unknown":
-        return fixture.league.country
     return None
 
 
@@ -325,7 +327,7 @@ async def get_today_fixtures(
 ) -> TodayFixturesResponse:
     """按后端已定稿的场地当地比赛日查询（只读本地库）。"""
     match_day_expr = fixture_match_day_expr()
-    competition_ids = allowed_competition_ids(get_settings())
+    competition_ids = await allowed_league_ids(db)
 
     if league_ids is not None:
         allowed = {int(x) for x in league_ids}

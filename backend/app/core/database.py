@@ -216,6 +216,34 @@ async def _ensure_sqlite_columns(conn) -> None:
     )
     await _ensure_table_columns(
         conn,
+        "leagues",
+        {
+            "category_id": "INTEGER",
+            "is_catalog": "INTEGER NOT NULL DEFAULT 0",
+            "is_hot": "INTEGER NOT NULL DEFAULT 0",
+            "is_protected": "INTEGER NOT NULL DEFAULT 0",
+        },
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_leagues_category_id "
+            "ON leagues (category_id)"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_leagues_is_catalog "
+            "ON leagues (is_catalog)"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_leagues_is_hot "
+            "ON leagues (is_hot)"
+        )
+    )
+    await _ensure_table_columns(
+        conn,
         "match_features",
         {
             "ah_line": "REAL",
@@ -285,3 +313,51 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
         if settings.DATABASE_URL.startswith("sqlite"):
             await _ensure_sqlite_columns(conn)
+
+    from app.services.league_catalog import seed_league_catalog
+
+    async with AsyncSessionLocal() as session:
+        await seed_league_catalog(session)
+
+    if settings.DATABASE_URL.startswith("sqlite"):
+        from sqlalchemy import text
+
+        async with async_engine.begin() as conn:
+            await conn.execute(
+                text(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS prevent_protected_league_delete
+                    BEFORE DELETE ON leagues
+                    WHEN OLD.is_protected = 1
+                    BEGIN
+                        SELECT RAISE(ABORT, 'protected league cannot be deleted');
+                    END
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS prevent_nonempty_category_delete
+                    BEFORE DELETE ON league_categories
+                    WHEN EXISTS (
+                        SELECT 1 FROM leagues WHERE category_id = OLD.id
+                    )
+                    BEGIN
+                        SELECT RAISE(ABORT, 'non-empty league category cannot be deleted');
+                    END
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS prevent_protected_league_unlock
+                    BEFORE UPDATE OF is_protected ON leagues
+                    WHEN OLD.is_protected = 1 AND NEW.is_protected = 0
+                    BEGIN
+                        SELECT RAISE(ABORT, 'protected league cannot be unlocked');
+                    END
+                    """
+                )
+            )

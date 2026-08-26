@@ -1,19 +1,12 @@
-"""Competition admission policy for worldwide fixture feeds.
+"""Extra competition admission policy for worldwide fixture feeds.
 
 API-Sports returns every competition for a date in one response.  Only IDs
-listed here (plus the configured catalog) may cross the persistence boundary.
+listed here (plus the database catalog) may cross the persistence boundary.
 IDs are verified against official payloads already stored in ``api_snapshots``;
 do not infer IDs from names or list order.
 """
 
 from __future__ import annotations
-
-from typing import Protocol
-
-
-class _SettingsWithLeagues(Protocol):
-    LEAGUE_IDS: dict[str, int]
-
 
 # Current non-catalog top divisions observed in the official date feed.
 TOP_DIVISION_IDS = frozenset(
@@ -63,16 +56,3 @@ SENIOR_CUP_IDS = frozenset(
 FRIENDLY_IDS = frozenset({667})
 
 EXTRA_COMPETITION_IDS = TOP_DIVISION_IDS | SENIOR_CUP_IDS | FRIENDLY_IDS
-
-
-def allowed_competition_ids(settings: _SettingsWithLeagues) -> frozenset[int]:
-    """Configured catalog plus the explicit non-catalog whitelist."""
-    configured = {int(value) for value in settings.LEAGUE_IDS.values()}
-    return frozenset(configured | EXTRA_COMPETITION_IDS)
-
-
-def competition_is_allowed(
-    league_id: int,
-    settings: _SettingsWithLeagues,
-) -> bool:
-    return int(league_id) in allowed_competition_ids(settings)

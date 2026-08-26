@@ -18,7 +18,10 @@ from app.services.api_quota import (
     clip_fixture_dates_for_plan,
 )
 from app.services.api_utils import parse_remaining_requests
-from app.services.competition_scope import allowed_competition_ids
+from app.services.league_catalog import (
+    allowed_league_ids as catalog_allowed_league_ids,
+    catalog_leagues,
+)
 from app.services.league_names import league_name_zh
 from app.services.match_day import infer_team_timezone, resolve_match_day
 from app.services.results_capture import (
@@ -422,10 +425,11 @@ class FootballFetcher:
             league = League(id=league_id, name=name, country=country_value, season=season)
             self.session.add(league)
         else:
-            league.name = name
-            # Don't clobber a real country with placeholder when re-seeding.
-            if country_value != "Unknown" or not league.country or league.country == "Unknown":
-                league.country = country_value
+            if not league.is_catalog:
+                league.name = name
+                # Don't clobber a real country with placeholder when re-seeding.
+                if country_value != "Unknown" or not league.country or league.country == "Unknown":
+                    league.country = country_value
             league.season = season
         return league
 
@@ -594,22 +598,23 @@ class FootballFetcher:
 
     async def fetch_leagues(self, league_ids: list[int] | None = None) -> int:
         assert self.session is not None
-        configured = self.settings.LEAGUE_IDS
-        league_ids = league_ids or list(configured.values())
+        catalog = await catalog_leagues(self.session)
+        configured = {int(row.id): row for row in catalog}
+        requested_ids = league_ids or list(configured)
+        league_ids = [int(value) for value in requested_ids if int(value) in configured]
         if not league_ids:
             logger.warning("No league IDs configured for fetch_leagues.")
             return 0
 
-        # Always seed from config so /leagues works even if API is rate-limited.
-        id_to_name = {league_id: name for name, league_id in configured.items()}
-        countries = self.settings.LEAGUE_COUNTRIES
+        # Always keep DB catalog rows usable even if the official API is rate-limited.
+        id_to_name = {league_id: row.name for league_id, row in configured.items()}
+        countries = {league_id: row.country for league_id, row in configured.items()}
         season_default = str(datetime.now().year)
         saved = 0
         for league_id in league_ids:
             try:
-                season = (
-                    self.settings.configured_season(league_id) or season_default
-                )
+                configured_row = configured.get(league_id)
+                season = configured_row.season if configured_row else season_default
                 await self._upsert_league(
                     league_id,
                     id_to_name.get(league_id, f"League {league_id}"),
@@ -739,7 +744,7 @@ class FootballFetcher:
         call, but can never expand it.
         """
         assert self.session is not None
-        competition_ids = allowed_competition_ids(self.settings)
+        competition_ids = await catalog_allowed_league_ids(self.session)
         effective_ids = (
             competition_ids
             if allowed_league_ids is None
@@ -820,10 +825,7 @@ class FootballFetcher:
         return saved
 
     async def _resolve_league_season(self, league_id: int, hint_date: date | None = None) -> str:
-        """Prefer catalog season → DB league.season → calendar year of hint/today."""
-        configured = self.settings.configured_season(league_id)
-        if configured:
-            return configured
+        """Prefer the DB catalog season, then the calendar year."""
         season = await self._get_league_season(league_id)
         if season:
             return season

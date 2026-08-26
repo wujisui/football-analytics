@@ -128,7 +128,7 @@ pip install fastapi uvicorn sqlalchemy aiosqlite redis apscheduler httpx python-
 | 文件 | 是否提交 Git | 操作 |
 |------|--------------|------|
 | `.env` | 否（可本地有） | `copy .env.example .env`（Windows）或 `cp .env.example .env` |
-| `config/leagues.json` | 是（可按个人改） | 默认可直接用；增删联赛后**重启后端** |
+| `config/leagues.json` | 首次建库种子 | 运行时目录在数据库中，通过管理员热门联赛页维护 |
 
 官方 Key **真源**：`app_settings`（`python manage.py set-api-sports-key …` 或「我的 → 管理员设置」）。
 
@@ -220,7 +220,7 @@ npm run dev
 - [ ] `python manage.py init-db` 成功，`data/football.db` 可生成  
 - [ ] 后端 `:8000/docs` 可开，前端 `:5173` 可开且计算器能拉赛程
 - [ ] IDE 解释器指向 venv；Vue 用 Volar 而非 Vetur  
-- [ ] 联赛清单按需改 `backend/config/leagues.json` 后重启后端  
+- [ ] 联赛目录按需在「管理员设置 → 热门联赛」维护，无需重启后端
 
 ---
 

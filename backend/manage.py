@@ -53,13 +53,11 @@ async def run_init_db() -> None:
 
 
 async def run_fetch_leagues() -> None:
-    from app.core.config import get_settings
     from app.services.fetcher import ApiKeyNotConfiguredError, FootballFetcher
 
-    settings = get_settings()
     try:
         async with FootballFetcher() as fetcher:
-            count = await fetcher.fetch_leagues(list(settings.LEAGUE_IDS.values()))
+            count = await fetcher.fetch_leagues()
             print(f"Fetched and saved {count} leagues.")
             if fetcher.last_remaining_requests is not None:
                 print(f"Remaining API requests: {fetcher.last_remaining_requests}")
@@ -260,7 +258,7 @@ async def run_audit_team_names() -> None:
 
 
 async def run_translate_catalog_teams(dry_run: bool = False) -> None:
-    """Auto-translate unmapped clubs that appear in config/leagues.json leagues."""
+    """Auto-translate unmapped clubs that appear in database catalog leagues."""
     import sys
 
     from app.core.database import AsyncSessionLocal, init_db
@@ -622,7 +620,7 @@ def main() -> None:
     translate_parser = subparsers.add_parser(
         "translate-catalog-teams",
         help=(
-            "Auto-translate clubs that appear in config/leagues.json fixtures "
+            "Auto-translate clubs that appear in database catalog fixtures "
             "but still lack Chinese names"
         ),
     )

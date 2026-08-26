@@ -111,11 +111,10 @@ class Settings(BaseSettings):
     ML_AH_MIN_TRAIN_SAMPLES: int = 80
     ML_AH_AUTO_TRAIN: bool = True
 
-    # Optional JSON array override (same shape as config/leagues.json). Highest priority.
+    # Optional first-database seed override (same shape as config/leagues.json).
     LEAGUES_JSON: str = ""
 
-    # Built-in fallback when no catalog file / LEAGUES_JSON is present.
-    # Prefer editing backend/config/leagues.json — left menu + fixture sync both use it.
+    # Built-in fallback for the first database seed. Runtime catalog lives in DB.
     LEAGUE_IDS: dict[str, int] = {
         "世界杯": 1,
         "欧洲杯": 4,

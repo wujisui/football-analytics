@@ -587,7 +587,7 @@ class LeagueCatalogItemResponse(BaseModel):
 class LeagueCatalogResponse(BaseModel):
     leagues: list[LeagueCatalogItemResponse] = Field(
         default_factory=list,
-        description="config/leagues.json 中可拉取的全部联赛",
+        description="数据库目录中可拉取的全部联赛",
     )
 
 

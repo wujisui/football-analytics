@@ -5,19 +5,40 @@ these tests call the builders instead of importing the module.
 """
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.api.v1.endpoints import admin
 
 
 def test_hot_leagues_payload_translates_every_catalog_league() -> None:
-    payload = admin._hot_leagues_payload([39], "db")
+    async def _run() -> object:
+        categories = [SimpleNamespace(id=1, name="五大联赛")]
+        leagues = [
+            SimpleNamespace(
+                id=39,
+                name="英超",
+                country="England",
+                category_id=1,
+                is_hot=True,
+                is_protected=True,
+            )
+        ]
+        with (
+            patch.object(
+                admin, "league_categories", AsyncMock(return_value=categories)
+            ),
+            patch.object(admin, "catalog_leagues", AsyncMock(return_value=leagues)),
+        ):
+            return await admin._hot_leagues_payload(AsyncMock())
 
+    payload = asyncio.run(_run())
     assert payload.source == "db"
     assert payload.league_ids == [39]
     assert payload.leagues, "catalog must not be empty"
     assert all(item.league_name for item in payload.leagues)
     assert [item.league_id for item in payload.leagues if item.selected] == [39]
+    assert payload.categories[0].category_name == "五大联赛"
 
 
 def _subscription_payload(subscribed: bool, *, early_odds: bool) -> object:

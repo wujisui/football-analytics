@@ -20,23 +20,6 @@ KEY_SUBSCRIPTION_EARLY_ODDS = "subscription_early_odds"
 KEY_LAST_FULL_SYNC_DAY = "last_full_sync_day"
 KEY_LAST_SYNC_RUN = "last_sync_run"
 KEY_API_SPORTS_KEY = "api_sports_key"
-KEY_HOT_LEAGUE_IDS = "hot_league_ids"
-
-# First-run 热门：五大联赛 + 欧冠/欧罗巴/欧协联 + 中超/日职联/韩K联。
-# Catalog membership is still ``config/leagues.json``; this is the odds-sync subset.
-DEFAULT_HOT_LEAGUE_IDS: tuple[int, ...] = (
-    39,
-    140,
-    78,
-    135,
-    61,
-    2,
-    3,
-    848,
-    169,
-    98,
-    292,
-)
 
 SettingSource = Literal["db", "env"]
 
@@ -279,66 +262,14 @@ async def set_last_sync_run(session: AsyncSession, run: dict) -> dict:
     return run
 
 
-def catalog_league_ids(settings=None) -> set[int]:
-    cfg = settings or get_settings()
-    return {int(value) for value in cfg.LEAGUE_IDS.values()}
-
-
-def default_hot_league_ids(catalog: set[int] | None = None) -> list[int]:
-    allowed = catalog if catalog is not None else catalog_league_ids()
-    return [league_id for league_id in DEFAULT_HOT_LEAGUE_IDS if league_id in allowed]
-
-
-def normalize_hot_league_ids(
-    raw: list[int] | tuple[int, ...] | None,
-    *,
-    catalog: set[int] | None = None,
-) -> list[int]:
-    """Keep catalog order; drop unknown / duplicate ids."""
-    allowed = catalog if catalog is not None else catalog_league_ids()
-    wanted = {int(value) for value in (raw or [])}
-    ordered: list[int] = []
-    seen: set[int] = set()
-    settings = get_settings()
-    for league_id in settings.LEAGUE_IDS.values():
-        lid = int(league_id)
-        if lid in wanted and lid in allowed and lid not in seen:
-            seen.add(lid)
-            ordered.append(lid)
-    return ordered
-
-
-def _parse_hot_league_ids(raw: str | None, catalog: set[int]) -> list[int] | None:
-    if raw is None or not str(raw).strip():
-        return None
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("Invalid %s JSON; using default hot leagues", KEY_HOT_LEAGUE_IDS)
-        return None
-    if not isinstance(payload, list):
-        return None
-    ids: list[int] = []
-    for item in payload:
-        try:
-            ids.append(int(item))
-        except (TypeError, ValueError):
-            continue
-    return normalize_hot_league_ids(ids, catalog=catalog)
-
-
 async def get_hot_league_ids(
     session: AsyncSession | None = None,
 ) -> tuple[list[int], SettingSource]:
-    """Leagues that scheduled batches refresh pre-match odds for."""
-    catalog = catalog_league_ids()
+    """Database catalog leagues that scheduled batches refresh odds for."""
+    from app.services.league_catalog import hot_league_ids
 
     async def _read(db: AsyncSession) -> tuple[list[int], SettingSource]:
-        row = await get_setting_row(db, KEY_HOT_LEAGUE_IDS)
-        parsed = _parse_hot_league_ids(row.value if row else None, catalog)
-        if parsed is None:
-            return default_hot_league_ids(catalog), "env"
-        return parsed, "db"
+        return await hot_league_ids(db), "db"
 
     if session is not None:
         return await _read(session)
@@ -350,13 +281,6 @@ async def set_hot_league_ids(
     session: AsyncSession,
     league_ids: list[int],
 ) -> list[int]:
-    catalog = catalog_league_ids()
-    selected = normalize_hot_league_ids(league_ids, catalog=catalog)
-    payload = json.dumps(selected, separators=(",", ":"))
-    row = await get_setting_row(session, KEY_HOT_LEAGUE_IDS)
-    if row is None:
-        session.add(AppSetting(key=KEY_HOT_LEAGUE_IDS, value=payload))
-    else:
-        row.value = payload
-    await session.commit()
-    return selected
+    from app.services.league_catalog import set_hot_league_ids as save_hot_ids
+
+    return await save_hot_ids(session, league_ids)

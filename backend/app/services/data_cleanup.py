@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from sqlalchemy import and_, delete, or_, select, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.models.api_snapshot import ApiSnapshot
 from app.models.favorite_fixture import FavoriteFixture
 from app.models.fixture import Fixture
@@ -28,7 +27,7 @@ from app.services.cache import (
     odds_cache_key,
     predictions_cache_key,
 )
-from app.services.competition_scope import allowed_competition_ids
+from app.services.league_catalog import allowed_league_ids
 from app.services.features import has_match_winner_odds
 from app.services.prematch_package import loads_json, rehydrate_odds_markets
 from app.services.results_capture import (
@@ -184,7 +183,7 @@ async def prune_low_value_data(
     Empty ``leagues`` rows (no fixtures left) may be removed after fixture prune.
     """
     now = datetime.utcnow()
-    competition_ids = allowed_competition_ids(get_settings())
+    competition_ids = await allowed_league_ids(session)
     rows = (
         await session.execute(
             select(Fixture, PreMatchData, MatchFeature)
@@ -265,11 +264,15 @@ async def prune_low_value_data(
             await session.execute(select(Fixture.league_id).distinct())
         ).all()
     }
-    all_league_ids = {
+    disposable_league_ids = {
         int(lid)
-        for (lid,) in (await session.execute(select(League.id))).all()
+        for (lid,) in (
+            await session.execute(
+                select(League.id).where(League.is_catalog.is_(False))
+            )
+        ).all()
     }
-    empty_league_ids = all_league_ids - remaining_league_ids
+    empty_league_ids = disposable_league_ids - remaining_league_ids
     await _delete_ids(session, League, League.id, empty_league_ids)
 
     fixture_snapshot_keys = {
@@ -384,6 +387,195 @@ class ResetMatchHistoryReport:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class DeleteLeagueReport:
+    apply: bool
+    league_id: int
+    league_name: str
+    fixtures: int
+    pre_match_data: int
+    match_features: int
+    auto_pick_snapshots: int
+    favorite_fixtures: int
+    league_standings: int
+    api_snapshots: int
+    orphan_teams: int
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+async def delete_catalog_league(
+    session: AsyncSession,
+    league_id: int,
+    *,
+    apply: bool,
+) -> DeleteLeagueReport:
+    """Preview or delete one unprotected catalog league and all match history."""
+    from sqlalchemy import func
+
+    from app.models.auto_pick_snapshot import AutoPickSnapshot
+    from app.models.league import LeagueCatalogTombstone
+    from app.models.league_standing import LeagueStanding
+
+    league = await session.get(League, int(league_id))
+    if league is None or not league.is_catalog:
+        raise ValueError("联赛不在可管理目录中")
+    if league.is_protected:
+        raise PermissionError("系统保护联赛不可删除")
+
+    fixture_rows = (
+        await session.execute(
+            select(
+                Fixture.id,
+                Fixture.match_day,
+                Fixture.date,
+                Fixture.home_team_id,
+                Fixture.away_team_id,
+            ).where(Fixture.league_id == league.id)
+        )
+    ).all()
+    fixture_ids = {int(row.id) for row in fixture_rows}
+    match_days = {
+        str(row.match_day or row.date.date().isoformat()) for row in fixture_rows
+    }
+    candidate_team_ids = {
+        int(team_id)
+        for row in fixture_rows
+        for team_id in (row.home_team_id, row.away_team_id)
+    }
+    externally_referenced_team_ids: set[int] = set()
+    if candidate_team_ids:
+        external_refs = union(
+            select(Fixture.home_team_id).where(
+                Fixture.league_id != league.id,
+                Fixture.home_team_id.in_(candidate_team_ids),
+            ),
+            select(Fixture.away_team_id).where(
+                Fixture.league_id != league.id,
+                Fixture.away_team_id.in_(candidate_team_ids),
+            ),
+        )
+        externally_referenced_team_ids = {
+            int(value)
+            for value in (await session.execute(external_refs)).scalars()
+        }
+    orphan_team_ids = candidate_team_ids - externally_referenced_team_ids
+    orphan_preview = len(orphan_team_ids)
+
+    async def _fixture_child_count(model: type) -> int:
+        if not fixture_ids:
+            return 0
+        return int(
+            await session.scalar(
+                select(func.count())
+                .select_from(model)
+                .where(model.fixture_id.in_(fixture_ids))
+            )
+            or 0
+        )
+
+    snapshot_keys = {
+        key
+        for fixture_id in fixture_ids
+        for key in (
+            analysis_cache_key(fixture_id),
+            fixture_score_cache_key(fixture_id),
+            odds_cache_key(fixture_id),
+            lineups_cache_key(fixture_id),
+            injuries_cache_key(fixture_id),
+            predictions_cache_key(fixture_id),
+        )
+    }
+    snapshot_keys.update(
+        key_builder(day)
+        for day in match_days
+        for key_builder in (fixtures_cache_key, fixtures_day_leagues_cache_key)
+    )
+    snapshot_pattern_filters = [
+        ApiSnapshot.cache_key.like(f"%league:{league.id}:%"),
+    ]
+    for team_id in orphan_team_ids:
+        snapshot_pattern_filters.extend(
+            (
+                ApiSnapshot.cache_key.like(f"%team:{team_id}:%"),
+                ApiSnapshot.cache_key.like(f"%h2h:{team_id}:%"),
+                ApiSnapshot.cache_key.like(f"%h2h:%:{team_id}:%"),
+            )
+        )
+    exact_snapshot_count = 0
+    ordered_snapshot_keys = sorted(snapshot_keys)
+    for start in range(0, len(ordered_snapshot_keys), DELETE_CHUNK_SIZE):
+        chunk = ordered_snapshot_keys[start : start + DELETE_CHUNK_SIZE]
+        exact_snapshot_count += int(
+            await session.scalar(
+                select(func.count())
+                .select_from(ApiSnapshot)
+                .where(ApiSnapshot.cache_key.in_(chunk))
+            )
+            or 0
+        )
+    pattern_snapshot_count = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ApiSnapshot)
+            .where(or_(*snapshot_pattern_filters))
+        )
+        or 0
+    )
+    snapshot_count = exact_snapshot_count + pattern_snapshot_count
+
+    report = DeleteLeagueReport(
+        apply=apply,
+        league_id=int(league.id),
+        league_name=league.name,
+        fixtures=len(fixture_ids),
+        pre_match_data=await _fixture_child_count(PreMatchData),
+        match_features=await _fixture_child_count(MatchFeature),
+        auto_pick_snapshots=await _fixture_child_count(AutoPickSnapshot),
+        favorite_fixtures=await _fixture_child_count(FavoriteFixture),
+        league_standings=int(
+            await session.scalar(
+                select(func.count())
+                .select_from(LeagueStanding)
+                .where(LeagueStanding.league_id == league.id)
+            )
+            or 0
+        ),
+        api_snapshots=snapshot_count,
+        orphan_teams=orphan_preview,
+    )
+    if not apply:
+        return report
+
+    await _delete_ids(
+        session, ApiSnapshot, ApiSnapshot.cache_key, snapshot_keys
+    )
+    await session.execute(
+        delete(ApiSnapshot).where(or_(*snapshot_pattern_filters))
+    )
+    await session.execute(delete(League).where(League.id == league_id))
+    session.add(LeagueCatalogTombstone(league_id=int(league_id)))
+    await session.flush()
+
+    orphan_result = await session.execute(
+        delete(Team).where(Team.id.in_(orphan_team_ids))
+    )
+    orphan_teams = int(orphan_result.rowcount or 0)
+    await session.commit()
+
+    cache = get_cache_service()
+    await cache.clear_pattern(f"*league:{league_id}:*")
+    for team_id in orphan_team_ids:
+        await cache.clear_pattern(f"*team:{team_id}:*")
+        await cache.clear_pattern(f"*h2h:{team_id}:*")
+        await cache.clear_pattern(f"*h2h:*:{team_id}:*")
+    for key in snapshot_keys:
+        await cache.delete(key)
+
+    return DeleteLeagueReport(**{**report.to_dict(), "orphan_teams": orphan_teams})
 
 
 _RESET_MATCH_HISTORY_KEPT = (

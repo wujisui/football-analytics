@@ -1,22 +1,28 @@
 import asyncio
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps_auth import AdminUser, require_admin
-from app.core.config import get_settings
 from app.core.database import get_db
+from app.models.league import League, LeagueCategory, LeagueCatalogTombstone
 from app.services import auth as auth_service
-from app.services.data_cleanup import reset_match_history
+from app.services.data_cleanup import delete_catalog_league, reset_match_history
 from app.services.cache import get_cache_service
 from app.services.fixtures_sync import official_sync_busy
-from app.services.league_names import league_name_zh
+from app.services.league_catalog import (
+    DEFAULT_HOT_LEAGUE_IDS,
+    catalog_leagues,
+    league_categories,
+    retarget_catalog_league_id,
+)
 from app.services.runtime_settings import (
-    default_hot_league_ids,
     get_api_sports_keys_setting,
-    get_hot_league_ids,
     get_last_sync_run,
     get_subscription_early_odds,
     get_subscription_enabled,
@@ -93,18 +99,76 @@ class HotLeagueItem(BaseModel):
     league_id: int
     league_name: str
     country: str | None = None
+    category_id: int
     selected: bool
+    protected: bool
+
+
+class HotLeagueCategory(BaseModel):
+    category_id: int
+    category_name: str
+    leagues: list[HotLeagueItem] = Field(default_factory=list)
 
 
 class HotLeaguesSetting(BaseModel):
     league_ids: list[int]
     default_league_ids: list[int] = Field(description="内置默认勾选（五大联赛+欧战+中日韩）")
-    source: str = Field(description="db = 管理员已覆盖；env = 内置默认勾选")
+    source: str = Field(default="db")
     leagues: list[HotLeagueItem] = Field(default_factory=list)
+    categories: list[HotLeagueCategory] = Field(default_factory=list)
 
 
 class HotLeaguesUpdate(BaseModel):
     league_ids: list[int] = Field(default_factory=list)
+
+
+class LeagueCategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=40)
+
+
+class CatalogLeagueCreate(BaseModel):
+    league_id: int = Field(..., gt=0)
+    league_name: str = Field(..., min_length=1, max_length=80)
+    country: str = Field(..., min_length=1, max_length=80)
+    category_id: int = Field(..., gt=0)
+    selected: bool = True
+
+
+class CatalogLeagueUpdate(BaseModel):
+    league_id: int | None = Field(default=None, gt=0)
+    league_name: str | None = Field(default=None, min_length=1, max_length=80)
+    country: str | None = Field(default=None, min_length=1, max_length=80)
+    category_id: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def require_one_field(self) -> "CatalogLeagueUpdate":
+        if (
+            self.league_id is None
+            and self.league_name is None
+            and self.country is None
+            and self.category_id is None
+        ):
+            raise ValueError("至少修改官方 ID、中文名、国家或分类中的一项")
+        return self
+
+
+class CatalogLeagueDeleteRequest(BaseModel):
+    password: str = Field(..., min_length=1)
+    apply: bool = True
+
+
+class CatalogLeagueDeleteReport(BaseModel):
+    apply: bool
+    league_id: int
+    league_name: str
+    fixtures: int
+    pre_match_data: int
+    match_features: int
+    auto_pick_snapshots: int
+    favorite_fixtures: int
+    league_standings: int
+    api_snapshots: int
+    orphan_teams: int
 
 
 class ResetMatchHistoryRequest(BaseModel):
@@ -270,32 +334,260 @@ async def patch_subscription_early_odds_setting(
     return await _subscription_payload(subscribed, source)
 
 
-def _hot_leagues_payload(
-    league_ids: list[int],
-    source: str,
+async def _hot_leagues_payload(
+    db: AsyncSession,
 ) -> HotLeaguesSetting:
-    settings = get_settings()
-    selected = set(league_ids)
+    category_rows = await league_categories(db)
+    league_rows = await catalog_leagues(db)
+    grouped: dict[int, list[HotLeagueItem]] = {
+        int(category.id): [] for category in category_rows
+    }
     items: list[HotLeagueItem] = []
-    for name, league_id in settings.LEAGUE_IDS.items():
-        lid = int(league_id)
-        country = settings.LEAGUE_COUNTRIES.get(lid)
-        items.append(
-            HotLeagueItem(
-                league_id=lid,
-                league_name=league_name_zh(
-                    name, league_id=lid, country=country, settings=settings
-                ),
-                country=country,
-                selected=lid in selected,
-            )
+    selected_ids: list[int] = []
+    for league in league_rows:
+        item = HotLeagueItem(
+            league_id=int(league.id),
+            league_name=league.name,
+            country=league.country if league.country != "Unknown" else None,
+            category_id=int(league.category_id or 0),
+            selected=bool(league.is_hot),
+            protected=bool(league.is_protected),
         )
+        items.append(item)
+        grouped.setdefault(item.category_id, []).append(item)
+        if item.selected:
+            selected_ids.append(item.league_id)
+
+    categories = [
+        HotLeagueCategory(
+            category_id=int(category.id),
+            category_name=category.name,
+            leagues=grouped.get(int(category.id), []),
+        )
+        for category in category_rows
+    ]
     return HotLeaguesSetting(
-        league_ids=league_ids,
-        default_league_ids=default_hot_league_ids(),
-        source=source,
+        league_ids=selected_ids,
+        default_league_ids=[
+            league_id
+            for league_id in DEFAULT_HOT_LEAGUE_IDS
+            if any(item.league_id == league_id for item in items)
+        ],
+        source="db",
         leagues=items,
+        categories=categories,
     )
+
+
+async def _require_category(db: AsyncSession, category_id: int) -> LeagueCategory:
+    category = await db.get(LeagueCategory, int(category_id))
+    if category is None:
+        raise HTTPException(status_code=404, detail="联赛分类不存在")
+    return category
+
+
+def _delete_league_report(report: Any) -> CatalogLeagueDeleteReport:
+    return CatalogLeagueDeleteReport(**report.to_dict())
+
+
+@router.post(
+    "/settings/league-categories",
+    response_model=HotLeaguesSetting,
+)
+async def create_league_category(
+    body: LeagueCategoryCreate,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> HotLeaguesSetting:
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="分类名称不能为空")
+    exists = await db.scalar(
+        select(LeagueCategory.id).where(func.lower(LeagueCategory.name) == name.lower())
+    )
+    if exists is not None:
+        raise HTTPException(status_code=409, detail="分类名称已存在")
+    max_sort = int(await db.scalar(select(func.max(LeagueCategory.sort_order))) or 0)
+    db.add(LeagueCategory(name=name, sort_order=max_sort + 10))
+    await db.commit()
+    return await _hot_leagues_payload(db)
+
+
+@router.delete(
+    "/settings/league-categories/{category_id}",
+    response_model=HotLeaguesSetting,
+)
+async def delete_league_category(
+    category_id: int,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> HotLeaguesSetting:
+    category = await _require_category(db, category_id)
+    child_count = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(League)
+            .where(League.is_catalog.is_(True), League.category_id == category.id)
+        )
+        or 0
+    )
+    if child_count:
+        raise HTTPException(status_code=409, detail="分类下仍有联赛，不能删除")
+    await db.delete(category)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="分类下仍有联赛，不能删除") from exc
+    return await _hot_leagues_payload(db)
+
+
+@router.post(
+    "/settings/leagues",
+    response_model=HotLeaguesSetting,
+)
+async def create_catalog_league(
+    body: CatalogLeagueCreate,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> HotLeaguesSetting:
+    await _require_category(db, body.category_id)
+    league_name = body.league_name.strip()
+    country = body.country.strip()
+    if not league_name or not country:
+        raise HTTPException(status_code=422, detail="中文名和国家不能为空")
+    league = await db.get(League, body.league_id)
+    if league is not None and league.is_catalog:
+        raise HTTPException(status_code=409, detail="该官方联赛 ID 已在目录中")
+    if (
+        league is not None
+        and league.country
+        and league.country != "Unknown"
+        and league.country.casefold() != country.casefold()
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"国家与本地官方记录不一致，应为 {league.country}",
+        )
+    if league is not None and league.country and league.country != "Unknown":
+        country = league.country
+    if league is None:
+        league = League(
+            id=int(body.league_id),
+            name=league_name,
+            country=country,
+            season=str(datetime.now().year),
+        )
+    else:
+        league.name = league_name
+        league.country = country
+    league.category_id = int(body.category_id)
+    league.is_catalog = True
+    league.is_hot = body.selected
+    league.is_protected = False
+    tombstone = await db.get(LeagueCatalogTombstone, body.league_id)
+    if tombstone is not None:
+        await db.delete(tombstone)
+    db.add(league)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="联赛 ID 或数据重复") from exc
+    return await _hot_leagues_payload(db)
+
+
+@router.patch(
+    "/settings/leagues/{league_id}",
+    response_model=HotLeaguesSetting,
+)
+async def update_catalog_league(
+    league_id: int,
+    body: CatalogLeagueUpdate,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> HotLeaguesSetting:
+    league = await db.get(League, int(league_id))
+    if league is None or not league.is_catalog:
+        raise HTTPException(status_code=404, detail="联赛不在可管理目录中")
+    if body.category_id is not None:
+        await _require_category(db, body.category_id)
+        league.category_id = int(body.category_id)
+    if body.league_name is not None:
+        league_name = body.league_name.strip()
+        if not league_name:
+            raise HTTPException(status_code=422, detail="中文名不能为空")
+        league.name = league_name
+    if body.country is not None:
+        country = body.country.strip()
+        if not country:
+            raise HTTPException(status_code=422, detail="国家不能为空")
+        league.country = country
+    old_id = int(league.id)
+    if body.league_id is not None and int(body.league_id) != old_id:
+        if official_sync_busy():
+            raise HTTPException(status_code=409, detail="官方同步正在执行，暂不能修改联赛 ID")
+        try:
+            league = await retarget_catalog_league_id(db, league, int(body.league_id))
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except LookupError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="联赛 ID 或数据重复") from exc
+    if int(league.id) != old_id:
+        cache = get_cache_service()
+        await cache.clear_pattern(f"*league:{old_id}:*")
+    return await _hot_leagues_payload(db)
+
+
+@router.get(
+    "/settings/leagues/{league_id}/delete-preview",
+    response_model=CatalogLeagueDeleteReport,
+)
+async def preview_catalog_league_delete(
+    league_id: int,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> CatalogLeagueDeleteReport:
+    try:
+        report = await delete_catalog_league(db, league_id, apply=False)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _delete_league_report(report)
+
+
+@router.post(
+    "/settings/leagues/{league_id}/delete",
+    response_model=CatalogLeagueDeleteReport,
+)
+async def remove_catalog_league(
+    league_id: int,
+    body: CatalogLeagueDeleteRequest,
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> CatalogLeagueDeleteReport:
+    if not auth_service.verify_password(body.password, admin.password_hash):
+        raise HTTPException(status_code=403, detail="管理员密码不正确")
+    if official_sync_busy():
+        raise HTTPException(status_code=409, detail="官方同步正在执行，暂不能删除联赛")
+    try:
+        report = await delete_catalog_league(db, league_id, apply=body.apply)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="联赛历史删除失败，请稍后重试") from exc
+    return _delete_league_report(report)
 
 
 @router.get("/settings/hot-leagues", response_model=HotLeaguesSetting)
@@ -303,8 +595,7 @@ async def get_hot_leagues_setting(
     _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> HotLeaguesSetting:
-    league_ids, source = await get_hot_league_ids(db)
-    return _hot_leagues_payload(league_ids, source)
+    return await _hot_leagues_payload(db)
 
 
 @router.patch("/settings/hot-leagues", response_model=HotLeaguesSetting)
@@ -313,8 +604,8 @@ async def patch_hot_leagues_setting(
     _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> HotLeaguesSetting:
-    league_ids = await set_hot_league_ids(db, body.league_ids)
-    return _hot_leagues_payload(league_ids, "db")
+    await set_hot_league_ids(db, body.league_ids)
+    return await _hot_leagues_payload(db)
 
 
 def _api_sports_key_payload(

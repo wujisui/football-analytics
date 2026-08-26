@@ -61,7 +61,7 @@ python manage.py check-quota
 
 1. 停止本机与服务器两端的后端写入进程。
 2. 将 `backend/data/football.db` 和整个 `backend/data/models/` 一起复制到服务器相同路径。
-3. 使用相同代码提交、Python/NumPy 依赖、`config/leagues.json`，并对齐
+3. 使用相同代码提交、Python/NumPy 依赖；联赛目录随数据库复制，并对齐
    `SCHEDULER_TIMEZONE`、`API_HISTORY_MODE`、全部 `ML_*` 配置及详情预拉开关。
 4. 从服务器的 `backend/` 目录执行 `python manage.py model-status`，核对三套模型的
    inference mode、样本数、deployable 状态与本机一致，再启动服务。

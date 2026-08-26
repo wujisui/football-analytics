@@ -1,4 +1,4 @@
-"""Auto-translate unmapped clubs that appear in ``config/leagues.json`` leagues.
+"""Auto-translate unmapped clubs that appear in database catalog leagues.
 
 Curated names in ``team_names.BY_ID`` always win. Accepted machine translations
 are stored in ``data/team_names_auto.json`` and merged at lookup time.
@@ -97,9 +97,10 @@ async def _translate_en_to_zh(client: httpx.AsyncClient, name: str) -> str | Non
 
 
 async def list_untranslated_catalog_teams(session: AsyncSession) -> list[Team]:
-    """Clubs that appear in fixtures of ``leagues.json`` leagues and still lack Chinese."""
-    settings = get_settings()
-    league_ids = set(settings.LEAGUE_IDS.values())
+    """Clubs in database catalog leagues that still lack a Chinese name."""
+    from app.services.league_catalog import catalog_league_ids
+
+    league_ids = set(await catalog_league_ids(session))
     if not league_ids:
         return []
 

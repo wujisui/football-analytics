@@ -17,7 +17,10 @@ from app.schemas.response import (
     LeaguesListResponse,
     LeagueSummaryResponse,
 )
-from app.services.competition_scope import allowed_competition_ids
+from app.services.league_catalog import (
+    allowed_league_ids,
+    catalog_leagues,
+)
 from app.services.league_names import league_name_zh
 from app.services.match_day import fixture_match_day_expr
 from app.services.results_capture import prematch_list_clause, results_list_clause
@@ -31,23 +34,17 @@ async def get_league_catalog(
     db: AsyncSession = Depends(get_db),
 ) -> LeagueCatalogResponse:
     """Configured leagues only. Use ``/leagues/filter-options`` for sidebar filters."""
-    settings = get_settings()
     hot_ids, _ = await get_hot_league_ids(db)
     hot = set(hot_ids)
     items: list[LeagueCatalogItemResponse] = []
-    for name, league_id in settings.LEAGUE_IDS.items():
-        lid = int(league_id)
+    for league in await catalog_leagues(db):
+        lid = int(league.id)
         items.append(
             LeagueCatalogItemResponse(
                 league_id=lid,
-                league_name=league_name_zh(
-                    name,
-                    league_id=lid,
-                    country=settings.LEAGUE_COUNTRIES.get(lid),
-                    settings=settings,
-                ),
-                country=settings.LEAGUE_COUNTRIES.get(lid),
-                season=settings.configured_season(lid),
+                league_name=league.name,
+                country=league.country if league.country != "Unknown" else None,
+                season=league.season,
                 hot=lid in hot,
             )
         )
@@ -78,9 +75,8 @@ async def get_league_filter_options(
     scope_key = (scope or "prematch").strip().lower()
     if scope_key not in {"prematch", "results"}:
         raise HTTPException(status_code=400, detail="scope must be prematch or results")
-    catalog_ids = set(settings.LEAGUE_IDS.values())
     hot_ids = set((await get_hot_league_ids(db))[0])
-    competition_ids = allowed_competition_ids(settings)
+    competition_ids = await allowed_league_ids(db)
 
     if date_str:
         try:
@@ -148,8 +144,6 @@ async def get_league_filter_options(
         league_rows = {int(row.id): row for row in rows}
 
     def _country(league_id: int) -> str | None:
-        if league_id in settings.LEAGUE_COUNTRIES:
-            return settings.LEAGUE_COUNTRIES[league_id]
         row = league_rows.get(league_id)
         if row and row.country and row.country != "Unknown":
             return row.country
@@ -157,11 +151,9 @@ async def get_league_filter_options(
 
     def _name(league_id: int) -> str:
         row = league_rows.get(league_id)
-        raw = (
-            settings.league_display_name(league_id)
-            if league_id in catalog_ids
-            else (row.name if row else "")
-        )
+        if row and row.is_catalog:
+            return row.name
+        raw = row.name if row else ""
         return league_name_zh(
             raw,
             league_id=league_id,
@@ -232,7 +224,9 @@ async def list_leagues(
 
     leagues: list[LeagueSummaryResponse] = []
 
-    for league_name, league_id in settings.LEAGUE_IDS.items():
+    for catalog_row in await catalog_leagues(db):
+        league_id = int(catalog_row.id)
+        league_name = catalog_row.name
         league = await db.get(League, league_id)
 
         today_stmt = (
@@ -274,8 +268,6 @@ async def list_leagues(
         country = None
         if league and league.country and league.country != "Unknown":
             country = league.country
-        elif league_id in settings.LEAGUE_COUNTRIES:
-            country = settings.LEAGUE_COUNTRIES[league_id]
 
         leagues.append(
             LeagueSummaryResponse(

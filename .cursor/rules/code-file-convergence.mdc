@@ -28,7 +28,7 @@ alwaysApply: true
 - 不为「这次方便」再拆一个几乎只被一处引用的薄封装（除非复用已明确出现第二次）。
 - 新增 `.vue` / composable / endpoint 前：在同目录找可扩展的宿主；优先扩展 `Home.vue` 已有组件、`useHomeFixtures`、`leagues.py` 等。
 - 删除或停止调用废弃导出后，**顺手删无引用文件**，不要留空壳。
-- 配置也收敛：联赛目录只保留 `config/leagues.json`（默认勾选）；其他联赛由当日本地赛程进筛选框，不要再维护次级/example 平行清单。
+- 配置也收敛：联赛目录、分类与热门状态只读数据库；`config/leagues.json` 仅作首次建库种子，不再作为运行时平行目录。目录外白名单联赛由当日本地赛程进筛选框，不要再维护次级/example 平行清单。
 - 对照表 / 翻译表只保留一处真源（例如队名只在 `backend/app/services/team_names.py`）；禁止前后端各维护一份长期漂移。
 - 展示用数据格式（符号、翻译、归一）按 `data-format-at-source`：入库定稿，禁止「写入加字符、前端再剥」。
 
