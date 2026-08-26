@@ -242,7 +242,7 @@ GET /api/v1/fixtures/today?league_id=39
 | GET/PATCH | `/admin/settings/hot-leagues` | 读取分类目录或保存热门勾选 |
 | POST/DELETE | `/admin/settings/league-categories[/{id}]` | 新增分类；仅空分类可删除 |
 | POST/PATCH | `/admin/settings/leagues[/{id}]` | 新增目录联赛；PATCH 可改中文名、国家、分类；后台新增联赛还可改正官方 ID |
-| GET | `/admin/settings/leagues/{id}/lookup` | 管理员新增前核对官方联赛：缓存优先，未命中才打 1 次 `GET /leagues?id=` |
+| GET | `/admin/settings/leagues/{id}/lookup` | 管理员新增/改正官方 ID 前核对：缓存优先，未命中才打 1 次 `GET /leagues?id=` |
 | GET | `/admin/settings/leagues/{id}/delete-preview` | 预览删除非保护联赛的历史影响 |
 | POST | `/admin/settings/leagues/{id}/delete` | 管理员密码确认后删除非保护联赛及全部历史 |
 | GET  | `/admin/settings/api-sports-key` | 读取官方 Key 配置（数量 + 每枚末 4 位） |

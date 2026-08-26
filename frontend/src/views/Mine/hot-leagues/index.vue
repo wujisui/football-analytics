@@ -41,6 +41,8 @@ const addLeagueShow = ref(false)
 const addLookupBusy = ref(false)
 const addLookup = ref<OfficialLeagueLookup | null>(null)
 const editLeagueShow = ref(false)
+const editLookupBusy = ref(false)
+const editLookup = ref<OfficialLeagueLookup | null>(null)
 const addCategoryShow = ref(false)
 const addCategoryName = ref('')
 const addLeague = reactive({
@@ -48,7 +50,7 @@ const addLeague = reactive({
   league_name: '',
   country: '',
   category_id: null as number | null,
-  selected: true,
+  selected: false,
 })
 const editLeague = reactive({
   league_id: null as number | null,
@@ -64,6 +66,14 @@ watch(
     addLookup.value = null
     addLeague.league_name = ''
     addLeague.country = ''
+  },
+)
+
+watch(
+  () => editLeague.league_id,
+  () => {
+    if (!editLeagueShow.value) return
+    editLookup.value = null
   },
 )
 
@@ -279,7 +289,7 @@ function openAddLeague() {
   addLeague.league_name = ''
   addLeague.country = ''
   addLeague.category_id = categories.value[0]?.category_id ?? null
-  addLeague.selected = true
+  addLeague.selected = false
   addLookup.value = null
   addLeagueShow.value = true
 }
@@ -326,6 +336,7 @@ function openEditLeague() {
     message.warning('请先点击选中要修改的联赛')
     return
   }
+  editLookup.value = null
   editLeague.league_id = item.league_id
   editLeague.league_name = item.league_name
   editLeague.country = item.country ?? ''
@@ -335,8 +346,57 @@ function openEditLeague() {
 }
 
 function closeEditLeague() {
-  if (catalogBusy.value) return
+  if (catalogBusy.value || editLookupBusy.value) return
   editLeagueShow.value = false
+}
+
+function editIdChanged(): boolean {
+  const item = selectedLeague.value
+  return item != null && editLeague.league_id !== item.league_id
+}
+
+function editLookupBlocksSave(): boolean {
+  if (!editIdChanged()) return false
+  const nextId = editLeague.league_id
+  const found = editLookup.value
+  if (found == null || found.league_id !== nextId) return true
+  return found.in_catalog && found.league_id !== selectedLeague.value?.league_id
+}
+
+async function lookupEditLeague() {
+  if (isPhone.value) return
+  const item = selectedLeague.value
+  const leagueId = editLeague.league_id
+  if (editLeague.protected) return
+  if (!Number.isInteger(leagueId) || leagueId == null || leagueId < 1) {
+    message.warning('请填写正整数官方联赛 ID')
+    return
+  }
+  editLookupBusy.value = true
+  try {
+    const found = await lookupOfficialLeague(leagueId)
+    editLookup.value = found
+    if (item != null && found.league_id !== item.league_id) {
+      editLeague.league_name = found.suggested_name
+      editLeague.country = found.country
+    } else if (!editLeague.country.trim()) {
+      editLeague.country = found.country
+    }
+    if (found.in_catalog && found.league_id !== item?.league_id) {
+      message.warning(`ID ${found.league_id} 已在目录中：${found.suggested_name}`)
+    } else {
+      message.success(
+        found.from_cache
+          ? `已核对 ${found.official_name}（读自缓存，未消耗配额）`
+          : `已核对 ${found.official_name}（本次消耗 1 次官方请求）`,
+      )
+    }
+  } catch (err) {
+    editLookup.value = null
+    message.error(err instanceof Error ? err.message : '核对官方联赛失败')
+  } finally {
+    editLookupBusy.value = false
+  }
 }
 
 async function submitEditLeague() {
@@ -354,6 +414,16 @@ async function submitEditLeague() {
   if (item.protected && nextLeagueId !== item.league_id) {
     message.warning('系统保护联赛不可修改官方 ID')
     return
+  }
+  if (editIdChanged()) {
+    if (editLookup.value?.league_id !== nextLeagueId) {
+      message.warning('改官方 ID 请先核对')
+      return
+    }
+    if (editLookup.value.in_catalog && editLookup.value.league_id !== item.league_id) {
+      message.warning('该官方联赛 ID 已在目录中')
+      return
+    }
   }
   if (!leagueName) {
     message.warning('请填写中文名')
@@ -865,8 +935,8 @@ onMounted(() => {
       v-model:show="editLeagueShow"
       preset="card"
       title="修改联赛"
-      :mask-closable="!catalogBusy"
-      :close-on-esc="!catalogBusy"
+      :mask-closable="!catalogBusy && !editLookupBusy"
+      :close-on-esc="!catalogBusy && !editLookupBusy"
       style="width: min(440px, 92vw)"
       @update:show="(show: boolean) => !show && closeEditLeague()"
     >
@@ -874,26 +944,58 @@ onMounted(() => {
         {{
           editLeague.protected
             ? '种子联赛不可改官方 ID。中文名与国家写入数据库目录，同步时不会被官方英文名覆盖。'
-            : '后台新增联赛可改正官方 ID。改 ID 会丢弃错误 ID 下已拉到的赛程；目标 ID 上已有赛程会保留。'
+            : '改官方 ID 须先核对：未命中缓存消耗 1 次 GET /leagues?id=。改 ID 会丢弃错误 ID 下已拉到的赛程；目标 ID 上已有赛程会保留。'
         }}
       </n-alert>
       <n-form-item label="官方 ID" :show-feedback="false">
-        <n-input-number
-          v-model:value="editLeague.league_id"
-          :min="1"
-          :precision="0"
-          :show-button="false"
-          placeholder="正整数"
-          class="hot-league-full-input"
-          :disabled="catalogBusy || editLeague.protected"
-        />
+        <div class="hot-league-id-row">
+          <n-input-number
+            v-model:value="editLeague.league_id"
+            :min="1"
+            :precision="0"
+            :show-button="false"
+            placeholder="正整数"
+            class="hot-league-full-input"
+            :disabled="catalogBusy || editLookupBusy || editLeague.protected"
+            @keyup.enter="lookupEditLeague"
+          />
+          <n-button
+            v-if="!editLeague.protected"
+            :disabled="catalogBusy || editLookupBusy || editLeague.league_id == null"
+            :loading="editLookupBusy"
+            @click="lookupEditLeague"
+          >
+            {{ editLookupBusy ? '核对中' : '核对' }}
+          </n-button>
+        </div>
       </n-form-item>
+      <n-alert
+        v-if="editLookup"
+        :type="
+          editLookup.in_catalog && editLookup.league_id !== selectedLeague?.league_id
+            ? 'warning'
+            : 'success'
+        "
+        :bordered="false"
+        style="margin: 8px 0 12px"
+      >
+        官方：{{ editLookup.official_name }}（{{ editLookup.country }}
+        <template v-if="editLookup.league_type"> · {{ editLookup.league_type }}</template>
+        <template v-if="editLookup.season"> · {{ editLookup.season }}</template>
+        ）
+        {{ editLookup.from_cache ? '已用缓存' : '本次消耗 1 次配额' }}
+        <template
+          v-if="editLookup.in_catalog && editLookup.league_id !== selectedLeague?.league_id"
+        >
+          ；该 ID 已在目录中
+        </template>
+      </n-alert>
       <n-form-item label="中文名" :show-feedback="false" style="margin-top: 8px">
         <n-input
           v-model:value="editLeague.league_name"
           maxlength="80"
           placeholder="联赛中文名"
-          :disabled="catalogBusy"
+          :disabled="catalogBusy || editLookupBusy"
         />
       </n-form-item>
       <n-form-item label="国家" :show-feedback="false" style="margin-top: 8px">
@@ -901,7 +1003,7 @@ onMounted(() => {
           v-model:value="editLeague.country"
           maxlength="80"
           placeholder="官方国家字符串，如 England / World"
-          :disabled="catalogBusy"
+          :disabled="catalogBusy || editLookupBusy"
         />
       </n-form-item>
       <n-form-item label="分类" :show-feedback="false" style="margin-top: 8px">
@@ -909,15 +1011,15 @@ onMounted(() => {
           v-model:value="editLeague.category_id"
           :options="categoryOptions"
           placeholder="选择分类"
-          :disabled="catalogBusy || !categoryOptions.length"
+          :disabled="catalogBusy || editLookupBusy || !categoryOptions.length"
         />
       </n-form-item>
       <template #footer>
         <div class="hot-league-modal-footer">
-          <n-button :disabled="catalogBusy" @click="closeEditLeague">取消</n-button>
+          <n-button :disabled="catalogBusy || editLookupBusy" @click="closeEditLeague">取消</n-button>
           <n-button
             type="primary"
-            :disabled="catalogBusy"
+            :disabled="catalogBusy || editLookupBusy || editLookupBlocksSave()"
             :loading="catalogBusy"
             @click="submitEditLeague"
           >
@@ -1066,7 +1168,7 @@ onMounted(() => {
 
 @media (min-width: 768px) {
   .hot-league-grid {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 
