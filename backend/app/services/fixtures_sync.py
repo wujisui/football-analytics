@@ -156,11 +156,11 @@ async def sync_free_quota_rollover_fixtures() -> int:
 
 
 async def scheduled_fixtures_sync(*, mode: str = "full") -> dict:
-    """Run one full batch, today's-hot-odds light batch, or results-only backfill."""
+    """Run a full, light-odds, results, or explicit prematch gap-fill batch."""
     if _sync_lock.locked():
         logger.info("Scheduled fixtures sync already running; skipping overlap")
         return {"status": "skipped", "reason": "locked", "mode": mode}
-    if mode not in {"full", "odds", "results"}:
+    if mode not in {"full", "odds", "results", "prematch_missing_odds"}:
         raise ValueError(f"Unknown sync mode: {mode}")
 
     settings = get_settings()
@@ -183,6 +183,7 @@ async def scheduled_fixtures_sync(*, mode: str = "full") -> dict:
             results_saved = 0
             fixtures_saved = 0
             odds_updated = 0
+            prematch_odds_stats: dict[str, int | str | None] = {}
             standings_stats = {
                 "leagues": 0,
                 "fetched": 0,
@@ -190,7 +191,17 @@ async def scheduled_fixtures_sync(*, mode: str = "full") -> dict:
                 "failed": 0,
             }
 
-            if mode == "results":
+            if mode == "prematch_missing_odds":
+                if not fetcher.quota_exhausted:
+                    prematch_odds_stats = (
+                        await fetcher.sync_missing_odds_for_prematch_list()
+                    )
+                    odds_updated = int(prematch_odds_stats.get("updated") or 0)
+                logger.info(
+                    "scheduled_fixtures_sync prematch-missing-odds stats=%s",
+                    prematch_odds_stats,
+                )
+            elif mode == "results":
                 if result_days and not fetcher.quota_exhausted:
                     results_saved = await fetcher.capture_finished_results(
                         on_days=result_days,
@@ -357,6 +368,7 @@ async def scheduled_fixtures_sync(*, mode: str = "full") -> dict:
         "fixtures_saved": fixtures_saved,
         "results_saved": results_saved,
         "odds_updated": odds_updated,
+        "prematch_odds": prematch_odds_stats,
         "standings": standings_stats,
         "detail": detail_stats,
     }

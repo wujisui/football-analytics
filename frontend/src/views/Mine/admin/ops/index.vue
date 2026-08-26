@@ -23,8 +23,16 @@ defineOptions({ name: 'MineAdminOps' })
 
 const message = useMessage()
 const modal = useModal()
-const { syncing, resultsSyncing, busy, runSync, runResultsSync, hydrateStatus } =
-  useAdminSync()
+const {
+  syncing,
+  resultsSyncing,
+  prematchOddsSyncing,
+  busy,
+  runSync,
+  runResultsSync,
+  runPrematchOddsSync,
+  hydrateStatus,
+} = useAdminSync()
 
 const subscribed = ref(false)
 const subscriptionSource = ref('')
@@ -51,6 +59,9 @@ const resultsSyncDescription = computed(() =>
     ? '只按日回写近 4 天（含今天）的终场比分与训练标签，不拉盘口、赛程或详情。当天「立即同步」完成后仍可用。早间盘口刷新只动未开赛盘口，关了也不会挡住赛果。与完整批次共用官方请求锁，不能同时跑。'
     : '只按日回写昨天和今天的终场比分与训练标签，不拉盘口、赛程或详情。当天「立即同步」完成后仍可用。未订阅的 22:00 轻刷也不回写比分，所以下午完场要靠这一下。与完整批次共用官方请求锁，不能同时跑。',
 )
+
+const prematchOddsDescription =
+  '只扫描当前【比赛】默认两个当地比赛日，逐场补拉尚未开赛且本地缺少完整 1X2 的比赛；不限热门勾选，不拉赛程、赛果、积分榜或详情。每个待补场次会消耗一次官方盘口请求，单次最多 250 场，没有开盘的场次仍可能为空。'
 
 const lastSyncText = computed(() => {
   if (syncing.value) return '同步进行中，完成后会全局提示'
@@ -163,6 +174,25 @@ async function syncResultsOnly() {
   await loadSetting()
 }
 
+async function applyPrematchOddsSync() {
+  await runPrematchOddsSync()
+  await loadSetting()
+}
+
+function syncPrematchOddsOnly() {
+  modal.create({
+    preset: 'dialog',
+    title: '确认补齐比赛盘口？',
+    type: 'warning',
+    content:
+      '任务会按缺盘场次逐场请求官方接口，每个待补场次通常消耗一次请求；尚未开盘的比赛不会生成盘口。',
+    positiveText: '开始补盘',
+    negativeText: '取消',
+    autoFocus: false,
+    onPositiveClick: () => void applyPrematchOddsSync(),
+  })
+}
+
 onMounted(() => {
   void hydrateStatus()
   void loadSetting()
@@ -217,6 +247,23 @@ watch(syncing, (value, previous) => {
               @click="syncOfficialData"
             >
               {{ syncing ? '同步中' : fullSyncCompletedToday ? '今日已同步' : '立即同步' }}
+            </n-button>
+          </template>
+        </n-list-item>
+
+        <n-list-item>
+          <template #prefix>
+            <n-icon :component="RefreshOutline" :size="20" />
+          </template>
+          <n-thing title="补齐比赛盘口" :description="prematchOddsDescription" />
+          <template #suffix>
+            <n-button
+              size="small"
+              :disabled="busy"
+              :loading="prematchOddsSyncing"
+              @click="syncPrematchOddsOnly"
+            >
+              {{ prematchOddsSyncing ? '补盘中' : '补齐盘口' }}
             </n-button>
           </template>
         </n-list-item>

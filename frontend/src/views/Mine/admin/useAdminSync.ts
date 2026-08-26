@@ -2,40 +2,55 @@ import { computed, readonly, ref } from 'vue'
 
 import {
   fetchAdminTaskStatus,
+  triggerPrematchMissingOddsSync,
   triggerScheduledFixturesSync,
   triggerScheduledResultsSync,
 } from '@/api/admin'
 import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
+import { invalidatePrematchListCache } from '@/composables/useHomeFixtures'
 import { invalidateFinishedResultsCache } from '@/composables/useResultsLeagues'
 import { notifyError, notifySuccess } from '@/utils/globalNotify'
 
 const FULL_TASK = 'scheduled_fixtures_sync'
 const RESULTS_TASK = 'scheduled_results_sync'
+const PREMATCH_ODDS_TASK = 'prematch_missing_odds_sync'
 
 // Module level: the batch keeps running while the user leaves /mine/admin,
 // so the button state must survive component unmount.
 const fullSyncing = ref(false)
 const resultsSyncing = ref(false)
+const prematchOddsSyncing = ref(false)
 const pollPromises = new Map<string, Promise<void>>()
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-type SyncKind = 'full' | 'results'
+type SyncKind = 'full' | 'results' | 'prematchOdds'
 
 function syncingRef(kind: SyncKind) {
-  return kind === 'full' ? fullSyncing : resultsSyncing
+  if (kind === 'full') return fullSyncing
+  if (kind === 'results') return resultsSyncing
+  return prematchOddsSyncing
+}
+
+function taskNameFor(kind: SyncKind) {
+  if (kind === 'full') return FULL_TASK
+  if (kind === 'results') return RESULTS_TASK
+  return PREMATCH_ODDS_TASK
 }
 
 export function useAdminSync() {
   const { refresh: refreshFavorites } = useFavoriteFixtures()
   const busy = computed(
-    () => fullSyncing.value || resultsSyncing.value,
+    () =>
+      fullSyncing.value ||
+      resultsSyncing.value ||
+      prematchOddsSyncing.value,
   )
 
   async function waitForCompletion(kind: SyncKind) {
-    const taskName = kind === 'full' ? FULL_TASK : RESULTS_TASK
+    const taskName = taskNameFor(kind)
     const existing = pollPromises.get(taskName)
     if (existing) return existing
     const flag = syncingRef(kind)
@@ -60,16 +75,29 @@ export function useAdminSync() {
         if (ok) {
           // Both batches rewrite settled scores; drop the 赛果 day/history cache
           // so the list re-reads instead of waiting for a manual page refresh.
-          invalidateFinishedResultsCache()
+          if (kind === 'prematchOdds') invalidatePrematchListCache()
+          else invalidateFinishedResultsCache()
           await refreshFavorites()
           if (kind === 'full') {
             notifySuccess('同步官方 API 数据完成', '赛程、盘口、赛果与自动推荐已更新')
-          } else {
+          } else if (kind === 'results') {
             notifySuccess('赛果已更新', '终场比分与训练标签已按日回写')
+          } else {
+            const stats = task.result?.prematch_odds
+            notifySuccess(
+              '比赛缺盘补齐完成',
+              stats
+                ? `待补 ${stats.candidates} 场，尝试 ${stats.attempted} 场，补到完整盘口 ${stats.updated} 场${stats.truncated ? `，另有 ${stats.truncated} 场超过单次上限` : ''}`
+                : '已完成当前比赛列表缺盘扫描',
+            )
           }
         } else {
           notifyError(
-            kind === 'full' ? '同步官方 API 数据未完成' : '更新赛果未完成',
+            kind === 'full'
+              ? '同步官方 API 数据未完成'
+              : kind === 'results'
+                ? '更新赛果未完成'
+                : '比赛缺盘补齐未完成',
             detail,
           )
         }
@@ -89,6 +117,8 @@ export function useAdminSync() {
         data.active_tasks[FULL_TASK]?.status === 'running'
       resultsSyncing.value =
         data.active_tasks[RESULTS_TASK]?.status === 'running'
+      prematchOddsSyncing.value =
+        data.active_tasks[PREMATCH_ODDS_TASK]?.status === 'running'
       if (fullSyncing.value) {
         void waitForCompletion('full').catch(() => {
           fullSyncing.value = false
@@ -97,6 +127,11 @@ export function useAdminSync() {
       if (resultsSyncing.value) {
         void waitForCompletion('results').catch(() => {
           resultsSyncing.value = false
+        })
+      }
+      if (prematchOddsSyncing.value) {
+        void waitForCompletion('prematchOdds').catch(() => {
+          prematchOddsSyncing.value = false
         })
       }
     } catch {
@@ -113,7 +148,7 @@ export function useAdminSync() {
     const flag = syncingRef(kind)
     if (flag.value || busy.value) return
     flag.value = true
-    const taskName = kind === 'full' ? FULL_TASK : RESULTS_TASK
+    const taskName = taskNameFor(kind)
     try {
       const data = await start()
       const task = data.task_status.active_tasks[taskName]
@@ -151,12 +186,23 @@ export function useAdminSync() {
     )
   }
 
+  async function runPrematchOddsSync() {
+    await runKind(
+      'prematchOdds',
+      triggerPrematchMissingOddsSync,
+      '比赛缺盘补齐未完成',
+      '比赛缺盘补齐失败',
+    )
+  }
+
   return {
     syncing: readonly(fullSyncing),
     resultsSyncing: readonly(resultsSyncing),
+    prematchOddsSyncing: readonly(prematchOddsSyncing),
     busy,
     runSync,
     runResultsSync,
+    runPrematchOddsSync,
     hydrateStatus,
   }
 }

@@ -52,6 +52,12 @@ export function isPrematchListCacheFresh(
   return cacheFresh(undefined, days, leagueIds)
 }
 
+/** An admin batch changed stored odds; force the next 【比赛】 read from local API. */
+export function invalidatePrematchListCache(): void {
+  loadedAt.value = 0
+  loadedKey = ''
+}
+
 function applyPendingPatches(): void {
   if (!pendingDetailPatches.size || !allFixtures.value.length) return
 

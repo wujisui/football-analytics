@@ -76,17 +76,26 @@ export type ApiSportsKeySetting = {
   masked_keys: string
 }
 
+export type AdminTaskState = {
+  status: string
+  error?: string
+  result?: {
+    prematch_odds?: {
+      window_start: string | null
+      window_days: number
+      candidates: number
+      attempted: number
+      updated: number
+      truncated: number
+    }
+  }
+}
+
 export type TriggerTaskResult = {
   status: string
   message: string
   task_status: {
-    active_tasks: Record<
-      string,
-      {
-        status: string
-        error?: string
-      }
-    >
+    active_tasks: Record<string, AdminTaskState>
   }
 }
 
@@ -134,7 +143,7 @@ export async function updateSubscriptionEarlyOdds(
 }
 
 export async function fetchAdminTaskStatus(): Promise<{
-  active_tasks: Record<string, { status: string; error?: string }>
+  active_tasks: Record<string, AdminTaskState>
 }> {
   const { data } = await apiClient.get('/admin/tasks')
   return data
@@ -252,6 +261,15 @@ export async function triggerScheduledResultsSync(): Promise<TriggerTaskResult> 
   const { data } = await apiClient.post<TriggerTaskResult>(
     '/admin/tasks/trigger',
     { name: 'scheduled_results_sync' },
+    { timeout: 5 * 60_000 },
+  )
+  return data
+}
+
+export async function triggerPrematchMissingOddsSync(): Promise<TriggerTaskResult> {
+  const { data } = await apiClient.post<TriggerTaskResult>(
+    '/admin/tasks/trigger',
+    { name: 'prematch_missing_odds_sync' },
     { timeout: 5 * 60_000 },
   )
   return data

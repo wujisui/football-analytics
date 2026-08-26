@@ -217,6 +217,61 @@ def test_light_batch_only_refreshes_today_odds() -> None:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
 
+def test_prematch_missing_odds_batch_only_runs_gap_fill() -> None:
+    from app.services import fixtures_sync as fs
+
+    fetcher = MagicMock()
+    fetcher.quota_exhausted = False
+    fetcher.capture_finished_results = AsyncMock()
+    fetcher.fetch_fixtures_for_date = AsyncMock()
+    fetcher.sync_odds_for_dates = AsyncMock()
+    fetcher.sync_missing_odds_for_prematch_list = AsyncMock(
+        return_value={
+            "window_start": "2026-08-26",
+            "window_days": 2,
+            "candidates": 3,
+            "attempted": 3,
+            "updated": 2,
+            "truncated": 0,
+        }
+    )
+    fetcher.__aenter__ = AsyncMock(return_value=fetcher)
+    fetcher.__aexit__ = AsyncMock(return_value=False)
+    settings = MagicMock(
+        SCHEDULER_TIMEZONE="Asia/Shanghai",
+        FIXTURES_LOOKAHEAD_DAYS=8,
+    )
+
+    async def _run() -> dict:
+        with (
+            patch.object(fs, "FootballFetcher", return_value=fetcher),
+            patch.object(fs, "get_settings", return_value=settings),
+            patch.object(
+                fs, "get_enable_free_quota", AsyncMock(return_value=(True, "db"))
+            ),
+            patch.object(
+                fs, "get_hot_league_ids", AsyncMock(return_value=([39], "db"))
+            ),
+            patch(
+                "app.services.auto_favorites.sync_daily_auto_favorites",
+                AsyncMock(return_value={"selected": []}),
+            ),
+            patch("app.core.database.AsyncSessionLocal"),
+        ):
+            return await fs.scheduled_fixtures_sync(mode="prematch_missing_odds")
+
+    try:
+        result = asyncio.run(_run())
+        assert result["odds_updated"] == 2
+        assert result["prematch_odds"]["attempted"] == 3
+        fetcher.sync_missing_odds_for_prematch_list.assert_awaited_once_with()
+        fetcher.capture_finished_results.assert_not_awaited()
+        fetcher.fetch_fixtures_for_date.assert_not_awaited()
+        fetcher.sync_odds_for_dates.assert_not_awaited()
+    finally:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
 def test_results_batch_only_captures_scores() -> None:
     from app.services import fixtures_sync as fs
 

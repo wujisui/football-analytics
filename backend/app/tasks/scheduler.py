@@ -47,6 +47,7 @@ SUBSCRIBED_EVENING_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
 )
 FREE_QUOTA_ROLLOVER_JOB_ID = "free_quota_fixture_rollover"
 RESULTS_SYNC_TASK = "scheduled_results_sync"
+PREMATCH_MISSING_ODDS_TASK = "prematch_missing_odds_sync"
 
 
 def odds_job_id(hour: int, minute: int = 0) -> str:
@@ -222,6 +223,14 @@ async def run_scheduled_results_sync() -> None:
     await run_scheduled_fixtures_sync(task_name=RESULTS_SYNC_TASK, mode="results")
 
 
+async def run_prematch_missing_odds_sync() -> None:
+    """Admin-only gap fill for missing odds in the current prematch list window."""
+    await run_scheduled_fixtures_sync(
+        task_name=PREMATCH_MISSING_ODDS_TASK,
+        mode="prematch_missing_odds",
+    )
+
+
 async def run_free_quota_fixture_rollover() -> None:
     """One-call UTC-day schedule ingest; no odds or enrichment."""
     from app.services.fetcher import ApiAccountBlockedError, ApiKeyNotConfiguredError
@@ -388,6 +397,7 @@ async def run_daily_auto_favorites() -> None:
 TASK_HANDLERS = {
     "scheduled_fixtures_sync": run_scheduled_fixtures_sync,
     RESULTS_SYNC_TASK: run_scheduled_results_sync,
+    PREMATCH_MISSING_ODDS_TASK: run_prematch_missing_odds_sync,
     "clean_old_data": clean_old_data,
     "train_model": train_model,
     "daily_auto_favorites": run_daily_auto_favorites,
