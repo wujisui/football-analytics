@@ -6,6 +6,7 @@ import {
   triggerScheduledResultsSync,
 } from '@/api/admin'
 import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
+import { invalidateFinishedResultsCache } from '@/composables/useResultsLeagues'
 import { notifyError, notifySuccess } from '@/utils/globalNotify'
 
 const FULL_TASK = 'scheduled_fixtures_sync'
@@ -57,6 +58,9 @@ export function useAdminSync() {
         const detail = task.error || `后端返回状态：${task.status}`
         flag.value = false
         if (ok) {
+          // Both batches rewrite settled scores; drop the 赛果 day/history cache
+          // so the list re-reads instead of waiting for a manual page refresh.
+          invalidateFinishedResultsCache()
           await refreshFavorites()
           if (kind === 'full') {
             notifySuccess('同步官方 API 数据完成', '赛程、盘口、赛果与自动推荐已更新')

@@ -28,7 +28,6 @@ import {useIsPhone} from '@/composables/useMediaQuery'
 import {useMarkedFixture} from '@/composables/useMarkedFixture'
 import {useScrollRestore} from '@/composables/useScrollRestore'
 import {useFavoriteFixtures} from '@/composables/useFavoriteFixtures'
-import {useHandicapRuleset} from '@/composables/useHandicapRuleset'
 import {
   cacheResultsHistory,
   consumeResultsSettlementDirty,
@@ -101,13 +100,13 @@ const phoneSwipeHandlers = useHorizontalSwipe({
 const route = useRoute()
 const router = useRouter()
 const {favoriteIds, dailyPickIds: autoFavoriteIds} = useFavoriteFixtures()
-const {ruleset: handicapRuleset} = useHandicapRuleset()
 const {
   resultsTrackedIds,
   resultsFixtures,
   scheduleFixtures,
   resultsLoadedDay,
   resultsHistory,
+  resultsDataRevision,
 } = useResultsLeagues()
 const {
   selectedDay,
@@ -479,7 +478,7 @@ async function refreshLocalResults() {
   }
 }
 
-watch(handicapRuleset, () => {
+watch(resultsDataRevision, () => {
   // Prematch rows adapt the lean client-side; only settled days need a re-read.
   if (isScheduleFutureDay.value) return
   // useResultsLeagues already dropped the cached hits; re-settle the open day.
