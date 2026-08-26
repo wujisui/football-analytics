@@ -650,7 +650,9 @@ onMounted(() => {
                         size="large"
                         @click.stop
                       />
-                      <span class="hot-league-name">{{ item.league_name }}</span>
+                      <n-ellipsis class="hot-league-name">
+                        {{ item.league_name }}
+                      </n-ellipsis>
                       <n-button
                         v-if="!isPhone && !item.protected"
                         size="tiny"
@@ -977,34 +979,22 @@ onMounted(() => {
 
 .hot-league-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px 12px;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 768px) {
   .hot-league-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1100px) {
-  .hot-league-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1440px) {
-  .hot-league-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 }
 
 .hot-league-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  padding: 4px 6px;
+  padding: 1px 3px;
   border: 1px solid transparent;
   border-radius: 6px;
 }
@@ -1026,12 +1016,11 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.hot-league-name {
-  flex: 1;
+/* n-ellipsis root has no parent scope id — reach it through :deep. */
+.hot-league-item :deep(.hot-league-name) {
+  flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
 }
 
 .hot-league-delete-btn {
