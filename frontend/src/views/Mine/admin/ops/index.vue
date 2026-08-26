@@ -121,7 +121,7 @@ const denseOddsSummary = computed(() => {
     : '默认方案：21:00 起每半小时到 00:00。'
 })
 const denseOddsDetail =
-  '两套完整方案二选一。默认方案：02:00、11:55、14:00、16:00、18:00、20:00、21:00、21:30、22:00、22:30、23:00、23:30、00:00。密刷方案：02:00、11:55、14:00、16:00、16:55、17:25、17:55、18:25、18:55、19:25、19:55、20:25、20:55、21:25、21:55、22:25、22:55、23:25、23:55、00:25、00:55、01:25、01:55（开赛整点/半点前 5 分钟）。早间开关的四个时刻叠加到任一方案。'
+  '密刷方案：02:00、11:55、14:00、16:00、16:55、17:25、17:55、18:25、18:55、19:25、19:55、20:25、20:55、21:25、21:55、22:25、22:55、23:25、23:55、00:25、00:55、01:25、01:55（开赛整点/半点前 5 分钟）。早间开关的四个时刻叠加到任一方案。'
 
 function applySubscription(data: Awaited<ReturnType<typeof fetchSubscriptionSetting>>) {
   subscribed.value = data.subscribed
@@ -160,19 +160,47 @@ async function applySubscriptionToggle(next: boolean) {
   }
 }
 
-function onSubscriptionToggle(next: boolean) {
+function confirmAdminSwitch(title: string, content: string, onConfirm: () => void) {
   modal.create({
     preset: 'dialog',
-    title: next ? '确认设为已订阅？' : '确认设为未订阅？',
+    title,
     autoFocus: false,
     type: 'warning',
-    content: next
-      ? '已订阅按至少 Pro、每日配额 7500 设计；会启用 8 天增量赛程、积分榜、今天/明天热门详情及高频盘口任务。开关本身不会立即同步。'
-      : '未订阅将只保留 08:05、11:00、22:00 三个任务，跳过未来赛程、积分榜及详情官方请求。开关本身不会立即同步。',
+    content,
     positiveText: '确认',
     negativeText: '取消',
-    onPositiveClick: () => void applySubscriptionToggle(next),
+    onPositiveClick: onConfirm,
   })
+}
+
+function onSubscriptionToggle(next: boolean) {
+  confirmAdminSwitch(
+    next ? '确认设为已订阅？' : '确认设为未订阅？',
+    next
+      ? '已订阅按至少 Pro、每日配额 7500 设计；会启用 8 天增量赛程、积分榜、今天/明天热门详情及高频盘口任务。开关本身不会立即同步。'
+      : '未订阅将只保留 08:05、11:00、22:00 三个任务，跳过未来赛程、积分榜及详情官方请求。开关本身不会立即同步。',
+    () => void applySubscriptionToggle(next),
+  )
+}
+
+function onEarlyOddsToggle(next: boolean) {
+  confirmAdminSwitch(
+    next ? '确认开启早间盘口刷新？' : '确认关闭早间盘口刷新？',
+    next
+      ? '将叠加 04:00、06:00、08:00、10:00 四次盘口轻刷。开关改完立刻重注册定时任务，不会马上打官方。'
+      : '04:00、06:00、08:00、10:00 将不再轻刷。开关改完立刻重注册定时任务，不会马上打官方。',
+    () => void applyEarlyOddsToggle(next),
+  )
+}
+
+function onDenseOddsToggle(next: boolean) {
+  confirmAdminSwitch(
+    next ? '确认切换到密刷方案？' : '确认切回默认方案？',
+    next
+      ? '将使用完整密刷时刻表（16:55 起每半小时到 01:55）。开关改完立刻重注册定时任务，不会马上打官方。'
+      : '将使用完整默认时刻表（21:00 起每半小时到 00:00）。开关改完立刻重注册定时任务，不会马上打官方。',
+    () => void applyDenseOddsToggle(next),
+  )
 }
 
 async function applyDenseOddsToggle(next: boolean) {
@@ -386,7 +414,7 @@ watch(syncing, (value, previous) => {
               aria-label="早间盘口刷新"
               :disabled="subscriptionLoading || earlyOddsSaving || !subscribed"
               :loading="earlyOddsSaving"
-              @update:value="applyEarlyOddsToggle"
+              @update:value="onEarlyOddsToggle"
             />
           </template>
         </n-list-item>
@@ -411,7 +439,7 @@ watch(syncing, (value, previous) => {
               aria-label="晚间密刷盘口"
               :disabled="subscriptionLoading || denseOddsSaving || !subscribed"
               :loading="denseOddsSaving"
-              @update:value="applyDenseOddsToggle"
+              @update:value="onDenseOddsToggle"
             />
           </template>
         </n-list-item>
