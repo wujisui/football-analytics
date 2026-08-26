@@ -15,6 +15,7 @@ declare module 'vue' {
     FixtureList: typeof import('./src/components/FixtureList.vue')['default']
     FixtureMatchup: typeof import('./src/components/FixtureMatchup.vue')['default']
     HandicapRulesetSwitch: typeof import('./src/components/HandicapRulesetSwitch.vue')['default']
+    HelpTip: typeof import('./src/components/HelpTip.vue')['default']
     ListBackTop: typeof import('./src/components/ListBackTop.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
     NAvatar: typeof import('naive-ui')['NAvatar']
