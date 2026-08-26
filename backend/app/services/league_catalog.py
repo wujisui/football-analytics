@@ -50,7 +50,7 @@ CATEGORY_BY_LEAGUE_ID: dict[int, int] = {
     6: 4,
     7: 4,
     22: 4,
-    10: 5,
+    10: 4,
     17: 5,
     13: 5,
     11: 5,
@@ -78,6 +78,10 @@ DEFAULT_HOT_LEAGUE_IDS: tuple[int, ...] = (
     98,
     292,
 )
+
+# Official league 10 is the broad Friendlies feed, not a protected core
+# competition. Keep it editable/deletable even when imported from the seed.
+UNPROTECTED_SEED_LEAGUE_IDS: frozenset[int] = frozenset({10})
 
 
 async def seed_league_catalog(session: AsyncSession) -> None:
@@ -133,7 +137,7 @@ async def seed_league_catalog(session: AsyncSession) -> None:
         row.category_id = CATEGORY_BY_LEAGUE_ID.get(league_id, 9)
         row.is_catalog = True
         row.is_hot = league_id in defaults
-        row.is_protected = True
+        row.is_protected = league_id not in UNPROTECTED_SEED_LEAGUE_IDS
     if legacy_hot_row is not None:
         await session.delete(legacy_hot_row)
     await session.commit()

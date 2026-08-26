@@ -663,6 +663,56 @@ class FootballFetcher:
         )
         return saved
 
+    async def lookup_official_league(self, league_id: int) -> dict[str, Any]:
+        """Resolve one official league by id for admin add-confirmation.
+
+        Cache/snapshot first (``TTL_LEAGUES``); a miss spends one
+        ``GET /leagues?id=`` request. Does not write the catalog.
+        """
+        from app.services.api_utils import extract_items, first_value
+
+        target = int(league_id)
+        if target < 1:
+            raise ValueError("官方联赛 ID 必须为正整数")
+        assert self.session is not None
+        started = int(self.cache.api_request_count or 0)
+        payload = await self._get_or_fetch(
+            leagues_cache_key([target]),
+            TTL_LEAGUES,
+            "lookup_official_league",
+            lambda client: self.provider.fetch_leagues_payload(client, [target]),
+        )
+        if _api_payload_unusable(payload):
+            raise RuntimeError("官方联赛查询失败或当日配额已用尽")
+        parsed = self.provider.parse_leagues(payload, [target])
+        if not parsed:
+            raise LookupError("官方没有这个联赛 ID")
+        official = parsed[0]
+        league_type = ""
+        for item in extract_items(payload):
+            item_id = first_value(item, [["league", "id"], ["id"], ["league_id"]])
+            if item_id is not None and int(item_id) == target:
+                league_type = str(
+                    first_value(item, [["league", "type"], ["type"]], "") or ""
+                )
+                break
+        suggested = league_name_zh(
+            str(official.get("name") or ""),
+            league_id=target,
+            country=str(official.get("country") or "") or None,
+        )
+        existing = await self.session.get(League, target)
+        return {
+            "league_id": target,
+            "official_name": str(official.get("name") or ""),
+            "country": str(official.get("country") or ""),
+            "season": str(official.get("season") or ""),
+            "league_type": league_type,
+            "suggested_name": suggested,
+            "in_catalog": bool(existing is not None and existing.is_catalog),
+            "from_cache": int(self.cache.api_request_count or 0) == started,
+        }
+
     async def fetch_teams_by_league(self, league_id: int, season: str | None = None) -> int:
         assert self.session is not None
         season = season or await self._get_league_season(league_id)

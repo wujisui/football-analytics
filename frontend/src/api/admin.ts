@@ -50,6 +50,17 @@ export type CatalogLeagueCreate = {
   selected: boolean
 }
 
+export type OfficialLeagueLookup = {
+  league_id: number
+  official_name: string
+  country: string
+  season: string
+  league_type: string
+  suggested_name: string
+  in_catalog: boolean
+  from_cache: boolean
+}
+
 export type CatalogLeagueUpdate = {
   league_id?: number
   league_name?: string
@@ -177,6 +188,15 @@ export async function deleteLeagueCategory(
 ): Promise<HotLeaguesSetting> {
   const { data } = await apiClient.delete<HotLeaguesSetting>(
     `/admin/settings/league-categories/${categoryId}`,
+  )
+  return data
+}
+
+export async function lookupOfficialLeague(
+  leagueId: number,
+): Promise<OfficialLeagueLookup> {
+  const { data } = await apiClient.get<OfficialLeagueLookup>(
+    `/admin/settings/leagues/${leagueId}/lookup`,
   )
   return data
 }

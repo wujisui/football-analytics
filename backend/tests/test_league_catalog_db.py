@@ -61,6 +61,12 @@ class LeagueCatalogDatabaseTests(unittest.TestCase):
                 self.assertTrue(premier_league.is_catalog)
                 self.assertTrue(premier_league.is_protected)
                 self.assertEqual(premier_league.category_id, 1)
+                friendlies = await session.get(League, 10)
+                self.assertIsNotNone(friendlies)
+                assert friendlies is not None
+                self.assertEqual(friendlies.name, "友谊赛")
+                self.assertFalse(friendlies.is_protected)
+                self.assertEqual(friendlies.category_id, 4)
                 self.assertIsNotNone(await session.get(LeagueCategory, 8))
             await engine.dispose()
 
@@ -262,6 +268,47 @@ class LeagueCatalogDatabaseTests(unittest.TestCase):
                 assert premier is not None
                 with self.assertRaises(PermissionError):
                     await retarget_catalog_league_id(session, premier, 40)
+            await engine.dispose()
+
+        asyncio.run(run())
+
+    def test_lookup_uses_official_name_not_catalog_label(self) -> None:
+        async def run() -> None:
+            from app.services.fetcher import FootballFetcher
+
+            engine = _sqlite_engine()
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            payload = {
+                "response": [
+                    {
+                        "league": {"id": 10, "name": "Friendlies", "type": "Cup"},
+                        "country": {"name": "World"},
+                        "seasons": [{"year": 2026, "current": True}],
+                    }
+                ]
+            }
+            async with factory() as session:
+                session.add(
+                    League(
+                        id=10,
+                        name="亚冠",
+                        country="World",
+                        season="2026",
+                        is_catalog=True,
+                        is_protected=False,
+                    )
+                )
+                await session.commit()
+                fetcher = FootballFetcher(session=session, cache=MagicMock(api_request_count=0))
+                fetcher._get_or_fetch = AsyncMock(return_value=payload)
+                result = await fetcher.lookup_official_league(10)
+            self.assertEqual(result["official_name"], "Friendlies")
+            self.assertEqual(result["suggested_name"], "友谊赛")
+            self.assertEqual(result["country"], "World")
+            self.assertTrue(result["in_catalog"])
+            self.assertTrue(result["from_cache"])
             await engine.dispose()
 
         asyncio.run(run())

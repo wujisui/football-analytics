@@ -15,6 +15,7 @@ from app.services import auth as auth_service
 from app.services.data_cleanup import delete_catalog_league, reset_match_history
 from app.services.cache import get_cache_service
 from app.services.fixtures_sync import official_sync_busy
+from app.services.fetcher import FootballFetcher
 from app.services.league_catalog import (
     DEFAULT_HOT_LEAGUE_IDS,
     catalog_leagues,
@@ -134,6 +135,17 @@ class CatalogLeagueCreate(BaseModel):
     country: str = Field(..., min_length=1, max_length=80)
     category_id: int = Field(..., gt=0)
     selected: bool = True
+
+
+class OfficialLeagueLookup(BaseModel):
+    league_id: int
+    official_name: str
+    country: str
+    season: str
+    league_type: str = ""
+    suggested_name: str
+    in_catalog: bool
+    from_cache: bool
 
 
 class CatalogLeagueUpdate(BaseModel):
@@ -449,6 +461,29 @@ async def delete_league_category(
         await db.rollback()
         raise HTTPException(status_code=409, detail="分类下仍有联赛，不能删除") from exc
     return await _hot_leagues_payload(db)
+
+
+@router.get(
+    "/settings/leagues/{league_id}/lookup",
+    response_model=OfficialLeagueLookup,
+)
+async def lookup_catalog_league(
+    league_id: int,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> OfficialLeagueLookup:
+    if league_id < 1:
+        raise HTTPException(status_code=422, detail="官方联赛 ID 必须为正整数")
+    try:
+        async with FootballFetcher(session=db) as fetcher:
+            payload = await fetcher.lookup_official_league(league_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return OfficialLeagueLookup(**payload)
 
 
 @router.post(

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useMessage, useModal } from 'naive-ui'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { useIsPhone } from '@/composables/useMediaQuery'
 import {
@@ -9,6 +9,7 @@ import {
   deleteCatalogLeague,
   deleteLeagueCategory,
   fetchHotLeaguesSetting,
+  lookupOfficialLeague,
   previewCatalogLeagueDelete,
   updateCatalogLeague,
   updateCatalogLeagueCategory,
@@ -17,6 +18,7 @@ import {
   type HotLeagueCategory,
   type HotLeagueItem,
   type HotLeaguesSetting,
+  type OfficialLeagueLookup,
 } from '@/api/admin'
 
 defineOptions({ name: 'MineHotLeagues' })
@@ -36,6 +38,8 @@ const movingLeagueId = ref<number | null>(null)
 const selectedLeagueId = ref<number | null>(null)
 
 const addLeagueShow = ref(false)
+const addLookupBusy = ref(false)
+const addLookup = ref<OfficialLeagueLookup | null>(null)
 const editLeagueShow = ref(false)
 const addCategoryShow = ref(false)
 const addCategoryName = ref('')
@@ -53,6 +57,15 @@ const editLeague = reactive({
   category_id: null as number | null,
   protected: false,
 })
+
+watch(
+  () => addLeague.league_id,
+  () => {
+    addLookup.value = null
+    addLeague.league_name = ''
+    addLeague.country = ''
+  },
+)
 
 const deleteModalShow = ref(false)
 const deletePreviewLoading = ref(false)
@@ -267,12 +280,43 @@ function openAddLeague() {
   addLeague.country = ''
   addLeague.category_id = categories.value[0]?.category_id ?? null
   addLeague.selected = true
+  addLookup.value = null
   addLeagueShow.value = true
 }
 
 function closeAddLeague() {
-  if (catalogBusy.value) return
+  if (catalogBusy.value || addLookupBusy.value) return
   addLeagueShow.value = false
+}
+
+async function lookupAddLeague() {
+  if (isPhone.value) return
+  const leagueId = addLeague.league_id
+  if (!Number.isInteger(leagueId) || leagueId == null || leagueId < 1) {
+    message.warning('请填写正整数官方联赛 ID')
+    return
+  }
+  addLookupBusy.value = true
+  try {
+    const found = await lookupOfficialLeague(leagueId)
+    addLookup.value = found
+    addLeague.league_name = found.suggested_name
+    addLeague.country = found.country
+    if (found.in_catalog) {
+      message.warning(`ID ${found.league_id} 已在目录中：${found.suggested_name}`)
+    } else {
+      message.success(
+        found.from_cache
+          ? `已核对 ${found.official_name}（读自缓存，未消耗配额）`
+          : `已核对 ${found.official_name}（本次消耗 1 次官方请求）`,
+      )
+    }
+  } catch (err) {
+    addLookup.value = null
+    message.error(err instanceof Error ? err.message : '核对官方联赛失败')
+  } finally {
+    addLookupBusy.value = false
+  }
 }
 
 function openEditLeague() {
@@ -370,6 +414,14 @@ async function submitAddLeague() {
     message.warning('请填写正整数官方联赛 ID')
     return
   }
+  if (addLookup.value?.league_id !== leagueId) {
+    message.warning('请先核对官方联赛')
+    return
+  }
+  if (addLookup.value.in_catalog) {
+    message.warning('该官方联赛 ID 已在目录中')
+    return
+  }
   if (!leagueName) {
     message.warning('请填写中文名')
     return
@@ -395,7 +447,7 @@ async function submitAddLeague() {
       true,
     )
     addLeagueShow.value = false
-    message.success('已新增联赛')
+    message.success(`已新增「${leagueName}」`)
   } catch (err) {
     message.error(err instanceof Error ? err.message : '新增联赛失败')
   } finally {
@@ -717,39 +769,62 @@ onMounted(() => {
       v-model:show="addLeagueShow"
       preset="card"
       title="新增联赛"
-      :mask-closable="!catalogBusy"
-      :close-on-esc="!catalogBusy"
+      :mask-closable="!catalogBusy && !addLookupBusy"
+      :close-on-esc="!catalogBusy && !addLookupBusy"
       style="width: min(440px, 92vw)"
       @update:show="(show: boolean) => !show && closeAddLeague()"
     >
       <n-alert type="info" :bordered="false" style="margin-bottom: 12px">
-        官方 ID 与国家请从 API-Sports v3 联赛目录核对；若本地已有该 ID，后端会校验国家是否一致。
+        填入官方 ID 后先核对：每次未命中缓存消耗 1 次 `GET /leagues?id=`。核对通过后再确认添加。
       </n-alert>
       <n-form-item label="官方 ID" :show-feedback="false">
-        <n-input-number
-          v-model:value="addLeague.league_id"
-          :min="1"
-          :precision="0"
-          :show-button="false"
-          placeholder="正整数"
-          class="hot-league-full-input"
-          :disabled="catalogBusy"
-        />
+        <div class="hot-league-id-row">
+          <n-input-number
+            v-model:value="addLeague.league_id"
+            :min="1"
+            :precision="0"
+            :show-button="false"
+            placeholder="正整数"
+            class="hot-league-full-input"
+            :disabled="catalogBusy || addLookupBusy"
+            @keyup.enter="lookupAddLeague"
+          />
+          <n-button
+            :disabled="catalogBusy || addLookupBusy || addLeague.league_id == null"
+            :loading="addLookupBusy"
+            @click="lookupAddLeague"
+          >
+            {{ addLookupBusy ? '核对中' : '核对' }}
+          </n-button>
+        </div>
       </n-form-item>
+      <n-alert
+        v-if="addLookup"
+        :type="addLookup.in_catalog ? 'warning' : 'success'"
+        :bordered="false"
+        style="margin: 8px 0 12px"
+      >
+        官方：{{ addLookup.official_name }}（{{ addLookup.country }}
+        <template v-if="addLookup.league_type"> · {{ addLookup.league_type }}</template>
+        <template v-if="addLookup.season"> · {{ addLookup.season }}</template>
+        ）
+        {{ addLookup.from_cache ? '已用缓存' : '本次消耗 1 次配额' }}
+        <template v-if="addLookup.in_catalog">；该 ID 已在目录中</template>
+      </n-alert>
       <n-form-item label="中文名" :show-feedback="false" style="margin-top: 8px">
         <n-input
           v-model:value="addLeague.league_name"
           maxlength="80"
-          placeholder="联赛中文名"
-          :disabled="catalogBusy"
+          placeholder="核对后自动填入，可改中文名"
+          :disabled="catalogBusy || addLookupBusy || !addLookup"
         />
       </n-form-item>
       <n-form-item label="国家" :show-feedback="false" style="margin-top: 8px">
         <n-input
           v-model:value="addLeague.country"
           maxlength="80"
-          placeholder="官方国家字符串，如 England / World"
-          :disabled="catalogBusy"
+          placeholder="核对后写入官方国家"
+          :disabled="catalogBusy || addLookupBusy || !addLookup"
         />
       </n-form-item>
       <n-form-item label="分类" :show-feedback="false" style="margin-top: 8px">
@@ -757,24 +832,30 @@ onMounted(() => {
           v-model:value="addLeague.category_id"
           :options="categoryOptions"
           placeholder="选择分类"
-          :disabled="catalogBusy || !categoryOptions.length"
+          :disabled="catalogBusy || addLookupBusy || !categoryOptions.length"
         />
       </n-form-item>
       <n-form-item :show-feedback="false" style="margin-top: 8px">
-        <n-checkbox v-model:checked="addLeague.selected" :disabled="catalogBusy">
+        <n-checkbox v-model:checked="addLeague.selected" :disabled="catalogBusy || addLookupBusy">
           同时设为热门
         </n-checkbox>
       </n-form-item>
       <template #footer>
         <div class="hot-league-modal-footer">
-          <n-button :disabled="catalogBusy" @click="closeAddLeague">取消</n-button>
+          <n-button :disabled="catalogBusy || addLookupBusy" @click="closeAddLeague">取消</n-button>
           <n-button
             type="primary"
-            :disabled="catalogBusy"
+            :disabled="
+              catalogBusy ||
+              addLookupBusy ||
+              !addLookup ||
+              addLookup.in_catalog ||
+              addLookup.league_id !== addLeague.league_id
+            "
             :loading="catalogBusy"
             @click="submitAddLeague"
           >
-            确定
+            确认添加
           </n-button>
         </div>
       </template>
@@ -1044,6 +1125,18 @@ onMounted(() => {
 
 .hot-league-full-input {
   width: 100%;
+}
+
+.hot-league-id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.hot-league-id-row .hot-league-full-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .hot-league-modal-footer {
