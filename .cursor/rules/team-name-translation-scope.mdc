@@ -1,5 +1,5 @@
 ---
-description: 未指定联赛时，只翻译数据库目录联赛的球队，禁止全量翻译冷门联赛
+description: 未指定联赛时，只翻译热门勾选联赛的球队，禁止翻非热门联赛
 alwaysApply: true
 ---
 
@@ -9,16 +9,18 @@ alwaysApply: true
 
 ## 默认范围
 
-用户**没有指定**要翻哪些联赛时，翻译范围 = 数据库中 `leagues.is_catalog=true` 的联赛；`config/leagues.json` 仅是首次建库种子。
+用户**没有指定**要翻哪些联赛时，翻译范围 = 数据库中 `leagues.is_hot=true` 的联赛，即管理员在「热门联赛」里勾选的那批。热门边界就是为了限定这类工作量，别再自行放大。
 
-- 判定“还缺哪些”只用这个口径：`team_translate.list_untranslated_catalog_teams` / `team_needs_zh`。
-- **禁止**为了“全量/清零”去翻冷门联赛（U17/U20/预备队/各国乙丙级/杯赛外围等）的球队，白费时间和 token。
-- **禁止**用单个自然日/单个时区日历日当核对窗口冒充“全量”；核对就按 catalog 联赛统计。
+- 判定“还缺哪些”：先按 `leagues.is_hot=true` 取联赛，再用 `team_needs_zh` 过滤球队。
+- **禁止**扩到 `is_catalog=true` 的全部目录联赛：目录里还有未勾选热门的次级联赛与各国杯赛。
+- **禁止**用「当前【比赛】列表」「今天获取到的联赛」当范围：官方按日返回上百个赛事，翻它们纯属浪费 token。
+- **禁止**为了“全量/清零”去翻非热门联赛（U17/U20/预备队/各国乙丙级/杯赛外围等）的球队。
+- 已经写进真源的非热门译名**不必回撤**：删它同样烧 token，留着不影响热门展示。
 
 ## 怎么补
 
-1. 热门联赛的常见球队 → 手工写进 `BY_ID`（机翻常把短名译错，如 Hearts→心）。
-2. 其余 catalog 球队 → `python manage.py translate-catalog-teams`（机翻 + 质量闸，不耗官方 API 配额）。
+1. 热门联赛的球队 → 手工写进 `BY_ID`（机翻常把短名译错，如 Hearts→心）。
+2. 量大且仍在热门范围内时 → `python manage.py translate-catalog-teams`（机翻 + 质量闸，不耗官方 API 配额）；该命令按 catalog 跑，范围比热门大，只在用户明确同意扩范围时使用。
 3. 写完 `backfill-team-names` 回写本地 `teams.name`。
 
 ## 手写 BY_ID 必须核对 ID
