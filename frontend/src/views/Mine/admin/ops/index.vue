@@ -175,7 +175,10 @@ watch(syncing, (value, previous) => {
 
 <template>
   <MineSectionBody>
-    <n-card size="small" title="运维" :bordered="false">
+    <n-card size="small" :bordered="false">
+      <template #header>
+        <span></span>
+      </template>
       <template #header-extra>
         <n-flex :size="6" align="center">
           <n-tag v-if="apiRemaining != null" size="small" :bordered="false" type="info">
