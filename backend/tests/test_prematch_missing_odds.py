@@ -88,12 +88,7 @@ class PrematchMissingOddsTests(unittest.TestCase):
                 session.add(PreMatchData(fixture_id=48002, odds_json=_odds_json()))
                 await session.commit()
 
-                async def fake_refresh(
-                    fixture_id: int,
-                    *,
-                    set_opening: bool = False,
-                ) -> bool:
-                    self.assertTrue(set_opening)
+                async def fake_refresh(fixture_id: int) -> bool:
                     row = await session.scalar(
                         select(PreMatchData).where(
                             PreMatchData.fixture_id == fixture_id
@@ -120,10 +115,7 @@ class PrematchMissingOddsTests(unittest.TestCase):
                 self.assertEqual(report["candidates"], 1)
                 self.assertEqual(report["attempted"], 1)
                 self.assertEqual(report["updated"], 1)
-                fetcher.refresh_odds_for_fixture.assert_awaited_once_with(
-                    48001,
-                    set_opening=True,
-                )
+                fetcher.refresh_odds_for_fixture.assert_awaited_once_with(48001)
             await engine.dispose()
 
         asyncio.run(run())

@@ -187,7 +187,7 @@ class PrematchPackageResponse(BaseModel):
     )
     odds_opening: OddsPackageResponse = Field(
         default_factory=OddsPackageResponse,
-        description="初盘（固定同步批次首次落库，冻结）",
+        description="初盘（任一路径首次成功获取可用盘口时冻结）",
     )
     lineups: LineupsPackageResponse = Field(default_factory=LineupsPackageResponse)
     injuries: InjuriesPackageResponse = Field(default_factory=InjuriesPackageResponse)
@@ -300,7 +300,7 @@ class FixtureResponse(BaseModel):
         default=None, description="列表用即时盘摘要（本地已存）"
     )
     odds_opening_snippet: FixtureOddsSnippetResponse | None = Field(
-        default=None, description="列表用初盘摘要（首次固定同步后冻结）"
+        default=None, description="列表用初盘摘要（首次可用盘口自动冻结）"
     )
 
     @field_serializer("fixture_date")

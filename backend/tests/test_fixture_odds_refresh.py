@@ -30,10 +30,7 @@ def test_admin_refresh_accepts_non_hot_prematch_fixture() -> None:
         with patch.object(fixtures, "FootballFetcher", return_value=fetcher):
             result = await fixtures.refresh_fixture_odds(987, None, db)
 
-        fetcher.refresh_odds_for_fixture.assert_awaited_once_with(
-            987,
-            set_opening=False,
-        )
+        fetcher.refresh_odds_for_fixture.assert_awaited_once_with(987)
         assert result == {
             "fixture_id": 987,
             "updated": True,

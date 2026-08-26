@@ -186,31 +186,27 @@ class OpeningUpgradeTests(unittest.TestCase):
     def _board(self, bookmaker: str) -> dict:
         return {"available": True, "bookmaker": bookmaker}
 
-    def test_only_a_freeze_batch_creates_the_first_opening(self) -> None:
+    def test_any_prematch_pull_creates_the_first_opening(self) -> None:
         candidate = self._board("Pinnacle")
-        self.assertTrue(
-            should_write_opening({}, candidate, freeze=True, locked=False)
-        )
-        self.assertFalse(
-            should_write_opening({}, candidate, freeze=False, locked=False)
-        )
+        self.assertTrue(should_write_opening({}, candidate, locked=False))
+        self.assertFalse(should_write_opening({}, candidate, locked=True))
 
     def test_sharper_book_replaces_a_fallback_opening_on_any_refresh(self) -> None:
         opening = self._board("1xBet")
         self.assertTrue(
             should_write_opening(
-                opening, self._board("Pinnacle"), freeze=False, locked=False
+                opening, self._board("Pinnacle"), locked=False
             )
         )
         # 同庄或更次级的盘口不动初盘。
         self.assertFalse(
             should_write_opening(
-                opening, self._board("1xBet"), freeze=True, locked=False
+                opening, self._board("1xBet"), locked=False
             )
         )
         self.assertFalse(
             should_write_opening(
-                opening, self._board("10Bet"), freeze=True, locked=False
+                opening, self._board("10Bet"), locked=False
             )
         )
 
@@ -219,7 +215,6 @@ class OpeningUpgradeTests(unittest.TestCase):
             should_write_opening(
                 self._board("1xBet"),
                 self._board("Pinnacle"),
-                freeze=True,
                 locked=True,
             )
         )
@@ -228,20 +223,18 @@ class OpeningUpgradeTests(unittest.TestCase):
         legacy = {"available": True, "match_winner": {"bookmaker": "William Hill"}}
         self.assertTrue(
             should_write_opening(
-                legacy, self._board("Pinnacle"), freeze=False, locked=False
+                legacy, self._board("Pinnacle"), locked=False
             )
         )
         self.assertFalse(
             should_write_opening(
-                legacy, self._board("10Bet"), freeze=False, locked=False
+                legacy, self._board("10Bet"), locked=False
             )
         )
 
     def test_empty_board_never_becomes_the_opening(self) -> None:
         self.assertFalse(
-            should_write_opening(
-                {}, {"available": False}, freeze=True, locked=False
-            )
+            should_write_opening({}, {"available": False}, locked=False)
         )
 
 

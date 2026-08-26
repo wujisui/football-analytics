@@ -257,8 +257,8 @@ async def scheduled_fixtures_sync(*, mode: str = "full") -> dict:
                         league_ids=None,
                     )
 
-                # 3) Tomorrow gets its first available board as 初盘. Today then
-                # refreshes 即时盘 while preserving that frozen opening board.
+                # 3) Any first successful pull has already frozen 初盘. The full
+                # batch also repairs legacy current-only rows via set_opening.
                 if subscribed and not fetcher.quota_exhausted:
                     odds_updated += await fetcher.sync_odds_for_dates(
                         [tomorrow],

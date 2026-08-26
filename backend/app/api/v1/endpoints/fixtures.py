@@ -77,7 +77,7 @@ async def refresh_fixture_odds(
     _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Admin-only official request: update this prematch fixture's current odds."""
+    """Admin-only pull: first board freezes opening; later pulls update current."""
     fixture = await db.get(Fixture, fixture_id)
     if fixture is None:
         raise HTTPException(status_code=404, detail="比赛不存在")
@@ -87,10 +87,7 @@ async def refresh_fixture_odds(
     ):
         raise HTTPException(status_code=409, detail="仅未开赛场次允许更新盘口")
     async with FootballFetcher(session=db) as fetcher:
-        updated = await fetcher.refresh_odds_for_fixture(
-            fixture_id,
-            set_opening=False,
-        )
+        updated = await fetcher.refresh_odds_for_fixture(fixture_id)
         remaining = fetcher.last_remaining_requests
     return {
         "fixture_id": fixture_id,

@@ -32,7 +32,7 @@ class PreMatchData(Base):
     handicap_lean: Mapped[str | None] = mapped_column(String, nullable=True)
     # Structured pre-match package (JSON text)
     odds_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # First board from a scheduled freeze (初盘); may upgrade to a sharper book pre-kickoff.
+    # First available pre-kickoff board (初盘); may upgrade to a sharper bookmaker.
     odds_opening_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Kickoff-relative boards: T-6h mid (closest), T-3h..kickoff late (newest).
     odds_mid_json: Mapped[str | None] = mapped_column(Text, nullable=True)

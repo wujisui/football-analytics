@@ -555,20 +555,19 @@ def should_write_opening(
     existing: dict[str, Any] | None,
     candidate: dict[str, Any] | None,
     *,
-    freeze: bool,
     locked: bool,
 ) -> bool:
     """Decide whether ``candidate`` should become the stored 初盘.
 
-    Only a ``freeze`` batch may create an opening. Replacing one is allowed on any
-    pre-kickoff refresh once a sharper bookmaker opens its board: an opening left
-    on a fallback book makes 初盘 and 即时盘 different sources, so the side-by-side
+    The first available board from any pre-kickoff path is the opening. Replacing
+    one is allowed once a sharper bookmaker opens its board: an opening left on a
+    fallback book makes 初盘 and 即时盘 different sources, so the side-by-side
     comparison shows a bookmaker swap dressed up as a line move.
     """
     if not (candidate or {}).get("available"):
         return False
     if not (existing or {}).get("available"):
-        return freeze
+        return not locked
     return not locked and _board_outranks(candidate, existing)
 
 

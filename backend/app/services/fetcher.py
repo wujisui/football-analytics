@@ -1312,10 +1312,8 @@ class FootballFetcher:
     async def refresh_odds_for_fixture(
         self,
         fixture_id: int,
-        *,
-        set_opening: bool = False,
     ) -> bool:
-        """Force one official odds pull, persist it, and recompute local predictions."""
+        """Force one official odds pull, freeze the first board, and recompute."""
         from app.services.prematch_package import parse_odds_payload
 
         await self.cache.delete(odds_cache_key(fixture_id))
@@ -1328,7 +1326,6 @@ class FootballFetcher:
             fixture_id,
             parsed,
             raw,
-            set_opening=set_opening,
         )
         return True
 
@@ -1337,10 +1334,8 @@ class FootballFetcher:
         fixture_id: int,
         parsed: dict[str, Any],
         raw: dict[str, Any],
-        *,
-        set_opening: bool = False,
     ) -> None:
-        """Write 即时盘; optionally freeze 初盘 once (midday scheduled sync)."""
+        """Write 即时盘 and freeze the first available pre-kickoff board as 初盘."""
         from sqlalchemy import select
 
         from app.models.fixture import Fixture
@@ -1382,15 +1377,40 @@ class FootballFetcher:
                 if row is not None
                 else {}
             )
+            existing_current = (
+                loads_json(getattr(row, "odds_json", None), {})
+                if row is not None
+                else {}
+            )
+            # Repair a legacy row before replacing its current board: its stored
+            # board predates this pull and is therefore the earliest recoverable
+            # opening. New rows use this pull directly.
+            opening_candidate = parsed
+            if (
+                not existing_open.get("available")
+                and existing_current.get("available")
+                and not should_write_opening(
+                    existing_current,
+                    parsed,
+                    locked=exam_locked,
+                )
+            ):
+                opening_candidate = existing_current
             opening_text: str | None = None
             if should_write_opening(
                 existing_open,
-                parsed,
-                freeze=set_opening,
+                opening_candidate,
                 locked=exam_locked,
             ):
+                opening_captured_at = (
+                    opening_candidate.get("captured_at") or captured_at
+                )
                 opening_text = dumps_json(
-                    {**parsed, "role": "opening", "captured_at": captured_at}
+                    {
+                        **opening_candidate,
+                        "role": "opening",
+                        "captured_at": opening_captured_at,
+                    }
                 )
 
             kickoff = fixture.date if fixture is not None else None
@@ -1573,7 +1593,8 @@ class FootballFetcher:
         Focused sync (single day or explicit ``league_ids``): fill **all** missing
         boards for the selected leagues (round-robin so evening leagues are not
         starved), then optionally refresh existing boards up to ``budget``.
-        ``set_opening=True`` (midday job): freeze 初盘 on first available board.
+        Every successful first pull freezes 初盘. ``set_opening=True`` additionally
+        promotes legacy stored current boards that are not pulled in this batch.
         """
         from sqlalchemy import select
 
@@ -1673,10 +1694,7 @@ class FootballFetcher:
                 )
                 break
             try:
-                if await self.refresh_odds_for_fixture(
-                    fixture_id,
-                    set_opening=set_opening,
-                ):
+                if await self.refresh_odds_for_fixture(fixture_id):
                     updated += 1
             except Exception as exc:
                 logger.warning("Fixture odds %s failed: %s", fixture_id, exc)
@@ -1685,9 +1703,8 @@ class FootballFetcher:
                 # does not feel stuck for a minute on large league selections.
                 await asyncio.sleep(0.35)
 
-        # Midday: promote existing 即时盘 → 初盘 when opening was never frozen
-        # (e.g. board first arrived via manual sync), or when the frozen opening
-        # still comes from a fallback book that the current board has outranked.
+        # Full batch repair: promote legacy 即时盘 → 初盘 when the row is not
+        # otherwise pulled, or upgrade a fallback opening from stored current.
         if set_opening:
             promoted = 0
             fresh_rows = (
@@ -1703,7 +1720,7 @@ class FootballFetcher:
                 fx = fixtures_by_id.get(stored.fixture_id)
                 locked = fx is None or is_prediction_exam_locked(fx.date, fx.status)
                 if should_write_opening(
-                    opening, current, freeze=True, locked=locked
+                    opening, current, locked=locked
                 ):
                     # Keep the board's original capture time as 初盘 clock.
                     captured_at = current.get("captured_at") or (
@@ -1834,10 +1851,7 @@ class FootballFetcher:
                 continue
             attempted += 1
             try:
-                if await self.refresh_odds_for_fixture(
-                    fixture_id,
-                    set_opening=True,
-                ):
+                if await self.refresh_odds_for_fixture(fixture_id):
                     stored = await self.session.scalar(
                         select(PreMatchData).where(
                             PreMatchData.fixture_id == fixture_id
