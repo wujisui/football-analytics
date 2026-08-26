@@ -75,8 +75,8 @@ class AutoPickAccuracyTests(unittest.TestCase):
                 handicap_ruleset="jc",
             )
         )
-        # Product accuracy keeps a half-loss alive; line 0 at a draw is a walk.
-        self.assertTrue(
+        # 让胜 -0.25 at a draw is 输半 — wrong side, not a hit.
+        self.assertFalse(
             settle_auto_pick_hit(
                 market="ah",
                 lean="让胜(-0.25)",
@@ -120,7 +120,8 @@ class AutoPickAccuracyTests(unittest.TestCase):
                 away_goals=1,
             )
         )
-        self.assertTrue(
+        # 3 goals vs 2.75: 大 is 赢半, 小 is 输半 — only the over side hits.
+        self.assertFalse(
             settle_auto_pick_hit(
                 market="ou",
                 lean="小(2.75)",

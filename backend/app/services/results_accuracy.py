@@ -226,22 +226,17 @@ def evaluate_fixture_prediction(
     )
     predicted_handicaps = handicap_picks_from_lean(display_lean)
     payload["handicap_result"] = handicap_result
-    if predicted_handicaps:
-        settled_picks = [
-            settle_handicap_pick(
-                fixture.home_goals,
-                fixture.away_goals,
-                line_f,
-                pick,
-                ruleset=ruleset,
-            )
-            for pick in predicted_handicaps
-        ]
-        graded = [asian_result_counts_as_hit(result) for result in settled_picks]
-        if any(hit is True for hit in graded):
-            payload["handicap_hit"] = True
-        elif any(hit is False for hit in graded):
-            payload["handicap_hit"] = False
+    # Dual 让胜/负 is a hedge, not a directional bet — leave it ungraded so
+    # quarter-line draws cannot mint a hit from both 赢半 and 输半.
+    if len(predicted_handicaps) == 1:
+        settled = settle_handicap_pick(
+            fixture.home_goals,
+            fixture.away_goals,
+            line_f,
+            next(iter(predicted_handicaps)),
+            ruleset=ruleset,
+        )
+        payload["handicap_hit"] = asian_result_counts_as_hit(settled)
 
     hits = evaluate_prediction_vs_score(
         home_goals=fixture.home_goals,

@@ -56,9 +56,7 @@ class AhFeaturesTests(unittest.TestCase):
 
     def test_double_chance_maps_to_handicap_double_pick(self) -> None:
         non_integer = _structural_pick(-0.5, "胜/平")
-        self.assertIsNotNone(non_integer)
-        self.assertEqual(non_integer.pick, "cover/no_cover")
-        self.assertEqual(format_handicap_lean(non_integer), "让胜/负(-0.5)")
+        self.assertIsNone(non_integer)
 
         integer = _structural_pick(-1.0, "胜/平")
         self.assertIsNotNone(integer)
@@ -66,12 +64,32 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(format_handicap_lean(integer), "让负/平(-1)")
 
         mirrored_non_integer = _structural_pick(0.5, "负/平")
-        self.assertIsNotNone(mirrored_non_integer)
-        self.assertEqual(mirrored_non_integer.pick, "cover/no_cover")
+        self.assertIsNone(mirrored_non_integer)
 
         mirrored_integer = _structural_pick(1.0, "负/平")
         self.assertIsNotNone(mirrored_integer)
         self.assertEqual(mirrored_integer.pick, "cover/push")
+
+    def test_double_chance_quarter_line_follows_score_not_both_sides(self) -> None:
+        from app.services.ah_predictor import handicap_bundle_from_markets
+
+        away_receive = {
+            "available": True,
+            "asian_handicap": {"line": "+0.25", "home": 1.88, "away": 1.98},
+        }
+        lean, _ = handicap_bundle_from_markets(
+            away_receive, "负/平", score_hint="比分:1-1"
+        )
+        self.assertEqual(lean, "让胜(+0.25)")
+
+        home_give = {
+            "available": True,
+            "asian_handicap": {"line": "-0.25", "home": 1.88, "away": 1.98},
+        }
+        lean, _ = handicap_bundle_from_markets(
+            home_give, "胜/平", score_hint="比分:1-1"
+        )
+        self.assertEqual(lean, "让负(-0.25)")
 
     def test_settle_three_way_handicap_result(self) -> None:
         # Jingcai keeps 让平 on integer non-zero lines.
@@ -184,7 +202,7 @@ class AhFeaturesTests(unittest.TestCase):
     def test_product_accuracy_counts_partial_results_but_excludes_walks(self) -> None:
         self.assertTrue(asian_result_counts_as_hit(ASIAN_WIN))
         self.assertTrue(asian_result_counts_as_hit(ASIAN_HALF_WIN))
-        self.assertTrue(asian_result_counts_as_hit(ASIAN_HALF_LOSS))
+        self.assertFalse(asian_result_counts_as_hit(ASIAN_HALF_LOSS))
         self.assertFalse(asian_result_counts_as_hit(ASIAN_LOSS))
         self.assertIsNone(asian_result_counts_as_hit(ASIAN_PUSH))
 

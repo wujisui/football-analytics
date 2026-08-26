@@ -457,10 +457,16 @@ def settle_handicap_pick(
 
 
 def asian_result_counts_as_hit(result: str | None) -> bool | None:
-    """Product accuracy: full/half win and half loss count; pushes are separate."""
+    """Product accuracy: only the right side of the line counts.
+
+    Full win and half win are hits. Half loss is the wrong side of a
+    quarter line, so it is a miss — otherwise ±0.25 + 让胜/负 (or even a
+    single pick against the draw) would almost never fail. Pushes stay
+    out of the sample.
+    """
     if result is None or result == ASIAN_PUSH:
         return None
-    return result in {ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_HALF_LOSS}
+    return result in {ASIAN_WIN, ASIAN_HALF_WIN}
 
 
 def settle_ah_label(

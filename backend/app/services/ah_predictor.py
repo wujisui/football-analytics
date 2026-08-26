@@ -180,17 +180,16 @@ def _structural_pick(
     if rec in {"负", "客胜"} and 0.05 < line_f < 1.0:
         return HandicapPrediction(0.28, "no_cover", "structural", line_f)
 
-    # 胜/平 + 主让：平局必为让负；胜局在非整数盘可穿/不穿，
-    # 整数盘按一球边界覆盖为让负/平，避免错误压成单选让负。
-    if home_undivided and line_f < -0.05:
-        pick = "no_cover/push" if integer_line else "cover/no_cover"
-        return HandicapPrediction(0.5, pick, "structural", line_f)
+    # 胜/平 + 主让整数盘：平局走水、小胜穿不过，只能给让负/平。
+    # 四分/半球不在这里双选让胜/负——平局在 ±0.25 上赢半、输半对赌，
+    # 同时推荐两侧会把命中率做成必中，交给参考比分或模型单选。
+    if home_undivided and line_f < -0.05 and integer_line:
+        return HandicapPrediction(0.5, "no_cover/push", "structural", line_f)
     if home_undivided and half_receiving:
         return HandicapPrediction(0.72, "cover", "structural", line_f)
-    # 负/平 + 客让（主队受让）与上面镜像。
-    if away_undivided and line_f > 0.05:
-        pick = "cover/push" if integer_line else "cover/no_cover"
-        return HandicapPrediction(0.5, pick, "structural", line_f)
+    # 负/平 + 客让整数盘与上面镜像。
+    if away_undivided and line_f > 0.05 and integer_line:
+        return HandicapPrediction(0.5, "cover/push", "structural", line_f)
     if away_undivided and half_giving:
         return HandicapPrediction(0.32, "no_cover", "structural", line_f)
     if rec in {"负", "客胜"} and half_receiving:
@@ -202,6 +201,24 @@ def _structural_pick(
     if rec in {"平", "平局"} and half_receiving:
         return HandicapPrediction(0.70, "cover", "structural", line_f)
     return None
+
+
+def _score_agrees_with_1x2(score_hint: str | None, recommendation: str) -> bool:
+    """Only let the reference score break a dual AH pick when it sits in the 1X2 set."""
+    from app.services.prediction import recommendation_outcomes
+
+    outcomes = recommendation_outcomes(recommendation)
+    scores = parse_score_hint(score_hint)
+    if not outcomes or not scores:
+        return False
+    home_g, away_g = scores[0]
+    if home_g > away_g:
+        actual = "home"
+    elif home_g < away_g:
+        actual = "away"
+    else:
+        actual = "draw"
+    return actual in outcomes
 
 
 def _pick_from_score_hint(score_hint: str | None, line_f: float) -> HandicapPrediction | None:
@@ -271,14 +288,21 @@ def predict_handicap(
     if line_f is None or ah_features.get("has_ah_market", 0) < 0.5:
         return None
 
-    structural = _structural_pick(line_f, recommendation or "")
-    if structural:
+    rec = recommendation or ""
+    structural = _structural_pick(line_f, rec)
+    # 单选结构约束（例如「胜」穿半球）优先；双选只保留整数盘。
+    # 负/平 + 1-1 +0.25 必须先按比分结算成让胜，而不是让胜/负。
+    if structural and "/" not in structural.pick:
         return structural
 
     score_pick = _pick_from_score_hint(score_hint, line_f)
-    if score_pick:
-        score_pick.market_note = _market_water_note(ah_features, score_pick.pick)
-        return score_pick
+    if score_pick and score_pick.pick in {"cover", "no_cover", "push"}:
+        if _score_agrees_with_1x2(score_hint, rec):
+            score_pick.market_note = _market_water_note(ah_features, score_pick.pick)
+            return score_pick
+
+    if structural:
+        return structural
 
     model, meta = load_trained_model()
     threshold = min_train_samples()
