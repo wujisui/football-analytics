@@ -41,13 +41,23 @@ def test_hot_leagues_payload_translates_every_catalog_league() -> None:
     assert payload.categories[0].category_name == "五大联赛"
 
 
-def _subscription_payload(subscribed: bool, *, early_odds: bool) -> object:
+def _subscription_payload(
+    subscribed: bool,
+    *,
+    early_odds: bool,
+    dense_odds: bool = False,
+) -> object:
     async def _run() -> object:
         with (
             patch.object(
                 admin,
                 "get_subscription_early_odds",
                 AsyncMock(return_value=(early_odds, "db")),
+            ),
+            patch.object(
+                admin,
+                "get_subscription_dense_odds",
+                AsyncMock(return_value=(dense_odds, "db")),
             ),
             patch.object(admin, "get_last_sync_run", AsyncMock(return_value=None)),
             patch.object(
@@ -71,6 +81,7 @@ def test_subscribed_sync_times_include_evening_half_hours() -> None:
     payload = _subscription_payload(True, early_odds=False)
 
     assert payload.subscribed is True
+    assert payload.dense_odds_enabled is False
     assert payload.api_remaining == 7000
     for clock in ("11:00", "11:55", "21:30", "22:30", "23:30", "00:00"):
         assert clock in payload.sync_times
@@ -82,7 +93,18 @@ def test_subscribed_sync_times_include_evening_half_hours() -> None:
     assert "21:30" in with_early.sync_times
 
 
+def test_subscribed_dense_sync_times_replace_default_evening() -> None:
+    payload = _subscription_payload(True, early_odds=False, dense_odds=True)
+
+    assert payload.dense_odds_enabled is True
+    for clock in ("11:55", "16:00", "16:55", "17:25", "01:55"):
+        assert clock in payload.sync_times
+    for clock in ("18:00", "20:00", "21:00", "21:30", "22:00", "00:00"):
+        assert clock not in payload.sync_times
+
+
 def test_unsubscribed_sync_times_stay_on_three_slots() -> None:
     payload = _subscription_payload(False, early_odds=True)
 
     assert payload.sync_times == ["08:05", "11:00", "22:00"]
+    assert payload.dense_odds_enabled is False

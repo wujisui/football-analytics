@@ -25,10 +25,12 @@ from app.services.league_catalog import (
 from app.services.runtime_settings import (
     get_api_sports_keys_setting,
     get_last_sync_run,
+    get_subscription_dense_odds,
     get_subscription_early_odds,
     get_subscription_enabled,
     set_api_sports_keys_setting,
     set_hot_league_ids,
+    set_subscription_dense_odds,
     set_subscription_early_odds,
     set_subscription_enabled,
 )
@@ -71,6 +73,7 @@ class SubscriptionSetting(BaseModel):
     subscribed: bool
     source: str = Field(description="db = 管理员已覆盖；env = 使用环境变量默认值")
     early_odds_enabled: bool
+    dense_odds_enabled: bool
     sync_times: list[str]
     full_sync_completed_today: bool
     api_remaining: int | None = None
@@ -82,6 +85,10 @@ class SubscriptionUpdate(BaseModel):
 
 
 class SubscriptionEarlyOddsUpdate(BaseModel):
+    enabled: bool
+
+
+class SubscriptionDenseOddsUpdate(BaseModel):
     enabled: bool
 
 
@@ -236,10 +243,14 @@ async def _subscription_payload(
     source: str,
 ) -> SubscriptionSetting:
     early_odds, _ = await get_subscription_early_odds()
+    dense_odds, _ = await get_subscription_dense_odds()
     if subscribed:
         times = ["11:00"] + [
             format_clock(hour, minute)
-            for hour, minute in subscribed_light_odds_slots(early_odds=early_odds)
+            for hour, minute in subscribed_light_odds_slots(
+                early_odds=early_odds,
+                dense_odds=dense_odds,
+            )
         ]
         times = sorted(set(times))
     else:
@@ -256,6 +267,7 @@ async def _subscription_payload(
         subscribed=subscribed,
         source=source,
         early_odds_enabled=early_odds,
+        dense_odds_enabled=dense_odds,
         sync_times=times,
         full_sync_completed_today=await full_sync_completed_today(),
         api_remaining=remaining,
@@ -350,6 +362,18 @@ async def patch_subscription_early_odds_setting(
     db: AsyncSession = Depends(get_db),
 ) -> SubscriptionSetting:
     await set_subscription_early_odds(db, body.enabled)
+    subscribed, source = await get_subscription_enabled(db)
+    await refresh_fixture_sync_jobs()
+    return await _subscription_payload(subscribed, source)
+
+
+@router.patch("/settings/subscription-dense-odds", response_model=SubscriptionSetting)
+async def patch_subscription_dense_odds_setting(
+    body: SubscriptionDenseOddsUpdate,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> SubscriptionSetting:
+    await set_subscription_dense_odds(db, body.enabled)
     subscribed, source = await get_subscription_enabled(db)
     await refresh_fixture_sync_jobs()
     return await _subscription_payload(subscribed, source)

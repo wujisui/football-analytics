@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 KEY_ENABLE_FREE_QUOTA = "enable_free_quota"
 KEY_SUBSCRIPTION_EARLY_ODDS = "subscription_early_odds"
+KEY_SUBSCRIPTION_DENSE_ODDS = "subscription_dense_odds"
 KEY_LAST_FULL_SYNC_DAY = "last_full_sync_day"
 KEY_LAST_SYNC_RUN = "last_sync_run"
 KEY_API_SPORTS_KEY = "api_sports_key"
@@ -201,6 +202,20 @@ async def set_subscription_early_odds(
     enabled: bool,
 ) -> bool:
     return await _set_bool_setting(session, KEY_SUBSCRIPTION_EARLY_ODDS, enabled)
+
+
+async def get_subscription_dense_odds(
+    session: AsyncSession | None = None,
+) -> tuple[bool, SettingSource]:
+    """Whether subscribed dense evening odds jobs replace the default night slots."""
+    return await _get_bool_setting(KEY_SUBSCRIPTION_DENSE_ODDS, False, session)
+
+
+async def set_subscription_dense_odds(
+    session: AsyncSession,
+    enabled: bool,
+) -> bool:
+    return await _set_bool_setting(session, KEY_SUBSCRIPTION_DENSE_ODDS, enabled)
 
 
 async def get_last_full_sync_day(

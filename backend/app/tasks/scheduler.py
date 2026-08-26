@@ -17,6 +17,7 @@ from app.services.fixtures_sync import (
 from app.services.cache import get_cache_service
 from app.services.runtime_settings import (
     get_last_full_sync_day,
+    get_subscription_dense_odds,
     get_subscription_early_odds,
     get_subscription_enabled,
     set_last_full_sync_day,
@@ -31,12 +32,15 @@ _scheduler_started = False
 
 FULL_SYNC_HOUR = 11
 UNSUBSCRIBED_ODDS_HOURS = (22,)
-# Hourly light odds outside the 21:00–24:00 half-hour window.
-SUBSCRIBED_ODDS_HOURS = (2, 14, 16, 18, 20)
 SUBSCRIBED_EARLY_ODDS_HOURS = (4, 6, 8, 10)
-SUBSCRIBED_FIRST_ODDS_MINUTE = 55
-# 21:00 through 24:00 (00:00) every 30 minutes; subscribed only.
-SUBSCRIBED_EVENING_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
+# Complete subscribed default light-odds schedule (excluding optional early slots).
+SUBSCRIBED_DEFAULT_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
+    (2, 0),
+    (11, 55),
+    (14, 0),
+    (16, 0),
+    (18, 0),
+    (20, 0),
     (21, 0),
     (21, 30),
     (22, 0),
@@ -44,6 +48,32 @@ SUBSCRIBED_EVENING_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
     (23, 0),
     (23, 30),
     (0, 0),
+)
+# Complete subscribed dense light-odds schedule (excluding optional early slots).
+SUBSCRIBED_DENSE_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
+    (2, 0),
+    (11, 55),
+    (14, 0),
+    (16, 0),
+    (16, 55),
+    (17, 25),
+    (17, 55),
+    (18, 25),
+    (18, 55),
+    (19, 25),
+    (19, 55),
+    (20, 25),
+    (20, 55),
+    (21, 25),
+    (21, 55),
+    (22, 25),
+    (22, 55),
+    (23, 25),
+    (23, 55),
+    (0, 25),
+    (0, 55),
+    (1, 25),
+    (1, 55),
 )
 FREE_QUOTA_ROLLOVER_JOB_ID = "free_quota_fixture_rollover"
 RESULTS_SYNC_TASK = "scheduled_results_sync"
@@ -56,12 +86,18 @@ def odds_job_id(hour: int, minute: int = 0) -> str:
     return f"scheduled_fixtures_sync_odds_{hour:02d}"
 
 
-def subscribed_light_odds_slots(*, early_odds: bool) -> list[tuple[int, int]]:
-    slots = [(hour, 0) for hour in SUBSCRIBED_ODDS_HOURS]
+def subscribed_light_odds_slots(
+    *,
+    early_odds: bool,
+    dense_odds: bool = False,
+) -> list[tuple[int, int]]:
+    slots = list(
+        SUBSCRIBED_DENSE_ODDS_SLOTS
+        if dense_odds
+        else SUBSCRIBED_DEFAULT_ODDS_SLOTS
+    )
     if early_odds:
         slots.extend((hour, 0) for hour in SUBSCRIBED_EARLY_ODDS_HOURS)
-    slots.extend(SUBSCRIBED_EVENING_ODDS_SLOTS)
-    slots.append((FULL_SYNC_HOUR, SUBSCRIBED_FIRST_ODDS_MINUTE))
     return sorted(set(slots), key=lambda item: (item[0], item[1]))
 
 
@@ -415,6 +451,7 @@ def register_jobs(
     *,
     subscribed: bool | None = None,
     early_odds: bool = True,
+    dense_odds: bool = False,
 ) -> None:
     """Register one 11:00 full batch plus subscription-specific light jobs."""
     settings = get_settings()
@@ -440,7 +477,10 @@ def register_jobs(
 
     odds_slots: list[tuple[int, int]]
     if subscribed:
-        odds_slots = subscribed_light_odds_slots(early_odds=early_odds)
+        odds_slots = subscribed_light_odds_slots(
+            early_odds=early_odds,
+            dense_odds=dense_odds,
+        )
     else:
         odds_slots = [(hour, 0) for hour in UNSUBSCRIBED_ODDS_HOURS]
     for hour, minute in odds_slots:
@@ -483,18 +523,24 @@ async def refresh_fixture_sync_jobs() -> bool:
     """Re-read subscription flags and rewrite fixture/odds cron slots."""
     subscribed, source = await get_subscription_enabled()
     early_odds, _ = await get_subscription_early_odds()
-    register_jobs(subscribed=subscribed, early_odds=early_odds)
+    dense_odds, _ = await get_subscription_dense_odds()
+    register_jobs(
+        subscribed=subscribed,
+        early_odds=early_odds,
+        dense_odds=dense_odds,
+    )
     if _scheduler_started:
         for job in scheduler.get_jobs():
             if str(job.id).startswith("scheduled_fixtures_sync_"):
                 logger.info(
                     "Refreshed scheduler job: id=%s trigger=%s next_run=%s "
-                    "(subscribed=%s early_odds=%s source=%s)",
+                    "(subscribed=%s early_odds=%s dense_odds=%s source=%s)",
                     job.id,
                     job.trigger,
                     job.next_run_time,
                     subscribed,
                     early_odds,
+                    dense_odds,
                     source,
                 )
     return subscribed

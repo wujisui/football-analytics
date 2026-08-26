@@ -13,6 +13,7 @@ export type SubscriptionSetting = {
   subscribed: boolean
   source: 'db' | 'env' | string
   early_odds_enabled: boolean
+  dense_odds_enabled: boolean
   sync_times: string[]
   full_sync_completed_today: boolean
   api_remaining: number | null
@@ -146,6 +147,18 @@ export async function updateSubscriptionEarlyOdds(
 ): Promise<SubscriptionSetting> {
   const { data } = await apiClient.patch<SubscriptionSetting>(
     '/admin/settings/subscription-early-odds',
+    {
+      enabled,
+    },
+  )
+  return data
+}
+
+export async function updateSubscriptionDenseOdds(
+  enabled: boolean,
+): Promise<SubscriptionSetting> {
+  const { data } = await apiClient.patch<SubscriptionSetting>(
+    '/admin/settings/subscription-dense-odds',
     {
       enabled,
     },

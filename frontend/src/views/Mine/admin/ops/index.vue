@@ -11,6 +11,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   fetchSubscriptionSetting,
   type LastSyncRun,
+  updateSubscriptionDenseOdds,
   updateSubscriptionEarlyOdds,
   updateSubscriptionSetting,
 } from '@/api/admin'
@@ -37,6 +38,7 @@ const {
 const subscribed = ref(false)
 const subscriptionSource = ref('')
 const earlyOddsEnabled = ref(true)
+const denseOddsEnabled = ref(false)
 const syncTimes = ref<string[]>([])
 const fullSyncCompletedToday = ref(false)
 const apiRemaining = ref<number | null>(null)
@@ -44,6 +46,7 @@ const lastSync = ref<LastSyncRun | null>(null)
 const subscriptionLoading = ref(false)
 const subscriptionSaving = ref(false)
 const earlyOddsSaving = ref(false)
+const denseOddsSaving = ref(false)
 
 const settingSourceLabel = (value: string) =>
   value === 'db' ? '管理员覆盖（库）' : value ? '环境变量默认' : ''
@@ -87,14 +90,23 @@ const subscriptionDescription = computed(() => {
     const early = earlyOddsEnabled.value
       ? '早间盘口刷新已开启（04/06/08/10）。'
       : '早间盘口刷新已关闭，04/06/08/10 不跑。'
-    return `${prefix}${clocks}11:00 为每日唯一完整批次，其余时刻只刷新今天未开赛热门盘口并重算日推；21:00 至 24:00 每隔半小时一次。${early}赛程保留 8 天滑动窗口，每天只新增末端一天；盘口与详情只处理今天、明天。`
+    const dense = denseOddsEnabled.value
+      ? '当前使用密刷方案：02:00、11:55、14:00、16:00，16:55 至 01:55 按开赛整点/半点前 5 分钟轻刷。'
+      : '当前使用默认方案：02:00、11:55、14:00、16:00、18:00、20:00，21:00 至 00:00 每隔半小时一次。'
+    return `${prefix}${clocks}11:00 为每日唯一完整批次，其余时刻只刷新今天未开赛热门盘口并重算日推。${early}${dense}赛程保留 8 天滑动窗口，每天只新增末端一天；盘口与详情只处理今天、明天。`
   }
   return `${prefix}${clocks}未订阅每天 08:05 只拉当天赛程，11:00 跑昨天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。晚间半小时刷新仅已订阅生效。`
 })
 
 const earlyOddsDescription = computed(() =>
   subscribed.value
-    ? '控制 04:00、06:00、08:00、10:00 是否也刷新今天未开赛热门盘口并重算日推；02:00 与 21:00–24:00 的半小时任务不受此开关影响。'
+    ? '控制 04:00、06:00、08:00、10:00 是否也刷新今天未开赛热门盘口并重算日推；02:00 与晚间任务不受此开关影响。'
+    : '仅已订阅时生效。',
+)
+
+const denseOddsDescription = computed(() =>
+  subscribed.value
+    ? '打开使用完整密刷方案：02:00、11:55、14:00、16:00、16:55、17:25 … 01:55；关闭使用完整默认方案：02:00、11:55、14:00、16:00、18:00、20:00、21:00、21:30 … 00:00。两套方案均叠加早间开关。'
     : '仅已订阅时生效。',
 )
 
@@ -102,6 +114,7 @@ function applySubscription(data: Awaited<ReturnType<typeof fetchSubscriptionSett
   subscribed.value = data.subscribed
   subscriptionSource.value = data.source
   earlyOddsEnabled.value = data.early_odds_enabled
+  denseOddsEnabled.value = data.dense_odds_enabled
   syncTimes.value = data.sync_times
   fullSyncCompletedToday.value = data.full_sync_completed_today
   apiRemaining.value = data.api_remaining
@@ -147,6 +160,21 @@ function onSubscriptionToggle(next: boolean) {
     negativeText: '取消',
     onPositiveClick: () => void applySubscriptionToggle(next),
   })
+}
+
+async function applyDenseOddsToggle(next: boolean) {
+  denseOddsSaving.value = true
+  const previous = denseOddsEnabled.value
+  denseOddsEnabled.value = next
+  try {
+    applySubscription(await updateSubscriptionDenseOdds(next))
+    message.success(next ? '已开启晚间密刷' : '已关闭晚间密刷，恢复默认调度')
+  } catch (err) {
+    denseOddsEnabled.value = previous
+    message.error(err instanceof Error ? err.message : '保存失败')
+  } finally {
+    denseOddsSaving.value = false
+  }
 }
 
 async function applyEarlyOddsToggle(next: boolean) {
@@ -317,6 +345,24 @@ watch(syncing, (value, previous) => {
               :disabled="subscriptionLoading || earlyOddsSaving || !subscribed"
               :loading="earlyOddsSaving"
               @update:value="applyEarlyOddsToggle"
+            />
+          </template>
+        </n-list-item>
+
+        <n-list-item>
+          <template #prefix>
+            <n-icon :component="SettingsOutline" :size="20" />
+          </template>
+          <n-thing title="晚间密刷盘口" :description="denseOddsDescription" />
+          <template #suffix>
+            <TextSwitch
+              :value="denseOddsEnabled"
+              checked-text="已开启"
+              unchecked-text="已关闭"
+              aria-label="晚间密刷盘口"
+              :disabled="subscriptionLoading || denseOddsSaving || !subscribed"
+              :loading="denseOddsSaving"
+              @update:value="applyDenseOddsToggle"
             />
           </template>
         </n-list-item>
