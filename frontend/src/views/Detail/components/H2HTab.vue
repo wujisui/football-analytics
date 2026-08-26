@@ -4,14 +4,11 @@ import { computed, ref } from 'vue'
 import MatchStatsSummary from '@/views/Detail/components/MatchStatsSummary.vue'
 import MatchStatsTable from '@/views/Detail/components/MatchStatsTable.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
-import type { PrematchPackage } from '@/api/types'
-import { formCharClass, formCharsZh } from '@/utils/format'
+import type { FixtureResponse, FormMatch, PrematchPackage } from '@/api/types'
+import { formCharClass, formCharsZh, hasKickedOff } from '@/utils/format'
 
 const props = defineProps<{
-  homeTeamName: string
-  awayTeamName: string
-  homeTeamId?: number
-  awayTeamId?: number
+  fixture: FixtureResponse
   pkg: PrematchPackage | null
 }>()
 
@@ -29,11 +26,30 @@ const limitOptions = [
   { label: '近 20 场', value: 20 },
 ]
 
-const homeZh = computed(() => props.homeTeamName || '—')
-const awayZh = computed(() => props.awayTeamName || '—')
+const homeZh = computed(() => props.fixture.home_team_name || '—')
+const awayZh = computed(() => props.fixture.away_team_name || '—')
 
 const h2hMatches = computed(
   () => props.pkg?.head_to_head?.matches?.slice(0, h2hLimit.value) ?? [],
+)
+const currentMatch = computed<FormMatch | null>(() => {
+  if (hasKickedOff(props.fixture.fixture_date)) return null
+  return {
+    fixture_id: props.fixture.fixture_id,
+    date: props.fixture.fixture_date,
+    status: 'pending',
+    home: props.fixture.home_team_name,
+    away: props.fixture.away_team_name,
+    home_id: props.fixture.home_team_id,
+    away_id: props.fixture.away_team_id,
+    score: 'VS',
+    league_id: props.fixture.league_id,
+    league_name: props.fixture.league_name,
+    league_country: props.fixture.league_country,
+  }
+})
+const displayedH2HMatches = computed(() =>
+  currentMatch.value ? [currentMatch.value, ...h2hMatches.value] : h2hMatches.value,
 )
 const homeRecent = computed(
   () => props.pkg?.home_form?.matches?.slice(0, formLimit.value) ?? [],
@@ -46,6 +62,7 @@ const awayForm = computed(() => props.pkg?.away_form ?? null)
 
 const hasAny = computed(
   () =>
+    currentMatch.value != null ||
     (props.pkg?.head_to_head?.matches?.length ?? 0) > 0 ||
     (props.pkg?.home_form?.matches?.length ?? 0) > 0 ||
     (props.pkg?.away_form?.matches?.length ?? 0) > 0,
@@ -73,10 +90,13 @@ const hasAny = computed(
           />
         </n-flex>
       </n-flex>
-      <MatchStatsSummary :matches="h2hMatches" :focus-team-id="homeTeamId" />
-      <MatchStatsTable
+      <MatchStatsSummary
         :matches="h2hMatches"
-        :focus-team-id="homeTeamId"
+        :focus-team-id="fixture.home_team_id"
+      />
+      <MatchStatsTable
+        :matches="displayedH2HMatches"
+        :focus-team-id="fixture.home_team_id"
         empty-description="双方暂无直接交锋记录"
       />
     </n-space>
@@ -112,8 +132,14 @@ const hasAny = computed(
               {{ zh }}
             </span>
           </n-flex>
-          <MatchStatsSummary :matches="homeRecent" :focus-team-id="homeTeamId" />
-          <MatchStatsTable :matches="homeRecent" :focus-team-id="homeTeamId" />
+          <MatchStatsSummary
+            :matches="homeRecent"
+            :focus-team-id="fixture.home_team_id"
+          />
+          <MatchStatsTable
+            :matches="homeRecent"
+            :focus-team-id="fixture.home_team_id"
+          />
         </n-space>
       </n-gi>
       <n-gi>
@@ -129,8 +155,14 @@ const hasAny = computed(
               {{ zh }}
             </span>
           </n-flex>
-          <MatchStatsSummary :matches="awayRecent" :focus-team-id="awayTeamId" />
-          <MatchStatsTable :matches="awayRecent" :focus-team-id="awayTeamId" />
+          <MatchStatsSummary
+            :matches="awayRecent"
+            :focus-team-id="fixture.away_team_id"
+          />
+          <MatchStatsTable
+            :matches="awayRecent"
+            :focus-team-id="fixture.away_team_id"
+          />
         </n-space>
       </n-gi>
     </n-grid>

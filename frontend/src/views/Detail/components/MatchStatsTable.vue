@@ -79,6 +79,9 @@ function renderScoreFt(row: FormMatch) {
 }
 
 function renderResultCell(row: FormMatch) {
+  if ((row.status || '').toLowerCase() === 'pending') {
+    return h('span', { class: ['result-text', 'pending'] }, '未开赛')
+  }
   const code = focusResultCode(row)
   const ftZh = resultToZh(code)
   const htft = htftZh(row.score, row.score_ht)
@@ -226,6 +229,11 @@ function rowKey(row: FormMatch): string | number {
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+:deep(.result-text.pending) {
+  color: var(--fa-text-secondary);
+  font-weight: 500;
 }
 
 :deep(.result-sep) {

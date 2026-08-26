@@ -91,6 +91,7 @@ export interface InjuriesPackage {
 export interface FormMatch {
   fixture_id?: number | null
   date?: string | null
+  status?: string | null
   home: string
   away: string
   home_id?: number | null

@@ -31,6 +31,7 @@ export type DetailCrumbFixture = {
   league_name: string
   home_team_name: string
   away_team_name: string
+  fixture_date: string
   home_rank?: number | null
   away_rank?: number | null
   home_goals?: number | null
@@ -84,6 +85,7 @@ export function peekDetailCrumb(fixtureId: number): DetailCrumbFixture | null {
     league_name: hit.league_name,
     home_team_name: hit.home_team_name,
     away_team_name: hit.away_team_name,
+    fixture_date: hit.fixture_date,
     home_rank: 'home_rank' in hit ? hit.home_rank : null,
     away_rank: 'away_rank' in hit ? hit.away_rank : null,
     home_goals: hit.home_goals,

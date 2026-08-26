@@ -11,7 +11,7 @@ import {
 } from '@/utils/detailNav'
 import {useIsPhone} from '@/composables/useMediaQuery'
 import {writeFixturesLeagueFilter} from '@/utils/fixturesLeagueFilter'
-import {rankBracket} from '@/utils/format'
+import {formatTime, rankBracket} from '@/utils/format'
 import {leagueLabel} from '@/utils/leagueNames'
 
 const props = defineProps<{
@@ -37,6 +37,10 @@ const scoreText = computed(() => {
   if (h == null || a == null) return null
   return `${h}:${a}`
 })
+
+const kickoffTime = computed(() =>
+    props.fixture?.fixture_date ? formatTime(props.fixture.fixture_date) : '',
+)
 
 const homeLabel = computed(() => {
   if (!props.fixture) return '—'
@@ -104,11 +108,13 @@ function goLeague() {
         </n-breadcrumb-item>
         <n-breadcrumb-item v-if="fixture">
            <span v-if="scoreText" class="match-title crumb-match">
+                <span v-if="kickoffTime" class="kickoff-time">{{ kickoffTime }}</span>
                 <span>{{ homeLabel }}</span>
                 <span class="score-value">{{ scoreText }}</span>
                 <span>{{ awayLabel }}</span>
               </span>
           <span v-else class="match-title crumb-match">
+            <span v-if="kickoffTime" class="kickoff-time">{{ kickoffTime }}</span>
             <span>{{ homeLabel }}</span>
             <span>VS</span>
             <span>{{ awayLabel }}</span>
@@ -145,6 +151,12 @@ function goLeague() {
 
 .crumb-match {
   font-variant-numeric: tabular-nums;
+}
+
+.kickoff-time {
+  flex-shrink: 0;
+  color: var(--fa-text-secondary);
+  font-weight: 500;
 }
 
 .match-title {

@@ -142,10 +142,7 @@ watch(
                 <template v-else-if="fixture && visited.has(tab.name)">
                   <H2HTab
                     v-if="tab.name === 'record'"
-                    :home-team-name="fixture.home_team_name"
-                    :away-team-name="fixture.away_team_name"
-                    :home-team-id="fixture.home_team_id"
-                    :away-team-id="fixture.away_team_id"
+                    :fixture="fixture"
                     :pkg="pkg"
                   />
                   <StatsTab
