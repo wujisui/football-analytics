@@ -4,6 +4,15 @@ import App from './App.vue'
 import router from './router'
 import './style.css'
 
+/**
+ * Vue 给 errorHandler 的 info 两种形态：dev 是可读的 'activated hook'，生产构建
+ * 只有钩子代号，且 3.4 起会拼成 `https://vuejs.org/error-reference/#runtime-a`。
+ * 只比对 dev 文案会让下面的拦截在打包后整段失效。
+ */
+function isActivatedHook(info: string): boolean {
+  return info === 'activated hook' || info.endsWith('#runtime-a')
+}
+
 const app = createApp(App)
 
 /**
@@ -18,9 +27,8 @@ const app = createApp(App)
  * 与生产版行为一致。
  */
 app.config.errorHandler = (err, _instance, info) => {
-  // info 在 dev 是 'activated hook'，生产构建下是内部代号 'a'
   const isStaleVirtualListScroll =
-    (info === 'activated hook' || info === 'a') &&
+    isActivatedHook(info) &&
     err instanceof TypeError &&
     err.message.includes('scrollTo')
   if (isStaleVirtualListScroll) return
