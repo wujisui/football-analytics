@@ -77,6 +77,21 @@ def test_ambiguous_short_names_resolve_by_id() -> None:
     assert BY_ID[1577] == "开罗阿赫利"
 
 
+def test_prematch_window_ids_match_official_clubs() -> None:
+    expected = {
+        575: "雅典AEK",
+        998: "特拉布宗体育",
+        279: "札幌冈萨多",
+        10307: "乌拉圭U20",
+        16202: "巴拉圭U20",
+        1564: "泰国",
+        2691: "凯泽酋长",
+        1051: "特古西加尔帕奥林匹亚",
+    }
+    for team_id, zh in expected.items():
+        assert BY_ID[team_id] == zh, f"team {team_id} mistranslated"
+
+
 def test_brazilian_ids_are_not_french_clubs() -> None:
     assert BY_ID[129] == "塞阿拉"
     assert BY_ID[130] == "格雷米奥"
