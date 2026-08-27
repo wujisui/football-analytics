@@ -40,7 +40,7 @@ export const sectionMeta: Record<
   },
   theme: {
     routeName: 'mine-theme',
-    title: '主题与玩法',
+    title: '偏好设置',
     hint: '显示主题与让球结算口径',
     icon: ColorPaletteOutline,
   },

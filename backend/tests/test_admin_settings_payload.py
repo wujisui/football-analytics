@@ -8,6 +8,9 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from fastapi import HTTPException
+
 from app.api.v1.endpoints import admin
 
 
@@ -61,9 +64,6 @@ def _subscription_payload(
             ),
             patch.object(admin, "get_last_sync_run", AsyncMock(return_value=None)),
             patch.object(
-                admin, "full_sync_completed_today", AsyncMock(return_value=False)
-            ),
-            patch.object(
                 admin,
                 "get_cache_service",
                 MagicMock(return_value=MagicMock(last_api_remaining=7000)),
@@ -108,3 +108,43 @@ def test_unsubscribed_sync_times_stay_on_three_slots() -> None:
 
     assert payload.sync_times == ["08:05", "11:00", "22:00"]
     assert payload.dense_odds_enabled is False
+
+
+def test_manual_full_sync_requires_subscription_but_has_no_daily_limit() -> None:
+    async def _run_unsubscribed() -> None:
+        with patch.object(
+            admin,
+            "get_subscription_enabled",
+            AsyncMock(return_value=(False, "db")),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await admin.trigger_task_endpoint(
+                    admin.TriggerTaskRequest(name="scheduled_fixtures_sync"),
+                    None,
+                )
+            assert exc.value.status_code == 409
+
+    async def _run_subscribed() -> dict:
+        with (
+            patch.object(
+                admin,
+                "get_subscription_enabled",
+                AsyncMock(return_value=(True, "db")),
+            ),
+            patch.object(admin, "official_sync_busy", return_value=False),
+            patch.object(
+                admin,
+                "get_task_status",
+                return_value={"active_tasks": {}},
+            ),
+            patch.object(admin, "trigger_task", AsyncMock()),
+            patch.object(admin.asyncio, "sleep", AsyncMock()),
+        ):
+            return await admin.trigger_task_endpoint(
+                admin.TriggerTaskRequest(name="scheduled_fixtures_sync"),
+                None,
+            )
+
+    asyncio.run(_run_unsubscribed())
+    response = asyncio.run(_run_subscribed())
+    assert response["status"] == "accepted"

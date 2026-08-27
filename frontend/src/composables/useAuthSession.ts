@@ -7,6 +7,7 @@ import {
   registerAccount,
   type AuthClaim,
 } from '@/api/auth'
+import { clearAdminSettingsCache } from '@/api/admin'
 import { setOnAuthExpired, type ApiError } from '@/api/client'
 import {
   clearPrivateBetPlans,
@@ -68,6 +69,7 @@ function clearLocalUser() {
  * remember-account, date strips, scroll).
  */
 function wipePrivateClientCaches() {
+  clearAdminSettingsCache()
   clearPrivateBetPlans()
   clearPrivateFavorites()
   clearPrivateCalculator()

@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 KEY_ENABLE_FREE_QUOTA = "enable_free_quota"
 KEY_SUBSCRIPTION_EARLY_ODDS = "subscription_early_odds"
 KEY_SUBSCRIPTION_DENSE_ODDS = "subscription_dense_odds"
-KEY_LAST_FULL_SYNC_DAY = "last_full_sync_day"
 KEY_LAST_SYNC_RUN = "last_sync_run"
 KEY_API_SPORTS_KEY = "api_sports_key"
 
@@ -216,31 +215,6 @@ async def set_subscription_dense_odds(
     enabled: bool,
 ) -> bool:
     return await _set_bool_setting(session, KEY_SUBSCRIPTION_DENSE_ODDS, enabled)
-
-
-async def get_last_full_sync_day(
-    session: AsyncSession | None = None,
-) -> str | None:
-    async def _read(db: AsyncSession) -> str | None:
-        row = await get_setting_row(db, KEY_LAST_FULL_SYNC_DAY)
-        value = (row.value if row else "").strip()
-        return value or None
-
-    if session is not None:
-        return await _read(session)
-    async with AsyncSessionLocal() as db:
-        return await _read(db)
-
-
-async def set_last_full_sync_day(session: AsyncSession, day: str) -> str:
-    row = await get_setting_row(session, KEY_LAST_FULL_SYNC_DAY)
-    value = str(day).strip()
-    if row is None:
-        session.add(AppSetting(key=KEY_LAST_FULL_SYNC_DAY, value=value))
-    else:
-        row.value = value
-    await session.commit()
-    return value
 
 
 async def get_last_sync_run(

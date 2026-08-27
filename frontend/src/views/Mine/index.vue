@@ -41,7 +41,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   },
   {
     key: 'theme',
-    label: '主题与玩法',
+    label: '偏好设置',
     icon: renderIcon(sectionMeta.theme.icon),
   },
   ...(isAdmin.value

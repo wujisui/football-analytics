@@ -39,7 +39,6 @@ from app.tasks.scheduler import (
     RESULTS_SYNC_TASK,
     UNSUBSCRIBED_ODDS_HOURS,
     format_clock,
-    full_sync_completed_today,
     get_task_status,
     refresh_fixture_sync_jobs,
     subscribed_light_odds_slots,
@@ -75,7 +74,6 @@ class SubscriptionSetting(BaseModel):
     early_odds_enabled: bool
     dense_odds_enabled: bool
     sync_times: list[str]
-    full_sync_completed_today: bool
     api_remaining: int | None = None
     last_sync: LastSyncRun | None = None
 
@@ -269,7 +267,6 @@ async def _subscription_payload(
         early_odds_enabled=early_odds,
         dense_odds_enabled=dense_odds,
         sync_times=times,
-        full_sync_completed_today=await full_sync_completed_today(),
         api_remaining=remaining,
         last_sync=last_sync,
     )
@@ -301,11 +298,10 @@ async def trigger_task_endpoint(
     }
     if body.name not in allowed:
         raise HTTPException(status_code=400, detail=f"Unknown task: {body.name}")
-    if (
-        body.name == "scheduled_fixtures_sync"
-        and await full_sync_completed_today()
-    ):
-        raise HTTPException(status_code=409, detail="今日完整批次已完成，无需重复同步")
+    if body.name == "scheduled_fixtures_sync":
+        subscribed, _ = await get_subscription_enabled()
+        if not subscribed:
+            raise HTTPException(status_code=409, detail="订阅已关闭，不能手动完整同步")
     if official_sync_busy():
         raise HTTPException(status_code=409, detail="官方同步正在执行，请稍后再试")
     running = (

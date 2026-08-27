@@ -2,7 +2,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -16,11 +15,9 @@ from app.services.fixtures_sync import (
 )
 from app.services.cache import get_cache_service
 from app.services.runtime_settings import (
-    get_last_full_sync_day,
     get_subscription_dense_odds,
     get_subscription_early_odds,
     get_subscription_enabled,
-    set_last_full_sync_day,
     set_last_sync_run,
 )
 
@@ -138,20 +135,10 @@ def get_task_status() -> dict[str, Any]:
     }
 
 
-def scheduler_today() -> str:
-    settings = get_settings()
-    return datetime.now(ZoneInfo(settings.SCHEDULER_TIMEZONE)).date().isoformat()
-
-
-async def full_sync_completed_today() -> bool:
-    return await get_last_full_sync_day() == scheduler_today()
-
-
 async def _record_sync_run(task_name: str, mode: str, start_count: int) -> None:
     """Persist a finished official batch so the admin page can show 上次同步.
 
-    Skipped batches (already synced today, no key) burn no quota and must not
-    overwrite the last real run.
+    Skipped batches that burn no quota must not overwrite the last real run.
     """
     entry = active_tasks.get(task_name) or {}
     status = entry.get("status")
@@ -188,15 +175,6 @@ async def run_scheduled_fixtures_sync(
     logger.info("Task %s started (mode=%s).", task_name, mode)
     start_count = get_cache_service().api_request_count
     try:
-        if mode == "full" and await full_sync_completed_today():
-            _set_task_status(
-                task_name,
-                "skipped",
-                reason="full_sync_completed_today",
-                finished_at=_utc_now().isoformat(),
-            )
-            logger.info("Task %s skipped: full batch already completed today.", task_name)
-            return
         result = await scheduled_fixtures_sync(mode=mode)
         if result.get("status") != "completed":
             _set_task_status(
@@ -206,9 +184,6 @@ async def run_scheduled_fixtures_sync(
                 finished_at=_utc_now().isoformat(),
             )
             return
-        if mode == "full":
-            async with AsyncSessionLocal() as session:
-                await set_last_full_sync_day(session, scheduler_today())
         if mode == "full":
             await clean_old_data()
         _set_task_status(

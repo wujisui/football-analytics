@@ -11,6 +11,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   fetchSubscriptionSetting,
   type LastSyncRun,
+  peekSubscriptionSetting,
   updateSubscriptionDenseOdds,
   updateSubscriptionEarlyOdds,
   updateSubscriptionSetting,
@@ -36,15 +37,15 @@ const {
   hydrateStatus,
 } = useAdminSync()
 
-const subscribed = ref(false)
-const subscriptionSource = ref('')
-const earlyOddsEnabled = ref(true)
-const denseOddsEnabled = ref(false)
-const syncTimes = ref<string[]>([])
-const fullSyncCompletedToday = ref(false)
-const apiRemaining = ref<number | null>(null)
-const lastSync = ref<LastSyncRun | null>(null)
-const subscriptionLoading = ref(false)
+const cachedSubscription = peekSubscriptionSetting()
+const subscribed = ref(cachedSubscription?.subscribed ?? false)
+const subscriptionSource = ref(cachedSubscription?.source ?? '')
+const earlyOddsEnabled = ref(cachedSubscription?.early_odds_enabled ?? true)
+const denseOddsEnabled = ref(cachedSubscription?.dense_odds_enabled ?? false)
+const syncTimes = ref<string[]>(cachedSubscription?.sync_times ?? [])
+const apiRemaining = ref<number | null>(cachedSubscription?.api_remaining ?? null)
+const lastSync = ref<LastSyncRun | null>(cachedSubscription?.last_sync ?? null)
+const subscriptionLoading = ref(cachedSubscription == null)
 const subscriptionSaving = ref(false)
 const earlyOddsSaving = ref(false)
 const denseOddsSaving = ref(false)
@@ -52,11 +53,13 @@ const denseOddsSaving = ref(false)
 const settingSourceLabel = (value: string) =>
   value === 'db' ? '管理员覆盖（库）' : value ? '环境变量默认' : ''
 
-const syncSummary = '当天完整批次尚未成功时手动补跑，成功后当天禁用。'
+const syncSummary = computed(() =>
+  subscribed.value ? '手动同步最新赛程、赛果、盘口与分析数据。' : '订阅关闭时不可用。',
+)
 const syncDetail = computed(() =>
   subscribed.value
-    ? '回写近 4 天赛果、增量补齐 8 天赛程窗口、更新今天/明天热门盘口与详情、积分榜、训练、日推及清理；成功后当天禁用，避免重复消耗。完场比分若还要再刷，用下面的「只更新赛果」。'
-    : '补跑昨天赛果、今天赛程/热门盘口、训练、日推及清理；成功后当天禁用。08:05 当天赛程是独立任务，不补跑。完场比分若还要再刷，用下面的「只更新赛果」。',
+    ? '每次都会回写近 4 天赛果、增量补齐 8 天赛程窗口、更新今天/明天热门盘口与详情、积分榜、训练、日推及清理。不限每日次数，但每次都会消耗官方配额；新增热门联赛后可在这里重新同步。'
+    : '完整同步只在已订阅时开放；未订阅仍按 08:05、11:00、22:00 固定任务运行。',
 )
 
 const resultsSyncSummary = computed(() =>
@@ -103,7 +106,7 @@ const subscriptionDetail = computed(() => {
     ? `时刻 ${syncTimes.value.join('、')}。`
     : ''
   if (subscribed.value) {
-    return `${clocks}11:00 为每日唯一完整批次，其余时刻只刷新今天未开赛热门盘口并重算日推。赛程保留 8 天滑动窗口，每天只新增末端一天；盘口与详情只处理今天、明天。`
+    return `${clocks}11:00 为每日定时完整批次，其余时刻只刷新今天未开赛热门盘口并重算日推。管理员可不限每日次数手动完整同步；赛程保留 8 天滑动窗口，每天只新增末端一天，盘口与详情只处理今天、明天。`
   }
   return `${clocks}未订阅每天 08:05 只拉当天赛程，11:00 跑昨天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。晚间密刷仅已订阅生效。`
 })
@@ -129,15 +132,14 @@ function applySubscription(data: Awaited<ReturnType<typeof fetchSubscriptionSett
   earlyOddsEnabled.value = data.early_odds_enabled
   denseOddsEnabled.value = data.dense_odds_enabled
   syncTimes.value = data.sync_times
-  fullSyncCompletedToday.value = data.full_sync_completed_today
   apiRemaining.value = data.api_remaining
   lastSync.value = data.last_sync
 }
 
-async function loadSetting() {
+async function loadSetting(force = false) {
   subscriptionLoading.value = true
   try {
-    applySubscription(await fetchSubscriptionSetting())
+    applySubscription(await fetchSubscriptionSetting(force))
   } catch (err) {
     message.error(err instanceof Error ? err.message : '读取运维设置失败')
   } finally {
@@ -235,17 +237,16 @@ async function applyEarlyOddsToggle(next: boolean) {
 
 async function syncOfficialData() {
   await runSync()
-  await loadSetting()
 }
 
 async function syncResultsOnly() {
   await runResultsSync()
-  await loadSetting()
+  await loadSetting(true)
 }
 
 async function applyPrematchOddsSync() {
   await runPrematchOddsSync()
-  await loadSetting()
+  await loadSetting(true)
 }
 
 function syncPrematchOddsOnly() {
@@ -264,11 +265,11 @@ function syncPrematchOddsOnly() {
 
 onMounted(() => {
   void hydrateStatus()
-  void loadSetting()
+  if (!cachedSubscription) void loadSetting()
 })
 
 watch(syncing, (value, previous) => {
-  if (previous && !value) void loadSetting()
+  if (previous && !value) void loadSetting(true)
 })
 </script>
 
@@ -312,11 +313,11 @@ watch(syncing, (value, previous) => {
             <n-button
               size="small"
               type="primary"
-              :disabled="busy || fullSyncCompletedToday"
+              :disabled="busy || !subscribed"
               :loading="syncing"
               @click="syncOfficialData"
             >
-              {{ syncing ? '同步中' : fullSyncCompletedToday ? '今日已同步' : '立即同步' }}
+              {{ syncing ? '同步中' : '立即同步' }}
             </n-button>
           </template>
         </n-list-item>

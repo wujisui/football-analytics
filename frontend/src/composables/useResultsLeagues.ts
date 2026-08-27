@@ -76,6 +76,12 @@ function setResultsConfiguredLeagueIds(ids: Iterable<number>) {
   )
 }
 
+/** Keep schedule/results 热门 grouping aligned after an admin catalog save. */
+export function updateResultsConfiguredLeagueIds(ids: Iterable<number>): void {
+  setResultsConfiguredLeagueIds(ids)
+  configuredIdsReady.value = true
+}
+
 /** Load admin 热门 ids once for 热门 grouping on 赛程. */
 export async function ensureResultsConfiguredLeagueIds(): Promise<void> {
   if (configuredIdsReady.value) return

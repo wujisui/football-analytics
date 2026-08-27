@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue'
 
 import {
   fetchApiSportsKeySetting,
+  peekApiSportsKeySetting,
   previewResetMatchHistory,
   resetMatchHistory,
   type ApiSportsKeySetting,
@@ -23,8 +24,9 @@ const resetModalShow = ref(false)
 const resetPassword = ref('')
 const resetSubmitting = ref(false)
 
-const apiKeySetting = ref<ApiSportsKeySetting | null>(null)
-const apiKeyLoading = ref(false)
+const cachedApiKeySetting = peekApiSportsKeySetting()
+const apiKeySetting = ref<ApiSportsKeySetting | null>(cachedApiKeySetting)
+const apiKeyLoading = ref(cachedApiKeySetting == null)
 const apiKeyModalShow = ref(false)
 const apiKeyDraft = ref('')
 const apiKeyPassword = ref('')
@@ -155,7 +157,7 @@ async function confirmResetMatchHistory() {
 }
 
 onMounted(() => {
-  void loadApiKeySetting()
+  if (!cachedApiKeySetting) void loadApiKeySetting()
 })
 </script>
 

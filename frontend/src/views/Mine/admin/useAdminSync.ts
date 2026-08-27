@@ -21,6 +21,7 @@ const fullSyncing = ref(false)
 const resultsSyncing = ref(false)
 const prematchOddsSyncing = ref(false)
 const pollPromises = new Map<string, Promise<void>>()
+let statusHydrated = false
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -110,9 +111,11 @@ export function useAdminSync() {
     return pollPromise
   }
 
-  async function hydrateStatus() {
+  async function hydrateStatus(force = false) {
+    if (statusHydrated && !force) return
     try {
       const data = await fetchAdminTaskStatus()
+      statusHydrated = true
       fullSyncing.value =
         data.active_tasks[FULL_TASK]?.status === 'running'
       resultsSyncing.value =

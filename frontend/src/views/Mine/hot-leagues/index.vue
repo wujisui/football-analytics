@@ -3,6 +3,7 @@ import { useMessage, useModal } from 'naive-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { updateResultsConfiguredLeagueIds } from '@/composables/useResultsLeagues'
 import {
   createCatalogLeague,
   createLeagueCategory,
@@ -10,6 +11,7 @@ import {
   deleteLeagueCategory,
   fetchHotLeaguesSetting,
   lookupOfficialLeague,
+  peekHotLeaguesSetting,
   previewCatalogLeagueDelete,
   updateCatalogLeague,
   updateCatalogLeagueCategory,
@@ -26,14 +28,15 @@ defineOptions({ name: 'MineHotLeagues' })
 const message = useMessage()
 const modal = useModal()
 const isPhone = useIsPhone()
-const loading = ref(false)
+const cachedSetting = peekHotLeaguesSetting()
+const loading = ref(cachedSetting == null)
 const reloading = ref(false)
 const saving = ref(false)
 const catalogBusy = ref(false)
-const leagues = ref<HotLeagueItem[]>([])
-const categories = ref<HotLeagueCategory[]>([])
-const selectedIds = ref<number[]>([])
-const defaultIds = ref<number[]>([])
+const leagues = ref<HotLeagueItem[]>(cachedSetting?.leagues ?? [])
+const categories = ref<HotLeagueCategory[]>(cachedSetting?.categories ?? [])
+const selectedIds = ref<number[]>(cachedSetting?.league_ids ?? [])
+const defaultIds = ref<number[]>(cachedSetting?.default_league_ids ?? [])
 const movingLeagueId = ref<number | null>(null)
 const selectedLeagueId = ref<number | null>(null)
 
@@ -146,6 +149,7 @@ function applySetting(data: HotLeaguesSetting, keepSelection = false) {
   const prevLeagueIds = new Set(leagues.value.map((item) => item.league_id))
   leagues.value = data.leagues
   categories.value = data.categories
+  updateResultsConfiguredLeagueIds(data.league_ids)
   if (
     selectedLeagueId.value != null &&
     !data.leagues.some((item) => item.league_id === selectedLeagueId.value)
@@ -214,7 +218,7 @@ async function save() {
     applySetting(await updateHotLeaguesSetting(selectedIds.value.map(Number)))
     message.success(
       selectedIds.value.length
-        ? `已保存 ${selectedIds.value.length} 项热门，下次定时同步按此拉取盘口`
+        ? `已保存 ${selectedIds.value.length} 项热门；如需立即拉取新增数据，请到运维管理点「立即同步」`
         : '已保存：热门为空，定时任务将不再拉取赛前盘口',
     )
   } catch (err) {
@@ -517,7 +521,11 @@ async function submitAddLeague() {
       true,
     )
     addLeagueShow.value = false
-    message.success(`已新增「${leagueName}」`)
+    message.success(
+      addLeague.selected
+        ? `已新增「${leagueName}」并设为热门，请到运维管理点「立即同步」拉取数据`
+        : `已新增「${leagueName}」`,
+    )
   } catch (err) {
     message.error(err instanceof Error ? err.message : '新增联赛失败')
   } finally {
@@ -612,11 +620,6 @@ async function confirmDeleteLeague() {
       leagues: category.leagues.filter((league) => league.league_id !== item.league_id),
     }))
     message.success(`已删除「${report.league_name}」及其关联数据`)
-    try {
-      applySetting(await fetchHotLeaguesSetting(), true)
-    } catch (err) {
-      message.warning(err instanceof Error ? err.message : '联赛已删除，目录刷新失败')
-    }
   } catch (err) {
     message.error(err instanceof Error ? err.message : '删除联赛失败')
   } finally {
@@ -625,7 +628,7 @@ async function confirmDeleteLeague() {
 }
 
 onMounted(() => {
-  void loadSetting()
+  if (!cachedSetting) void loadSetting()
 })
 </script>
 

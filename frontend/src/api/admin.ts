@@ -15,7 +15,6 @@ export type SubscriptionSetting = {
   early_odds_enabled: boolean
   dense_odds_enabled: boolean
   sync_times: string[]
-  full_sync_completed_today: boolean
   api_remaining: number | null
   last_sync: LastSyncRun | null
 }
@@ -126,10 +125,60 @@ export type ResetMatchHistoryReport = {
   kept: string[]
 }
 
+const ADMIN_CACHE_PREFIX = 'fa-admin-setting:v2:'
+const SUBSCRIPTION_CACHE_KEY = `${ADMIN_CACHE_PREFIX}subscription`
+const HOT_LEAGUES_CACHE_KEY = `${ADMIN_CACHE_PREFIX}hot-leagues`
+const API_KEY_CACHE_KEY = `${ADMIN_CACHE_PREFIX}api-key`
+
+function readAdminCache<T>(key: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as T) : null
+  } catch {
+    return null
+  }
+}
+
+function writeAdminCache<T>(key: string, value: T): T {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Private mode / quota: the API response still remains usable in this render.
+  }
+  return value
+}
+
+export function peekSubscriptionSetting(): SubscriptionSetting | null {
+  return readAdminCache<SubscriptionSetting>(SUBSCRIPTION_CACHE_KEY)
+}
+
+export function peekHotLeaguesSetting(): HotLeaguesSetting | null {
+  return readAdminCache<HotLeaguesSetting>(HOT_LEAGUES_CACHE_KEY)
+}
+
+export function peekApiSportsKeySetting(): ApiSportsKeySetting | null {
+  return readAdminCache<ApiSportsKeySetting>(API_KEY_CACHE_KEY)
+}
+
+export function clearAdminSettingsCache(): void {
+  try {
+    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = sessionStorage.key(index)
+      if (key?.startsWith('fa-admin-setting:')) sessionStorage.removeItem(key)
+    }
+  } catch {
+    // Ignore unavailable session storage.
+  }
+}
+
 /** Admin routes authenticate via the logged-in is_admin session cookie. */
-export async function fetchSubscriptionSetting(): Promise<SubscriptionSetting> {
+export async function fetchSubscriptionSetting(force = false): Promise<SubscriptionSetting> {
+  if (!force) {
+    const cached = peekSubscriptionSetting()
+    if (cached) return cached
+  }
   const { data } = await apiClient.get<SubscriptionSetting>('/admin/settings/subscription')
-  return data
+  return writeAdminCache(SUBSCRIPTION_CACHE_KEY, data)
 }
 
 export async function updateSubscriptionSetting(
@@ -139,7 +188,7 @@ export async function updateSubscriptionSetting(
     '/admin/settings/subscription',
     { subscribed },
   )
-  return data
+  return writeAdminCache(SUBSCRIPTION_CACHE_KEY, data)
 }
 
 export async function updateSubscriptionEarlyOdds(
@@ -151,7 +200,7 @@ export async function updateSubscriptionEarlyOdds(
       enabled,
     },
   )
-  return data
+  return writeAdminCache(SUBSCRIPTION_CACHE_KEY, data)
 }
 
 export async function updateSubscriptionDenseOdds(
@@ -163,7 +212,7 @@ export async function updateSubscriptionDenseOdds(
       enabled,
     },
   )
-  return data
+  return writeAdminCache(SUBSCRIPTION_CACHE_KEY, data)
 }
 
 export async function fetchAdminTaskStatus(): Promise<{
@@ -173,9 +222,13 @@ export async function fetchAdminTaskStatus(): Promise<{
   return data
 }
 
-export async function fetchHotLeaguesSetting(): Promise<HotLeaguesSetting> {
+export async function fetchHotLeaguesSetting(force = false): Promise<HotLeaguesSetting> {
+  if (!force) {
+    const cached = peekHotLeaguesSetting()
+    if (cached) return cached
+  }
   const { data } = await apiClient.get<HotLeaguesSetting>('/admin/settings/hot-leagues')
-  return data
+  return writeAdminCache(HOT_LEAGUES_CACHE_KEY, data)
 }
 
 export async function updateHotLeaguesSetting(
@@ -185,7 +238,7 @@ export async function updateHotLeaguesSetting(
     '/admin/settings/hot-leagues',
     { league_ids: leagueIds },
   )
-  return data
+  return writeAdminCache(HOT_LEAGUES_CACHE_KEY, data)
 }
 
 export async function createLeagueCategory(name: string): Promise<HotLeaguesSetting> {
@@ -193,7 +246,7 @@ export async function createLeagueCategory(name: string): Promise<HotLeaguesSett
     '/admin/settings/league-categories',
     { name },
   )
-  return data
+  return writeAdminCache(HOT_LEAGUES_CACHE_KEY, data)
 }
 
 export async function deleteLeagueCategory(
@@ -202,7 +255,7 @@ export async function deleteLeagueCategory(
   const { data } = await apiClient.delete<HotLeaguesSetting>(
     `/admin/settings/league-categories/${categoryId}`,
   )
-  return data
+  return writeAdminCache(HOT_LEAGUES_CACHE_KEY, data)
 }
 
 export async function lookupOfficialLeague(
@@ -221,7 +274,7 @@ export async function createCatalogLeague(
     '/admin/settings/leagues',
     params,
   )
-  return data
+  return writeAdminCache(HOT_LEAGUES_CACHE_KEY, data)
 }
 
 export async function updateCatalogLeague(
@@ -232,7 +285,7 @@ export async function updateCatalogLeague(
     `/admin/settings/leagues/${leagueId}`,
     params,
   )
-  return data
+  return writeAdminCache(HOT_LEAGUES_CACHE_KEY, data)
 }
 
 export async function updateCatalogLeagueCategory(
@@ -262,12 +315,30 @@ export async function deleteCatalogLeague(params: {
     { password: params.password, apply: true },
     { timeout: 5 * 60_000 },
   )
+  const cached = readAdminCache<HotLeaguesSetting>(HOT_LEAGUES_CACHE_KEY)
+  if (cached) {
+    const leagueId = params.leagueId
+    writeAdminCache(HOT_LEAGUES_CACHE_KEY, {
+      ...cached,
+      league_ids: cached.league_ids.filter((id) => id !== leagueId),
+      default_league_ids: cached.default_league_ids.filter((id) => id !== leagueId),
+      leagues: cached.leagues.filter((league) => league.league_id !== leagueId),
+      categories: cached.categories.map((category) => ({
+        ...category,
+        leagues: category.leagues.filter((league) => league.league_id !== leagueId),
+      })),
+    })
+  }
   return data
 }
 
-export async function fetchApiSportsKeySetting(): Promise<ApiSportsKeySetting> {
+export async function fetchApiSportsKeySetting(force = false): Promise<ApiSportsKeySetting> {
+  if (!force) {
+    const cached = peekApiSportsKeySetting()
+    if (cached) return cached
+  }
   const { data } = await apiClient.get<ApiSportsKeySetting>('/admin/settings/api-sports-key')
-  return data
+  return writeAdminCache(API_KEY_CACHE_KEY, data)
 }
 
 export async function updateApiSportsKeySetting(params: {
@@ -278,7 +349,7 @@ export async function updateApiSportsKeySetting(params: {
     '/admin/settings/api-sports-key',
     params,
   )
-  return data
+  return writeAdminCache(API_KEY_CACHE_KEY, data)
 }
 
 export async function triggerScheduledFixturesSync(): Promise<TriggerTaskResult> {
