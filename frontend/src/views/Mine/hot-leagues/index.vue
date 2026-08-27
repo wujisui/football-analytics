@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useMessage, useModal } from 'naive-ui'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
 
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { updateResultsConfiguredLeagueIds } from '@/composables/useResultsLeagues'
@@ -171,21 +171,29 @@ function applySetting(data: HotLeaguesSetting, keepSelection = false) {
     .map((item) => item.league_id)
 }
 
-async function loadSetting() {
-  loading.value = true
+/**
+ * Cache paints first; `force` then reads the local backend so `protected`
+ * never stays on a stale sessionStorage snapshot.
+ */
+async function loadSetting(options?: { silent?: boolean; keepSelection?: boolean }) {
+  const silent = options?.silent ?? false
+  const keepSelection = options?.keepSelection ?? false
+  if (!silent) loading.value = true
   try {
-    applySetting(await fetchHotLeaguesSetting())
+    applySetting(await fetchHotLeaguesSetting(true), keepSelection)
   } catch (err) {
-    message.error(err instanceof Error ? err.message : '读取热门联赛失败')
+    if (!silent) {
+      message.error(err instanceof Error ? err.message : '读取热门联赛失败')
+    }
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
 async function restoreLastSaved() {
   reloading.value = true
   try {
-    applySetting(await fetchHotLeaguesSetting())
+    applySetting(await fetchHotLeaguesSetting(true))
   } catch (err) {
     message.error(err instanceof Error ? err.message : '读取热门联赛失败')
   } finally {
@@ -629,8 +637,20 @@ async function confirmDeleteLeague() {
   }
 }
 
+let skipKeepAliveActivate = false
 onMounted(() => {
-  if (!cachedSetting) void loadSetting()
+  skipKeepAliveActivate = true
+  void loadSetting({
+    silent: cachedSetting != null,
+    keepSelection: false,
+  })
+})
+onActivated(() => {
+  if (skipKeepAliveActivate) {
+    skipKeepAliveActivate = false
+    return
+  }
+  void loadSetting({ silent: true, keepSelection: true })
 })
 </script>
 
@@ -948,7 +968,7 @@ onMounted(() => {
       <n-alert type="info" :bordered="false" style="margin-bottom: 12px">
         {{
           editLeague.protected
-            ? '种子联赛不可改官方 ID。中文名与国家写入数据库目录，同步时不会被官方英文名覆盖。'
+            ? '系统保护联赛（五大联赛、荷甲、葡超、欧冠、中超）不可改官方 ID。中文名与国家写入数据库目录，同步时不会被官方英文名覆盖。'
             : '改官方 ID 须先核对：未命中缓存消耗 1 次 GET /leagues?id=。改 ID 会丢弃错误 ID 下已拉到的赛程；目标 ID 上已有赛程会保留。'
         }}
       </n-alert>

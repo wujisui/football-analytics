@@ -79,9 +79,21 @@ DEFAULT_HOT_LEAGUE_IDS: tuple[int, ...] = (
     292,
 )
 
-# Official league 10 is the broad Friendlies feed, not a protected core
-# competition. Keep it editable/deletable even when imported from the seed.
-UNPROTECTED_SEED_LEAGUE_IDS: frozenset[int] = frozenset({10})
+# Catalog rows that cannot be deleted or have their official ID changed.
+# Everyone else in the directory is editable, including JSON seed leftovers.
+PROTECTED_CORE_LEAGUE_IDS: frozenset[int] = frozenset(
+    {
+        39,  # 英超
+        140,  # 西甲
+        78,  # 德甲
+        135,  # 意甲
+        61,  # 法甲
+        88,  # 荷甲
+        94,  # 葡超
+        2,  # 欧冠
+        169,  # 中超
+    }
+)
 
 
 async def seed_league_catalog(session: AsyncSession) -> None:
@@ -137,10 +149,27 @@ async def seed_league_catalog(session: AsyncSession) -> None:
         row.category_id = CATEGORY_BY_LEAGUE_ID.get(league_id, 9)
         row.is_catalog = True
         row.is_hot = league_id in defaults
-        row.is_protected = league_id not in UNPROTECTED_SEED_LEAGUE_IDS
+        row.is_protected = league_id in PROTECTED_CORE_LEAGUE_IDS
     if legacy_hot_row is not None:
         await session.delete(legacy_hot_row)
     await session.commit()
+
+
+async def sync_catalog_protection(session: AsyncSession) -> None:
+    """Align `is_protected` with the current core set on already-seeded databases."""
+    rows = (
+        await session.execute(select(League).where(League.is_catalog.is_(True)))
+    ).scalars()
+    changed = False
+    for row in rows:
+        should_protect = row.id in PROTECTED_CORE_LEAGUE_IDS
+        if bool(row.is_protected) != should_protect:
+            row.is_protected = should_protect
+            changed = True
+    if changed:
+        await session.commit()
+    else:
+        await session.rollback()
 
 
 async def catalog_leagues(session: AsyncSession) -> list[League]:
@@ -240,7 +269,7 @@ async def retarget_catalog_league_id(
         "category_id": source.category_id,
         "is_catalog": True,
         "is_hot": source.is_hot,
-        "is_protected": False,
+        "is_protected": next_id in PROTECTED_CORE_LEAGUE_IDS,
     }
     await session.execute(delete(League).where(League.id == old_id))
     session.expunge(source)

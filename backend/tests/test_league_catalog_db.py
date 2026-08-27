@@ -13,9 +13,11 @@ from app.models.team import Team
 from app.services.data_cleanup import delete_catalog_league
 from app.services.fetcher import FootballFetcher
 from app.services.league_catalog import (
+    PROTECTED_CORE_LEAGUE_IDS,
     allowed_league_ids,
     retarget_catalog_league_id,
     seed_league_catalog,
+    sync_catalog_protection,
 )
 
 
@@ -67,7 +69,47 @@ class LeagueCatalogDatabaseTests(unittest.TestCase):
                 self.assertEqual(friendlies.name, "友谊赛")
                 self.assertFalse(friendlies.is_protected)
                 self.assertEqual(friendlies.category_id, 4)
+                eredivisie = await session.get(League, 88)
+                self.assertIsNotNone(eredivisie)
+                assert eredivisie is not None
+                self.assertTrue(eredivisie.is_protected)
+                europa = await session.get(League, 3)
+                self.assertIsNotNone(europa)
+                assert europa is not None
+                self.assertFalse(europa.is_protected)
                 self.assertIsNotNone(await session.get(LeagueCategory, 8))
+            await engine.dispose()
+
+        asyncio.run(run())
+
+    def test_sync_catalog_protection_narrows_legacy_seed_locks(self) -> None:
+        async def run() -> None:
+            engine = _sqlite_engine()
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                await seed_league_catalog(session)
+                europa = await session.get(League, 3)
+                self.assertIsNotNone(europa)
+                assert europa is not None
+                europa.is_protected = True
+                await session.commit()
+                await sync_catalog_protection(session)
+                await session.refresh(europa)
+                self.assertFalse(europa.is_protected)
+                premier_league = await session.get(League, 39)
+                self.assertIsNotNone(premier_league)
+                assert premier_league is not None
+                self.assertTrue(premier_league.is_protected)
+                champions = await session.get(League, 2)
+                self.assertIsNotNone(champions)
+                assert champions is not None
+                self.assertTrue(champions.is_protected)
+                self.assertEqual(
+                    PROTECTED_CORE_LEAGUE_IDS,
+                    {39, 140, 78, 135, 61, 88, 94, 2, 169},
+                )
             await engine.dispose()
 
         asyncio.run(run())

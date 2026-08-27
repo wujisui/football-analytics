@@ -314,10 +314,20 @@ async def init_db() -> None:
         if settings.DATABASE_URL.startswith("sqlite"):
             await _ensure_sqlite_columns(conn)
 
-    from app.services.league_catalog import seed_league_catalog
+    from app.services.league_catalog import seed_league_catalog, sync_catalog_protection
 
     async with AsyncSessionLocal() as session:
         await seed_league_catalog(session)
+
+    if settings.DATABASE_URL.startswith("sqlite"):
+        from sqlalchemy import text
+
+        async with async_engine.begin() as conn:
+            # Allow the one-time policy remap below; the trigger is recreated after.
+            await conn.execute(text("DROP TRIGGER IF EXISTS prevent_protected_league_unlock"))
+
+    async with AsyncSessionLocal() as session:
+        await sync_catalog_protection(session)
 
     if settings.DATABASE_URL.startswith("sqlite"):
         from sqlalchemy import text

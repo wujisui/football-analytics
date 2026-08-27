@@ -18,6 +18,7 @@ from app.services.fixtures_sync import official_sync_busy
 from app.services.fetcher import FootballFetcher
 from app.services.league_catalog import (
     DEFAULT_HOT_LEAGUE_IDS,
+    PROTECTED_CORE_LEAGUE_IDS,
     catalog_leagues,
     league_categories,
     retarget_catalog_league_id,
@@ -554,7 +555,7 @@ async def create_catalog_league(
     league.category_id = int(body.category_id)
     league.is_catalog = True
     league.is_hot = body.selected
-    league.is_protected = False
+    league.is_protected = int(body.league_id) in PROTECTED_CORE_LEAGUE_IDS
     tombstone = await db.get(LeagueCatalogTombstone, body.league_id)
     if tombstone is not None:
         await db.delete(tombstone)

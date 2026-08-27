@@ -125,7 +125,7 @@ export type ResetMatchHistoryReport = {
   kept: string[]
 }
 
-const ADMIN_CACHE_PREFIX = 'fa-admin-setting:v2:'
+const ADMIN_CACHE_PREFIX = 'fa-admin-setting:v3:'
 const SUBSCRIPTION_CACHE_KEY = `${ADMIN_CACHE_PREFIX}subscription`
 const HOT_LEAGUES_CACHE_KEY = `${ADMIN_CACHE_PREFIX}hot-leagues`
 const API_KEY_CACHE_KEY = `${ADMIN_CACHE_PREFIX}api-key`
