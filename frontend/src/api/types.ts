@@ -173,6 +173,15 @@ export interface PrematchPackage {
   away_formation?: string | null
 }
 
+export interface MarketAnalysis {
+  available: boolean
+  title: string
+  paragraphs: string[]
+  bullets: string[]
+  warnings: string[]
+  stage_count: number
+}
+
 export interface AnalysisResponse {
   fixture_id: number
   home_team_name: string
@@ -188,6 +197,7 @@ export interface AnalysisResponse {
   score_hint?: string
   handicap_lean?: string
   handicap_market_note?: string
+  market_analysis?: MarketAnalysis
   data_source: string
   analyzed_at: string
   cache_status: string

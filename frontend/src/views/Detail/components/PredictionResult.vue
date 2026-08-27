@@ -4,7 +4,6 @@ import { computed, defineAsyncComponent } from 'vue'
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import type { FixtureResponse } from '@/api/types'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
-import { buildPredictionExplanation } from '@/utils/predictionExplanation'
 import { toPercent } from '@/utils/format'
 import { adaptHandicapLean, HANDICAP_MISSING_LABEL } from '@/utils/handicapDisplay'
 import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
@@ -24,8 +23,16 @@ const props = defineProps<{
 }>()
 
 const original = computed(() => snapshotFromAnalysis(props.fixture.analysis))
-const explanation = computed(() =>
-  buildPredictionExplanation(props.fixture.analysis),
+const explanation = computed(
+  () =>
+    props.fixture.analysis.market_analysis ?? {
+      available: false,
+      title: '盘口解释',
+      paragraphs: ['暂无后端盘口解释，请刷新详情后重试。'],
+      bullets: [],
+      warnings: [],
+      stage_count: 0,
+    },
 )
 const { ruleset } = useHandicapRuleset()
 const handicapLabel = computed(
@@ -123,6 +130,19 @@ const handicapTagColor = computed(() =>
               {{ b }}
             </li>
           </ul>
+          <n-alert
+            v-if="explanation.warnings.length"
+            type="warning"
+            :bordered="false"
+            class="explain-warning"
+          >
+            <div
+              v-for="(warning, idx) in explanation.warnings"
+              :key="`warning-${idx}`"
+            >
+              {{ warning }}
+            </div>
+          </n-alert>
         </div>
       </n-card>
     </div>
@@ -302,6 +322,11 @@ const handicapTagColor = computed(() =>
   font-size: 13px;
   line-height: 1.7;
   color: var(--fa-text-secondary);
+}
+
+.explain-warning {
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 @media (max-width: 900px) {

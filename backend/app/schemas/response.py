@@ -55,7 +55,7 @@ class OddsPackageResponse(BaseModel):
     goals_ou: LineOddsResponse | None = None
     both_teams_score: LineOddsResponse | None = None
     bookmakers: list[dict[str, Any]] = Field(default_factory=list)
-    role: str | None = Field(default=None, description="opening|current")
+    role: str | None = Field(default=None, description="opening|mid|late|current")
     captured_at: str | None = None
 
 
@@ -200,6 +200,15 @@ class PrematchPackageResponse(BaseModel):
     away_formation: str | None = None
 
 
+class MarketAnalysisResponse(BaseModel):
+    available: bool = False
+    title: str = "盘口解释"
+    paragraphs: list[str] = Field(default_factory=list)
+    bullets: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    stage_count: int = 0
+
+
 class AnalysisResponse(BaseModel):
     fixture_id: int = Field(..., description="比赛 ID")
     home_team_name: str = Field(..., description="主队名称")
@@ -223,6 +232,10 @@ class AnalysisResponse(BaseModel):
     handicap_market_note: str = Field(
         default="",
         description="进阶：盘口水位与参考比分结算不一致时的说明（详情页）",
+    )
+    market_analysis: MarketAnalysisResponse | None = Field(
+        default=None,
+        description="由初盘/中盘/临场/即时盘生成的后端盘口解释",
     )
     data_source: str = Field(..., description="数据来源：cache/api/database")
     analyzed_at: datetime = Field(..., description="分析时间（UTC）")
@@ -629,6 +642,7 @@ class LeaguesListResponse(BaseModel):
 
 
 def analysis_to_response(analysis) -> AnalysisResponse:
+    from app.services.market_analysis import build_market_analysis
     from app.services.prediction import (
         derive_prediction_leans,
         has_1x2_market,
@@ -707,6 +721,15 @@ def analysis_to_response(analysis) -> AnalysisResponse:
         handicap_lean = leans["handicap_lean"]
         handicap_market_note = leans.get("handicap_market_note", "")
 
+    market_analysis = build_market_analysis(
+        analysis.package if isinstance(analysis.package, dict) else None,
+        probabilities=probs if ready else None,
+        recommendation=recommendation,
+        handicap_lean=handicap_lean,
+        handicap_market_note=handicap_market_note or "",
+        goal_lean=goal_lean,
+    )
+
     return AnalysisResponse(
         fixture_id=analysis.fixture_id,
         home_team_name=analysis.home_team_name,
@@ -727,6 +750,7 @@ def analysis_to_response(analysis) -> AnalysisResponse:
         score_hint=score_hint,
         handicap_lean=handicap_lean,
         handicap_market_note=handicap_market_note or "",
+        market_analysis=MarketAnalysisResponse.model_validate(market_analysis),
         data_source=analysis.data_source,
         analyzed_at=analysis.analyzed_at,
         cache_status=analysis.cache_status,
