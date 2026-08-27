@@ -1,27 +1,29 @@
 :root,
 html[data-theme='light'] {
-  --fa-bg: #f5f6f8;
+  /* Warm paper greys; the page sits a clear step below the cards so layering
+     reads without any pure-white surface. */
+  --fa-bg: #e1dbd3;
   /* Backdrop outside the centered content band (wide screens). */
-  --fa-backdrop: #e3e5ea;
-  --fa-bg-elevated: #ffffff;
-  --fa-bg-soft: #fafafa;
-  --fa-border: #e8e8e8;
-  --fa-border-soft: #f0f0f0;
-  --fa-text: #213547;
-  --fa-text-strong: #1a1a1a;
-  --fa-text-secondary: #666666;
-  --fa-text-muted: #888888;
-  --fa-text-faint: #999999;
-  --fa-hover-border: #b8d4f8;
-  --fa-hover-shadow: rgba(32, 128, 240, 0.08);
+  --fa-backdrop: #d2cbc1;
+  --fa-bg-elevated: #f3f0eb;
+  --fa-bg-soft: #e9e4dc;
+  --fa-border: #d0c9c0;
+  --fa-border-soft: #ded8d0;
+  --fa-text: #3a352f;
+  --fa-text-strong: #262220;
+  --fa-text-secondary: #6b6359;
+  --fa-text-muted: #857d72;
+  --fa-text-faint: #9c9489;
+  --fa-hover-border: #9fc1ea;
+  --fa-hover-shadow: rgba(74, 62, 48, 0.12);
   /* 盘口线 / 链接类强调色（与 hover 蓝同源） */
   --fa-accent: #2080f0;
-  --fa-highlight-bg: #fff7e6;
-  --fa-highlight-border: #f0c78a;
+  --fa-highlight-bg: #f7e9d1;
+  --fa-highlight-border: #eac388;
   --fa-highlight-text: #c2410c;
-  --fa-header-shadow: 0 -6px 20px rgba(0, 0, 0, 0.12);
-  --fa-bottom-nav-shadow: 0 1px 20px rgba(0, 0, 0, 0.12);
-  --fa-sider-shadow: -6px 0 20px rgba(0, 0, 0, 0.1);
+  --fa-header-shadow: 0 -6px 18px rgba(74, 62, 48, 0.1);
+  --fa-bottom-nav-shadow: 0 1px 18px rgba(74, 62, 48, 0.1);
+  --fa-sider-shadow: -6px 0 18px rgba(74, 62, 48, 0.09);
   /* 胜平负业务色（与 theme/wdlColors.ts、统计 tab 徽章一致） */
   --fa-wdl-win: #c23b3b;
   --fa-wdl-draw: #909399;

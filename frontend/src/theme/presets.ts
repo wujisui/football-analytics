@@ -1,6 +1,6 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
-/** Only Naive built-in light / dark (no color variants). */
+/** Single light/dark choice; light uses a warm paper-grey surface palette. */
 export type ThemePresetId = 'light' | 'dark'
 
 export const DEFAULT_THEME: ThemePresetId = 'light'
@@ -57,22 +57,53 @@ const SHELL_CSS_VARS: Record<ShellToken, string> = {
 }
 
 const lightShell: ThemePreset['shell'] = {
-  bg: '#f5f6f8',
-  bgElevated: '#ffffff',
-  bgSoft: '#fafafa',
-  border: '#e8e8e8',
-  borderSoft: '#f0f0f0',
-  text: '#213547',
-  textStrong: '#1a1a1a',
-  textSecondary: '#666666',
-  textMuted: '#888888',
-  textFaint: '#999999',
-  hoverBorder: '#b8d4f8',
-  hoverShadow: 'rgba(32, 128, 240, 0.08)',
+  bg: '#e1dbd3',
+  bgElevated: '#f3f0eb',
+  bgSoft: '#e9e4dc',
+  border: '#d0c9c0',
+  borderSoft: '#ded8d0',
+  text: '#3a352f',
+  textStrong: '#262220',
+  textSecondary: '#6b6359',
+  textMuted: '#857d72',
+  textFaint: '#9c9489',
+  hoverBorder: '#9fc1ea',
+  hoverShadow: 'rgba(74, 62, 48, 0.12)',
   accent: '#2080f0',
-  highlightBg: '#fff7e6',
-  highlightBorder: '#f0c78a',
+  highlightBg: '#f7e9d1',
+  highlightBorder: '#eac388',
   highlightText: '#c2410c',
+}
+
+const lightOverrides: GlobalThemeOverrides = {
+  common: {
+    bodyColor: '#e1dbd3',
+    baseColor: '#f3f0eb',
+    cardColor: '#f3f0eb',
+    modalColor: '#f3f0eb',
+    popoverColor: '#f3f0eb',
+    tableColor: '#f3f0eb',
+    tableHeaderColor: '#eae5dd',
+    inputColor: '#ebe6de',
+    inputColorDisabled: '#e4ded5',
+    actionColor: '#eae5dd',
+    tagColor: '#eae5dd',
+    tabColor: '#eae5dd',
+    codeColor: '#eae5dd',
+    hoverColor: '#e6e0d7',
+    borderColor: '#d0c9c0',
+    dividerColor: '#ddd6cd',
+    textColorBase: '#3a352f',
+    textColor1: '#262220',
+    textColor2: '#3a352f',
+    textColor3: '#6b6359',
+    textColorDisabled: '#aaa298',
+    placeholderColor: '#948b80',
+    placeholderColorDisabled: '#bab2a8',
+    boxShadow1: '0 1px 4px rgba(74, 62, 48, 0.08)',
+    boxShadow2: '0 4px 14px rgba(74, 62, 48, 0.1)',
+    boxShadow3: '0 8px 24px rgba(74, 62, 48, 0.12)',
+  },
 }
 
 const darkShell: ThemePreset['shell'] = {
@@ -94,13 +125,13 @@ const darkShell: ThemePreset['shell'] = {
   highlightText: '#f0c78a',
 }
 
-/** Official themes only: `light` (Naive default) / `dark` (Naive `darkTheme`). */
+/** One softened neutral light theme and Naive's dark theme. */
 export const THEME_PRESETS: ThemePreset[] = [
   {
     id: 'light',
     label: '浅色',
     dark: false,
-    overrides: {},
+    overrides: lightOverrides,
     shell: lightShell,
   },
   {
