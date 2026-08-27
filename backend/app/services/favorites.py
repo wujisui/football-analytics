@@ -17,6 +17,7 @@ from app.models.favorite_fixture import (
 from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.schemas.response import FavoriteFixtureResponse
+from app.services.ah_features import handicap_pick_from_lean
 from app.services.user_scope import ANON_OWNER_ID, normalize_owner_id, owner_is
 
 
@@ -208,6 +209,16 @@ async def list_auto_pick_responses(
             .order_by(FavoriteFixture.saved_at.desc())
         )
     ).scalars().all()
+    # Hide stale rows written before standalone AH pushes were excluded from
+    # auto-pick generation. The next ranking pass deletes/replaces them.
+    fav_rows = [
+        row
+        for row in fav_rows
+        if not (
+            row.auto_market == "ah"
+            and handicap_pick_from_lean(row.auto_lean) == "让平"
+        )
+    ]
     return await _hydrate_favorite_responses(
         db, fav_rows, handicap_ruleset=handicap_ruleset
     )

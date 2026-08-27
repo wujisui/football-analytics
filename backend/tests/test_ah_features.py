@@ -189,7 +189,7 @@ class AhFeaturesTests(unittest.TestCase):
         )
         self.assertEqual(
             adapt_handicap_lean_for_ruleset("让平(-1)", ruleset="asian"),
-            "让平(-1)",
+            "走水(-1)",
         )
 
     def test_settle_quarter_total_split(self) -> None:

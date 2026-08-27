@@ -631,8 +631,9 @@ def adapt_handicap_lean_for_ruleset(
 ) -> str | None:
     """Remap frozen lean copy for the reader's ruleset without mutating storage.
 
-    Asian drops 让平 from dual picks; Jingcai shows the whole-goal line it
-    actually settles on, so 让胜(-0.5) reads 让胜(-1).
+    Asian renders a standalone 让平 as non-bettable 走水 and drops 让平 from
+    dual picks. Jingcai shows the whole-goal line it actually settles on, so
+    让胜(-0.5) reads 让胜(-1).
     """
     shown = display_handicap_lean(lean, line_f)
     if not shown:
@@ -651,7 +652,9 @@ def adapt_handicap_lean_for_ruleset(
         return shown
     remaining = {pick for pick in picks if pick != "让平"}
     if not remaining:
-        return shown
+        if resolved is None:
+            return "走水"
+        return f"走水({format_ah_line(resolved)})"
     return format_handicap_lean_text(_lean_base(remaining), resolved)
 
 

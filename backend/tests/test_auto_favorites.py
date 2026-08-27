@@ -92,6 +92,22 @@ def test_double_chance_is_rejected() -> None:
     assert "让胜/负" not in lean
 
 
+def test_standalone_handicap_push_is_not_an_auto_pick() -> None:
+    odds = {
+        "match_winner": {"home": "1.18", "draw": "7.30", "away": "14.00"},
+        "asian_handicap": {"home": "1.90", "away": "1.95", "line": "-2"},
+        "goals_ou": {"home": "1.92", "away": "1.92", "line": "3.25"},
+        "both_teams_score": {"home": "2.20", "away": "1.65"},
+    }
+    _score, market, lean = score_fixture_confidence(
+        _stored(handicap_lean="让平(-2)"),
+        odds=odds,
+        feature=SimpleNamespace(ah_cover_prob=0.80),
+    )
+    assert market != "ah"
+    assert lean != "让平(-2)"
+
+
 def test_exact_score_is_never_an_auto_pick_market() -> None:
     """比分提示 remains display-only; 9%-type hit rates cannot be a main pick."""
     odds = {

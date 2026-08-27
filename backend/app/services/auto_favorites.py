@@ -153,6 +153,10 @@ def _score_handicap(
     single = handicap_pick_from_lean(lean)
     if single is None:
         return 0.0, ""
+    # Asian handicap has no bettable draw selection: an exact-margin push
+    # refunds the stake, so it must never become the daily main pick.
+    if single == "让平":
+        return 0.0, ""
     cover = getattr(feature, "ah_cover_prob", None)
     if cover is not None:
         try:
@@ -164,8 +168,6 @@ def _score_handicap(
                 return max(1.0 - cover_f, 0.0), lean
             if single == "让胜":
                 return max(cover_f, 0.0), lean
-            # 让平 is rare; treat as max side confidence when model exists.
-            return max(cover_f, 1.0 - cover_f), lean
     ah = odds.get("asian_handicap") if isinstance(odds, dict) else None
     if not isinstance(ah, dict):
         return 0.0, ""
@@ -177,7 +179,7 @@ def _score_handicap(
         return away_p, lean
     if single == "让胜":
         return home_p, lean
-    return max(home_p, away_p), lean
+    return 0.0, ""
 
 
 def _score_ou(stored: PreMatchData, odds: dict[str, Any] | None) -> tuple[float, str]:

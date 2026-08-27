@@ -27,8 +27,9 @@ export function handicapLeanLabel(text: string | null | undefined): string {
 const LEAN_LINE_RE = /[（(]\s*([+-]?\d+(?:\.\d+)?)\s*[）)]\s*$/
 
 /**
- * Remap a frozen lean for the reader's ruleset: Asian drops 让平 from dual
- * picks, 竞彩 shows the whole-goal line it settles on（让胜(-0.5) → 让胜(-1)）。
+ * Remap a frozen lean for the reader's ruleset: Asian renders a standalone
+ * 让平 as non-bettable 走水 and drops 让平 from dual picks; 竞彩 shows the
+ * whole-goal line it settles on（让胜(-0.5) → 让胜(-1)）。
  */
 export function adaptHandicapLean(
   text: string | null | undefined,
@@ -43,6 +44,9 @@ export function adaptHandicapLean(
     return value.replace(LEAN_LINE_RE, `(${formatSignedHandicapLine(rounded)})`)
   }
   if (!value.includes('平')) return value
+  if (/^让平(?:\s*[（(]|$)/.test(value)) {
+    return value.replace('让平', '走水')
+  }
   const stripped = value.replace(/\/平|平\//g, '')
   return stripped.trim() || value
 }
