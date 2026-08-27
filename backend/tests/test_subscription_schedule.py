@@ -1,7 +1,7 @@
 """Subscription schedule and rolling fixture-window helpers."""
 
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.fixtures_sync import sync_dates
@@ -184,9 +184,12 @@ def test_subscribed_full_batch_only_fetches_missing_future_days() -> None:
             league_ids=None,
         )
         assert fetcher.sync_odds_for_dates.await_count == 2
-        tomorrow_call, today_call = fetcher.sync_odds_for_dates.await_args_list
-        assert tomorrow_call.kwargs["refresh_existing"] is False
-        assert tomorrow_call.kwargs["set_opening"] is True
+        future_call, today_call = fetcher.sync_odds_for_dates.await_args_list
+        future_days = future_call.args[0]
+        assert len(future_days) == fs.FULL_BATCH_FUTURE_ODDS_DAYS
+        assert future_days[0] + timedelta(days=2) == future_days[-1]
+        assert future_call.kwargs["refresh_existing"] is False
+        assert future_call.kwargs["set_opening"] is True
         assert today_call.kwargs["refresh_existing"] is True
         assert today_call.kwargs["set_opening"] is True
         detail.assert_awaited_once()

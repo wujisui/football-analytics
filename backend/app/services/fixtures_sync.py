@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 _sync_lock = asyncio.Lock()
 SUBSCRIBED_LIGHT_ODDS_BUDGET = 100
+# 11:00 / 立即同步：今天刷即时盘，另拉未来三天缺盘（首次可用冻初盘）。
+FULL_BATCH_FUTURE_ODDS_DAYS = 3
 
 
 def sync_dates(
@@ -173,6 +175,10 @@ async def scheduled_fixtures_sync(
     subscribed = not free_quota
     primary_league_ids, _ = await get_hot_league_ids()
     tomorrow = today + timedelta(days=1)
+    future_odds_days = [
+        today + timedelta(days=offset)
+        for offset in range(1, FULL_BATCH_FUTURE_ODDS_DAYS + 1)
+    ]
     result_days = clip_fixture_dates_for_plan(
         result_days_for_batch(
             today,
@@ -267,7 +273,7 @@ async def scheduled_fixtures_sync(
                 # batch also repairs legacy current-only rows via set_opening.
                 if subscribed and not fetcher.quota_exhausted:
                     odds_updated += await fetcher.sync_odds_for_dates(
-                        [tomorrow],
+                        future_odds_days,
                         refresh_existing=False,
                         league_ids=primary_league_ids,
                         budget=SUBSCRIBED_LIGHT_ODDS_BUDGET,
@@ -286,8 +292,8 @@ async def scheduled_fixtures_sync(
                         set_opening=True,
                     )
 
-                # 4) Subscription standings only. Today + tomorrow are the only
-                # dates whose odds/details are active in the full batch.
+                # 4) Subscription standings only. Details stay today/tomorrow;
+                # odds already covered today plus the next three days above.
                 if subscribed and not fetcher.quota_exhausted:
                     standings_stats = await sync_league_standings_for_dates(
                         fetcher,
