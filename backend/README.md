@@ -204,7 +204,8 @@ python -m unittest discover -s tests -v
 
 1. 赛前分析 / 赔率入库写入 `match_features` 的 AH 字段
 2. 固定同步批次回写赛果并打 `ah_label`；样本 ≥ `ML_AH_MIN_TRAIN_SAMPLES`（默认 80）且有新增 → 自动训练
-3. 推断优先级：结构性双选 > ML > multifactor 启发式（相对水位 + 1X2 分歧）
+3. 推断优先级：结构性双选 > 参考比分 > ML > multifactor 启发式（相对水位 + 1X2 分歧）
+4. 出口统一过一道互斥闸 `_agree_with_recommendation`：`|让球线| ≤ 0.5` 时结算只看胜平负结果，若当前一侧会在推荐结果上输掉全注（胜/平 配 让负(-0.25)）就改取镜像侧并把原因写进 `handicap_market_note`；四分盘平局只输半、不算互斥，`|让球线| > 0.5` 看净胜球不受约束。写 `match_features` 的 `ah_cover_prob` 不传胜平负推荐，训练标签不受该闸影响
 
 配置：`ML_AH_MIN_TRAIN_SAMPLES`、`ML_AH_AUTO_TRAIN`。
 ## API 接口

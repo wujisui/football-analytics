@@ -20,6 +20,7 @@ from app.services.ah_features import (
     extract_main_ah_line,
     format_handicap_lean_text,
     loads_ah_features,
+    outcome_settlement_units,
     parse_score_hint,
     pick_to_lean,
     settle_ah_label,
@@ -237,6 +238,53 @@ def _pick_from_score_hint(score_hint: str | None, line_f: float) -> HandicapPred
     return None
 
 
+_OPPOSITE_PICK = {"cover": "no_cover", "no_cover": "cover"}
+
+
+def _loses_outright_on_recommendation(
+    line_f: float | None,
+    pick: str,
+    recommendation: str,
+) -> bool:
+    """True when this side loses the whole stake on a recommended 1X2 outcome."""
+    from app.services.prediction import recommendation_outcomes
+
+    outcomes = recommendation_outcomes(recommendation)
+    if not outcomes:
+        return False
+    units = outcome_settlement_units(line_f, pick_to_lean(pick))
+    if units is None:
+        return False
+    return any(units.get(outcome, 0.0) <= -1.0 for outcome in outcomes)
+
+
+def _agree_with_recommendation(
+    pred: HandicapPrediction,
+    recommendation: str,
+) -> HandicapPrediction:
+    """Never advise the handicap side the 1X2 lean expects to lose outright.
+
+    On ±0.25/±0.5 boards the reference score or the AH model can land on the
+    side that busts whenever the recommended result happens — 胜/平 paired with
+    让负(-0.25) loses the full stake on a home win. A draw only costs half a
+    stake there, so the mirrored side is the honest read of the same view.
+    """
+    opposite = _OPPOSITE_PICK.get(pred.pick)
+    if opposite is None:
+        return pred
+    if not _loses_outright_on_recommendation(pred.line_f, pred.pick, recommendation):
+        return pred
+    if _loses_outright_on_recommendation(pred.line_f, opposite, recommendation):
+        return pred
+    return HandicapPrediction(
+        1.0 - pred.cover_prob,
+        opposite,
+        pred.source,
+        pred.line_f,
+        f"与胜平负推荐冲突，已由{pick_to_lean(pred.pick)}改取{pick_to_lean(opposite)}",
+    )
+
+
 def _market_water_note(ah_features: dict[str, float], score_pick: str) -> str:
     """Advanced: when odds-implied side differs from score-settled pick."""
     if score_pick not in {"cover", "no_cover"}:
@@ -293,13 +341,13 @@ def predict_handicap(
     # 单选结构约束（例如「胜」穿半球）优先；双选只保留整数盘。
     # 负/平 + 1-1 +0.25 必须先按比分结算成让胜，而不是让胜/负。
     if structural and "/" not in structural.pick:
-        return structural
+        return _agree_with_recommendation(structural, rec)
 
     score_pick = _pick_from_score_hint(score_hint, line_f)
     if score_pick and score_pick.pick in {"cover", "no_cover", "push"}:
         if _score_agrees_with_1x2(score_hint, rec):
             score_pick.market_note = _market_water_note(ah_features, score_pick.pick)
-            return score_pick
+            return _agree_with_recommendation(score_pick, rec)
 
     if structural:
         return structural
@@ -318,7 +366,9 @@ def predict_handicap(
         source = "multifactor"
 
     pick = "cover" if cover_prob >= 0.5 else "no_cover"
-    return HandicapPrediction(cover_prob, pick, source, line_f)
+    return _agree_with_recommendation(
+        HandicapPrediction(cover_prob, pick, source, line_f), rec
+    )
 
 
 def format_handicap_lean(pred: HandicapPrediction) -> str:

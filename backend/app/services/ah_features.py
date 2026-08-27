@@ -469,6 +469,43 @@ def asian_result_counts_as_hit(result: str | None) -> bool | None:
     return result in {ASIAN_WIN, ASIAN_HALF_WIN}
 
 
+_OUTCOME_REFERENCE_SCORES: dict[str, tuple[int, int]] = {
+    "home": (1, 0),
+    "draw": (1, 1),
+    "away": (0, 1),
+}
+
+_RESULT_STAKE_UNITS: dict[str, float] = {
+    ASIAN_WIN: 1.0,
+    ASIAN_HALF_WIN: 0.5,
+    ASIAN_PUSH: 0.0,
+    ASIAN_HALF_LOSS: -0.5,
+    ASIAN_LOSS: -1.0,
+}
+
+
+def outcome_settlement_units(
+    line_f: float | None,
+    pick: str,
+) -> dict[str, float] | None:
+    """Stake units this pick settles per 胜/平/负 outcome, in Asian rules.
+
+    Only ``|line| <= 0.5`` settles from the match result alone: 1-0 and 4-0 are
+    the same on -0.5 but differ on -1. Deeper lines return ``None`` because the
+    goal margin, not the 1X2 outcome, decides them.
+    """
+    if line_f is None or abs(float(line_f)) > 0.5 + 1e-9:
+        return None
+    units: dict[str, float] = {}
+    for outcome, (home_goals, away_goals) in _OUTCOME_REFERENCE_SCORES.items():
+        result = settle_handicap_pick(home_goals, away_goals, line_f, pick)
+        unit = _RESULT_STAKE_UNITS.get(result or "")
+        if unit is None:
+            return None
+        units[outcome] = unit
+    return units
+
+
 def settle_ah_label(
     home_goals: int | None,
     away_goals: int | None,

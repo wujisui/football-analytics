@@ -32,7 +32,7 @@ class AutoPickSnapshot(Base):
     lean: Mapped[str] = mapped_column(String(64), nullable=False)
     # Probability before the validated per-market calibration layer.
     raw_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Probability after calibration; this value drives expected_return.
+    # Probability after calibration, equivalent-event convergence and market-risk shrink.
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     decimal_odd: Mapped[float | None] = mapped_column(Float, nullable=True)
     expected_return: Mapped[float | None] = mapped_column(Float, nullable=True)

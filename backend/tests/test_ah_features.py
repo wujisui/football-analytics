@@ -70,26 +70,74 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertIsNotNone(mirrored_integer)
         self.assertEqual(mirrored_integer.pick, "cover/push")
 
-    def test_double_chance_quarter_line_follows_score_not_both_sides(self) -> None:
+    def test_double_chance_quarter_line_never_contradicts_1x2(self) -> None:
+        """A draw reference score must not flip the lean onto the busting side.
+
+        On ±0.25 the draw is only a half win / half loss, so it cannot outvote
+        the branch that loses the whole stake: 负/平 with 让胜(+0.25) dies on an
+        away win, 胜/平 with 让负(-0.25) dies on a home win.
+        """
         from app.services.ah_predictor import handicap_bundle_from_markets
 
         away_receive = {
             "available": True,
             "asian_handicap": {"line": "+0.25", "home": 1.88, "away": 1.98},
         }
-        lean, _ = handicap_bundle_from_markets(
+        lean, note = handicap_bundle_from_markets(
             away_receive, "负/平", score_hint="比分:1-1"
         )
-        self.assertEqual(lean, "让胜(+0.25)")
+        self.assertEqual(lean, "让负(+0.25)")
+        self.assertIn("胜平负推荐", note)
 
         home_give = {
             "available": True,
             "asian_handicap": {"line": "-0.25", "home": 1.88, "away": 1.98},
         }
-        lean, _ = handicap_bundle_from_markets(
+        lean, note = handicap_bundle_from_markets(
             home_give, "胜/平", score_hint="比分:1-1"
         )
+        self.assertEqual(lean, "让胜(-0.25)")
+        self.assertIn("胜平负推荐", note)
+
+        # 胜/负 has no non-conflicting side, so the reference score still rules.
+        lean, note = handicap_bundle_from_markets(
+            home_give, "胜/负", score_hint="比分:1-1"
+        )
         self.assertEqual(lean, "让负(-0.25)")
+        self.assertNotIn("胜平负推荐", note)
+
+    def test_quarter_line_keeps_the_side_the_1x2_lean_backs(self) -> None:
+        """负/平 + 主让 0.25 already sits on 让负; the gate leaves it alone."""
+        from app.services.ah_predictor import handicap_bundle_from_markets
+
+        home_receive = {
+            "available": True,
+            "asian_handicap": {"line": "+0.25", "home": 1.78, "away": 2.10},
+        }
+        lean, note = handicap_bundle_from_markets(
+            home_receive, "负/平", score_hint="比分:0-3"
+        )
+        self.assertEqual(lean, "让负(+0.25)")
+        self.assertNotIn("胜平负推荐", note)
+
+    def test_outcome_settlement_units_only_cover_result_settled_lines(self) -> None:
+        from app.services.ah_features import outcome_settlement_units
+
+        self.assertEqual(
+            outcome_settlement_units(-0.25, "让负"),
+            {"home": -1.0, "draw": 0.5, "away": 1.0},
+        )
+        self.assertEqual(
+            outcome_settlement_units(-0.5, "让胜"),
+            {"home": 1.0, "draw": -1.0, "away": -1.0},
+        )
+        self.assertEqual(
+            outcome_settlement_units(0.0, "让胜"),
+            {"home": 1.0, "draw": 0.0, "away": -1.0},
+        )
+        # -1 depends on the winning margin, not the result alone.
+        self.assertIsNone(outcome_settlement_units(-1.0, "让胜"))
+        self.assertIsNone(outcome_settlement_units(-0.75, "让胜"))
 
     def test_settle_three_way_handicap_result(self) -> None:
         # Jingcai keeps 让平 on integer non-zero lines.

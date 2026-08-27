@@ -4,6 +4,7 @@ from datetime import datetime
 from types import SimpleNamespace
 
 from app.services.auto_favorites import (
+    _market_candidates,
     rank_auto_pick_candidates,
     score_auto_pick_candidates,
     score_fixture_confidence,
@@ -38,14 +39,17 @@ def _patch_odds(mod, odds):
 def test_score_prefers_sharp_single_1x2() -> None:
     odds = {
         "match_winner": {"home": "1.60", "draw": "3.80", "away": "5.50"},
-        "asian_handicap": {"home": "1.90", "away": "1.90", "line": "0"},
+        # 让胜(-0.5) settles on the same home win as 胜 but pays less.
+        "asian_handicap": {"home": "1.45", "away": "2.70", "line": "-0.5"},
         "goals_ou": {"home": "2.10", "away": "1.70", "line": "2.5"},
         "both_teams_score": {"home": "2.00", "away": "1.75"},
     }
-    score, market, lean = score_fixture_confidence(_stored(), odds=odds)
+    score, market, lean = score_fixture_confidence(
+        _stored(handicap_lean="让胜(-0.5)"), odds=odds
+    )
     assert market == "1x2"
     assert lean == "胜"
-    assert score == 0.62 * 1.60 - 1.0
+    assert -0.05 < score < 0.0
 
 
 def test_score_uses_validated_calibration_before_expected_return() -> None:
@@ -108,6 +112,153 @@ def test_standalone_handicap_push_is_not_an_auto_pick() -> None:
     assert lean != "让平(-2)"
 
 
+def test_plus_half_equivalent_away_pick_uses_higher_actual_price() -> None:
+    """客胜与主队 +0.5 让负是同一事件，不应被 AH 独立概率扭曲。"""
+    odds = {
+        "match_winner": {"home": "3.80", "draw": "3.40", "away": "2.00"},
+        "asian_handicap": {"home": "1.90", "away": "2.08", "line": "+0.5"},
+        "goals_ou": {"home": "1.20", "away": "4.50", "line": "2.5"},
+        "both_teams_score": {"home": "1.20", "away": "4.50"},
+    }
+    candidates = _market_candidates(
+        _stored(
+            recommendation="负",
+            handicap_lean="让负(+0.5)",
+            home_win_prob=0.16,
+            draw_prob=0.20,
+            away_win_prob=0.64,
+        ),
+        odds=odds,
+        # Deliberately contradictory AH model: it must not change an equivalent event.
+        feature=SimpleNamespace(ah_cover_prob=0.95),
+    )
+    result_candidates = [
+        item for item in candidates if item.event_key == "result:away"
+    ]
+    assert {item.market for item in result_candidates} == {"1x2", "ah"}
+    assert len({item.raw_confidence for item in result_candidates}) == 1
+    assert len({item.confidence for item in result_candidates}) == 1
+
+    score, market, lean = score_fixture_confidence(
+        _stored(
+            recommendation="负",
+            handicap_lean="让负(+0.5)",
+            home_win_prob=0.16,
+            draw_prob=0.20,
+            away_win_prob=0.64,
+        ),
+        odds=odds,
+        feature=SimpleNamespace(ah_cover_prob=0.95),
+    )
+    assert score > 0
+    assert market == "ah"
+    assert lean == "让负(+0.5)"
+
+
+def test_minus_half_no_cover_uses_draw_plus_away_probability() -> None:
+    """主队 -0.5 让负包含平局和客胜，应作为更稳的复合事件估值。"""
+    odds = {
+        "match_winner": {"home": "2.50", "draw": "3.00", "away": "3.00"},
+        "asian_handicap": {"home": "2.05", "away": "1.83", "line": "-0.5"},
+        "goals_ou": {"home": "1.20", "away": "4.50", "line": "2.5"},
+        "both_teams_score": {"home": "1.20", "away": "4.50"},
+    }
+    candidates = _market_candidates(
+        _stored(
+            recommendation="负",
+            handicap_lean="让负(-0.5)",
+            home_win_prob=0.30,
+            draw_prob=0.30,
+            away_win_prob=0.40,
+        ),
+        odds=odds,
+        feature=SimpleNamespace(ah_cover_prob=0.99),
+    )
+    handicap = next(item for item in candidates if item.market == "ah")
+    assert handicap.raw_confidence == 0.70
+
+    score, market, lean = score_fixture_confidence(
+        _stored(
+            recommendation="负",
+            handicap_lean="让负(-0.5)",
+            home_win_prob=0.30,
+            draw_prob=0.30,
+            away_win_prob=0.40,
+        ),
+        odds=odds,
+        feature=SimpleNamespace(ah_cover_prob=0.99),
+    )
+    assert score > 0
+    assert market == "ah"
+    assert lean == "让负(-0.5)"
+
+
+def test_quarter_line_prices_the_half_refund_instead_of_a_two_way_bet() -> None:
+    """-0.25 让胜 only loses half a stake on a draw, and 平 never fully wins."""
+    odds = {
+        "match_winner": {"home": "2.50", "draw": "3.00", "away": "3.00"},
+        "asian_handicap": {"home": "1.94", "away": "1.89", "line": "-0.25"},
+    }
+    candidates = _market_candidates(
+        _stored(
+            recommendation="胜/平",
+            handicap_lean="让胜(-0.25)",
+            home_win_prob=0.43,
+            draw_prob=0.24,
+            away_win_prob=0.33,
+        ),
+        odds=odds,
+        feature=SimpleNamespace(ah_cover_prob=0.90),
+    )
+    handicap = next(item for item in candidates if item.market == "ah")
+    # Half the stake rides on the draw, so 12% of it is refunded.
+    assert handicap.stake_share == 0.88
+    assert handicap.raw_confidence == 0.43 / 0.88
+    # The independent AH model claimed a 0.90 cover, which as a plain two-way
+    # bet would read as a huge edge; off the 1X2 board it is a losing price.
+    assert handicap.raw_confidence < 0.55
+    assert handicap.expected_return < 0
+
+
+def test_level_line_refunds_the_draw_instead_of_counting_it_as_a_loss() -> None:
+    odds = {
+        "match_winner": {"home": "2.10", "draw": "3.30", "away": "3.60"},
+        "asian_handicap": {"home": "1.95", "away": "1.95", "line": "0"},
+    }
+    candidates = _market_candidates(
+        _stored(
+            recommendation="胜",
+            handicap_lean="让胜(0)",
+            home_win_prob=0.45,
+            draw_prob=0.28,
+            away_win_prob=0.27,
+        ),
+        odds=odds,
+    )
+    handicap = next(item for item in candidates if item.market == "ah")
+    assert handicap.stake_share == 0.72
+    assert handicap.raw_confidence == 0.45 / 0.72
+
+
+def test_large_model_market_gap_is_conservatively_shrunk() -> None:
+    odds = {
+        "match_winner": {"home": "3.80", "draw": "3.40", "away": "2.00"},
+        "asian_handicap": {"home": "1.90", "away": "2.08", "line": "+0.5"},
+    }
+    candidates = _market_candidates(
+        _stored(
+            recommendation="负",
+            handicap_lean="让负(+0.5)",
+            home_win_prob=0.03,
+            draw_prob=0.04,
+            away_win_prob=0.93,
+        ),
+        odds=odds,
+    )
+    away = next(item for item in candidates if item.market == "1x2")
+    assert away.implied_probability < away.confidence < away.raw_confidence
+
+
 def test_exact_score_is_never_an_auto_pick_market() -> None:
     """比分提示 remains display-only; 9%-type hit rates cannot be a main pick."""
     odds = {
@@ -146,8 +297,9 @@ def test_prefers_better_value_market_over_tiny_1x2() -> None:
     )
     assert market == "ah"
     assert "让胜" in lean
-    assert score == 0.62 * 1.90 - 1.0
-    assert score > 0.90 * 1.07 - 1.0
+    expected_confidence = (0.62 + 0.5) / 2
+    assert score == (expected_confidence * 1.90 - 1.0) / (1.90 - 1.0)
+    assert score > 0.0
 
 
 def test_rank_still_fills_four_when_only_short_odds_exist() -> None:
