@@ -6,9 +6,7 @@ import {
   triggerScheduledFixturesSync,
   triggerScheduledResultsSync,
 } from '@/api/admin'
-import { useFavoriteFixtures } from '@/composables/useFavoriteFixtures'
-import { invalidatePrematchListCache } from '@/composables/useHomeFixtures'
-import { invalidateFinishedResultsCache } from '@/composables/useResultsLeagues'
+import { notifyLocalDataChanged } from '@/composables/useClientDataRevision'
 import { notifyError, notifySuccess } from '@/utils/globalNotify'
 
 const FULL_TASK = 'scheduled_fixtures_sync'
@@ -42,7 +40,6 @@ function taskNameFor(kind: SyncKind) {
 }
 
 export function useAdminSync() {
-  const { refresh: refreshFavorites } = useFavoriteFixtures()
   const busy = computed(
     () =>
       fullSyncing.value ||
@@ -74,11 +71,7 @@ export function useAdminSync() {
         const detail = task.error || `后端返回状态：${task.status}`
         flag.value = false
         if (ok) {
-          // Both batches rewrite settled scores; drop the 赛果 day/history cache
-          // so the list re-reads instead of waiting for a manual page refresh.
-          if (kind === 'prematchOdds') invalidatePrematchListCache()
-          else invalidateFinishedResultsCache()
-          await refreshFavorites()
+          await notifyLocalDataChanged()
           if (kind === 'full') {
             notifySuccess('同步官方 API 数据完成', '赛程、盘口、赛果与自动推荐已更新')
           } else if (kind === 'results') {

@@ -5,6 +5,13 @@ import type {
   TodayFixturesResponse,
 } from './types'
 
+export async function fetchClientDataRevision(): Promise<string> {
+  const { data } = await apiClient.get<{ revision: string }>(
+    '/fixtures/data-revision',
+  )
+  return data.revision
+}
+
 export async function fetchTodayFixtures(options?: {
   leagueIds?: number[]
   date?: string

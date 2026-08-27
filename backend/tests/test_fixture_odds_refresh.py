@@ -27,10 +27,15 @@ def test_admin_refresh_accepts_non_hot_prematch_fixture() -> None:
         fetcher.__aenter__ = AsyncMock(return_value=fetcher)
         fetcher.__aexit__ = AsyncMock(return_value=False)
 
-        with patch.object(fixtures, "FootballFetcher", return_value=fetcher):
+        publish = AsyncMock()
+        with (
+            patch.object(fixtures, "FootballFetcher", return_value=fetcher),
+            patch.object(fixtures, "touch_client_data_revision", publish),
+        ):
             result = await fixtures.refresh_fixture_odds(987, None, db)
 
         fetcher.refresh_odds_for_fixture.assert_awaited_once_with(987)
+        publish.assert_awaited_once_with(db)
         assert result == {
             "fixture_id": 987,
             "updated": True,

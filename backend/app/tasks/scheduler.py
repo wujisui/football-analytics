@@ -187,6 +187,10 @@ async def run_scheduled_fixtures_sync(
             return
         if mode == "full":
             await clean_old_data()
+        from app.services.runtime_settings import touch_client_data_revision
+
+        async with AsyncSessionLocal() as session:
+            await touch_client_data_revision(session)
         _set_task_status(
             task_name,
             "completed",
@@ -253,6 +257,10 @@ async def run_free_quota_fixture_rollover() -> None:
     start_count = get_cache_service().api_request_count
     try:
         saved = await sync_free_quota_rollover_fixtures()
+        from app.services.runtime_settings import touch_client_data_revision
+
+        async with AsyncSessionLocal() as session:
+            await touch_client_data_revision(session)
         _set_task_status(
             task_name,
             "completed",
@@ -307,6 +315,10 @@ async def clean_old_data() -> None:
                 await train_model_from_db(session)
                 await train_ah_model_from_db(session)
                 await train_goal_model_from_db(session)
+
+            from app.services.runtime_settings import touch_client_data_revision
+
+            await touch_client_data_revision(session)
 
         log_dir = Path(settings.LOG_DIR)
         if log_dir.exists():
@@ -383,9 +395,11 @@ async def run_daily_auto_favorites() -> None:
     logger.info("Task %s started.", task_name)
     try:
         from app.services.auto_favorites import sync_daily_auto_favorites
+        from app.services.runtime_settings import touch_client_data_revision
 
         async with AsyncSessionLocal() as session:
             result = await sync_daily_auto_favorites(session)
+            await touch_client_data_revision(session)
         _set_task_status(
             task_name,
             "completed",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Literal
 
 from sqlalchemy import select
@@ -20,6 +21,7 @@ KEY_SUBSCRIPTION_EARLY_ODDS = "subscription_early_odds"
 KEY_SUBSCRIPTION_DENSE_ODDS = "subscription_dense_odds"
 KEY_LAST_SYNC_RUN = "last_sync_run"
 KEY_API_SPORTS_KEY = "api_sports_key"
+KEY_CLIENT_DATA_REVISION = "client_data_revision"
 
 SettingSource = Literal["db", "env"]
 
@@ -249,6 +251,33 @@ async def set_last_sync_run(session: AsyncSession, run: dict) -> dict:
         row.value = payload
     await session.commit()
     return run
+
+
+async def get_client_data_revision(
+    session: AsyncSession | None = None,
+) -> str:
+    """Persistent token changed after list/recommendation data is rewritten."""
+
+    async def _read(db: AsyncSession) -> str:
+        row = await get_setting_row(db, KEY_CLIENT_DATA_REVISION)
+        return (row.value if row else "0").strip() or "0"
+
+    if session is not None:
+        return await _read(session)
+    async with AsyncSessionLocal() as db:
+        return await _read(db)
+
+
+async def touch_client_data_revision(session: AsyncSession) -> str:
+    """Publish one completed local-data mutation to connected clients."""
+    revision = str(time.time_ns())
+    row = await get_setting_row(session, KEY_CLIENT_DATA_REVISION)
+    if row is None:
+        session.add(AppSetting(key=KEY_CLIENT_DATA_REVISION, value=revision))
+    else:
+        row.value = revision
+    await session.commit()
+    return revision
 
 
 async def get_hot_league_ids(

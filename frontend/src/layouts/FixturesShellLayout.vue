@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { FilterOutline } from '@vicons/ionicons5'
-import { computed, onActivated } from 'vue'
+import { computed, onActivated, onDeactivated } from 'vue'
 import { useRoute } from 'vue-router'
 
 import HomeDateStrip from '@/layouts/components/HomeDateStrip.vue'
@@ -13,6 +13,7 @@ import {
   useFixturesShell,
 } from '@/layouts/composables/useFixturesShell'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { startClientDataRevisionMonitor } from '@/composables/useClientDataRevision'
 
 defineOptions({ name: 'FixturesShellLayout' })
 
@@ -51,13 +52,20 @@ const showShellLeagueNav = computed(
  * 多刷一遍。首次激活按当前路由决定是否拉赛前列表，之后回到 shell 只同步路由。
  */
 let shellVisited = false
+let stopDataRevisionMonitor: (() => void) | null = null
 onActivated(() => {
+  stopDataRevisionMonitor?.()
+  stopDataRevisionMonitor = startClientDataRevisionMonitor()
   if (!shellVisited) {
     shellVisited = true
     bootstrapFixturesShell({ reloadPrematch: route.name !== 'results' })
     return
   }
   bootstrapFixturesShell()
+})
+onDeactivated(() => {
+  stopDataRevisionMonitor?.()
+  stopDataRevisionMonitor = null
 })
 </script>
 

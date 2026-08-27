@@ -23,6 +23,7 @@ import {
   hasSessionShellDay,
   useFixturesShell,
 } from '@/layouts/composables/useFixturesShell'
+import {useClientDataEpoch} from '@/composables/clientDataEpoch'
 import {useHorizontalSwipe} from '@/composables/useHorizontalSwipe'
 import {useIsPhone} from '@/composables/useMediaQuery'
 import {useMarkedFixture} from '@/composables/useMarkedFixture'
@@ -106,8 +107,8 @@ const {
   scheduleFixtures,
   resultsLoadedDay,
   resultsHistory,
-  resultsDataRevision,
 } = useResultsLeagues()
+const clientDataEpoch = useClientDataEpoch()
 const {
   selectedDay,
   selectedLeagueId,
@@ -478,12 +479,10 @@ async function refreshLocalResults() {
   }
 }
 
-watch(resultsDataRevision, () => {
-  // Prematch rows adapt the lean client-side; only settled days need a re-read.
-  if (isScheduleFutureDay.value) return
-  // useResultsLeagues already dropped the cached hits; re-settle the open day.
+watch(clientDataEpoch, () => {
+  if (route.name !== 'results') return
   void loadSelectedDay(true)
-  void loadHistory(true)
+  if (!isScheduleFutureDay.value) void loadHistory(true)
 })
 
 watch(isScheduleFutureDay, (future, wasFuture) => {
@@ -541,6 +540,8 @@ onActivated(() => {
     }
     if (resultsLoadedDay.value !== selectedDay.value) {
       void loadSelectedDay()
+    } else if (!restoreCachedResultsDay(selectedDay.value, true)) {
+      void loadSelectedDay(true)
     }
     return
   }
@@ -565,6 +566,11 @@ onActivated(() => {
   }
   if (resultsLoadedDay.value !== selectedDay.value) {
     void loadSelectedDay()
+    return
+  }
+  if (!restoreCachedResultsDay(selectedDay.value, false)) {
+    void loadSelectedDay(true)
+    void loadHistory(true)
   }
 })
 </script>

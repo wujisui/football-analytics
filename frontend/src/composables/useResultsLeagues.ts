@@ -1,5 +1,6 @@
 import { computed, ref, watch } from 'vue'
 
+import { bumpClientDataEpoch } from '@/composables/clientDataEpoch'
 import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 
 import type { ResultFixture, ResultsHistoryResponse } from '@/api/fixtures'
@@ -193,16 +194,11 @@ export function invalidateCachedResultsDay(day: string, schedule: boolean) {
   else resultsByDay.delete(day)
 }
 
-/**
- * Bumped whenever settled rows change outside the 赛果 page (盘口规则切换、
- * 管理员回写终场比分)。赛果页监听它重新读取当前日期与走势，避免必须 F5。
- */
-const resultsDataRevision = ref(0)
-
 export function invalidateFinishedResultsCache() {
   resultsByDay.clear()
+  scheduleByDay.clear()
   resultsHistory.value = null
-  resultsDataRevision.value += 1
+  bumpClientDataEpoch()
 }
 
 const { ruleset: handicapRuleset } = useHandicapRuleset()
@@ -475,7 +471,6 @@ export function useResultsLeagues() {
     scheduleMode,
     resultsLoadedDay,
     resultsHistory,
-    resultsDataRevision,
     resultsTrackedIds,
     setResultsTrackedIds,
     commitResultsTrackedIds,

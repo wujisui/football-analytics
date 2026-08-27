@@ -6,6 +6,7 @@ import { useMessage } from 'naive-ui'
 import BasicInfo from '@/views/Detail/components/BasicInfo.vue'
 import TabsContainer from '@/views/Detail/components/TabsContainer.vue'
 import { useFixtureAnalysis } from '@/views/Detail/composables/useFixtureAnalysis'
+import { notifyLocalDataChanged } from '@/composables/useClientDataRevision'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { parseDetailTab, peekDetailCrumb, type DetailTab } from '@/utils/detailNav'
 import { refreshFixtureOdds } from '@/api/fixtures'
@@ -41,6 +42,7 @@ async function onRefreshOdds() {
       return
     }
     await reload()
+    await notifyLocalDataChanged()
     message.success(
       result.api_remaining == null
         ? '本场盘口已更新'

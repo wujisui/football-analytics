@@ -22,6 +22,7 @@ import {
   type HotLeaguesSetting,
   type OfficialLeagueLookup,
 } from '@/api/admin'
+import { notifyLocalDataChanged } from '@/composables/useClientDataRevision'
 
 defineOptions({ name: 'MineHotLeagues' })
 
@@ -216,6 +217,7 @@ async function save() {
   saving.value = true
   try {
     applySetting(await updateHotLeaguesSetting(selectedIds.value.map(Number)))
+    await notifyLocalDataChanged()
     message.success(
       selectedIds.value.length
         ? `已保存 ${selectedIds.value.length} 项热门；如需立即拉取新增数据，请到运维管理点「立即同步」`

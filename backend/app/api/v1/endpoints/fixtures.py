@@ -59,6 +59,10 @@ from app.services.results_capture import (
     results_list_score,
     score_refresh_ttl,
 )
+from app.services.runtime_settings import (
+    get_client_data_revision,
+    touch_client_data_revision,
+)
 from app.services.league_names import league_name_zh
 from app.services.league_standings import (
     fixture_standing_key,
@@ -69,6 +73,16 @@ from app.services.team_names import team_name_zh
 
 router = APIRouter(prefix="/fixtures", tags=["fixtures"])
 logger = logging.getLogger(__name__)
+
+
+@router.get("/data-revision")
+async def client_data_revision(
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Lightweight local token; checking it never calls the official API."""
+    set_no_store_headers(response)
+    return {"revision": await get_client_data_revision(db)}
 
 
 @router.post("/{fixture_id}/odds/refresh")
@@ -89,6 +103,8 @@ async def refresh_fixture_odds(
     async with FootballFetcher(session=db) as fetcher:
         updated = await fetcher.refresh_odds_for_fixture(fixture_id)
         remaining = fetcher.last_remaining_requests
+    if updated:
+        await touch_client_data_revision(db)
     return {
         "fixture_id": fixture_id,
         "updated": updated,

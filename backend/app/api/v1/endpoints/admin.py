@@ -33,6 +33,7 @@ from app.services.runtime_settings import (
     set_subscription_dense_odds,
     set_subscription_early_odds,
     set_subscription_enabled,
+    touch_client_data_revision,
 )
 from app.tasks.scheduler import (
     PREMATCH_ODDS_TASK,
@@ -674,6 +675,7 @@ async def patch_hot_leagues_setting(
     db: AsyncSession = Depends(get_db),
 ) -> HotLeaguesSetting:
     await set_hot_league_ids(db, body.league_ids)
+    await touch_client_data_revision(db)
     return await _hot_leagues_payload(db)
 
 

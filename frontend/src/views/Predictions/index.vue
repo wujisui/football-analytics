@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onActivated, ref } from 'vue'
+import { onActivated, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import FixtureList from '@/components/FixtureList.vue'
@@ -10,11 +11,14 @@ import PullToRefresh from '@/components/PullToRefresh.vue'
 import { MAX_CALC_MATCHES } from '@/utils/betCalculator'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
-import { useHomeFixtures } from '@/composables/useHomeFixtures'
+import { useHomeFixtures, isPrematchListCacheFresh } from '@/composables/useHomeFixtures'
+import { useClientDataEpoch } from '@/composables/clientDataEpoch'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { useScrollRestore } from '@/composables/useScrollRestore'
 
 defineOptions({ name: 'Predictions' })
+
+const route = useRoute()
 
 const isPhone = useIsPhone()
 const listShellRef = ref<HTMLElement | null>(null)
@@ -34,13 +38,27 @@ const {
 } = useFixturesShell()
 
 const { error, syncHomeListAfterDetail } = useHomeFixtures()
+const clientDataEpoch = useClientDataEpoch()
 const { matchCount } = useBetCalculator()
 
 const colContentStyle =
   'position: relative; min-height: 0; overflow: hidden; padding: 0;'
 
+let prematchVisited = false
 onActivated(() => {
   syncHomeListAfterDetail(homeDay.value, shellTrackedIds.value)
+  if (
+    prematchVisited &&
+    !isPrematchListCacheFresh(undefined, shellTrackedIds.value)
+  ) {
+    void reloadPrematchDay(true)
+  }
+  prematchVisited = true
+})
+
+watch(clientDataEpoch, () => {
+  if (route.name !== 'predictions') return
+  void reloadPrematchDay(true)
 })
 </script>
 

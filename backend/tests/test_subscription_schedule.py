@@ -300,6 +300,29 @@ def test_prematch_odds_batch_only_refreshes_explicit_fixture_ids() -> None:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
 
+def test_client_data_revision_is_persisted_after_batch_mutation() -> None:
+    from app.services import runtime_settings
+
+    row = MagicMock(value="old")
+    session = AsyncMock()
+
+    async def _run() -> str:
+        with (
+            patch.object(
+                runtime_settings,
+                "get_setting_row",
+                AsyncMock(return_value=row),
+            ),
+            patch.object(runtime_settings.time, "time_ns", return_value=123456),
+        ):
+            return await runtime_settings.touch_client_data_revision(session)
+
+    revision = asyncio.run(_run())
+    assert revision == "123456"
+    assert row.value == revision
+    session.commit.assert_awaited_once()
+
+
 def test_results_batch_only_captures_scores() -> None:
     from app.services import fixtures_sync as fs
 

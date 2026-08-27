@@ -349,7 +349,6 @@ async def scheduled_fixtures_sync(
         # Results-only does not touch boards, so skip the pick rewrite.
         if mode != "results":
             try:
-                from app.core.database import AsyncSessionLocal
                 from app.services.auto_favorites import sync_daily_auto_favorites
 
                 async with AsyncSessionLocal() as session:
