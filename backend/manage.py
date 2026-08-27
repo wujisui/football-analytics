@@ -200,6 +200,17 @@ async def run_scheduler_loop() -> None:
         shutdown_scheduler()
 
 
+async def run_backfill_league_names() -> None:
+    """Rewrite non-catalog leagues.name from league_names.py (no API)."""
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.league_names import backfill_league_names
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        updated = await backfill_league_names(session)
+    print(f"Updated {updated} league display name(s) to Chinese.")
+
+
 async def run_backfill_team_names() -> None:
     """Rewrite teams.name to Chinese for every mapped club/national team."""
     from app.core.database import AsyncSessionLocal, init_db
@@ -606,8 +617,8 @@ def main() -> None:
     subparsers.add_parser("list-tasks", help="List registered scheduler tasks")
     subparsers.add_parser("run-scheduler", help="Run scheduler in foreground for debugging")
     subparsers.add_parser(
-        "backfill-team-names",
-        help="Rewrite teams.name to Chinese from the built-in id/name map",
+        "backfill-league-names",
+        help="Rewrite non-catalog leagues.name to Chinese from the built-in id/name map",
     )
     subparsers.add_parser(
         "backfill-match-days",
@@ -790,6 +801,7 @@ def main() -> None:
         "cache-stats": run_cache_stats,
         "list-tasks": run_list_tasks,
         "run-scheduler": run_scheduler_loop,
+        "backfill-league-names": run_backfill_league_names,
         "backfill-team-names": run_backfill_team_names,
         "backfill-match-days": run_backfill_match_days,
         "audit-team-names": run_audit_team_names,

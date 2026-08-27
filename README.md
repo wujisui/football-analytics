@@ -86,7 +86,7 @@ npm run dev
 | GET | `/fixtures/today?league_id=39`    | 今日赛程（含分析） |
 | GET | `/fixtures/{fixture_id}/analysis` | 单场比赛分析    |
 
-常用联赛 ID：英超 `39`、西甲 `140`、德甲 `78`、意甲 `135`、法甲 `61`、欧冠 `2`、欧罗巴 `3`、友谊赛 `10`、亚冠精英 `17`、日职联 `98`、韩K联 `292`。
+常用联赛 ID：英超 `39`、西甲 `140`、德甲 `78`、意甲 `135`、法甲 `61`、欧冠 `2`、欧罗巴 `3`、友谊赛 `10`、亚冠精英 `17`、日职联 `98`、韩K联 `292`。完整名称对照见 [docs/LEAGUE_ID_NAMES.md](docs/LEAGUE_ID_NAMES.md)。
 
 管理接口需请求头 `X-Admin-Key`，详见 Swagger 文档。
 

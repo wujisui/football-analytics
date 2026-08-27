@@ -44,6 +44,47 @@ def test_premier_league_does_not_default_to_england() -> None:
     )
 
 
+def test_league_one_scotland_is_not_england() -> None:
+    assert league_name_zh("League One", league_id=41, country="England", settings=SETTINGS) == "英甲"
+    assert league_name_zh("League One", league_id=183, country="Scotland", settings=SETTINGS) == "苏甲"
+    assert league_name_zh("League Two", league_id=184, country="Scotland", settings=SETTINGS) == "苏乙"
+
+
+def test_primera_division_is_country_scoped() -> None:
+    assert league_name_zh("Primera División", league_id=265, country="Chile", settings=SETTINGS) == "智利甲"
+    assert league_name_zh("Primera División", league_id=268, country="Uruguay", settings=SETTINGS) == "乌拉甲"
+    assert league_name_zh("Primera División", league_id=299, country="Venezuela", settings=SETTINGS) == "委内甲"
+    assert league_name_zh("Primera División", settings=SETTINGS) == "Primera División"
+
+
+def test_championship_northern_ireland_is_not_england() -> None:
+    assert (
+        league_name_zh(
+            "Championship", league_id=407, country="Northern-Ireland", settings=SETTINGS
+        )
+        == "北爱冠"
+    )
+
+
+def test_super_liga_serbia_is_not_slovakia() -> None:
+    assert league_name_zh("Super Liga", league_id=286, country="Serbia", settings=SETTINGS) == "塞超"
+    assert (
+        league_name_zh("Super Liga", league_id=332, country="Slovakia", settings=SETTINGS)
+        == "斯洛伐克超"
+    )
+
+
+def test_liga_nacional_honduras_is_not_guatemala() -> None:
+    assert (
+        league_name_zh("Liga Nacional", league_id=234, country="Honduras", settings=SETTINGS)
+        == "洪都拉斯甲"
+    )
+    assert (
+        league_name_zh("Liga Nacional", league_id=339, country="Guatemala", settings=SETTINGS)
+        == "危地马拉甲"
+    )
+
+
 def test_kings_cup_is_not_bound_to_saudi_arabia_by_name() -> None:
     # Thailand runs a King's Cup as well, so the bare name must stay untranslated.
     assert league_name_zh("King's Cup", league_id=504, settings=SETTINGS) == "沙特国王杯"
