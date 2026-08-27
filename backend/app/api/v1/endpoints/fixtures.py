@@ -35,6 +35,7 @@ from app.services.analyzer import (
     AnalyzerService,
 )
 from app.services.calendar_tz import utc_today
+from app.services.fixtures_sync import official_sync_busy
 from app.services.league_catalog import allowed_league_ids
 from app.services.fetcher import FootballFetcher
 from app.services.match_day import fixture_match_day_expr
@@ -92,6 +93,11 @@ async def refresh_fixture_odds(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Admin-only pull: first board freezes opening; later pulls update current."""
+    if official_sync_busy():
+        raise HTTPException(
+            status_code=409,
+            detail="后台官方同步正在执行，本次盘口未更新，请稍后再试",
+        )
     fixture = await db.get(Fixture, fixture_id)
     if fixture is None:
         raise HTTPException(status_code=404, detail="比赛不存在")

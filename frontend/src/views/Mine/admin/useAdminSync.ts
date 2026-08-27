@@ -18,7 +18,9 @@ const PREMATCH_ODDS_TASK = 'prematch_odds_sync'
 const fullSyncing = ref(false)
 const resultsSyncing = ref(false)
 const prematchOddsSyncing = ref(false)
+const officialSyncing = ref(false)
 const pollPromises = new Map<string, Promise<void>>()
+let officialIdlePromise: Promise<void> | null = null
 let statusHydrated = false
 
 function delay(ms: number) {
@@ -44,8 +46,33 @@ export function useAdminSync() {
     () =>
       fullSyncing.value ||
       resultsSyncing.value ||
-      prematchOddsSyncing.value,
+      prematchOddsSyncing.value ||
+      officialSyncing.value,
   )
+
+  function syncOfficialBusy(
+    data: Awaited<ReturnType<typeof fetchAdminTaskStatus>>,
+  ) {
+    officialSyncing.value = Boolean(data.official_sync_busy)
+  }
+
+  function waitForOfficialIdle() {
+    if (officialIdlePromise) return officialIdlePromise
+    officialIdlePromise = (async () => {
+      while (officialSyncing.value) {
+        await delay(1500)
+        try {
+          const data = await fetchAdminTaskStatus()
+          syncOfficialBusy(data)
+        } catch {
+          // Keep the current busy state; a later status read can recover.
+        }
+      }
+    })().finally(() => {
+      officialIdlePromise = null
+    })
+    return officialIdlePromise
+  }
 
   async function waitForCompletion(kind: SyncKind) {
     const taskName = taskNameFor(kind)
@@ -59,6 +86,7 @@ export function useAdminSync() {
         let data: Awaited<ReturnType<typeof fetchAdminTaskStatus>>
         try {
           data = await fetchAdminTaskStatus()
+          syncOfficialBusy(data)
           failures = 0
         } catch (err) {
           failures += 1
@@ -109,6 +137,7 @@ export function useAdminSync() {
     try {
       const data = await fetchAdminTaskStatus()
       statusHydrated = true
+      syncOfficialBusy(data)
       fullSyncing.value =
         data.active_tasks[FULL_TASK]?.status === 'running'
       resultsSyncing.value =
@@ -129,6 +158,14 @@ export function useAdminSync() {
         void waitForCompletion('prematchOdds').catch(() => {
           prematchOddsSyncing.value = false
         })
+      }
+      if (
+        officialSyncing.value
+        && !fullSyncing.value
+        && !resultsSyncing.value
+        && !prematchOddsSyncing.value
+      ) {
+        void waitForOfficialIdle()
       }
     } catch {
       // Admin page setting load reports authentication/network failures.
@@ -195,6 +232,7 @@ export function useAdminSync() {
     syncing: readonly(fullSyncing),
     resultsSyncing: readonly(resultsSyncing),
     prematchOddsSyncing: readonly(prematchOddsSyncing),
+    officialSyncing: readonly(officialSyncing),
     busy,
     runSync,
     runResultsSync,

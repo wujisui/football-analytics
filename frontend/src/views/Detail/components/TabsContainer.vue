@@ -19,6 +19,8 @@ const props = defineProps<{
   pkg: PrematchPackage | null
   loading?: boolean
   oddsRefreshing?: boolean
+  oddsRefreshBlocked?: boolean
+  officialSyncBusy?: boolean
   error?: string
   /** Deep-link from route query `tab`. */
   initialTab?: TabKey | null
@@ -167,6 +169,8 @@ watch(
                     v-else-if="tab.name === 'prediction'"
                     :fixture="fixture"
                     :odds-refreshing="oddsRefreshing"
+                    :odds-refresh-blocked="oddsRefreshBlocked"
+                    :official-sync-busy="officialSyncBusy"
                     @refresh-odds="emit('refresh-odds')"
                   />
                 </template>

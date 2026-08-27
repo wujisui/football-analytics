@@ -217,6 +217,7 @@ export async function updateSubscriptionDenseOdds(
 
 export async function fetchAdminTaskStatus(): Promise<{
   active_tasks: Record<string, AdminTaskState>
+  official_sync_busy: boolean
 }> {
   const { data } = await apiClient.get('/admin/tasks')
   return data

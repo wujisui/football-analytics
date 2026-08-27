@@ -11,6 +11,8 @@ import { hasOddsMarkets, isOpeningDistinct } from '@/utils/oddsDisplay'
 const props = defineProps<{
   fixture: FixtureResponse
   oddsRefreshing?: boolean
+  oddsRefreshBlocked?: boolean
+  officialSyncBusy?: boolean
 }>()
 const emit = defineEmits<{ 'refresh-odds': [] }>()
 const { isAdmin } = useAuthSession()
@@ -56,6 +58,7 @@ const canRefreshOdds = computed(
               secondary
               type="primary"
               :loading="oddsRefreshing"
+              :disabled="oddsRefreshBlocked"
               @click="emit('refresh-odds')"
             >
               更新盘口
@@ -82,6 +85,7 @@ const canRefreshOdds = computed(
               secondary
               type="primary"
               :loading="oddsRefreshing"
+              :disabled="oddsRefreshBlocked"
               @click="emit('refresh-odds')"
             >
               更新盘口
@@ -104,6 +108,7 @@ const canRefreshOdds = computed(
           secondary
           type="primary"
           :loading="oddsRefreshing"
+          :disabled="oddsRefreshBlocked"
           @click="emit('refresh-odds')"
         >
           更新盘口
@@ -111,6 +116,14 @@ const canRefreshOdds = computed(
       </template>
       <n-empty description="暂无官方盘口，可手动更新本场" />
     </n-card>
+
+    <n-alert
+      v-if="canRefreshOdds && officialSyncBusy"
+      type="warning"
+      :bordered="false"
+    >
+      后台官方同步正在执行，暂时不能单独更新本场盘口
+    </n-alert>
 
     <PredictionResult
       :fixture="fixture"

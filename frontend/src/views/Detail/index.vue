@@ -8,8 +8,10 @@ import TabsContainer from '@/views/Detail/components/TabsContainer.vue'
 import { useFixtureAnalysis } from '@/views/Detail/composables/useFixtureAnalysis'
 import { notifyLocalDataChanged } from '@/composables/useClientDataRevision'
 import { useIsPhone } from '@/composables/useMediaQuery'
+import { useAuthSession } from '@/composables/useAuthSession'
 import { parseDetailTab, peekDetailCrumb, type DetailTab } from '@/utils/detailNav'
 import { refreshFixtureOdds } from '@/api/fixtures'
+import { useAdminSync } from '@/views/Mine/admin/useAdminSync'
 
 const props = defineProps<{
   fixtureId: string
@@ -19,6 +21,7 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const isPhone = useIsPhone()
+const { isAdmin } = useAuthSession()
 const contentStyle = computed(
   () =>
     `height: 100%; box-sizing: border-box; padding: ${
@@ -31,9 +34,24 @@ const { data, loading, error, ensureLoaded, reload, reset } =
   useFixtureAnalysis(fixtureIdNumber)
 const contentLoading = computed(() => loading.value || !data.value)
 const oddsRefreshing = ref(false)
+const syncStatusChecking = ref(true)
+const { busy: officialSyncBusy, hydrateStatus } = useAdminSync()
+const oddsRefreshBlocked = computed(
+  () => syncStatusChecking.value || officialSyncBusy.value,
+)
 
 async function onRefreshOdds() {
-  if (oddsRefreshing.value) return
+  if (oddsRefreshing.value || syncStatusChecking.value) return
+  syncStatusChecking.value = true
+  try {
+    await hydrateStatus(true)
+  } finally {
+    syncStatusChecking.value = false
+  }
+  if (officialSyncBusy.value) {
+    message.warning('后台官方同步正在执行，本次盘口未更新，请稍后再试')
+    return
+  }
   oddsRefreshing.value = true
   try {
     const result = await refreshFixtureOdds(fixtureIdNumber.value)
@@ -74,6 +92,13 @@ function onTabChange(tab: DetailTab) {
 
 onMounted(() => {
   void ensureLoaded()
+  if (!isAdmin.value) {
+    syncStatusChecking.value = false
+    return
+  }
+  void hydrateStatus(true).finally(() => {
+    syncStatusChecking.value = false
+  })
 })
 
 watch(
@@ -102,6 +127,8 @@ watch(
           :pkg="data?.analysis.package ?? null"
           :loading="contentLoading"
           :odds-refreshing="oddsRefreshing"
+          :odds-refresh-blocked="oddsRefreshBlocked"
+          :official-sync-busy="officialSyncBusy"
           :error="error"
           :initial-tab="initialTab"
           @retry="reload"

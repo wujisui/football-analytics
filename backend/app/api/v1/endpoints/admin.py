@@ -283,7 +283,10 @@ def _reset_history_response(report: Any) -> ResetMatchHistoryResponse:
 
 @router.get("/tasks")
 async def list_task_status(_: None = Depends(require_admin)) -> dict:
-    return get_task_status()
+    return {
+        **get_task_status(),
+        "official_sync_busy": official_sync_busy(),
+    }
 
 
 @router.post("/tasks/trigger")
