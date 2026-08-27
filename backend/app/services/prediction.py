@@ -505,6 +505,32 @@ def _score_matches_outcomes(h: int, a: int, outcomes: set[str]) -> bool:
     return False
 
 
+def _align_score_with_outcomes(
+    pair: tuple[int, int],
+    *,
+    outcomes: set[str],
+    probs: dict[str, float],
+    btts_yes: bool,
+) -> tuple[int, int]:
+    """Keep a score inside the final 1X2 recommendation outcome set."""
+    h, a = pair
+    if _score_matches_outcomes(h, a, outcomes):
+        return pair
+
+    target = max(outcomes, key=lambda key: float(probs.get(key, 0.0)))
+    if btts_yes:
+        fixed = _btts_score_for_outcomes({target}, probs)
+        if fixed is not None:
+            return fixed
+
+    goals = max(h, a, 1)
+    if target == "home":
+        return goals, 0
+    if target == "away":
+        return 0, goals
+    return 0, 0
+
+
 def _align_score_with_btts(
     lines: list[tuple[int, int]],
     *,
@@ -519,6 +545,8 @@ def _align_score_with_btts(
 
     When O/U is provided, never leave a score that fights the size lean (O/U
     outranks BTTS): e.g. 小 2.5 must not stay at 2-1 just to keep 双进:是.
+    Every candidate is finally constrained to the recommendation outcome set;
+    this also covers zero-sided ML scores such as 4-0 under a 客胜 recommendation.
     """
     if not lines:
         return lines
@@ -558,6 +586,12 @@ def _align_score_with_btts(
                 pair = (0, max(a, 1))
         else:
             pair = (h, a)
+        pair = _align_score_with_outcomes(
+            pair,
+            outcomes=outcomes,
+            probs=probs,
+            btts_yes=btts_yes,
+        )
         if ou_line is not None and ou_side in ("over", "under"):
             pair = _nudge_score_for_ou(
                 pair[0],

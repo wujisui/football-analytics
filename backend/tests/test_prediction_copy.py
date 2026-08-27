@@ -179,6 +179,40 @@ class PredictionCopyTests(unittest.TestCase):
                     msg=f"{h}-{a} fights {side} {line}",
                 )
 
+    def test_score_candidates_follow_single_away_recommendation(self) -> None:
+        """截图回归：客胜主推不得同时给出主胜或平局比分。"""
+        from app.services.prediction import (
+            _align_score_with_btts,
+            _score_matches_outcomes,
+            _score_settles_ou,
+        )
+
+        cases = [
+            ([(2, 2), (3, 0)], {"home": 0.04, "draw": 0.03, "away": 0.92}, 2.5),
+            ([(4, 0), (0, 4)], {"home": 0.21, "draw": 0.11, "away": 0.68}, 3.0),
+        ]
+        for scores, probs, line in cases:
+            aligned = _align_score_with_btts(
+                scores,
+                btts_yes=False,
+                probs=probs,
+                total=4,
+                recommendation="负",
+                ou_line=line,
+                ou_side="over",
+            )
+            self.assertTrue(aligned)
+            for home, away in aligned:
+                self.assertTrue(
+                    _score_matches_outcomes(home, away, {"away"}),
+                    msg=f"{home}-{away} fights away recommendation",
+                )
+                self.assertTrue(
+                    _score_settles_ou(home, away, line, "over"),
+                    msg=f"{home}-{away} fights over {line}",
+                )
+                self.assertEqual(home, 0)
+
     def test_score_hint_does_not_fight_over_25_on_draw(self) -> None:
         """大（2.5）不得配 1-1；平局参考分至少 2-2。"""
         from unittest.mock import patch
