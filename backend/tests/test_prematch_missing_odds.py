@@ -2,7 +2,7 @@ import asyncio
 import json
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -36,8 +36,8 @@ def _odds_json() -> str:
     )
 
 
-class PrematchMissingOddsTests(unittest.TestCase):
-    def test_only_missing_fixture_in_default_prematch_window_is_pulled(self) -> None:
+class PrematchBatchOddsTests(unittest.TestCase):
+    def test_only_explicit_fixture_ids_are_refreshed_including_existing_odds(self) -> None:
         async def run() -> None:
             engine = _sqlite_engine()
             async with engine.begin() as conn:
@@ -110,12 +110,17 @@ class PrematchMissingOddsTests(unittest.TestCase):
                 fetcher.refresh_odds_for_fixture = AsyncMock(
                     side_effect=fake_refresh
                 )
-                report = await fetcher.sync_missing_odds_for_prematch_list()
+                report = await fetcher.sync_odds_for_prematch_fixtures(
+                    [48001, 48002]
+                )
 
-                self.assertEqual(report["candidates"], 1)
-                self.assertEqual(report["attempted"], 1)
-                self.assertEqual(report["updated"], 1)
-                fetcher.refresh_odds_for_fixture.assert_awaited_once_with(48001)
+                self.assertEqual(report["candidates"], 2)
+                self.assertEqual(report["attempted"], 2)
+                self.assertEqual(report["updated"], 2)
+                self.assertEqual(
+                    fetcher.refresh_odds_for_fixture.await_args_list,
+                    [call(48001), call(48002)],
+                )
             await engine.dispose()
 
         asyncio.run(run())

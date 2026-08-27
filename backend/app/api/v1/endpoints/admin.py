@@ -35,7 +35,7 @@ from app.services.runtime_settings import (
     set_subscription_enabled,
 )
 from app.tasks.scheduler import (
-    PREMATCH_MISSING_ODDS_TASK,
+    PREMATCH_ODDS_TASK,
     RESULTS_SYNC_TASK,
     UNSUBSCRIBED_ODDS_HOURS,
     format_clock,
@@ -53,10 +53,11 @@ class TriggerTaskRequest(BaseModel):
         ...,
         description=(
             "任务名称：scheduled_fixtures_sync / scheduled_results_sync / "
-            "prematch_missing_odds_sync / clean_old_data / train_model / "
+            "prematch_odds_sync / clean_old_data / train_model / "
             "daily_auto_favorites"
         ),
     )
+    fixture_ids: list[int] = Field(default_factory=list)
 
 
 class LastSyncRun(BaseModel):
@@ -218,7 +219,7 @@ SYNC_MODE_LABELS = {
     "odds": "盘口轻刷",
     "fixtures": "当天赛程",
     "results": "赛果回写",
-    "prematch_missing_odds": "比赛缺盘补齐",
+    "prematch_odds": "批量更新盘口",
 }
 
 
@@ -291,7 +292,7 @@ async def trigger_task_endpoint(
     allowed = {
         "scheduled_fixtures_sync",
         RESULTS_SYNC_TASK,
-        PREMATCH_MISSING_ODDS_TASK,
+        PREMATCH_ODDS_TASK,
         "clean_old_data",
         "train_model",
         "daily_auto_favorites",
@@ -302,6 +303,8 @@ async def trigger_task_endpoint(
         subscribed, _ = await get_subscription_enabled()
         if not subscribed:
             raise HTTPException(status_code=409, detail="订阅已关闭，不能手动完整同步")
+    if body.name == PREMATCH_ODDS_TASK and not body.fixture_ids:
+        raise HTTPException(status_code=400, detail="当前【比赛】筛选没有可更新的场次")
     if official_sync_busy():
         raise HTTPException(status_code=409, detail="官方同步正在执行，请稍后再试")
     running = (
@@ -313,13 +316,15 @@ async def trigger_task_endpoint(
         for name in (
             "scheduled_fixtures_sync",
             RESULTS_SYNC_TASK,
-            PREMATCH_MISSING_ODDS_TASK,
+            PREMATCH_ODDS_TASK,
             body.name,
         )
     ):
         raise HTTPException(status_code=409, detail="任务正在执行，请勿重复触发")
     try:
-        asyncio.create_task(trigger_task(body.name))
+        asyncio.create_task(
+            trigger_task(body.name, fixture_ids=body.fixture_ids)
+        )
         await asyncio.sleep(0)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

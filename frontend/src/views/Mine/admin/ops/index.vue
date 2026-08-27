@@ -18,7 +18,10 @@ import {
 } from '@/api/admin'
 import HelpTip from '@/components/HelpTip.vue'
 import TextSwitch from '@/components/TextSwitch.vue'
+import { useHomeFixtures } from '@/composables/useHomeFixtures'
+import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
 import { formatLocalDateMinute } from '@/utils/format'
+import { prematchFetchParams } from '@/utils/homeDateStrip'
 import { useAdminSync } from '@/views/Mine/admin/useAdminSync'
 import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 
@@ -36,6 +39,14 @@ const {
   runPrematchOddsSync,
   hydrateStatus,
 } = useAdminSync()
+const { allFixtures, loadHomeFixtures } = useHomeFixtures()
+const { trackedIds, loadFilterOptions } = useTrackedLeagues()
+const prematchFixtureIds = computed(() => {
+  const selected = new Set(trackedIds.value)
+  return allFixtures.value
+    .filter((fixture) => selected.has(fixture.league_id))
+    .map((fixture) => fixture.fixture_id)
+})
 
 const cachedSubscription = peekSubscriptionSetting()
 const subscribed = ref(cachedSubscription?.subscribed ?? false)
@@ -73,9 +84,13 @@ const resultsSyncDetail = computed(() =>
     : '只按日回写昨天和今天的终场比分与训练标签，不拉盘口、赛程或详情。当天「立即同步」完成后仍可用。未订阅的 22:00 轻刷也不回写比分，所以下午完场要靠这一下。与完整批次共用官方请求锁，不能同时跑。',
 )
 
-const prematchOddsSummary = '为【比赛】里缺盘的未开赛场次逐场补拉盘口。'
+const prematchOddsSummary = computed(() =>
+  prematchFixtureIds.value.length
+    ? `更新【比赛】当前筛选的 ${prematchFixtureIds.value.length} 场盘口。`
+    : '请先进入【比赛】并勾选要显示的联赛。',
+)
 const prematchOddsDetail =
-  '只扫描当前【比赛】默认两个当地比赛日，逐场补拉尚未开赛且本地缺少完整 1X2 的比赛；不限热门勾选，不拉赛程、赛果、积分榜或详情。每个待补场次会消耗一次官方盘口请求，单次最多 250 场，没有开盘的场次仍可能为空。'
+  '只处理【比赛】当前筛选已勾选联赛对应的未开赛场次；未勾选的“其他”赛事不会进入名单。已有盘口更新即时盘，没有盘口的场次补齐；不拉赛程、赛果、积分榜或详情。每场通常消耗一次官方盘口请求，尚未开盘的比赛仍可能为空。'
 
 const lastSyncText = computed(() => {
   if (syncing.value) return '同步进行中，完成后会全局提示'
@@ -245,26 +260,38 @@ async function syncResultsOnly() {
 }
 
 async function applyPrematchOddsSync() {
-  await runPrematchOddsSync()
+  await runPrematchOddsSync(prematchFixtureIds.value)
   await loadSetting(true)
 }
 
 function syncPrematchOddsOnly() {
   modal.create({
     preset: 'dialog',
-    title: '确认补齐比赛盘口？',
+    title: '确认批量更新盘口？',
     type: 'warning',
     content:
-      '任务会按缺盘场次逐场请求官方接口，每个待补场次通常消耗一次请求；尚未开盘的比赛不会生成盘口。',
-    positiveText: '开始补盘',
+      `将逐场更新【比赛】当前筛选的 ${prematchFixtureIds.value.length} 场：已有盘口刷新即时盘，缺盘口则补齐。每场通常消耗一次官方请求。`,
+    positiveText: '开始更新',
     negativeText: '取消',
     autoFocus: false,
     onPositiveClick: () => void applyPrematchOddsSync(),
   })
 }
 
+async function hydratePrematchOddsList() {
+  if (allFixtures.value.length) return
+  const { days } = prematchFetchParams()
+  try {
+    await loadFilterOptions({ days, scope: 'prematch' })
+    await loadHomeFixtures({ days, leagueIds: [...trackedIds.value] })
+  } catch {
+    // The summary remains disabled; the list composables retain their own errors.
+  }
+}
+
 onMounted(() => {
   void hydrateStatus()
+  void hydratePrematchOddsList()
   if (!cachedSubscription) void loadSetting()
 })
 
@@ -329,7 +356,7 @@ watch(syncing, (value, previous) => {
           <n-thing :description="prematchOddsSummary">
             <template #header>
               <n-flex :size="6" align="center">
-                <span>补齐比赛盘口</span>
+                <span>批量更新盘口</span>
                 <HelpTip :text="prematchOddsDetail" />
               </n-flex>
             </template>
@@ -337,11 +364,13 @@ watch(syncing, (value, previous) => {
           <template #suffix>
             <n-button
               size="small"
-              :disabled="busy"
+              type="primary"
+              tertiary
+              :disabled="busy || prematchFixtureIds.length === 0"
               :loading="prematchOddsSyncing"
               @click="syncPrematchOddsOnly"
             >
-              {{ prematchOddsSyncing ? '补盘中' : '补齐盘口' }}
+              {{ prematchOddsSyncing ? '更新中' : '批量更新' }}
             </n-button>
           </template>
         </n-list-item>

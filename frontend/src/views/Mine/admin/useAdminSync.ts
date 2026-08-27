@@ -2,7 +2,7 @@ import { computed, readonly, ref } from 'vue'
 
 import {
   fetchAdminTaskStatus,
-  triggerPrematchMissingOddsSync,
+  triggerPrematchOddsSync,
   triggerScheduledFixturesSync,
   triggerScheduledResultsSync,
 } from '@/api/admin'
@@ -13,7 +13,7 @@ import { notifyError, notifySuccess } from '@/utils/globalNotify'
 
 const FULL_TASK = 'scheduled_fixtures_sync'
 const RESULTS_TASK = 'scheduled_results_sync'
-const PREMATCH_ODDS_TASK = 'prematch_missing_odds_sync'
+const PREMATCH_ODDS_TASK = 'prematch_odds_sync'
 
 // Module level: the batch keeps running while the user leaves /mine/admin,
 // so the button state must survive component unmount.
@@ -86,10 +86,10 @@ export function useAdminSync() {
           } else {
             const stats = task.result?.prematch_odds
             notifySuccess(
-              '比赛缺盘补齐完成',
+              '批量更新盘口完成',
               stats
-                ? `待补 ${stats.candidates} 场，尝试 ${stats.attempted} 场，补到完整盘口 ${stats.updated} 场${stats.truncated ? `，另有 ${stats.truncated} 场超过单次上限` : ''}`
-                : '已完成当前比赛列表缺盘扫描',
+                ? `名单 ${stats.candidates} 场，尝试 ${stats.attempted} 场，成功更新 ${stats.updated} 场`
+                : '已完成当前【比赛】筛选场次的盘口更新',
             )
           }
         } else {
@@ -98,7 +98,7 @@ export function useAdminSync() {
               ? '同步官方 API 数据未完成'
               : kind === 'results'
                 ? '更新赛果未完成'
-                : '比赛缺盘补齐未完成',
+                : '批量更新盘口未完成',
             detail,
           )
         }
@@ -189,12 +189,12 @@ export function useAdminSync() {
     )
   }
 
-  async function runPrematchOddsSync() {
+  async function runPrematchOddsSync(fixtureIds: number[]) {
     await runKind(
       'prematchOdds',
-      triggerPrematchMissingOddsSync,
-      '比赛缺盘补齐未完成',
-      '比赛缺盘补齐失败',
+      () => triggerPrematchOddsSync(fixtureIds),
+      '批量更新盘口未完成',
+      '批量更新盘口失败',
     )
   }
 

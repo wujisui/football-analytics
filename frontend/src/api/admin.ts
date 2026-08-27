@@ -370,10 +370,12 @@ export async function triggerScheduledResultsSync(): Promise<TriggerTaskResult> 
   return data
 }
 
-export async function triggerPrematchMissingOddsSync(): Promise<TriggerTaskResult> {
+export async function triggerPrematchOddsSync(
+  fixtureIds: number[],
+): Promise<TriggerTaskResult> {
   const { data } = await apiClient.post<TriggerTaskResult>(
     '/admin/tasks/trigger',
-    { name: 'prematch_missing_odds_sync' },
+    { name: 'prematch_odds_sync', fixture_ids: fixtureIds },
     { timeout: 5 * 60_000 },
   )
   return data

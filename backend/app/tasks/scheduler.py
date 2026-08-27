@@ -74,7 +74,7 @@ SUBSCRIBED_DENSE_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
 )
 FREE_QUOTA_ROLLOVER_JOB_ID = "free_quota_fixture_rollover"
 RESULTS_SYNC_TASK = "scheduled_results_sync"
-PREMATCH_MISSING_ODDS_TASK = "prematch_missing_odds_sync"
+PREMATCH_ODDS_TASK = "prematch_odds_sync"
 
 
 def odds_job_id(hour: int, minute: int = 0) -> str:
@@ -167,6 +167,7 @@ async def run_scheduled_fixtures_sync(
     task_name: str = "scheduled_fixtures_sync",
     *,
     mode: str = "full",
+    fixture_ids: list[int] | None = None,
 ) -> None:
     """Run the daily full batch or a today's-hot-odds light batch."""
     from app.services.fetcher import ApiAccountBlockedError, ApiKeyNotConfiguredError
@@ -175,7 +176,7 @@ async def run_scheduled_fixtures_sync(
     logger.info("Task %s started (mode=%s).", task_name, mode)
     start_count = get_cache_service().api_request_count
     try:
-        result = await scheduled_fixtures_sync(mode=mode)
+        result = await scheduled_fixtures_sync(mode=mode, fixture_ids=fixture_ids)
         if result.get("status") != "completed":
             _set_task_status(
                 task_name,
@@ -234,11 +235,12 @@ async def run_scheduled_results_sync() -> None:
     await run_scheduled_fixtures_sync(task_name=RESULTS_SYNC_TASK, mode="results")
 
 
-async def run_prematch_missing_odds_sync() -> None:
-    """Admin-only gap fill for missing odds in the current prematch list window."""
+async def run_prematch_odds_sync(fixture_ids: list[int]) -> None:
+    """Admin-only odds refresh for the fixtures selected in 【比赛】."""
     await run_scheduled_fixtures_sync(
-        task_name=PREMATCH_MISSING_ODDS_TASK,
-        mode="prematch_missing_odds",
+        task_name=PREMATCH_ODDS_TASK,
+        mode="prematch_odds",
+        fixture_ids=fixture_ids,
     )
 
 
@@ -408,18 +410,25 @@ async def run_daily_auto_favorites() -> None:
 TASK_HANDLERS = {
     "scheduled_fixtures_sync": run_scheduled_fixtures_sync,
     RESULTS_SYNC_TASK: run_scheduled_results_sync,
-    PREMATCH_MISSING_ODDS_TASK: run_prematch_missing_odds_sync,
+    PREMATCH_ODDS_TASK: run_prematch_odds_sync,
     "clean_old_data": clean_old_data,
     "train_model": train_model,
     "daily_auto_favorites": run_daily_auto_favorites,
 }
 
 
-async def trigger_task(task_name: str) -> None:
+async def trigger_task(
+    task_name: str,
+    *,
+    fixture_ids: list[int] | None = None,
+) -> None:
     handler = TASK_HANDLERS.get(task_name)
     if handler is None:
         raise ValueError(f"Unknown task: {task_name}")
-    await handler()
+    if task_name == PREMATCH_ODDS_TASK:
+        await handler(fixture_ids or [])
+    else:
+        await handler()
 
 
 def register_jobs(

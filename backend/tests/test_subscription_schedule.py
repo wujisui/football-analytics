@@ -239,7 +239,7 @@ def test_light_batch_only_refreshes_today_odds() -> None:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
 
-def test_prematch_missing_odds_batch_only_runs_gap_fill() -> None:
+def test_prematch_odds_batch_only_refreshes_explicit_fixture_ids() -> None:
     from app.services import fixtures_sync as fs
 
     fetcher = MagicMock()
@@ -247,10 +247,8 @@ def test_prematch_missing_odds_batch_only_runs_gap_fill() -> None:
     fetcher.capture_finished_results = AsyncMock()
     fetcher.fetch_fixtures_for_date = AsyncMock()
     fetcher.sync_odds_for_dates = AsyncMock()
-    fetcher.sync_missing_odds_for_prematch_list = AsyncMock(
+    fetcher.sync_odds_for_prematch_fixtures = AsyncMock(
         return_value={
-            "window_start": "2026-08-26",
-            "window_days": 2,
             "candidates": 3,
             "attempted": 3,
             "updated": 2,
@@ -280,13 +278,18 @@ def test_prematch_missing_odds_batch_only_runs_gap_fill() -> None:
             ),
             patch("app.core.database.AsyncSessionLocal"),
         ):
-            return await fs.scheduled_fixtures_sync(mode="prematch_missing_odds")
+            return await fs.scheduled_fixtures_sync(
+                mode="prematch_odds",
+                fixture_ids=[101, 102, 103],
+            )
 
     try:
         result = asyncio.run(_run())
         assert result["odds_updated"] == 2
         assert result["prematch_odds"]["attempted"] == 3
-        fetcher.sync_missing_odds_for_prematch_list.assert_awaited_once_with()
+        fetcher.sync_odds_for_prematch_fixtures.assert_awaited_once_with(
+            [101, 102, 103]
+        )
         fetcher.capture_finished_results.assert_not_awaited()
         fetcher.fetch_fixtures_for_date.assert_not_awaited()
         fetcher.sync_odds_for_dates.assert_not_awaited()

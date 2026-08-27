@@ -700,7 +700,6 @@ def main() -> None:
         choices=[
             "scheduled_fixtures_sync",
             "scheduled_results_sync",
-            "prematch_missing_odds_sync",
             "clean_old_data",
             "train_model",
             "daily_auto_favorites",

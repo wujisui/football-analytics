@@ -1746,62 +1746,28 @@ class FootballFetcher:
         )
         return updated
 
-    async def sync_missing_odds_for_prematch_list(
+    async def sync_odds_for_prematch_fixtures(
         self,
-        *,
-        match_day_span: int = 2,
-        hard_cap: int = 250,
-    ) -> dict[str, int | str | None]:
-        """Fill missing 1X2 boards only for the default 【比赛】 local-day window."""
-        from sqlalchemy import func, select
+        fixture_ids: list[int],
+    ) -> dict[str, int]:
+        """Refresh exactly the admin-selected fixtures visible in 【比赛】."""
+        from sqlalchemy import select
 
-        from app.models.pre_match_data import PreMatchData
-        from app.services.features import has_match_winner_odds
-        from app.services.match_day import fixture_match_day_expr
-        from app.services.prematch_package import loads_json, rehydrate_odds_markets
         from app.services.results_capture import prematch_list_clause
 
         assert self.session is not None
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-        allowed_ids = await catalog_allowed_league_ids(self.session)
-        if not allowed_ids:
-            return {
-                "window_start": None,
-                "window_days": max(1, int(match_day_span)),
-                "candidates": 0,
-                "attempted": 0,
-                "updated": 0,
-                "truncated": 0,
-            }
-
-        day_expr = fixture_match_day_expr()
-        start_text = await self.session.scalar(
-            select(func.min(day_expr)).where(
-                Fixture.league_id.in_(sorted(allowed_ids)),
-                prematch_list_clause(now),
-            )
+        requested_ids = sorted(
+            {int(fixture_id) for fixture_id in fixture_ids if int(fixture_id) > 0}
         )
-        if not start_text:
-            return {
-                "window_start": None,
-                "window_days": max(1, int(match_day_span)),
-                "candidates": 0,
-                "attempted": 0,
-                "updated": 0,
-                "truncated": 0,
-            }
-
-        start_day = date.fromisoformat(str(start_text))
-        window_days = max(1, int(match_day_span))
-        end_exclusive = start_day + timedelta(days=window_days)
+        if not requested_ids:
+            return {"candidates": 0, "attempted": 0, "updated": 0, "truncated": 0}
         fixtures = list(
             (
                 await self.session.execute(
                     select(Fixture)
                     .where(
-                        day_expr >= start_day.isoformat(),
-                        day_expr < end_exclusive.isoformat(),
-                        Fixture.league_id.in_(sorted(allowed_ids)),
+                        Fixture.id.in_(requested_ids),
                         prematch_list_clause(now),
                     )
                     .order_by(Fixture.date, Fixture.id)
@@ -1810,88 +1776,40 @@ class FootballFetcher:
             .scalars()
             .all()
         )
-        rows = (
-            (
-                await self.session.execute(
-                    select(PreMatchData).where(
-                        PreMatchData.fixture_id.in_([fixture.id for fixture in fixtures] or [0])
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        stored_by_fixture = {int(row.fixture_id): row for row in rows}
-        missing: list[int] = []
-        fixtures_by_id = {int(fixture.id): fixture for fixture in fixtures}
-        for fixture in fixtures:
-            stored = stored_by_fixture.get(int(fixture.id))
-            raw = loads_json(getattr(stored, "odds_json", None), {"available": False})
-            odds = rehydrate_odds_markets(raw if isinstance(raw, dict) else {})
-            if not has_match_winner_odds(odds):
-                missing.append(int(fixture.id))
-
-        limit = max(0, int(hard_cap))
-        queue = _round_robin_fixture_ids(
-            missing,
-            fixtures_by_id,
-            min(len(missing), limit),
-        )
         updated = 0
         attempted = 0
-        for index, fixture_id in enumerate(queue):
+        for index, fixture in enumerate(fixtures):
             if self.quota_exhausted:
                 break
-            fixture = fixtures_by_id.get(fixture_id)
-            if (
-                fixture is None
-                or fixture.date
-                <= datetime.now(timezone.utc).replace(tzinfo=None)
-            ):
+            if fixture.date <= datetime.now(timezone.utc).replace(tzinfo=None):
                 continue
+            fixture_id = int(fixture.id)
             attempted += 1
             try:
                 if await self.refresh_odds_for_fixture(fixture_id):
-                    stored = await self.session.scalar(
-                        select(PreMatchData).where(
-                            PreMatchData.fixture_id == fixture_id
-                        )
-                    )
-                    raw = loads_json(
-                        getattr(stored, "odds_json", None),
-                        {"available": False},
-                    )
-                    odds = rehydrate_odds_markets(
-                        raw if isinstance(raw, dict) else {}
-                    )
-                    if has_match_winner_odds(odds):
-                        updated += 1
+                    updated += 1
             except Exception as exc:
                 logger.warning(
-                    "Prematch-list missing odds fixture %s failed: %s",
+                    "Prematch-list batch odds fixture %s failed: %s",
                     fixture_id,
                     exc,
                 )
-            if index + 1 < len(queue) and not self.quota_exhausted:
+            if index + 1 < len(fixtures) and not self.quota_exhausted:
                 await asyncio.sleep(0.35)
 
         logger.info(
-            "Prematch-list missing odds done window=%s days=%s candidates=%s "
-            "attempted=%s updated=%s truncated=%s",
-            start_day,
-            window_days,
-            len(missing),
+            "Prematch-list batch odds done requested=%s candidates=%s "
+            "attempted=%s updated=%s",
+            len(requested_ids),
+            len(fixtures),
             attempted,
             updated,
-            max(len(missing) - len(queue), 0),
         )
         return {
-            "window_start": start_day.isoformat(),
-            "window_days": window_days,
-            "candidates": len(missing),
+            "candidates": len(fixtures),
             "attempted": attempted,
             "updated": updated,
-            "truncated": max(len(missing) - len(queue), 0),
+            "truncated": 0,
         }
 
     async def _fetch_odds_with_rate_limit(self, fixture_id: int) -> dict[str, Any]:
