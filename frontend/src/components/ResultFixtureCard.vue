@@ -41,8 +41,6 @@ const props = withDefaults(defineProps<{
   oddsClickable?: boolean
   showProbabilities?: boolean
   showDate?: boolean
-  /** Auto-favorite market to highlight in the prediction tag row. */
-  highlightMarket?: string | null
   from?: DetailFrom
   date?: string | null
   hitFilterable?: boolean
@@ -55,7 +53,6 @@ const props = withDefaults(defineProps<{
   oddsClickable: false,
   showProbabilities: false,
   showDate: true,
-  highlightMarket: null,
   from: 'results',
   date: null,
   hitFilterable: false,
@@ -263,7 +260,6 @@ function onLeagueClick(e: Event) {
       :show-matchup-title="false"
       flush
       :odds-clickable="oddsClickable"
-      :highlight-market="highlightMarket"
       :from="from"
       :date="date"
       @open-odds="emit('openOdds')"
@@ -275,7 +271,6 @@ function onLeagueClick(e: Event) {
       :show-probabilities="showProbabilities"
       :hit-filterable="hitFilterable"
       :active-hit-key="activeHitKey"
-      :highlight-market="highlightMarket"
       @open-odds="emit('openOdds')"
       @filter-hit="emit('filterHit', $event)"
     />

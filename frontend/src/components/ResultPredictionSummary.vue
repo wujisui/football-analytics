@@ -24,14 +24,11 @@ const props = withDefaults(defineProps<{
   showProbabilities?: boolean
   hitFilterable?: boolean
   activeHitKey?: ResultsHitKey | null
-  /** Auto-favorite market to mark with [荐] in the hit-tag row. */
-  highlightMarket?: string | null
 }>(), {
   oddsClickable: false,
   showProbabilities: false,
   hitFilterable: false,
   activeHitKey: null,
-  highlightMarket: null,
 })
 
 const emit = defineEmits<{
@@ -75,7 +72,6 @@ const probabilities = computed(() => {
       :fixture="fixture"
       :filterable="hitFilterable"
       :active-hit-key="activeHitKey"
-      :highlight-market="highlightMarket"
       @filter-hit="emit('filterHit', $event)"
     />
   </div>

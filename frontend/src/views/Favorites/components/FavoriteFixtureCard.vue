@@ -34,9 +34,6 @@ const showOddsModal = ref(false)
 
 const hasPredict = computed(() => favoriteHasPredictSnapshot(props.item))
 const predictionSnapshot = computed(() => snapshotFromFavorite(props.item))
-const highlightMarket = computed(() =>
-  props.item.source === 'auto' ? props.item.auto_market || null : null,
-)
 
 /** Any settled fixture uses the same card as the results list. */
 const isFinished = computed(() => {
@@ -71,7 +68,6 @@ function onDesktopMarkClick(e: MouseEvent) {
     v-if="isFinished && isPhone"
     :fixture="item"
     odds-clickable
-    :highlight-market="highlightMarket"
     :selectable="selectable"
     :selected="selected"
     @open-detail="openDetail"
@@ -97,7 +93,6 @@ function onDesktopMarkClick(e: MouseEvent) {
       <ResultFixtureCard
         :fixture="item"
         show-probabilities
-        :highlight-market="highlightMarket"
         @open-detail="openDetail"
       />
     </div>
@@ -109,7 +104,6 @@ function onDesktopMarkClick(e: MouseEvent) {
     prematch
     odds-clickable
     :prediction-snapshot="hasPredict ? predictionSnapshot : undefined"
-    :highlight-market="highlightMarket"
     from="favorites"
     :selectable="selectable"
     :selected="selected"
@@ -136,7 +130,6 @@ function onDesktopMarkClick(e: MouseEvent) {
         :fixture="item"
         prematch
         :prediction-snapshot="hasPredict ? predictionSnapshot : undefined"
-        :highlight-market="highlightMarket"
         from="favorites"
       />
     </div>

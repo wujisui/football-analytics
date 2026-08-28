@@ -46,8 +46,6 @@ const props = withDefaults(
     flush?: boolean
     /** Click win/draw/away bars to open pre-match odds (e.g. phone list). */
     oddsClickable?: boolean
-    /** Override auto-favorite market highlight (favorites page passes row field). */
-    highlightMarket?: string | null
     from?: DetailFrom
     date?: string | null
   }>(),
@@ -56,7 +54,6 @@ const props = withDefaults(
     showMatchupTitle: true,
     flush: false,
     oddsClickable: false,
-    highlightMarket: null,
     from: 'predictions',
     date: null,
   },
@@ -397,7 +394,6 @@ function onOddsClick() {
         :both-score="prediction.both_score_lean"
         :score-hint="prediction.score_hint"
         :fixture-id="resolvedFixtureId"
-        :highlight-market="highlightMarket"
         clickable
         @open="goBriefing"
       />

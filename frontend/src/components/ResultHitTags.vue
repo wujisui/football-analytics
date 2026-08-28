@@ -14,13 +14,10 @@ const props = withDefaults(
     /** Enable click-to-filter on Results list. */
     filterable?: boolean
     activeHitKey?: ResultsHitKey | null
-    /** Override the daily-pick market (favorites rows carry their own field). */
-    highlightMarket?: AutoFavoriteMarket | string | null
   }>(),
   {
     filterable: false,
     activeHitKey: null,
-    highlightMarket: null,
   },
 )
 
@@ -36,9 +33,7 @@ const handicapTagLabel = computed(() =>
 
 const showTags = computed(() => !!props.fixture.has_prediction)
 
-const pickMarket = computed(() =>
-  (props.highlightMarket ?? props.fixture.auto_pick_market ?? '').trim(),
-)
+const pickMarket = computed(() => (props.fixture.auto_pick_market ?? '').trim())
 
 /** 对齐【比赛】：不额外加标签，只在被推荐的玩法前面标 [荐]。 */
 function isPick(market: AutoFavoriteMarket): boolean {

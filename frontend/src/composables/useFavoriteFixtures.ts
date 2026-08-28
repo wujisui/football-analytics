@@ -301,6 +301,17 @@ export function autoFavoriteMarket(
   return market || null
 }
 
+/** 日推真实下注方向（单选），非算法推荐时为 null。 */
+export function autoFavoriteLean(
+  fixtureId: number | null | undefined,
+): string | null {
+  if (fixtureId == null) return null
+  const item = autoPicks.value.find((row) => row.fixture_id === fixtureId)
+  if (!item) return null
+  const lean = (item.auto_lean || '').trim()
+  return lean || null
+}
+
 /** 0.5–5 星推荐质量；非算法推荐或历史不足时为 null。 */
 export function favoriteQualityRating(
   fixtureId: number | null | undefined,

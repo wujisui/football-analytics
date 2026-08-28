@@ -2,7 +2,10 @@
 import { computed } from 'vue'
 
 import type { AutoFavoriteMarket } from '@/api/favorites'
-import { autoFavoriteMarket } from '@/composables/useFavoriteFixtures'
+import {
+  autoFavoriteLean,
+  autoFavoriteMarket,
+} from '@/composables/useFavoriteFixtures'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
 import { isPredictionPending, adaptHandicapLean } from '@/utils/handicapDisplay'
 import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
@@ -15,10 +18,8 @@ const props = withDefaults(
     bothScore?: string
     scoreHint?: string
     clickable?: boolean
-    /** Resolves the auto-favorite market when no explicit override is given. */
+    /** Resolves the auto-favorite market/lean for this fixture. */
     fixtureId?: number | null
-    /** Override auto-favorite market (favorites page passes the row field). */
-    highlightMarket?: AutoFavoriteMarket | string | null
   }>(),
   {
     recommendation: '待分析',
@@ -28,7 +29,6 @@ const props = withDefaults(
     scoreHint: '',
     clickable: false,
     fixtureId: null,
-    highlightMarket: null,
   },
 )
 
@@ -36,9 +36,23 @@ const emit = defineEmits<{
   open: []
 }>()
 
-const recommendationLabel = computed(() =>
-  isPredictionPending(props.recommendation) ? '待分析' : props.recommendation,
-)
+const pickMarket = computed(() => (autoFavoriteMarket(props.fixtureId) ?? '').trim())
+
+function isPick(market: AutoFavoriteMarket): boolean {
+  return pickMarket.value === market
+}
+
+/**
+ * 日推是单选（胜/平/负三选一），分析器的可见推荐允许双选。
+ * 带 [荐] 时展示日推真实下注方向，避免卡片印着「胜/平」却只押一边。
+ */
+const recommendationLabel = computed(() => {
+  if (isPick('1x2')) {
+    const lean = autoFavoriteLean(props.fixtureId)
+    if (lean) return lean
+  }
+  return isPredictionPending(props.recommendation) ? '待分析' : props.recommendation
+})
 const recommendationTagColor = computed(() =>
   isPredictionPending(props.recommendation)
     ? undefined
@@ -56,14 +70,6 @@ const handicapTagColor = computed(() =>
 const showGoal = computed(() => !isPredictionPending(props.goalLean))
 const showBothScore = computed(() => !isPredictionPending(props.bothScore))
 const showScore = computed(() => !isPredictionPending(props.scoreHint))
-
-const pickMarket = computed(() =>
-  (props.highlightMarket ?? autoFavoriteMarket(props.fixtureId) ?? '').trim(),
-)
-
-function isPick(market: AutoFavoriteMarket): boolean {
-  return pickMarket.value === market
-}
 
 function open() {
   if (props.clickable) emit('open')
