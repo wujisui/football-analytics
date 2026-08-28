@@ -11,6 +11,32 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#101014" />
     <title>Football Analytics</title>
+    <script>
+      (function () {
+        var KEY = 'fa-theme-preset-v2'
+        var LEGACY = 'fa-theme-preset'
+        function normalize(id) {
+          if (!id) return 'eye-care'
+          if (id === 'eye-care') return 'eye-care'
+          if (id === 'dark' || id.indexOf('dark-') === 0) return 'dark'
+          if (id === 'light' || id.indexOf('light-') === 0) return 'light'
+          return 'eye-care'
+        }
+        var theme = 'eye-care'
+        try {
+          var stored = localStorage.getItem(KEY)
+          if (stored) {
+            theme = normalize(stored)
+          } else {
+            var legacy = localStorage.getItem(LEGACY)
+            theme = legacy && normalize(legacy) === 'dark' ? 'dark' : 'eye-care'
+          }
+        } catch (e) {
+          /* ignore */
+        }
+        document.documentElement.setAttribute('data-theme', theme)
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

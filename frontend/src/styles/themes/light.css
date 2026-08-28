@@ -1,0 +1,22 @@
+html[data-theme='light'] {
+  --fa-bg: #f5f6f8;
+  --fa-backdrop: #e3e5ea;
+  --fa-bg-elevated: #ffffff;
+  --fa-bg-soft: #fafafa;
+  --fa-border: #e8e8e8;
+  --fa-border-soft: #f0f0f0;
+  --fa-text: #213547;
+  --fa-text-strong: #1a1a1a;
+  --fa-text-secondary: #666666;
+  --fa-text-muted: #888888;
+  --fa-text-faint: #999999;
+  --fa-hover-border: #b8d4f8;
+  --fa-hover-shadow: rgba(32, 128, 240, 0.08);
+  --fa-accent: #2080f0;
+  --fa-highlight-bg: #fff7e6;
+  --fa-highlight-border: #f0c78a;
+  --fa-highlight-text: #c2410c;
+  --fa-header-shadow: 0 -6px 20px rgba(0, 0, 0, 0.12);
+  --fa-bottom-nav-shadow: 0 1px 20px rgba(0, 0, 0, 0.12);
+  --fa-sider-shadow: -6px 0 20px rgba(0, 0, 0, 0.1);
+}

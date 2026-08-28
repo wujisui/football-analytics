@@ -1,14 +1,30 @@
 <script setup lang="ts">
-import { MoonOutline, SunnyOutline } from '@vicons/ionicons5'
+import { EyeOutline, MoonOutline, SunnyOutline } from '@vicons/ionicons5'
+import { computed } from 'vue'
 
 import HandicapRulesetSwitch from '@/components/HandicapRulesetSwitch.vue'
-import TextSwitch from '@/components/TextSwitch.vue'
 import { useTheme } from '@/composables/useTheme'
+import { THEME_PRESETS, type ThemePresetId } from '@/theme/presets'
 import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 
 defineOptions({ name: 'MineTheme' })
 
-const { isDark, toggleTheme } = useTheme()
+const { presetId, setPreset } = useTheme()
+
+const themeOptions = THEME_PRESETS.map(({ id, label }) => ({
+  label,
+  value: id,
+}))
+
+const themeIcon = computed(() => {
+  if (presetId.value === 'dark') return MoonOutline
+  if (presetId.value === 'eye-care') return EyeOutline
+  return SunnyOutline
+})
+
+function onThemeChange(value: ThemePresetId) {
+  setPreset(value)
+}
 </script>
 
 <template>
@@ -19,21 +35,21 @@ const { isDark, toggleTheme } = useTheme()
           <n-list-item>
             <template #prefix>
               <n-icon
-                :component="isDark ? MoonOutline : SunnyOutline"
+                :component="themeIcon"
                 :size="20"
               />
             </template>
             <n-thing
-              title="深色模式"
+              title="界面主题"
               description="偏好保存在本机，下次打开沿用"
             />
             <template #suffix>
-              <TextSwitch
-                :value="isDark"
-                checked-text="深色"
-                unchecked-text="浅色"
-                aria-label="深色模式"
-                @update:value="toggleTheme"
+              <n-select
+                :value="presetId"
+                :options="themeOptions"
+                aria-label="界面主题"
+                style="width: 112px"
+                @update:value="onThemeChange"
               />
             </template>
           </n-list-item>

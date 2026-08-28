@@ -1,66 +1,3 @@
-:root,
-html[data-theme='light'] {
-  /* Warm paper greys; the page sits a clear step below the cards so layering
-     reads without any pure-white surface. */
-  --fa-bg: #e1dbd3;
-  /* Backdrop outside the centered content band (wide screens). */
-  --fa-backdrop: #d2cbc1;
-  --fa-bg-elevated: #f3f0eb;
-  --fa-bg-soft: #e9e4dc;
-  --fa-border: #d0c9c0;
-  --fa-border-soft: #ded8d0;
-  --fa-text: #3a352f;
-  --fa-text-strong: #262220;
-  --fa-text-secondary: #6b6359;
-  --fa-text-muted: #857d72;
-  --fa-text-faint: #9c9489;
-  --fa-hover-border: #9fc1ea;
-  --fa-hover-shadow: rgba(74, 62, 48, 0.12);
-  /* 盘口线 / 链接类强调色（与 hover 蓝同源） */
-  --fa-accent: #2080f0;
-  --fa-highlight-bg: #f7e9d1;
-  --fa-highlight-border: #eac388;
-  --fa-highlight-text: #c2410c;
-  --fa-header-shadow: 0 -6px 18px rgba(74, 62, 48, 0.1);
-  --fa-bottom-nav-shadow: 0 1px 18px rgba(74, 62, 48, 0.1);
-  --fa-sider-shadow: -6px 0 18px rgba(74, 62, 48, 0.09);
-  /* 胜平负业务色（与 theme/wdlColors.ts、统计 tab 徽章一致） */
-  --fa-wdl-win: #c23b3b;
-  --fa-wdl-draw: #909399;
-  --fa-wdl-loss: #3b6fc2;
-}
-
-html[data-theme='dark'] {
-  --fa-bg: #101014;
-  /* Backdrop outside the centered content band (wide screens). */
-  --fa-backdrop: #050507;
-  --fa-bg-elevated: #18181c;
-  --fa-bg-soft: #1f1f24;
-  --fa-border: #2e2e36;
-  --fa-border-soft: #2a2a30;
-  --fa-text: #e5e5e5;
-  --fa-text-strong: #f5f5f5;
-  --fa-text-secondary: #a3a3a3;
-  --fa-text-muted: #8b8b8b;
-  --fa-text-faint: #737373;
-  --fa-hover-border: #3b6ea8;
-  --fa-hover-shadow: rgba(0, 0, 0, 0.35);
-  /* 盘口线 / 链接类强调色（深色下略提亮，保证可读） */
-  --fa-accent: #69b1ff;
-  --fa-highlight-bg: rgba(240, 160, 32, 0.12);
-  --fa-highlight-border: #8a6a2b;
-  --fa-highlight-text: #f0c78a;
-  --fa-header-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.08),
-    0 4px 10px rgba(0, 0, 0, 0.42);
-  --fa-bottom-nav-shadow:
-    0 -1px 0 rgba(0, 0, 0, 0.08),
-    0 -4px 12px rgba(0, 0, 0, 0.22);
-  --fa-sider-shadow:
-    1px 0 0 rgba(255, 255, 255, 0.07),
-    4px 0 10px rgba(0, 0, 0, 0.38);
-}
-
 :root {
   font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   line-height: 1.5;
@@ -74,14 +11,18 @@ html[data-theme='dark'] {
   -moz-osx-font-smoothing: grayscale;
   --fa-page-max-width: 1280px;
   /*
-   * 卡片 / 面板圆角唯一真源，值取 Naive `common.borderRadius`（项目无 theme-overrides），
-   * 这样自定义表面与 `n-card`（如 .predict-card.standalone）完全一致。
+   * 卡片 / 面板圆角唯一真源，值取 Naive `common.borderRadius`；护眼主题的
+   * theme-overrides 只改表面色，因此自定义表面与 `n-card` 圆角仍完全一致。
    * 只有圆点、胶囊、细指示条等形状本身决定的圆角才可以不用它。
    */
   --fa-radius-card: 3px;
   --fa-content-inline: 12px;
   --fa-content-block-start: 12px;
   --fa-content-block-end: 20px;
+  /* 胜平负业务色（与 theme/wdlColors.ts、统计 tab 徽章一致），三套主题共用。 */
+  --fa-wdl-win: #c23b3b;
+  --fa-wdl-draw: #909399;
+  --fa-wdl-loss: #3b6fc2;
 }
 
 @media (min-width: 768px) {

@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 
 import App from './App.vue'
 import router from './router'
-import './style.css'
+import '@/styles'
 
 /**
  * Vue 给 errorHandler 的 info 两种形态：dev 是可读的 'activated hook'，生产构建

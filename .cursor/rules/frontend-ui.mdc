@@ -90,7 +90,7 @@ Naive Layout **默认 `nativeScrollbar: true`**（浏览器原生条）。主内
 
 1. 外层 `n-layout` 用 `content-style="display:flex;flex-direction:column;height:100%;"` 把高度锁死（否则子内容撑开，外层仍会冒原生条）
 2. 顶栏 `flex-shrink: 0`；可滚区域用 `n-layout-content`：`style="flex:1;min-height:0"` + **`:native-scrollbar="false"`**（可加 `:scrollbar-props="{ trigger: 'hover' }"`）
-3. **原生 overflow 条**：统一在 `src/style.css`（`--fa-scrollbar-*`）；需要隐藏时用 `.fa-scrollbar-hidden`，不要再在业务组件里复制一套
+3. **原生 overflow 条**：统一在 `src/styles/base.css`（`--fa-scrollbar-*`）；需要隐藏时用 `.fa-scrollbar-hidden`，不要再在业务组件里复制一套
 4. **禁止卡片内嵌套滚动抢滚轮**：计算器玩法区等固定高度面板用 `overflow: hidden`，滚轮交给外层比赛列表；不要再给内层挂 `wheel` 拦截
 5. 不要指望只写 `native-scrollbar=false` 却不约束高度
 ### 少写 CSS（优先依赖组件默认样式）
@@ -111,16 +111,17 @@ Naive UI **只内置两套全局主题**：默认浅色（`theme=null`）与 `da
 
 本项目做法：
 
-1. 仅保留 Naive 内置两套：**浅色**（`theme=null`）/ **深色**（`darkTheme`），无 `theme-overrides`
-2. 主题与让球玩法开关都只在「我的 → 偏好设置」；真源组件 `components/HandicapRulesetSwitch.vue`（亚盘 / 竞彩），顶栏不再放玩法开关
-3. 自定义页面壳用 `--fa-*`（非 Naive 变量），由预设同步；**禁止**写死 `#fff` / `#f5f6f8`
-4. 偏好键：`fa-theme-preset`（`localStorage`，值为 `light` | `dark`；旧色系 id 会自动归一）
+1. 产品下拉为 **深色 / 浅色 / 护眼**。深色走 Naive `darkTheme`；浅色走 Naive 默认；护眼仍是浅色 Naive + `theme-overrides` 改表面色
+2. 表面色真源是 `src/styles/themes/{dark,light,eye-care}.css`（`html[data-theme]`），由 `src/styles/index.ts` 统一导入；`src/styles/base.css` 只放布局与共用 token。JS 只写 `data-theme`，禁止再 `setProperty` 注入颜色
+3. 主题与让球玩法开关都只在「我的 → 偏好设置」；真源组件 `components/HandicapRulesetSwitch.vue`（亚盘 / 竞彩），顶栏不再放玩法开关
+4. 自定义页面壳用 `--fa-*`（非 Naive 变量）；**禁止**写死 `#fff` / `#f5f6f8`
+5. 偏好键：`fa-theme-preset-v2`（`localStorage`，值为 `dark` | `light` | `eye-care`）；`index.html` 同步脚本在首屏写入 `data-theme`。旧键 `fa-theme-preset` 仅用于迁移
 
 **禁止**在页面/卡片上写死 `#fff` / `#f5f6f8`；自定义区域用 `--fa-*`。
 
 ### 圆角
 
-卡片 / 面板 / 浮层 / hover 高亮块的圆角唯一真源是 `--fa-radius-card`（`src/style.css` 的 `:root`），值与 Naive `common.borderRadius` 一致，因此自定义表面与 `n-card`（如 `.predict-card`）看起来完全一样。
+卡片 / 面板 / 浮层 / hover 高亮块的圆角唯一真源是 `--fa-radius-card`（`src/styles/base.css` 的 `:root`），值与 Naive `common.borderRadius` 一致，因此自定义表面与 `n-card`（如 `.predict-card`）看起来完全一样。
 
 - **禁止**再写 `border-radius: 6px / 8px / 10px / 12px` 这类字面值；一律 `border-radius: var(--fa-radius-card)`。
 - 要改全站圆角只改这一个 token，不要逐个组件调。

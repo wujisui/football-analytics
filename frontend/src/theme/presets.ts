@@ -1,30 +1,35 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
-/** Single light/dark choice; light uses a warm paper-grey surface palette. */
-export type ThemePresetId = 'light' | 'dark'
+/** Restored stock light, dark, and the warm paper-grey eye-care theme. */
+export type ThemePresetId = 'light' | 'dark' | 'eye-care'
 
-export const DEFAULT_THEME: ThemePresetId = 'light'
+export const DEFAULT_THEME: ThemePresetId = 'eye-care'
 
-const SHELL_CSS_KEYS = [
-  'bg',
-  'bgElevated',
-  'bgSoft',
-  'border',
-  'borderSoft',
-  'text',
-  'textStrong',
-  'textSecondary',
-  'textMuted',
-  'textFaint',
-  'hoverBorder',
-  'hoverShadow',
-  'accent',
-  'highlightBg',
-  'highlightBorder',
-  'highlightText',
+export const THEME_STORAGE_KEY = 'fa-theme-preset-v2'
+export const THEME_LEGACY_STORAGE_KEY = 'fa-theme-preset'
+
+const LEGACY_INLINE_VARS = [
+  '--fa-bg',
+  '--fa-backdrop',
+  '--fa-bg-elevated',
+  '--fa-bg-soft',
+  '--fa-border',
+  '--fa-border-soft',
+  '--fa-text',
+  '--fa-text-strong',
+  '--fa-text-secondary',
+  '--fa-text-muted',
+  '--fa-text-faint',
+  '--fa-hover-border',
+  '--fa-hover-shadow',
+  '--fa-accent',
+  '--fa-highlight-bg',
+  '--fa-highlight-border',
+  '--fa-highlight-text',
+  '--fa-header-shadow',
+  '--fa-bottom-nav-shadow',
+  '--fa-sider-shadow',
 ] as const
-
-type ShellToken = (typeof SHELL_CSS_KEYS)[number]
 
 export interface ThemePreset {
   id: ThemePresetId
@@ -33,49 +38,9 @@ export interface ThemePreset {
   dark: boolean
   /** Naive theme-overrides (empty for stock themes) */
   overrides: GlobalThemeOverrides
-  /** Page shell tokens for custom (non-Naive) surfaces */
-  shell: Record<ShellToken, string>
 }
 
-const SHELL_CSS_VARS: Record<ShellToken, string> = {
-  bg: '--fa-bg',
-  bgElevated: '--fa-bg-elevated',
-  bgSoft: '--fa-bg-soft',
-  border: '--fa-border',
-  borderSoft: '--fa-border-soft',
-  text: '--fa-text',
-  textStrong: '--fa-text-strong',
-  textSecondary: '--fa-text-secondary',
-  textMuted: '--fa-text-muted',
-  textFaint: '--fa-text-faint',
-  hoverBorder: '--fa-hover-border',
-  hoverShadow: '--fa-hover-shadow',
-  accent: '--fa-accent',
-  highlightBg: '--fa-highlight-bg',
-  highlightBorder: '--fa-highlight-border',
-  highlightText: '--fa-highlight-text',
-}
-
-const lightShell: ThemePreset['shell'] = {
-  bg: '#e1dbd3',
-  bgElevated: '#f3f0eb',
-  bgSoft: '#e9e4dc',
-  border: '#d0c9c0',
-  borderSoft: '#ded8d0',
-  text: '#3a352f',
-  textStrong: '#262220',
-  textSecondary: '#6b6359',
-  textMuted: '#857d72',
-  textFaint: '#9c9489',
-  hoverBorder: '#9fc1ea',
-  hoverShadow: 'rgba(74, 62, 48, 0.12)',
-  accent: '#2080f0',
-  highlightBg: '#f7e9d1',
-  highlightBorder: '#eac388',
-  highlightText: '#c2410c',
-}
-
-const lightOverrides: GlobalThemeOverrides = {
+const eyeCareOverrides: GlobalThemeOverrides = {
   common: {
     bodyColor: '#e1dbd3',
     baseColor: '#f3f0eb',
@@ -106,46 +71,32 @@ const lightOverrides: GlobalThemeOverrides = {
   },
 }
 
-const darkShell: ThemePreset['shell'] = {
-  bg: '#101014',
-  bgElevated: '#18181c',
-  bgSoft: '#1f1f24',
-  border: '#2e2e36',
-  borderSoft: '#2a2a30',
-  text: '#e5e5e5',
-  textStrong: '#f5f5f5',
-  textSecondary: '#a3a3a3',
-  textMuted: '#8b8b8b',
-  textFaint: '#737373',
-  hoverBorder: '#3b6ea8',
-  hoverShadow: 'rgba(0, 0, 0, 0.35)',
-  accent: '#69b1ff',
-  highlightBg: 'rgba(240, 160, 32, 0.12)',
-  highlightBorder: '#8a6a2b',
-  highlightText: '#f0c78a',
-}
-
-/** One softened neutral light theme and Naive's dark theme. */
+/** Theme selector options in product display order. */
 export const THEME_PRESETS: ThemePreset[] = [
-  {
-    id: 'light',
-    label: '浅色',
-    dark: false,
-    overrides: lightOverrides,
-    shell: lightShell,
-  },
   {
     id: 'dark',
     label: '深色',
     dark: true,
     overrides: {},
-    shell: darkShell,
+  },
+  {
+    id: 'light',
+    label: '浅色',
+    dark: false,
+    overrides: {},
+  },
+  {
+    id: 'eye-care',
+    label: '护眼',
+    dark: false,
+    overrides: eyeCareOverrides,
   },
 ]
 
-/** Map legacy color-variant ids → light/dark. Missing → light default. */
+/** Normalize current and legacy color-variant ids. */
 export function normalizePresetId(id: string | null | undefined): ThemePresetId {
   if (!id) return DEFAULT_THEME
+  if (id === 'eye-care') return 'eye-care'
   if (id === 'dark' || id.startsWith('dark-')) return 'dark'
   if (id === 'light' || id.startsWith('light-')) return 'light'
   return DEFAULT_THEME
@@ -153,13 +104,17 @@ export function normalizePresetId(id: string | null | undefined): ThemePresetId 
 
 export function getPreset(id: string | null | undefined): ThemePreset {
   const normalized = normalizePresetId(id)
-  return THEME_PRESETS.find((p) => p.id === normalized) ?? THEME_PRESETS[0]
+  return (
+    THEME_PRESETS.find((p) => p.id === normalized) ??
+    THEME_PRESETS.find((p) => p.id === DEFAULT_THEME)!
+  )
 }
 
-export function applyShellCssVars(preset: ThemePreset) {
+/** Switch CSS by `html[data-theme]`. Palette lives in `src/styles/themes/`. */
+export function applyThemeAttribute(preset: ThemePreset) {
   const root = document.documentElement
-  root.dataset.theme = preset.dark ? 'dark' : 'light'
-  for (const key of SHELL_CSS_KEYS) {
-    root.style.setProperty(SHELL_CSS_VARS[key], preset.shell[key])
+  root.dataset.theme = preset.id
+  for (const name of LEGACY_INLINE_VARS) {
+    root.style.removeProperty(name)
   }
 }

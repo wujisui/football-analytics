@@ -279,7 +279,7 @@ const bottomItems: {
   background: var(--fa-bg-elevated);
   box-shadow: var(--fa-bottom-nav-shadow);
   box-sizing: border-box;
-  /* 不可选由全局触屏规则统一负责（style.css @media pointer: coarse） */
+  /* 不可选由全局触屏规则统一负责（styles/base.css @media pointer: coarse） */
   touch-action: manipulation;
 }
 

@@ -2,18 +2,24 @@ import { darkTheme, type GlobalTheme, type GlobalThemeOverrides } from 'naive-ui
 import { computed, ref, watch } from 'vue'
 
 import {
-  applyShellCssVars,
+  applyThemeAttribute,
   DEFAULT_THEME,
   getPreset,
   normalizePresetId,
+  THEME_LEGACY_STORAGE_KEY,
+  THEME_STORAGE_KEY,
   type ThemePresetId,
 } from '@/theme/presets'
 
-const STORAGE_KEY = 'fa-theme-preset'
-
 function readStored(): ThemePresetId {
   try {
-    return normalizePresetId(localStorage.getItem(STORAGE_KEY))
+    const stored = localStorage.getItem(THEME_STORAGE_KEY)
+    if (stored) return normalizePresetId(stored)
+
+    // Before the three-theme selector, the warm eye-care palette was stored as
+    // "light". Preserve that visual preference; a real dark choice stays dark.
+    const legacy = localStorage.getItem(THEME_LEGACY_STORAGE_KEY)
+    return legacy && normalizePresetId(legacy) === 'dark' ? 'dark' : DEFAULT_THEME
   } catch {
     return DEFAULT_THEME
   }
@@ -26,11 +32,11 @@ watch(
   (id) => {
     const preset = getPreset(id)
     try {
-      localStorage.setItem(STORAGE_KEY, id)
+      localStorage.setItem(THEME_STORAGE_KEY, id)
     } catch {
       /* ignore */
     }
-    applyShellCssVars(preset)
+    applyThemeAttribute(preset)
   },
   { immediate: true },
 )
@@ -46,16 +52,14 @@ export function useTheme() {
     () => preset.value.overrides,
   )
 
-  const isDark = computed(() => preset.value.dark)
-
-  function toggleTheme() {
-    presetId.value = isDark.value ? 'light' : 'dark'
+  function setPreset(id: ThemePresetId) {
+    presetId.value = id
   }
 
   return {
     naiveTheme,
     themeOverrides,
-    isDark,
-    toggleTheme,
+    presetId,
+    setPreset,
   }
 }

@@ -1,0 +1,22 @@
+html[data-theme='eye-care'] {
+  --fa-bg: #e1dbd3;
+  --fa-backdrop: #d2cbc1;
+  --fa-bg-elevated: #f3f0eb;
+  --fa-bg-soft: #e9e4dc;
+  --fa-border: #d0c9c0;
+  --fa-border-soft: #ded8d0;
+  --fa-text: #3a352f;
+  --fa-text-strong: #262220;
+  --fa-text-secondary: #6b6359;
+  --fa-text-muted: #857d72;
+  --fa-text-faint: #9c9489;
+  --fa-hover-border: #9fc1ea;
+  --fa-hover-shadow: rgba(74, 62, 48, 0.12);
+  --fa-accent: #2080f0;
+  --fa-highlight-bg: #f7e9d1;
+  --fa-highlight-border: #eac388;
+  --fa-highlight-text: #c2410c;
+  --fa-header-shadow: 0 -6px 18px rgba(74, 62, 48, 0.1);
+  --fa-bottom-nav-shadow: 0 1px 18px rgba(74, 62, 48, 0.1);
+  --fa-sider-shadow: -6px 0 18px rgba(74, 62, 48, 0.09);
+}
