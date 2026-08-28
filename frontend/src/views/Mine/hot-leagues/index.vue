@@ -172,15 +172,15 @@ function applySetting(data: HotLeaguesSetting, keepSelection = false) {
 }
 
 /**
- * Cache paints first; `force` then reads the local backend so `protected`
- * never stays on a stale sessionStorage snapshot.
+ * Cache paints first; network only when this tab has no snapshot yet.
+ * 「恢复」仍 force 读后端。
  */
 async function loadSetting(options?: { silent?: boolean; keepSelection?: boolean }) {
   const silent = options?.silent ?? false
   const keepSelection = options?.keepSelection ?? false
   if (!silent) loading.value = true
   try {
-    applySetting(await fetchHotLeaguesSetting(true), keepSelection)
+    applySetting(await fetchHotLeaguesSetting(), keepSelection)
   } catch (err) {
     if (!silent) {
       message.error(err instanceof Error ? err.message : '读取热门联赛失败')
@@ -638,10 +638,8 @@ async function confirmDeleteLeague() {
 }
 
 onMounted(() => {
-  void loadSetting({
-    silent: cachedSetting != null,
-    keepSelection: false,
-  })
+  if (cachedSetting != null) return
+  void loadSetting({ keepSelection: false })
 })
 </script>
 

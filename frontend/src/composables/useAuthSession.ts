@@ -17,6 +17,7 @@ import {
   clearPrivateFavorites,
   useFavoriteFixtures,
 } from '@/composables/useFavoriteFixtures'
+import { clearLastMineRoute } from '@/views/Mine/sectionMeta'
 import { clearPrivateCalculator } from '@/views/Predictions/composables/useBetCalculator'
 
 /**
@@ -70,6 +71,7 @@ function clearLocalUser() {
  */
 function wipePrivateClientCaches() {
   clearAdminSettingsCache()
+  clearLastMineRoute()
   clearPrivateBetPlans()
   clearPrivateFavorites()
   clearPrivateCalculator()

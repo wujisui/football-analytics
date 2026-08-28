@@ -101,3 +101,41 @@ export function sectionFromRouteName(name: unknown): MineSection {
   )
   return (matched?.[0] as MineSection | undefined) ?? 'account'
 }
+
+const LAST_MINE_ROUTE_KEY = 'fa-mine-last-route'
+
+export function isMineRouteName(name: unknown): boolean {
+  return String(name ?? '').startsWith('mine')
+}
+
+/** Remember the subsection left when navigating off 【我的】. */
+export function rememberLastMineRoute(name: unknown): void {
+  if (!isMineRouteName(name)) return
+  try {
+    sessionStorage.setItem(LAST_MINE_ROUTE_KEY, String(name))
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+/** PC top-nav restore target; admin-only pages fall back for non-admins. */
+export function restoredMineRouteName(isAdmin: boolean): string {
+  try {
+    const raw = sessionStorage.getItem(LAST_MINE_ROUTE_KEY)
+    if (!raw) return sectionMeta.account.routeName
+    const section = sectionFromRouteName(raw)
+    if (sectionMeta[section].routeName !== raw) return sectionMeta.account.routeName
+    if (isAdminOnlySection(section) && !isAdmin) return sectionMeta.account.routeName
+    return raw
+  } catch {
+    return sectionMeta.account.routeName
+  }
+}
+
+export function clearLastMineRoute(): void {
+  try {
+    sessionStorage.removeItem(LAST_MINE_ROUTE_KEY)
+  } catch {
+    /* ignore */
+  }
+}

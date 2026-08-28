@@ -18,7 +18,7 @@ import {
   zhCN,
   dateZhCN,
 } from 'naive-ui'
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthSession } from '@/composables/useAuthSession'
@@ -27,6 +27,11 @@ import { useTheme } from '@/composables/useTheme'
 import LoginModal from '@/views/Mine/components/LoginModal.vue'
 import { parseDetailFrom } from '@/utils/detailNav'
 import { fixturesRouteWithLeague } from '@/utils/fixturesLeagueFilter'
+import {
+  isMineRouteName,
+  rememberLastMineRoute,
+  restoredMineRouteName,
+} from '@/views/Mine/sectionMeta'
 
 type NavKey = 'predictions' | 'results' | 'favorites' | 'mine'
 
@@ -34,7 +39,7 @@ const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides } = useTheme()
-const { verifySession } = useAuthSession()
+const { verifySession, isAdmin } = useAuthSession()
 
 onMounted(() => {
   void verifySession()
@@ -52,8 +57,17 @@ const showBottomNav = computed(
 )
 
 function isMineRoute(name: unknown) {
-  return String(name ?? '').startsWith('mine')
+  return isMineRouteName(name)
 }
+
+watch(
+  () => route.name,
+  (to, from) => {
+    if (isMineRouteName(from) && !isMineRouteName(to)) {
+      rememberLastMineRoute(from)
+    }
+  },
+)
 
 const activeNav = computed<NavKey>(() => {
   if (isMineRoute(route.name)) return 'mine'
@@ -79,8 +93,20 @@ function goNav(name: 'predictions' | 'results') {
 }
 
 function goMine() {
-  if (route.name === 'mine-account') return
-  void router.push({ name: 'mine-account' })
+  const account = 'mine-account'
+  if (isPhone.value) {
+    if (route.name === account) return
+    void router.push({ name: account })
+    return
+  }
+  if (isMineRouteName(route.name)) {
+    if (route.name === account) return
+    void router.push({ name: account })
+    return
+  }
+  const target = restoredMineRouteName(isAdmin.value)
+  if (route.name === target) return
+  void router.push({ name: target })
 }
 
 function goFavorites() {
