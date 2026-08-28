@@ -139,18 +139,57 @@ def resolve_match_probabilities(
     probs: dict[str, float] | None,
     odds: dict[str, Any] | None = None,
 ) -> dict[str, float]:
-    """Prefer stored model probs; if still flat prior, fall back to odds-implied."""
-    normalized = normalize_probabilities(
+    """Return UI / audit 1X2 probabilities (alias of ``published_match_probabilities``)."""
+    return published_match_probabilities(probs, odds)
+
+
+def published_match_probabilities(
+    model_probs: dict[str, float] | None,
+    odds: dict[str, Any] | None = None,
+) -> dict[str, float]:
+    """1X2 probabilities shown in lists, detail, and ``pre_match_data``.
+
+    When a match-winner board exists, these are **de-vigged market probabilities**
+    computed from the same three decimal prices on the card:
+
+        p_i = (1/odd_i) / sum(1/odd_j)
+
+    Raw ML softmax outputs are **not** shown: they are overconfident on thin samples
+    and are not reproducible from the quoted prices.  The trained model still feeds
+    ``get_recommendation`` via ``working_match_probabilities``.
+    """
+    board = implied_probs_from_odds(odds)
+    if board is not None:
+        return board
+    return normalize_probabilities(
         {
-            "home": float((probs or {}).get("home", DEFAULT_PROB)),
-            "draw": float((probs or {}).get("draw", DEFAULT_PROB)),
-            "away": float((probs or {}).get("away", DEFAULT_PROB)),
+            "home": float((model_probs or {}).get("home", DEFAULT_PROB)),
+            "draw": float((model_probs or {}).get("draw", DEFAULT_PROB)),
+            "away": float((model_probs or {}).get("away", DEFAULT_PROB)),
         }
     )
-    if not is_flat_prior(normalized):
-        return normalized
-    implied = implied_probs_from_odds(odds)
-    return implied if implied is not None else normalized
+
+
+def working_match_probabilities(
+    model_probs: dict[str, float] | None,
+    odds: dict[str, Any] | None = None,
+) -> dict[str, float]:
+    """Internal 1X2 estimate for leans / goal model / recommendation ranking.
+
+    Uses model output when it carries signal; otherwise falls back to de-vigged odds.
+    """
+    model = normalize_probabilities(
+        {
+            "home": float((model_probs or {}).get("home", DEFAULT_PROB)),
+            "draw": float((model_probs or {}).get("draw", DEFAULT_PROB)),
+            "away": float((model_probs or {}).get("away", DEFAULT_PROB)),
+        }
+    )
+    if is_flat_prior(model):
+        implied = implied_probs_from_odds(odds)
+        if implied is not None:
+            return implied
+    return model
 
 
 def has_1x2_market(odds: dict[str, Any] | None) -> bool:
@@ -944,7 +983,7 @@ def derive_prediction_leans(
     Frozen ``pre_match_data`` snapshots are written at analysis time; changing
     this function only affects **future** analyses (historical audit stays).
     """
-    normalized = resolve_match_probabilities(probs, odds)
+    normalized = working_match_probabilities(probs, odds)
     if not has_1x2_market(odds):
         has_ah = isinstance((odds or {}).get("asian_handicap"), dict) if odds else False
         return {
@@ -1098,15 +1137,14 @@ def build_prediction_snapshot(
     *,
     league_id: int | None = None,
 ) -> dict[str, Any]:
-    # Odds-implied fills flat placeholders so 1X2 + leans stay consistent.
-    normalized = resolve_match_probabilities(probs, odds)
+    display = published_match_probabilities(probs, odds)
     leans = derive_prediction_leans(
-        normalized, odds, features=features, league_id=league_id
+        probs, odds, features=features, league_id=league_id
     )
     return {
-        "home_win_prob": round(normalized["home"], 4),
-        "draw_prob": round(normalized["draw"], 4),
-        "away_win_prob": round(normalized["away"], 4),
+        "home_win_prob": round(display["home"], 4),
+        "draw_prob": round(display["draw"], 4),
+        "away_win_prob": round(display["away"], 4),
         **leans,
     }
 

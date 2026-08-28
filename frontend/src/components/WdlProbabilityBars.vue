@@ -17,11 +17,11 @@ withDefaults(
     <div v-for="item in items" :key="item.key" class="prob-item">
       <span class="prob-head">
         <span>{{ item.label }}</span>
-        <strong>{{ toPercent(item.value) }}</strong>
+        <strong>{{ toPercent(item.value, 1) }}</strong>
       </span>
       <n-progress
         type="line"
-        :percentage="Math.round(item.value * 100)"
+        :percentage="Math.min(100, Math.round(item.value * 1000) / 10)"
         :show-indicator="false"
         :height="variant === 'card' ? 6 : 8"
       />
