@@ -2,10 +2,7 @@
 import { computed } from 'vue'
 
 import type { AutoFavoriteMarket } from '@/api/favorites'
-import {
-  autoFavoriteLean,
-  autoFavoriteMarket,
-} from '@/composables/useFavoriteFixtures'
+import { autoFavoritePick } from '@/composables/useFavoriteFixtures'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
 import { isPredictionPending, adaptHandicapLean } from '@/utils/handicapDisplay'
 import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
@@ -36,40 +33,48 @@ const emit = defineEmits<{
   open: []
 }>()
 
-const pickMarket = computed(() => (autoFavoriteMarket(props.fixtureId) ?? '').trim())
+/**
+ * 日推按期望收益单选，分析器按最可能结果推导，两者允许不同向。
+ * 被日推选中的场次整行改用日推那套自洽三件套，禁止两套混排。
+ */
+const pick = computed(() => autoFavoritePick(props.fixtureId))
 
 function isPick(market: AutoFavoriteMarket): boolean {
-  return pickMarket.value === market
+  return pick.value?.market === market
 }
 
-/**
- * 日推是单选（胜/平/负三选一），分析器的可见推荐允许双选。
- * 带 [荐] 时展示日推真实下注方向，避免卡片印着「胜/平」却只押一边。
- */
-const recommendationLabel = computed(() => {
-  if (isPick('1x2')) {
-    const lean = autoFavoriteLean(props.fixtureId)
-    if (lean) return lean
-  }
-  return isPredictionPending(props.recommendation) ? '待分析' : props.recommendation
-})
+const recommendationText = computed(
+  () => (isPick('1x2') && pick.value?.lean) || props.recommendation,
+)
+const handicapText = computed(
+  () => (isPick('1x2') && pick.value?.handicapLean) || props.handicapLean,
+)
+const scoreText = computed(
+  () => (isPick('1x2') && pick.value?.scoreHint) || props.scoreHint,
+)
+
+const recommendationLabel = computed(() =>
+  isPredictionPending(recommendationText.value)
+    ? '待分析'
+    : recommendationText.value,
+)
 const recommendationTagColor = computed(() =>
-  isPredictionPending(props.recommendation)
+  isPredictionPending(recommendationText.value)
     ? undefined
-    : wdlTagColor(leanWdlTone(props.recommendation)),
+    : wdlTagColor(leanWdlTone(recommendationText.value)),
 )
 const { ruleset } = useHandicapRuleset()
 
 const handicapLabel = computed(() =>
-  adaptHandicapLean(props.handicapLean, ruleset.value),
+  adaptHandicapLean(handicapText.value, ruleset.value),
 )
-const showHandicap = computed(() => !isPredictionPending(props.handicapLean))
+const showHandicap = computed(() => !isPredictionPending(handicapText.value))
 const handicapTagColor = computed(() =>
   wdlTagColor(leanWdlTone(handicapLabel.value)),
 )
 const showGoal = computed(() => !isPredictionPending(props.goalLean))
 const showBothScore = computed(() => !isPredictionPending(props.bothScore))
-const showScore = computed(() => !isPredictionPending(props.scoreHint))
+const showScore = computed(() => !isPredictionPending(scoreText.value))
 
 function open() {
   if (props.clickable) emit('open')
@@ -137,7 +142,7 @@ function open() {
       :bordered="false"
       type="info"
     >
-      <n-ellipsis style="max-width: 100%">{{ scoreHint }}</n-ellipsis>
+      <n-ellipsis style="max-width: 100%">{{ scoreText }}</n-ellipsis>
     </n-tag>
   </div>
 </template>

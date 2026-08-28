@@ -46,6 +46,10 @@ class FavoriteFixture(Base):
     # Populated only when source=auto: which single-lean market won ranking.
     auto_market: Mapped[str | None] = mapped_column(String(16), nullable=True)
     auto_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 与 auto_lean 同源的自洽展示：让球方向与仍可成立的比分候选。
+    # 分析器那套（pre_match_data）按最可能结果推导，两者允许不同向，不得混用。
+    auto_handicap_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    auto_score_hint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Auto tip quality as 0.5–5 星（同一比赛日的入选场次内部排名）。
     quality_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     saved_at: Mapped[datetime] = mapped_column(

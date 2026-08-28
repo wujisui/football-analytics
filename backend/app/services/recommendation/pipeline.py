@@ -61,8 +61,9 @@ class MatchPipelineInput:
     match_day: str
     odds: dict[str, Any] | None
     package: dict[str, Any] | None = None
-    recommendation: str | None = None
-    score_hint: str | None = None
+    # 大小球 / 双方进球是与方向无关的结论，日推重算比分时沿用本场这两条。
+    goal_lean: str | None = None
+    both_score_lean: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,7 +100,7 @@ class DailyRecommendationPick:
     handicap_lean: str | None = None
     score_hint: str | None = None
     is_consistent: bool = True
-    conflict_reason: str = "原始匹配"
+    conflict_reason: str = "自洽"
     conflict_detail: str = ""
 
 
@@ -116,20 +117,20 @@ def log_sync_summary(
     positive_ev_count: int,
     selected_count: int,
     feedback_written: bool,
-    handicap_conflicts: int = 0,
+    consistency_rejected: int = 0,
     day: str | None = None,
 ) -> None:
     """Emit structured daily sync metrics; warn when picks < 4 on busy days."""
     day_label = day or "unknown"
     logger.info(
         "Recommendation sync summary day=%s total_matches=%s positive_ev=%s selected=%s "
-        "feedback_written=%s handicap_conflicts=%s",
+        "feedback_written=%s consistency_rejected=%s",
         day_label,
         total_matches,
         positive_ev_count,
         selected_count,
         feedback_written,
-        handicap_conflicts,
+        consistency_rejected,
     )
     if total_matches >= MIN_MATCHES_FOR_FULL_QUOTA and selected_count < AUTO_PICK_LIMIT:
         logger.warning(
@@ -300,17 +301,15 @@ def run_pipeline(
     incentive_state: Any | None = None,
     limit_per_day: int = AUTO_PICK_LIMIT,
     skip_fixture_ids: set[int] | None = None,
-    stored_handicap_by_fixture: dict[int, str | None] | None = None,
 ) -> dict[str, Any]:
     """Score prematch fixtures and return per-day Top-N positive-EV 1X2 picks."""
     artifact = artifact if artifact is not None else load_calibration_artifact()
     odds_by_fixture = {match.fixture_id: match.odds for match in matches}
-    recommendation_by_fixture = {
-        match.fixture_id: match.recommendation for match in matches
+    goal_lean_by_fixture = {match.fixture_id: match.goal_lean for match in matches}
+    both_score_lean_by_fixture = {
+        match.fixture_id: match.both_score_lean for match in matches
     }
-    score_hint_by_fixture = {match.fixture_id: match.score_hint for match in matches}
     matches_count_by_day = _count_matches_by_day(matches)
-    stored_handicap = stored_handicap_by_fixture or {}
 
     processed: list[PipelineMatchResult] = []
     for match in matches:
@@ -332,10 +331,17 @@ def run_pipeline(
     consistency_pool = [pick for pick in picks if pick.fixture_id not in skipped]
     consistent_pairs, rejected = validate_consistency_batch(
         consistency_pool,
-        recommendation_by_fixture=recommendation_by_fixture,
-        score_hint_by_fixture=score_hint_by_fixture,
+        probs_by_fixture={
+            pick.fixture_id: {
+                "home": pick.calibrated_home_prob,
+                "draw": pick.calibrated_draw_prob,
+                "away": pick.calibrated_away_prob,
+            }
+            for pick in consistency_pool
+        },
+        goal_lean_by_fixture=goal_lean_by_fixture,
+        both_score_lean_by_fixture=both_score_lean_by_fixture,
         odds_by_fixture=odds_by_fixture,
-        stored_handicap_by_fixture=stored_handicap,
     )
     picks = [
         replace(
@@ -355,10 +361,6 @@ def run_pipeline(
         matches_count_by_day=matches_count_by_day,
     )
 
-    corrected_count = sum(
-        1 for _pick, decision in consistent_pairs if decision.corrected
-    )
-    handicap_conflicts = corrected_count + len(rejected)
     ratings = within_day_quality_ratings(
         [
             AutoPickCandidate(
@@ -388,7 +390,6 @@ def run_pipeline(
         "positive_ev_count": positive_ev_count,
         "consistency_rejected_count": len(rejected),
         "selected_count": len(selected),
-        "handicap_conflicts": handicap_conflicts,
         "by_day": by_day_counts,
         "feedback": feedback_summary(incentive_state),
         "selected": [
@@ -444,8 +445,8 @@ def match_input_from_fixture_row(
         match_day=match_day,
         odds=odds if isinstance(odds, dict) else None,
         package=package if isinstance(package, dict) else None,
-        recommendation=stored.recommendation,
-        score_hint=stored.score_hint,
+        goal_lean=stored.goal_lean,
+        both_score_lean=stored.both_score_lean,
     )
 
 
@@ -453,7 +454,7 @@ async def collect_prematch_pipeline_inputs(
     db: AsyncSession,
     *,
     now: datetime | None = None,
-) -> tuple[list[MatchPipelineInput], dict[int, PreMatchData]]:
+) -> list[MatchPipelineInput]:
     """Load prematch fixtures that already have a stored pre-match package."""
     current = now or datetime.now(timezone.utc).replace(tzinfo=None)
     rows = (
@@ -472,13 +473,10 @@ async def collect_prematch_pipeline_inputs(
         if prev is None or (feature is not None and prev[2] is None):
             by_fixture[fixture.id] = (fixture, stored, feature)
 
-    return (
-        [
-            match_input_from_fixture_row(fixture, stored)
-            for fixture, stored, _feature in by_fixture.values()
-        ],
-        {int(fixture.id): stored for fixture, stored, _ in by_fixture.values()},
-    )
+    return [
+        match_input_from_fixture_row(fixture, stored)
+        for fixture, stored, _feature in by_fixture.values()
+    ]
 
 
 def _utc_now() -> datetime:
@@ -500,11 +498,7 @@ async def sync_daily_recommendations(
 
     incentive_state = await ensure_feedback_state(db, now=current)
     calibration = await train_from_frozen_history(db, now=current)
-    matches, stored_by_fixture = await collect_prematch_pipeline_inputs(db, now=current)
-    stored_handicap = {
-        fixture_id: (stored.handicap_lean or None)
-        for fixture_id, stored in stored_by_fixture.items()
-    }
+    matches = await collect_prematch_pipeline_inputs(db, now=current)
 
     manual_ids = {
         int(row[0])
@@ -524,20 +518,11 @@ async def sync_daily_recommendations(
         incentive_state=incentive_state,
         limit_per_day=limit,
         skip_fixture_ids=manual_ids,
-        stored_handicap_by_fixture=stored_handicap,
     )
     selected: list[DailyRecommendationPick] = pipeline_result["picks"]
     ratings: dict[int, float] = pipeline_result["ratings"]
     prematch_ids = {match.fixture_id for match in matches}
     selected_ids = {pick.fixture_id for pick in selected}
-
-    for pick in selected:
-        stored = stored_by_fixture.get(pick.fixture_id)
-        if stored is None or not pick.handicap_lean:
-            continue
-        stored.handicap_lean = pick.handicap_lean
-        if pick.score_hint:
-            stored.score_hint = pick.score_hint
 
     await db.execute(
         delete(FavoriteFixture).where(
@@ -555,6 +540,8 @@ async def sync_daily_recommendations(
                 source=FAVORITE_SOURCE_AUTO,
                 auto_market=pick.market,
                 auto_lean=pick.lean,
+                auto_handicap_lean=pick.handicap_lean,
+                auto_score_hint=pick.score_hint,
                 quality_rating=ratings.get(pick.fixture_id),
                 saved_at=saved_at,
             )
@@ -579,6 +566,8 @@ async def sync_daily_recommendations(
                 match_day=pick.match_day,
                 market=pick.market,
                 lean=pick.lean,
+                handicap_lean=pick.handicap_lean,
+                score_hint=pick.score_hint,
                 raw_confidence=pick.raw_confidence,
                 confidence=pick.confidence,
                 decimal_odd=pick.decimal_odd,
@@ -608,7 +597,6 @@ async def sync_daily_recommendations(
         "total_matches": pipeline_result.get("total_matches", len(matches)),
         "candidates": pipeline_result["positive_ev_count"],
         "selected_count": pipeline_result["selected_count"],
-        "handicap_conflicts": pipeline_result.get("handicap_conflicts", 0),
         "consistency_rejected_count": pipeline_result.get(
             "consistency_rejected_count", 0
         ),
@@ -635,7 +623,7 @@ async def sync_daily_recommendations(
         positive_ev_count=int(result["candidates"]),
         selected_count=int(result["selected_count"]),
         feedback_written=feedback_written,
-        handicap_conflicts=int(result["handicap_conflicts"]),
+        consistency_rejected=int(result["consistency_rejected_count"]),
         day=local_day,
     )
     return result

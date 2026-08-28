@@ -43,6 +43,9 @@ export interface FavoriteFixtureRecord {
   source?: 'manual' | 'auto' | string
   auto_market?: AutoFavoriteMarket | string | null
   auto_lean?: string | null
+  /** 与 auto_lean 同源的自洽展示；分析器那套在 recommendation / handicap_lean。 */
+  auto_handicap_lean?: string | null
+  auto_score_hint?: string | null
   /** 0.5–5 星推荐质量（同一比赛日的入选场次内部排名）。 */
   quality_rating?: number | null
 }

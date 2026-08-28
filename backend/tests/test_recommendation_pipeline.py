@@ -20,8 +20,8 @@ def _match(
     fixture_id: int,
     *,
     match_day: str = "2026-08-28",
-    recommendation: str | None = None,
-    score_hint: str | None = None,
+    goal_lean: str | None = "大(2.5)",
+    both_score_lean: str | None = "双进:是",
     ah_line: str | None = None,
 ) -> MatchPipelineInput:
     odds = {
@@ -36,8 +36,8 @@ def _match(
         kickoff=datetime(2026, 8, 28, 15, 0, tzinfo=timezone.utc),
         match_day=match_day,
         odds=odds,
-        recommendation=recommendation,
-        score_hint=score_hint,
+        goal_lean=goal_lean,
+        both_score_lean=both_score_lean,
     )
 
 
@@ -179,29 +179,24 @@ def test_consistency_gate_runs_before_top_four_and_backfills(monkeypatch) -> Non
         "app.services.recommendation.pipeline.process_match",
         fake_process,
     )
+    # 主胜穿不过主让1.5球，最高分的这场无法表达成让球方向，只能淘汰补位。
     matches = [
-        _match(
-            1,
-            recommendation="胜/平",
-            score_hint="比分:1-1",
-            ah_line="-0.75",
-        ),
-        *[_match(i) for i in range(2, 7)],
+        _match(1, ah_line="-1.5"),
+        *[_match(i, ah_line="-0.5") for i in range(2, 7)],
     ]
-    result = run_pipeline(
-        matches,
-        artifact={},
-        limit_per_day=4,
-        stored_handicap_by_fixture={1: "让负(-0.75)"},
-    )
+    result = run_pipeline(matches, artifact={}, limit_per_day=4)
 
     assert [item["fixture_id"] for item in result["selected"]] == [2, 3, 4, 5]
     assert result["selected_count"] == 4
     assert result["consistency_rejected_count"] == 1
     assert result["rejected"][0]["fixture_id"] == 1
     assert result["rejected"][0]["is_consistent"] is False
-    assert result["rejected"][0]["conflict_reason"] == "无法修正，跳过"
+    assert result["rejected"][0]["conflict_reason"] == "无法自洽，跳过"
     assert all(item["is_consistent"] is True for item in result["selected"])
+    assert all(item["handicap_lean"] == "让胜(-0.5)" for item in result["selected"])
+    for item in result["selected"]:
+        home_goals, away_goals = item["score_hint"].split(":")[1].split("-")
+        assert int(home_goals) > int(away_goals)
 
 
 def test_select_daily_picks_respects_match_day_buckets() -> None:

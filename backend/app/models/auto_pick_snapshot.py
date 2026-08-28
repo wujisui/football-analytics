@@ -30,6 +30,9 @@ class AutoPickSnapshot(Base):
     match_day: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     market: Mapped[str] = mapped_column(String(16), nullable=False)
     lean: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 与 lean 同源的自洽展示，冻结用于审计（分析器那套另存 pre_match_data）。
+    handicap_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    score_hint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Probability before the validated per-market calibration layer.
     raw_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Probability after calibration, equivalent-event convergence and market-risk shrink.

@@ -424,6 +424,9 @@ class FavoriteFixtureResponse(BaseModel):
     source: str = "manual"
     auto_market: str | None = None
     auto_lean: str | None = None
+    # 与 auto_lean 同源的自洽展示；分析器那套在 recommendation/handicap_lean。
+    auto_handicap_lean: str | None = None
+    auto_score_hint: str | None = None
     # 0.5–5 星推荐质量（同一比赛日的入选场次内部排名）。
     quality_rating: float | None = None
 

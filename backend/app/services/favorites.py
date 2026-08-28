@@ -132,6 +132,8 @@ def _to_favorite_response(
         source=fav.source,
         auto_market=fav.auto_market,
         auto_lean=fav.auto_lean,
+        auto_handicap_lean=fav.auto_handicap_lean,
+        auto_score_hint=fav.auto_score_hint,
         quality_rating=fav.quality_rating,
     )
 

@@ -1101,6 +1101,50 @@ def derive_prediction_leans(
     }
 
 
+def score_hint_for_lean(
+    lean: str,
+    probs: dict[str, float],
+    *,
+    goal_lean: str | None,
+    both_score_lean: str | None,
+) -> str | None:
+    """Reference score for one 1X2 direction, using the display generator.
+
+    日推按期望收益单选，方向常与分析器的最可能结果不同，分析器算好的比分候选
+    对它无效。这里换方向跑同一套生成器，大小球与双方进球沿用本场已有结论，
+    因此仍是推导而非另起一套模型。无法落到该方向时返回 None，由调用方淘汰。
+    """
+    outcomes = recommendation_outcomes(lean)
+    if not outcomes or len(outcomes) != 1:
+        return None
+    parsed_ou = _parse_goal_lean(goal_lean or "")
+    if parsed_ou is None:
+        return None
+    side, line = parsed_ou
+    btts_yes = "是" in (both_score_lean or "")
+    _, lines = _score_hints_for_recommendation(
+        lean,
+        probs,
+        _target_total(line, side),
+        btts_yes=btts_yes,
+        ou_side=side,
+        ou_line=line,
+    )
+    lines = [
+        _align_score_with_outcomes(
+            pair, outcomes=outcomes, probs=probs, btts_yes=btts_yes
+        )
+        for pair in lines
+    ]
+    lines = _align_score_with_ou(
+        lines, line=line, ou_side=side, btts_yes=btts_yes
+    )
+    kept = [pair for pair in lines if _score_matches_outcomes(*pair, outcomes)]
+    if not kept:
+        return None
+    return "比分:" + "/".join(f"{home}-{away}" for home, away in kept)
+
+
 def _clamp(n: float, lo: float, hi: float) -> float:
     return min(hi, max(lo, n))
 

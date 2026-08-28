@@ -290,26 +290,27 @@ export function findFavoriteListFixture(
   )
 }
 
-/** Auto-pick market for highlight, or null when not an algorithm favorite. */
-export function autoFavoriteMarket(
-  fixtureId: number | null | undefined,
-): string | null {
-  if (fixtureId == null) return null
-  const item = autoPicks.value.find((row) => row.fixture_id === fixtureId)
-  if (!item) return null
-  const market = (item.auto_market || '').trim()
-  return market || null
+/** 日推自洽三件套：单选方向、让球表达与同向比分；非算法推荐时为 null。 */
+export interface AutoPickBundle {
+  market: string
+  lean: string
+  handicapLean: string
+  scoreHint: string
 }
 
-/** 日推真实下注方向（单选），非算法推荐时为 null。 */
-export function autoFavoriteLean(
+export function autoFavoritePick(
   fixtureId: number | null | undefined,
-): string | null {
+): AutoPickBundle | null {
   if (fixtureId == null) return null
   const item = autoPicks.value.find((row) => row.fixture_id === fixtureId)
-  if (!item) return null
-  const lean = (item.auto_lean || '').trim()
-  return lean || null
+  const market = (item?.auto_market || '').trim()
+  if (!item || !market) return null
+  return {
+    market,
+    lean: (item.auto_lean || '').trim(),
+    handicapLean: (item.auto_handicap_lean || '').trim(),
+    scoreHint: (item.auto_score_hint || '').trim(),
+  }
 }
 
 /** 0.5–5 星推荐质量；非算法推荐或历史不足时为 null。 */

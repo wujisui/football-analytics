@@ -269,6 +269,8 @@ async def _ensure_sqlite_columns(conn) -> None:
             "source": "TEXT DEFAULT 'manual'",
             "auto_market": "TEXT",
             "auto_lean": "TEXT",
+            "auto_handicap_lean": "TEXT",
+            "auto_score_hint": "TEXT",
             "quality_rating": "REAL",
         },
     )
@@ -279,6 +281,8 @@ async def _ensure_sqlite_columns(conn) -> None:
             "raw_confidence": "REAL",
             "score": "REAL",
             "quality_rating": "REAL",
+            "handicap_lean": "TEXT",
+            "score_hint": "TEXT",
         },
     )
     await _ensure_table_columns(
