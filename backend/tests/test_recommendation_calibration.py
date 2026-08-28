@@ -1,5 +1,6 @@
 """League-bucket recommendation calibration (no official API calls)."""
 
+import random
 from datetime import datetime, timedelta, timezone
 
 from app.services.recommendation.calibration import (
@@ -26,6 +27,10 @@ def _synthetic_rows(
         + ["draw"] * int(count * draw_rate)
         + ["away"] * (count - int(count * home_rate) - int(count * draw_rate))
     )
+    # Spread the outcomes over the timeline: the fitter holds out the most
+    # recent 20%, and a chronologically blocked list makes that slice
+    # single-class, which no calibrator can beat.
+    random.Random(20260828).shuffle(labels)
     for index in range(count):
         label = labels[index % len(labels)]
         rows.append(

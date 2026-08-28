@@ -1,9 +1,9 @@
 """Historical feedback layer for the recommendation pipeline.
 
-The EV gate (strategy) decides *whether* a fixture is recommendable.
-This module applies persisted daily-pick EMA + league×market soft weights
-to the ranking score only — it never promotes negative-EV fixtures or
-relaxes the positive-EV filter.
+The strategy decides *which* side of a fixture is recommendable. This module
+applies persisted daily-pick EMA + league×market soft weights to the ranking
+score only — the base score is the calibrated confidence, so a boost always
+moves a pick up and a penalty always moves it down.
 
 Persistence and learning logic live in ``auto_pick_incentive``; this file
 is the pipeline-facing adapter so calibration / strategy stay unchanged.
@@ -37,17 +37,17 @@ async def ensure_feedback_state(
 
 
 def feedback_adjusted_score(
-    base_ev: float,
+    base_score: float,
     *,
     league_id: int,
     market: str,
     state: IncentiveState | None,
 ) -> float:
-    """Apply EMA + soft-weight multipliers to a raw positive EV base score."""
+    """Apply EMA + soft-weight multipliers to a calibrated-confidence base."""
     if state is None:
-        return float(base_ev)
+        return float(base_score)
     return adjust_pick_score(
-        float(base_ev),
+        float(base_score),
         league_id=int(league_id),
         market=market,
         state=state,
@@ -61,7 +61,7 @@ def apply_feedback_to_pick(
 ) -> DailyRecommendationPick:
     """Return a copy whose ``score`` reflects historical feedback; ``ev`` unchanged."""
     adjusted = feedback_adjusted_score(
-        pick.ev,
+        pick.score,
         league_id=pick.league_id,
         market=pick.market,
         state=state,

@@ -29,7 +29,7 @@ def _pick(
         recommended_choice="home",
         ev=ev,
         confidence=0.56,
-        reason="EV最大",
+        reason="置信度最高",
         decimal_odd=2.0,
         raw_confidence=0.50,
         calibrated_home_prob=0.56,

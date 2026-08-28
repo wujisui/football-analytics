@@ -44,12 +44,12 @@ from app.services.recommendation.features import build_match_features
 from app.services.results_capture import prematch_list_clause
 from app.services.user_scope import ANON_OWNER_ID
 
-from app.services.recommendation.strategy import OUTCOMES, decide_match
+from app.services.recommendation.strategy import DAILY_PICK_OUTCOMES, decide_match
 
 logger = logging.getLogger(__name__)
 
 MARKET_1X2 = "1x2"
-OUTCOME_TO_LEAN = {"home": "胜", "draw": "平", "away": "负"}
+OUTCOME_TO_LEAN = {"home": "胜", "away": "负"}
 MIN_MATCHES_FOR_FULL_QUOTA = 6
 
 
@@ -114,7 +114,7 @@ def _count_matches_by_day(matches: list[MatchPipelineInput]) -> dict[str, int]:
 def log_sync_summary(
     *,
     total_matches: int,
-    positive_ev_count: int,
+    candidate_count: int,
     selected_count: int,
     feedback_written: bool,
     consistency_rejected: int = 0,
@@ -123,11 +123,11 @@ def log_sync_summary(
     """Emit structured daily sync metrics; warn when picks < 4 on busy days."""
     day_label = day or "unknown"
     logger.info(
-        "Recommendation sync summary day=%s total_matches=%s positive_ev=%s selected=%s "
+        "Recommendation sync summary day=%s total_matches=%s candidates=%s selected=%s "
         "feedback_written=%s consistency_rejected=%s",
         day_label,
         total_matches,
-        positive_ev_count,
+        candidate_count,
         selected_count,
         feedback_written,
         consistency_rejected,
@@ -143,7 +143,7 @@ def log_sync_summary(
         )
     elif total_matches < MIN_MATCHES_FOR_FULL_QUOTA:
         logger.info(
-            "Recommendation sync day=%s total_matches=%s<%s; selected all positive EV=%s",
+            "Recommendation sync day=%s total_matches=%s<%s; selected all candidates=%s",
             day_label,
             total_matches,
             MIN_MATCHES_FOR_FULL_QUOTA,
@@ -206,14 +206,13 @@ def process_match(
     )
 
 
-def _positive_ev_results(
+def _recommendable_results(
     results: list[PipelineMatchResult],
 ) -> list[PipelineMatchResult]:
     return [
         item
         for item in results
-        if item.strategy.get("recommended_choice") in OUTCOMES
-        and float(item.strategy.get("ev") or 0.0) > 0.0
+        if item.strategy.get("recommended_choice") in DAILY_PICK_OUTCOMES
     ]
 
 
@@ -223,11 +222,9 @@ def _to_daily_pick(
     odds: dict[str, Any] | None,
 ) -> DailyRecommendationPick | None:
     choice = result.strategy.get("recommended_choice")
-    if choice not in OUTCOMES:
+    if choice not in DAILY_PICK_OUTCOMES:
         return None
     ev = float(result.strategy.get("ev") or 0.0)
-    if ev <= 0.0:
-        return None
 
     decimal_odd = _decimal_odd_for_choice(odds, choice)
     if decimal_odd is None:
@@ -256,7 +253,7 @@ def _to_daily_pick(
         calibrated_away_prob=float(calibration.get("calibrated_away_prob") or 0.0),
         reliability=float(calibration.get("reliability") or 0.0),
         sample_size=int(calibration.get("sample_size") or 0),
-        score=ev,
+        score=confidence,
     )
 
 
@@ -317,16 +314,16 @@ def run_pipeline(
         if result is not None:
             processed.append(result)
 
-    positive = _positive_ev_results(processed)
+    recommendable = _recommendable_results(processed)
     picks: list[DailyRecommendationPick] = []
-    for result in positive:
+    for result in recommendable:
         pick = _to_daily_pick(result, odds=odds_by_fixture.get(result.fixture_id))
         if pick is not None:
             picks.append(pick)
 
     picks = apply_feedback_to_picks(picks, state=incentive_state)
     picks.sort(key=pick_rank_key)
-    positive_ev_count = len(picks)
+    candidate_count = len(picks)
     skipped = skip_fixture_ids or set()
     consistency_pool = [pick for pick in picks if pick.fixture_id not in skipped]
     consistent_pairs, rejected = validate_consistency_batch(
@@ -387,7 +384,7 @@ def run_pipeline(
     return {
         "total_matches": len(matches),
         "processed_count": len(processed),
-        "positive_ev_count": positive_ev_count,
+        "candidate_count": candidate_count,
         "consistency_rejected_count": len(rejected),
         "selected_count": len(selected),
         "by_day": by_day_counts,
@@ -595,7 +592,7 @@ async def sync_daily_recommendations(
     result = {
         "day": local_day,
         "total_matches": pipeline_result.get("total_matches", len(matches)),
-        "candidates": pipeline_result["positive_ev_count"],
+        "candidates": pipeline_result["candidate_count"],
         "selected_count": pipeline_result["selected_count"],
         "consistency_rejected_count": pipeline_result.get(
             "consistency_rejected_count", 0
@@ -620,7 +617,7 @@ async def sync_daily_recommendations(
     }
     log_sync_summary(
         total_matches=int(result["total_matches"]),
-        positive_ev_count=int(result["candidates"]),
+        candidate_count=int(result["candidates"]),
         selected_count=int(result["selected_count"]),
         feedback_written=feedback_written,
         consistency_rejected=int(result["consistency_rejected_count"]),

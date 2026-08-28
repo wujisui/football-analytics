@@ -19,6 +19,7 @@ from app.services.ah_features import (
     dumps_ah_features,
     extract_main_ah_line,
     format_handicap_lean_text,
+    iter_ah_quotes,
     loads_ah_features,
     outcome_settlement_units,
     parse_score_hint,
@@ -241,6 +242,64 @@ def _pick_from_score_hint(score_hint: str | None, line_f: float) -> HandicapPred
 _OPPOSITE_PICK = {"cover": "no_cover", "no_cover": "cover"}
 
 
+def _level_ball_pick(
+    odds: dict[str, Any] | None,
+    recommendation: str,
+) -> HandicapPrediction | None:
+    """Choose a bettable side on level ball; a draw is settlement, never a pick.
+
+    Prefer the nearest balanced non-zero quote from the same bookmaker board:
+    a negative line identifies the home side as the giving/favoured side, while
+    a positive line identifies the away side. If no auxiliary line survived
+    parsing, use the level-ball prices, then the directional 1X2 recommendation.
+    """
+    quotes = iter_ah_quotes(odds)
+    auxiliary = [
+        (line_f, home_odd, away_odd)
+        for line_f, home_odd, away_odd in quotes
+        if abs(line_f) >= 0.05
+    ]
+    if auxiliary:
+        line_f, _, _ = min(
+            auxiliary,
+            key=lambda quote: abs(math.log(quote[1] / quote[2])),
+        )
+        pick = "cover" if line_f < 0 else "no_cover"
+        return HandicapPrediction(
+            0.64 if pick == "cover" else 0.36,
+            pick,
+            "level_aux_line",
+            0.0,
+            f"平手盘按其他让球档位取{pick_to_lean(pick)}",
+        )
+
+    _, home_odd, away_odd = extract_main_ah_line(odds)
+    if home_odd is not None and away_odd is not None:
+        gap = abs(home_odd - away_odd) / max(min(home_odd, away_odd), 1e-6)
+        if gap >= 0.02:
+            pick = "cover" if home_odd < away_odd else "no_cover"
+            return HandicapPrediction(
+                0.6 if pick == "cover" else 0.4,
+                pick,
+                "level_water",
+                0.0,
+                f"平手盘按主盘水位取{pick_to_lean(pick)}",
+            )
+
+    from app.services.prediction import recommendation_outcomes
+
+    outcomes = recommendation_outcomes(recommendation)
+    if outcomes and "home" in outcomes and "away" not in outcomes:
+        return HandicapPrediction(
+            0.58, "cover", "level_1x2", 0.0, "平手盘按胜平负方向取让胜"
+        )
+    if outcomes and "away" in outcomes and "home" not in outcomes:
+        return HandicapPrediction(
+            0.42, "no_cover", "level_1x2", 0.0, "平手盘按胜平负方向取让负"
+        )
+    return None
+
+
 def _loses_outright_on_recommendation(
     line_f: float | None,
     pick: str,
@@ -342,6 +401,13 @@ def predict_handicap(
     # 负/平 + 1-1 +0.25 必须先按比分结算成让胜，而不是让胜/负。
     if structural and "/" not in structural.pick:
         return _agree_with_recommendation(structural, rec)
+
+    # Level ball still has two bettable sides. A reference draw means either
+    # side pushes; it must not become a standalone 「让平/走水」 recommendation.
+    if abs(line_f) < 1e-9:
+        level_pick = _level_ball_pick(odds, rec)
+        if level_pick is not None:
+            return _agree_with_recommendation(level_pick, rec)
 
     score_pick = _pick_from_score_hint(score_hint, line_f)
     if score_pick and score_pick.pick in {"cover", "no_cover", "push"}:

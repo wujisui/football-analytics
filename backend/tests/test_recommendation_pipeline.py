@@ -47,13 +47,14 @@ def _processed(
     match_day: str = "2026-08-28",
     choice: str | None = "home",
     ev: float = 0.12,
+    confidence: float = 0.56,
 ) -> PipelineMatchResult:
     strategy = {
         "match_id": fixture_id,
         "recommended_choice": choice,
         "ev": ev,
-        "confidence": 0.56,
-        "reason": "EV最大" if choice else "无正EV，不推荐",
+        "confidence": confidence,
+        "reason": "置信度最高" if choice else "缺少可用赔率，不推荐",
     }
     calibration = {
         "match_id": fixture_id,
@@ -83,14 +84,15 @@ def test_build_match_features_in_process_match() -> None:
     assert "recommended_choice" in result.strategy
 
 
-def test_run_pipeline_keeps_top_four_positive_ev_per_day(monkeypatch) -> None:
+def test_run_pipeline_keeps_top_four_by_confidence_per_day(monkeypatch) -> None:
+    """EV 与置信度反向排列，验证选场只看置信度、EV 只是随行审计字段。"""
     processed = [
-        _processed(1, ev=0.40),
-        _processed(2, ev=0.30),
-        _processed(3, ev=0.20),
-        _processed(4, ev=0.10),
-        _processed(5, ev=0.05),
-        _processed(6, choice=None, ev=-0.02),
+        _processed(1, confidence=0.62, ev=0.05),
+        _processed(2, confidence=0.60, ev=0.10),
+        _processed(3, confidence=0.58, ev=0.20),
+        _processed(4, confidence=0.56, ev=0.30),
+        _processed(5, confidence=0.54, ev=0.40),
+        _processed(6, choice=None, ev=0.50),
     ]
 
     def fake_process(match, *, artifact=None):
@@ -104,12 +106,35 @@ def test_run_pipeline_keeps_top_four_positive_ev_per_day(monkeypatch) -> None:
     result = run_pipeline([_match(i) for i in range(1, 7)], artifact={}, limit_per_day=4)
     assert result["selected_count"] == 4
     assert [item["fixture_id"] for item in result["selected"]] == [1, 2, 3, 4]
-    assert all(item["ev"] > 0 for item in result["selected"])
     assert all(item["lean"] == "胜" for item in result["selected"])
     assert result["selected"][0]["quality_rating"] == 5.0
 
 
-def test_run_pipeline_feedback_reorders_without_changing_ev_gate(monkeypatch) -> None:
+def test_negative_ev_candidates_still_fill_the_daily_four(monkeypatch) -> None:
+    """1X2 模型跑不赢市场时 EV 恒为负；日推不能因此空池。"""
+    processed = [
+        _processed(i, confidence=0.60 - i / 100, ev=-0.03 - i / 1000)
+        for i in range(1, 7)
+    ]
+
+    def fake_process(match, *, artifact=None):
+        del artifact
+        return next(item for item in processed if item.fixture_id == match.fixture_id)
+
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        fake_process,
+    )
+    result = run_pipeline([_match(i) for i in range(1, 7)], artifact={}, limit_per_day=4)
+    assert result["candidate_count"] == 6
+    assert result["selected_count"] == 4
+    assert [item["fixture_id"] for item in result["selected"]] == [1, 2, 3, 4]
+    assert all(item["ev"] < 0 for item in result["selected"])
+
+
+def test_run_pipeline_feedback_reorders_without_changing_the_pick_side(
+    monkeypatch,
+) -> None:
     processed = [
         _processed(1, ev=0.11),
         _processed(2, ev=0.10),
@@ -150,7 +175,9 @@ def test_run_pipeline_feedback_reorders_without_changing_ev_gate(monkeypatch) ->
     assert result["selected"][0]["score"] > result["selected"][1]["score"]
 
 
-def test_run_pipeline_does_not_pad_when_fewer_than_four_positive_ev(monkeypatch) -> None:
+def test_run_pipeline_does_not_pad_when_fewer_candidates_than_quota(
+    monkeypatch,
+) -> None:
     processed = [
         _processed(10, ev=0.12),
         _processed(11, choice=None, ev=-0.01),
@@ -211,7 +238,7 @@ def test_select_daily_picks_respects_match_day_buckets() -> None:
             recommended_choice="home",
             ev=0.20,
             confidence=0.56,
-            reason="EV最大",
+            reason="置信度最高",
             decimal_odd=2.0,
             raw_confidence=0.50,
             calibrated_home_prob=0.56,
@@ -231,7 +258,7 @@ def test_select_daily_picks_respects_match_day_buckets() -> None:
             recommended_choice="home",
             ev=0.10,
             confidence=0.56,
-            reason="EV最大",
+            reason="置信度最高",
             decimal_odd=2.0,
             raw_confidence=0.50,
             calibrated_home_prob=0.56,
@@ -251,7 +278,7 @@ def test_select_daily_picks_respects_match_day_buckets() -> None:
             recommended_choice="home",
             ev=0.30,
             confidence=0.56,
-            reason="EV最大",
+            reason="置信度最高",
             decimal_odd=2.0,
             raw_confidence=0.50,
             calibrated_home_prob=0.56,
@@ -282,7 +309,7 @@ def test_select_daily_picks_outputs_all_when_day_total_below_six() -> None:
             recommended_choice="home",
             ev=0.20,
             confidence=0.56,
-            reason="EV最大",
+            reason="置信度最高",
             decimal_odd=2.0,
             raw_confidence=0.50,
             calibrated_home_prob=0.56,
@@ -302,7 +329,7 @@ def test_select_daily_picks_outputs_all_when_day_total_below_six() -> None:
             recommended_choice="home",
             ev=0.10,
             confidence=0.56,
-            reason="EV最大",
+            reason="置信度最高",
             decimal_odd=2.0,
             raw_confidence=0.50,
             calibrated_home_prob=0.56,

@@ -205,7 +205,7 @@ python -m unittest discover -s tests -v
 1. 赛前分析 / 赔率入库写入 `match_features` 的 AH 字段
 2. 固定同步批次回写赛果并打 `ah_label`；样本 ≥ `ML_AH_MIN_TRAIN_SAMPLES`（默认 80）且有新增 → 自动训练
 3. 推断优先级：结构性双选 > 参考比分 > ML > multifactor 启发式（相对水位 + 1X2 分歧）
-4. 普通详情出口过 `_agree_with_recommendation` 浅盘互斥闸；日推在 Top-N 截取前过 `recommendation.consistency.validate_pick_consistency`，以**日推自己的单选方向**加真实让球线判定，配出该方向不会输的让球侧与按该方向重算的比分候选（`prediction.score_hint_for_lean`，沿用本场大小球/双进结论）。无法表达的场次跳过并从后续候选补位，不改盘口线。三件套写 `favorite_fixtures` / `auto_pick_snapshots`，不回写 `pre_match_data`。写 `match_features` 的 `ah_cover_prob` 不传胜平负推荐，训练标签不受展示闸影响
+4. 普通详情出口过 `_agree_with_recommendation` 浅盘互斥闸；日推只在主胜 / 客胜里单选（`strategy.DAILY_PICK_OUTCOMES`，平局虽可下注但概率低、方差大，不进候选），在 Top-N 截取前过 `recommendation.consistency.validate_pick_consistency`，以**日推自己的单选方向**加真实让球线判定，配出该方向不会输的让球侧（让 0 打平按走水退本，不算输）与按该方向重算的比分候选（`prediction.score_hint_for_lean`，沿用本场大小球/双进结论）。无法表达的场次跳过并从后续候选补位，不改盘口线。三件套写 `favorite_fixtures` / `auto_pick_snapshots`，不回写 `pre_match_data`。写 `match_features` 的 `ah_cover_prob` 不传胜平负推荐，训练标签不受展示闸影响
 5. 详情盘口解释由 `market_analysis.py` 统一生成：使用初盘 / 中盘 / 临场 / 即时盘并按采集时间去重，只比较同庄家、同玩法、同档位的去水概率；分别说明主盘升降、同档共振、1X2、大小球及计入赢半/输半/走水后的让球期望收益。中间态来自已有盘口刷新，不增加官方请求；前端不维护平行判断
 
 配置：`ML_AH_MIN_TRAIN_SAMPLES`、`ML_AH_AUTO_TRAIN`。

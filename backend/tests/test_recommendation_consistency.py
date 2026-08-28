@@ -15,20 +15,18 @@ def _probs(home: float = 0.456, draw: float = 0.279, away: float = 0.265) -> dic
     return {"home": home, "draw": draw, "away": away}
 
 
-def test_draw_pick_never_shows_the_home_side_of_the_board() -> None:
-    """截图场景：日推平却印让胜(-0.25)、比分2-1，三签必须重算成同向。"""
-    decision = validate_pick_consistency(
-        daily_lean="平",
-        probs=_probs(),
-        goal_lean="大(2.5)",
-        both_score_lean="双进:是",
-        odds=_odds(line="-0.25"),
-    )
-    assert decision.is_consistent is True
-    assert decision.handicap_lean == "让负(-0.25)"
-    assert "-" in (decision.score_hint or "")
-    home_goals, away_goals = (decision.score_hint or "").split(":")[1].split("-")
-    assert home_goals == away_goals
+def test_draw_pick_never_enters_the_daily_four() -> None:
+    """平局概率低、方差大，不管盘口能不能表达，都不进日推。"""
+    for line in ("-0.25", "0", "-0.75"):
+        decision = validate_pick_consistency(
+            daily_lean="平",
+            probs=_probs(),
+            goal_lean="大(2.5)",
+            both_score_lean="双进:是",
+            odds=_odds(line=line),
+        )
+        assert decision.is_consistent is False
+        assert "平局" in decision.conflict_detail
 
 
 def test_home_pick_keeps_the_home_side_and_a_home_win_score() -> None:
@@ -45,16 +43,17 @@ def test_home_pick_keeps_the_home_side_and_a_home_win_score() -> None:
     assert int(home_goals) > int(away_goals)
 
 
-def test_draw_pick_rejected_when_the_board_is_too_deep_to_express() -> None:
+def test_level_ball_keeps_a_bettable_side_with_a_push_downside() -> None:
+    """让0也是让球盘：主胜配让0胜，赛果打平走水退本，不算输。"""
     decision = validate_pick_consistency(
-        daily_lean="平",
+        daily_lean="胜",
         probs=_probs(),
         goal_lean="大(2.5)",
         both_score_lean="双进:是",
-        odds=_odds(line="-0.75"),
+        odds=_odds(line="0", home=1.95, away=1.95),
     )
-    assert decision.is_consistent is False
-    assert "平局" in decision.conflict_detail
+    assert decision.is_consistent is True
+    assert decision.handicap_lean == "让胜(0)"
 
 
 def test_home_pick_rejected_on_a_board_deeper_than_one_goal() -> None:

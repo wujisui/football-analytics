@@ -34,7 +34,7 @@ const emit = defineEmits<{
 }>()
 
 /**
- * 日推按期望收益单选，分析器按最可能结果推导，两者允许不同向。
+ * 日推按校准置信度单选，分析器按最可能结果推导，两者允许不同向。
  * 被日推选中的场次整行改用日推那套自洽三件套，禁止两套混排。
  */
 const pick = computed(() => autoFavoritePick(props.fixtureId))

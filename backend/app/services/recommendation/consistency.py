@@ -1,6 +1,6 @@
 """Build one self-consistent bundle for each daily pick's own 1X2 direction.
 
-日推按期望收益单选，分析器按最可能结果推导，两者允许不同向。卡片上标 `[荐]`
+日推按校准置信度单选，分析器按最可能结果推导，两者允许不同向。卡片上标 `[荐]`
 的那一行必须整行同源：这里以日推方向为唯一基准，配一条真实盘口上的让球表达
 和一份同方向的比分候选。无法自洽的场次直接淘汰，由后续候选补位。
 """
@@ -48,22 +48,18 @@ def _reject(detail: str) -> ConsistencyDecision:
 
 
 def _handicap_side(outcome: str, line_f: float) -> tuple[str | None, str | None]:
-    """The AH side that cannot lose when this single 1X2 outcome lands."""
+    """The AH side that cannot lose when this single 1X2 outcome lands.
+
+    平手盘同样是可下注的让球盘：主胜配让0胜、客胜配让0负，赛果打平按走水退本，
+    不算输，所以这里照常给出方向。只有主客两侧会走到这里，平局在上游已被淘汰。
+    """
     if outcome == "home":
         if line_f < -1.0 - _LINE_EPSILON:
             return None, "主胜不能保证穿过深于主让1球的盘口"
         return "让胜", None
-    if outcome == "away":
-        if line_f > 1.0 + _LINE_EPSILON:
-            return None, "客胜不能保证穿过深于客让1球的盘口"
-        return "让负", None
-    if abs(line_f) > 0.25 + _LINE_EPSILON:
-        return None, "平局只在±0.25以内有不输的让球表达"
-    if line_f < -_LINE_EPSILON:
-        return "让负", None
-    if line_f > _LINE_EPSILON:
-        return "让胜", None
-    return None, "平手盘遇平局只有走水，没有可展示方向"
+    if line_f > 1.0 + _LINE_EPSILON:
+        return None, "客胜不能保证穿过深于客让1球的盘口"
+    return "让负", None
 
 
 def validate_pick_consistency(
@@ -79,6 +75,8 @@ def validate_pick_consistency(
     if not outcomes or len(outcomes) != 1:
         return _reject(f"日推方向{daily_lean!r}不是可结算的单选")
     outcome = next(iter(outcomes))
+    if outcome == "draw":
+        return _reject("平局命中率低，日推只取主客单选")
 
     score_hint = score_hint_for_lean(
         daily_lean,

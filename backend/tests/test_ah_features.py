@@ -120,6 +120,59 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(lean, "让负(+0.25)")
         self.assertNotIn("胜平负推荐", note)
 
+    def test_level_ball_uses_auxiliary_line_instead_of_recommending_push(self) -> None:
+        """平手盘的平局是退本结算；推荐仍须落到可下注的主客一侧。"""
+        from app.services.ah_predictor import handicap_bundle_from_markets
+
+        home_leaning = {
+            "available": True,
+            "asian_handicap": {
+                "line": "0",
+                "home": 1.81,
+                "away": 2.07,
+                "lines": [
+                    {"line": "0", "home": 1.81, "away": 2.07},
+                    {"line": "-0.25", "home": 2.08, "away": 1.80},
+                    {"line": "-0.5", "home": 2.46, "away": 1.56},
+                ],
+            },
+        }
+        lean, note = handicap_bundle_from_markets(
+            home_leaning, "胜/平", score_hint="比分:1-1"
+        )
+        self.assertEqual(lean, "让胜(0)")
+        self.assertIn("其他让球档位", note)
+
+        away_leaning = {
+            "available": True,
+            "asian_handicap": {
+                "line": "0",
+                "home": 2.06,
+                "away": 1.82,
+                "lines": [
+                    {"line": "0", "home": 2.06, "away": 1.82},
+                    {"line": "+0.25", "home": 1.79, "away": 2.10},
+                ],
+            },
+        }
+        lean, _ = handicap_bundle_from_markets(
+            away_leaning, "负/平", score_hint="比分:1-1"
+        )
+        self.assertEqual(lean, "让负(0)")
+
+    def test_level_ball_falls_back_to_directional_1x2_not_push(self) -> None:
+        from app.services.ah_predictor import handicap_bundle_from_markets
+
+        level = {
+            "available": True,
+            "asian_handicap": {"line": "0", "home": 1.95, "away": 1.95},
+        }
+        lean, note = handicap_bundle_from_markets(
+            level, "胜/平", score_hint="比分:1-1"
+        )
+        self.assertEqual(lean, "让胜(0)")
+        self.assertIn("胜平负方向", note)
+
     def test_outcome_settlement_units_only_cover_result_settled_lines(self) -> None:
         from app.services.ah_features import outcome_settlement_units
 
