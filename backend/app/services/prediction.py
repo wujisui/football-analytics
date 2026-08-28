@@ -1110,7 +1110,7 @@ def score_hint_for_lean(
 ) -> str | None:
     """Reference score for one 1X2 direction, using the display generator.
 
-    日推按校准置信度单选，方向常与分析器的最可能结果不同，分析器算好的比分候选
+    日推按风险调整回报单选，方向常与分析器的最可能结果不同，分析器算好的比分候选
     对它无效。这里换方向跑同一套生成器，大小球与双方进球沿用本场已有结论，
     因此仍是推导而非另起一套模型。无法落到该方向时返回 None，由调用方淘汰。
     """

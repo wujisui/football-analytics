@@ -21,6 +21,11 @@ from app.models.favorite_fixture import (
 from app.models.fixture import Fixture
 from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
+from app.services.ah_features import (
+    extract_main_ah_line,
+    format_handicap_lean_text,
+    outcome_settlement_units,
+)
 from app.services.auto_favorites import (
     AUTO_PICK_LIMIT,
     AutoPickCandidate,
@@ -28,6 +33,11 @@ from app.services.auto_favorites import (
 )
 from app.services.prediction import implied_probs_from_odds
 from app.services.prematch_package import package_from_record, rehydrate_odds_markets
+from app.services.probability_calibration import (
+    calibrate_probability,
+    load_calibration_artifact as load_market_calibration_artifact,
+    train_from_frozen_history as train_market_calibration,
+)
 from app.services.recommendation.calibration import (
     calibrate_match,
     load_calibration_artifact,
@@ -44,13 +54,21 @@ from app.services.recommendation.features import build_match_features
 from app.services.results_capture import prematch_list_clause
 from app.services.user_scope import ANON_OWNER_ID
 
-from app.services.recommendation.strategy import DAILY_PICK_OUTCOMES, decide_match
+from app.services.recommendation.strategy import (
+    DAILY_PICK_OUTCOMES,
+    MIN_DAILY_CONFIDENCE,
+    REASON_RISK_ADJUSTED_RETURN,
+    decide_match,
+    risk_adjusted_return_score,
+)
 
 logger = logging.getLogger(__name__)
 
 MARKET_1X2 = "1x2"
+MARKET_AH = "ah"
 OUTCOME_TO_LEAN = {"home": "胜", "away": "负"}
 MIN_MATCHES_FOR_FULL_QUOTA = 6
+MAX_PICKS_PER_MARKET = 3
 
 
 @dataclass(frozen=True)
@@ -64,6 +82,8 @@ class MatchPipelineInput:
     # 大小球 / 双方进球是与方向无关的结论，日推重算比分时沿用本场这两条。
     goal_lean: str | None = None
     both_score_lean: str | None = None
+    ah_cover_prob: float | None = None
+    ah_model_line: float | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +95,8 @@ class PipelineMatchResult:
     features: dict[str, Any]
     calibration: dict[str, Any] | None
     strategy: dict[str, Any]
+    ah_cover_prob: float | None = None
+    ah_model_line: float | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +119,9 @@ class DailyRecommendationPick:
     reliability: float
     sample_size: int
     score: float
+    # Actual selection used for settlement. For 1X2 it equals ``lean``; for
+    # AH, ``lean`` remains the companion result direction shown on the card.
+    market_lean: str | None = None
     handicap_lean: str | None = None
     score_hint: str | None = None
     is_consistent: bool = True
@@ -203,6 +228,8 @@ def process_match(
         features=features,
         calibration=calibration,
         strategy=strategy,
+        ah_cover_prob=match.ah_cover_prob,
+        ah_model_line=match.ah_model_line,
     )
 
 
@@ -216,7 +243,30 @@ def _recommendable_results(
     ]
 
 
-def _to_daily_pick(
+def _base_pick_fields(
+    result: PipelineMatchResult,
+) -> dict[str, Any]:
+    calibration = result.calibration or {}
+    return {
+        "fixture_id": result.fixture_id,
+        "league_id": result.league_id,
+        "kickoff": result.kickoff,
+        "match_day": result.match_day,
+        "calibrated_home_prob": float(
+            calibration.get("calibrated_home_prob") or 0.0
+        ),
+        "calibrated_draw_prob": float(
+            calibration.get("calibrated_draw_prob") or 0.0
+        ),
+        "calibrated_away_prob": float(
+            calibration.get("calibrated_away_prob") or 0.0
+        ),
+        "reliability": float(calibration.get("reliability") or 0.0),
+        "sample_size": int(calibration.get("sample_size") or 0),
+    }
+
+
+def _to_1x2_pick(
     result: PipelineMatchResult,
     *,
     odds: dict[str, Any] | None,
@@ -224,37 +274,138 @@ def _to_daily_pick(
     choice = result.strategy.get("recommended_choice")
     if choice not in DAILY_PICK_OUTCOMES:
         return None
-    ev = float(result.strategy.get("ev") or 0.0)
-
     decimal_odd = _decimal_odd_for_choice(odds, choice)
     if decimal_odd is None:
         return None
-
-    calibration = result.calibration or {}
-    implied = implied_probs_from_odds(odds) or {}
     confidence = float(result.strategy.get("confidence") or 0.0)
-    raw_confidence = float(implied.get(choice, confidence))
-
+    if confidence < MIN_DAILY_CONFIDENCE:
+        return None
+    implied = implied_probs_from_odds(odds) or {}
+    lean = OUTCOME_TO_LEAN[choice]
     return DailyRecommendationPick(
-        fixture_id=result.fixture_id,
-        league_id=result.league_id,
-        kickoff=result.kickoff,
-        match_day=result.match_day,
+        **_base_pick_fields(result),
         market=MARKET_1X2,
-        lean=OUTCOME_TO_LEAN[choice],
+        lean=lean,
+        market_lean=lean,
         recommended_choice=choice,
-        ev=ev,
+        ev=float(result.strategy.get("ev") or 0.0),
         confidence=confidence,
         reason=str(result.strategy.get("reason") or ""),
         decimal_odd=decimal_odd,
-        raw_confidence=raw_confidence,
-        calibrated_home_prob=float(calibration.get("calibrated_home_prob") or 0.0),
-        calibrated_draw_prob=float(calibration.get("calibrated_draw_prob") or 0.0),
-        calibrated_away_prob=float(calibration.get("calibrated_away_prob") or 0.0),
-        reliability=float(calibration.get("reliability") or 0.0),
-        sample_size=int(calibration.get("sample_size") or 0),
-        score=confidence,
+        raw_confidence=float(implied.get(choice, confidence)),
+        score=risk_adjusted_return_score(confidence, decimal_odd),
     )
+
+
+def _two_way_fair_probs(home_odd: float, away_odd: float) -> tuple[float, float]:
+    home_inv, away_inv = 1.0 / home_odd, 1.0 / away_odd
+    total = home_inv + away_inv
+    return home_inv / total, away_inv / total
+
+
+def _ah_side_probability(
+    *,
+    side: str,
+    line: float,
+    result: PipelineMatchResult,
+) -> tuple[float, float] | None:
+    """Return (conditional win probability, stake share at risk)."""
+    pick = "让胜" if side == "home" else "让负"
+    units = outcome_settlement_units(line, pick)
+    calibration = result.calibration or {}
+    if units is not None:
+        probs = {
+            "home": float(calibration.get("calibrated_home_prob") or 0.0),
+            "draw": float(calibration.get("calibrated_draw_prob") or 0.0),
+            "away": float(calibration.get("calibrated_away_prob") or 0.0),
+        }
+        won = sum(probs[key] * unit for key, unit in units.items() if unit > 0)
+        lost = sum(probs[key] * -unit for key, unit in units.items() if unit < 0)
+        at_risk = won + lost
+        if at_risk <= 0:
+            return None
+        return won / at_risk, at_risk
+
+    cover = result.ah_cover_prob
+    if (
+        cover is None
+        or result.ah_model_line is None
+        or abs(float(result.ah_model_line) - line) > 0.04
+    ):
+        return None
+    probability = float(cover) if side == "home" else 1.0 - float(cover)
+    return max(0.0, min(1.0, probability)), 1.0
+
+
+def _to_ah_picks(
+    result: PipelineMatchResult,
+    *,
+    odds: dict[str, Any] | None,
+    market_artifact: dict[str, Any] | None,
+) -> list[DailyRecommendationPick]:
+    line, home_odd, away_odd = extract_main_ah_line(odds)
+    if line is None or home_odd is None or away_odd is None:
+        return []
+    fair_home, fair_away = _two_way_fair_probs(home_odd, away_odd)
+    picks: list[DailyRecommendationPick] = []
+    for side, decimal_odd, market_probability in (
+        ("home", home_odd, fair_home),
+        ("away", away_odd, fair_away),
+    ):
+        probability = _ah_side_probability(side=side, line=line, result=result)
+        if probability is None:
+            continue
+        raw_confidence, stake_share = probability
+        confidence = calibrate_probability(market_artifact, MARKET_AH, raw_confidence)
+        # The AH model has not shown a stable time-holdout edge. Treat a gap
+        # above the market as uncertainty and keep only half of it.
+        if confidence > market_probability:
+            confidence = (confidence + market_probability) / 2.0
+        if confidence < MIN_DAILY_CONFIDENCE:
+            continue
+        market_lean = format_handicap_lean_text(
+            "让胜" if side == "home" else "让负",
+            line,
+        )
+        ev = stake_share * (confidence * decimal_odd - 1.0)
+        result_lean = OUTCOME_TO_LEAN[side]
+        picks.append(
+            DailyRecommendationPick(
+                **_base_pick_fields(result),
+                market=MARKET_AH,
+                lean=result_lean,
+                market_lean=market_lean,
+                recommended_choice=side,
+                ev=ev,
+                confidence=confidence,
+                reason=REASON_RISK_ADJUSTED_RETURN,
+                decimal_odd=decimal_odd,
+                raw_confidence=raw_confidence,
+                score=risk_adjusted_return_score(
+                    confidence,
+                    decimal_odd,
+                    stake_share=stake_share,
+                ),
+            )
+        )
+    return picks
+
+
+def _to_daily_picks(
+    result: PipelineMatchResult,
+    *,
+    odds: dict[str, Any] | None,
+    market_artifact: dict[str, Any] | None,
+) -> list[DailyRecommendationPick]:
+    picks = _to_ah_picks(
+        result,
+        odds=odds,
+        market_artifact=market_artifact,
+    )
+    one_x_two = _to_1x2_pick(result, odds=odds)
+    if one_x_two is not None:
+        picks.append(one_x_two)
+    return picks
 
 
 def select_daily_picks_by_match_day(
@@ -264,7 +415,7 @@ def select_daily_picks_by_match_day(
     skip_fixture_ids: set[int] | None = None,
     matches_count_by_day: dict[str, int] | None = None,
 ) -> list[DailyRecommendationPick]:
-    """Keep up to ``limit_per_day`` positive-EV picks per venue-local match day."""
+    """Keep one market per fixture, up to the daily venue-local quota."""
     skip = skip_fixture_ids or set()
     day_totals = matches_count_by_day or {}
     by_day: dict[str, list[DailyRecommendationPick]] = {}
@@ -272,6 +423,7 @@ def select_daily_picks_by_match_day(
         by_day.setdefault(pick.match_day, []).append(pick)
 
     selected: list[DailyRecommendationPick] = []
+    selected_fixture_ids: set[int] = set()
     for day in sorted(by_day):
         day_picks = sorted(by_day[day], key=pick_rank_key)
         day_total = int(day_totals.get(day, 0))
@@ -281,13 +433,34 @@ def select_daily_picks_by_match_day(
             else len(day_picks)
         )
         count = 0
-        for pick in day_picks:
-            if pick.fixture_id in skip:
-                continue
+        market_counts: dict[str, int] = {}
+
+        def _take(pick: DailyRecommendationPick) -> None:
+            nonlocal count
             selected.append(pick)
+            selected_fixture_ids.add(pick.fixture_id)
+            market_counts[pick.market] = market_counts.get(pick.market, 0) + 1
             count += 1
+
+        # First pass diversifies model/market risk: no one market may occupy
+        # all four slots when an alternative candidate exists.
+        for pick in day_picks:
             if count >= day_limit:
                 break
+            if pick.fixture_id in skip or pick.fixture_id in selected_fixture_ids:
+                continue
+            if market_counts.get(pick.market, 0) >= MAX_PICKS_PER_MARKET:
+                continue
+            _take(pick)
+
+        # If the other market cannot supply a valid candidate, still fill the
+        # quota rather than making the daily list artificially short.
+        for pick in day_picks:
+            if count >= day_limit:
+                break
+            if pick.fixture_id in skip or pick.fixture_id in selected_fixture_ids:
+                continue
+            _take(pick)
     return selected
 
 
@@ -295,12 +468,18 @@ def run_pipeline(
     matches: list[MatchPipelineInput],
     *,
     artifact: dict[str, Any] | None = None,
+    market_artifact: dict[str, Any] | None = None,
     incentive_state: Any | None = None,
     limit_per_day: int = AUTO_PICK_LIMIT,
     skip_fixture_ids: set[int] | None = None,
 ) -> dict[str, Any]:
-    """Score prematch fixtures and return per-day Top-N positive-EV 1X2 picks."""
+    """Score 1X2/AH candidates and return each match day's risk-adjusted Top-N."""
     artifact = artifact if artifact is not None else load_calibration_artifact()
+    market_artifact = (
+        market_artifact
+        if market_artifact is not None
+        else load_market_calibration_artifact()
+    )
     odds_by_fixture = {match.fixture_id: match.odds for match in matches}
     goal_lean_by_fixture = {match.fixture_id: match.goal_lean for match in matches}
     both_score_lean_by_fixture = {
@@ -317,9 +496,13 @@ def run_pipeline(
     recommendable = _recommendable_results(processed)
     picks: list[DailyRecommendationPick] = []
     for result in recommendable:
-        pick = _to_daily_pick(result, odds=odds_by_fixture.get(result.fixture_id))
-        if pick is not None:
-            picks.append(pick)
+        picks.extend(
+            _to_daily_picks(
+                result,
+                odds=odds_by_fixture.get(result.fixture_id),
+                market_artifact=market_artifact,
+            )
+        )
 
     picks = apply_feedback_to_picks(picks, state=incentive_state)
     picks.sort(key=pick_rank_key)
@@ -394,7 +577,8 @@ def run_pipeline(
                 "fixture_id": pick.fixture_id,
                 "match_day": pick.match_day,
                 "market": pick.market,
-                "lean": pick.lean,
+                "lean": pick.market_lean or pick.lean,
+                "result_lean": pick.lean,
                 "handicap_lean": pick.handicap_lean,
                 "recommended_choice": pick.recommended_choice,
                 "ev": round(pick.ev, 4),
@@ -426,6 +610,7 @@ def run_pipeline(
 def match_input_from_fixture_row(
     fixture: Fixture,
     stored: PreMatchData,
+    feature: MatchFeature | None = None,
 ) -> MatchPipelineInput:
     package = package_from_record(stored)
     odds_raw = package.get("odds") if isinstance(package, dict) else None
@@ -444,6 +629,8 @@ def match_input_from_fixture_row(
         package=package if isinstance(package, dict) else None,
         goal_lean=stored.goal_lean,
         both_score_lean=stored.both_score_lean,
+        ah_cover_prob=feature.ah_cover_prob if feature is not None else None,
+        ah_model_line=feature.ah_line if feature is not None else None,
     )
 
 
@@ -471,8 +658,8 @@ async def collect_prematch_pipeline_inputs(
             by_fixture[fixture.id] = (fixture, stored, feature)
 
     return [
-        match_input_from_fixture_row(fixture, stored)
-        for fixture, stored, _feature in by_fixture.values()
+        match_input_from_fixture_row(fixture, stored, feature)
+        for fixture, stored, feature in by_fixture.values()
     ]
 
 
@@ -487,7 +674,7 @@ async def sync_daily_recommendations(
     limit: int = AUTO_PICK_LIMIT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Replace guest-bucket auto tips with pipeline Top-N positive-EV 1X2 picks."""
+    """Replace shared auto tips with risk-adjusted 1X2/AH picks."""
     del user_id  # product-wide tips; kept for call-site compat
     owner = ANON_OWNER_ID
     settings = get_settings()
@@ -495,6 +682,7 @@ async def sync_daily_recommendations(
 
     incentive_state = await ensure_feedback_state(db, now=current)
     calibration = await train_from_frozen_history(db, now=current)
+    market_calibration = await train_market_calibration(db, now=current)
     matches = await collect_prematch_pipeline_inputs(db, now=current)
 
     manual_ids = {
@@ -512,6 +700,7 @@ async def sync_daily_recommendations(
     pipeline_result = run_pipeline(
         matches,
         artifact=calibration,
+        market_artifact=market_calibration,
         incentive_state=incentive_state,
         limit_per_day=limit,
         skip_fixture_ids=manual_ids,
@@ -562,7 +751,7 @@ async def sync_daily_recommendations(
                 fixture_id=pick.fixture_id,
                 match_day=pick.match_day,
                 market=pick.market,
-                lean=pick.lean,
+                lean=pick.market_lean or pick.lean,
                 handicap_lean=pick.handicap_lean,
                 score_hint=pick.score_hint,
                 raw_confidence=pick.raw_confidence,

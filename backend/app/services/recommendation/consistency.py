@@ -1,8 +1,7 @@
-"""Build one self-consistent bundle for each daily pick's own 1X2 direction.
+"""Build one self-consistent bundle for each daily pick's selected market.
 
-日推按校准置信度单选，分析器按最可能结果推导，两者允许不同向。卡片上标 `[荐]`
-的那一行必须整行同源：这里以日推方向为唯一基准，配一条真实盘口上的让球表达
-和一份同方向的比分候选。无法自洽的场次直接淘汰，由后续候选补位。
+日推可选独赢或亚洲让球盘。卡片上标 `[荐]` 的那一行及其胜负方向、比分必须同源；
+无法自洽的市场候选直接淘汰，由同场另一市场或后续场次补位。
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from app.services.ah_features import (
     ASIAN_WIN,
     extract_main_ah_line,
     format_handicap_lean_text,
+    handicap_pick_from_lean,
     parse_score_hint,
     settle_handicap_pick,
 )
@@ -69,6 +69,8 @@ def validate_pick_consistency(
     goal_lean: str | None,
     both_score_lean: str | None,
     odds: dict[str, Any] | None,
+    market: str = "1x2",
+    market_lean: str | None = None,
 ) -> ConsistencyDecision:
     """Validate before Top-N; never reshape the real line."""
     outcomes = recommendation_outcomes(daily_lean)
@@ -97,7 +99,11 @@ def validate_pick_consistency(
             conflict_detail="没有可展示的让球行",
         )
 
-    side, line_error = _handicap_side(outcome, line_f)
+    if market == "ah":
+        side = handicap_pick_from_lean(market_lean)
+        line_error = None if side in {"让胜", "让负"} else "让球日推不是主客单选"
+    else:
+        side, line_error = _handicap_side(outcome, line_f)
     if side is None:
         return _reject(line_error or "真实盘口无法表达该日推方向")
 
@@ -111,7 +117,11 @@ def validate_pick_consistency(
 
     return ConsistencyDecision(
         is_consistent=True,
-        handicap_lean=format_handicap_lean_text(side, line_f),
+        handicap_lean=(
+            format_handicap_lean_text(side, line_f)
+            if market == "1x2"
+            else str(market_lean)
+        ),
         score_hint=score_hint,
         conflict_reason="自洽",
         conflict_detail=f"{daily_lean}、{side}与比分候选同向",
@@ -137,6 +147,8 @@ def validate_consistency_batch(
             goal_lean=goal_lean_by_fixture.get(fixture_id),
             both_score_lean=both_score_lean_by_fixture.get(fixture_id),
             odds=odds_by_fixture.get(fixture_id),
+            market=str(pick.market),
+            market_lean=str(pick.market_lean or pick.lean),
         )
         if decision.is_consistent:
             accepted.append((pick, decision))
@@ -145,15 +157,18 @@ def validate_consistency_batch(
             {
                 "fixture_id": fixture_id,
                 "match_day": pick.match_day,
+                "market": pick.market,
+                "lean": pick.market_lean or pick.lean,
                 "is_consistent": False,
                 "conflict_reason": decision.conflict_reason,
                 "conflict_detail": decision.conflict_detail,
             }
         )
         logger.warning(
-            "Daily pick rejected by consistency gate fixture=%s lean=%s reason=%s",
+            "Daily candidate rejected fixture=%s market=%s lean=%s reason=%s",
             fixture_id,
-            pick.lean,
+            pick.market,
+            pick.market_lean or pick.lean,
             decision.conflict_detail,
         )
     return accepted, rejected

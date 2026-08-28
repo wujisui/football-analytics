@@ -34,7 +34,7 @@ const emit = defineEmits<{
 }>()
 
 /**
- * 日推按校准置信度单选，分析器按最可能结果推导，两者允许不同向。
+ * 日推按风险调整回报从独赢/让球中单选，分析器按最可能结果推导。
  * 被日推选中的场次整行改用日推那套自洽三件套，禁止两套混排。
  */
 const pick = computed(() => autoFavoritePick(props.fixtureId))
@@ -44,13 +44,13 @@ function isPick(market: AutoFavoriteMarket): boolean {
 }
 
 const recommendationText = computed(
-  () => (isPick('1x2') && pick.value?.lean) || props.recommendation,
+  () => pick.value?.lean || props.recommendation,
 )
 const handicapText = computed(
-  () => (isPick('1x2') && pick.value?.handicapLean) || props.handicapLean,
+  () => pick.value?.handicapLean || props.handicapLean,
 )
 const scoreText = computed(
-  () => (isPick('1x2') && pick.value?.scoreHint) || props.scoreHint,
+  () => pick.value?.scoreHint || props.scoreHint,
 )
 
 const recommendationLabel = computed(() =>

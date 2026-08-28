@@ -1,10 +1,11 @@
-"""Confidence-ranked recommendation strategy (no official API calls)."""
+"""Risk-adjusted recommendation strategy (no official API calls)."""
 
 from app.services.recommendation.strategy import (
     REASON_NO_MARKET,
-    REASON_TOP_CONFIDENCE,
+    REASON_RISK_ADJUSTED_RETURN,
     decide_match,
     expected_value,
+    risk_adjusted_return_score,
 )
 
 
@@ -38,29 +39,38 @@ def test_expected_value_formula() -> None:
     assert abs(expected_value(2.0, 0.55) - 0.10) < 1e-9
 
 
-def test_picks_the_most_confident_side() -> None:
+def test_risk_score_rewards_payout_but_dampens_long_odds() -> None:
+    assert risk_adjusted_return_score(0.50, 2.0) > risk_adjusted_return_score(
+        0.625, 1.6
+    )
+    assert risk_adjusted_return_score(0.50, 2.0) > risk_adjusted_return_score(
+        0.25, 4.0
+    )
+
+
+def test_picks_the_best_risk_adjusted_side() -> None:
     payload = decide_match(
         match_id=1001,
         calibration=_calibration(),
         odds=_odds(),
     )
     assert payload["recommended_choice"] == "home"
-    assert payload["reason"] == REASON_TOP_CONFIDENCE
+    assert payload["reason"] == REASON_RISK_ADJUSTED_RETURN
     assert abs(payload["confidence"] - 0.55) < 1e-9
     # EV rides along for audit even though it did not drive the choice.
     assert abs(payload["ev"] - 0.10) < 1e-9
 
 
-def test_negative_ev_still_produces_a_pick() -> None:
-    """校准概率等于市场去水概率时 EV 恒为负；日推仍要选出最有把握的一侧。"""
+def test_negative_ev_still_produces_a_payout_aware_pick() -> None:
+    """EV 为负仍可入池；较高赔率在风险调整后可以胜过单纯高置信度。"""
     payload = decide_match(
         match_id=1002,
-        calibration=_calibration(home=0.40, draw=0.30, away=0.30),
-        odds=_odds(home=2.0, draw=3.0, away=3.2),
+        calibration=_calibration(home=0.45, draw=0.14, away=0.41),
+        odds=_odds(home=2.0, draw=6.0, away=2.3),
     )
-    assert payload["recommended_choice"] == "home"
+    assert payload["recommended_choice"] == "away"
     assert payload["ev"] < 0.0
-    assert abs(payload["confidence"] - 0.40) < 1e-9
+    assert abs(payload["confidence"] - 0.41) < 1e-9
 
 
 def test_draw_is_never_picked_even_when_most_likely() -> None:
@@ -69,8 +79,8 @@ def test_draw_is_never_picked_even_when_most_likely() -> None:
         calibration=_calibration(home=0.30, draw=0.45, away=0.25),
         odds=_odds(),
     )
-    assert payload["recommended_choice"] == "home"
-    assert abs(payload["confidence"] - 0.30) < 1e-9
+    assert payload["recommended_choice"] == "away"
+    assert abs(payload["confidence"] - 0.25) < 1e-9
 
 
 def test_confidence_shrinks_on_low_reliability_leagues() -> None:

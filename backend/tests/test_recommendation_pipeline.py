@@ -1,5 +1,6 @@
 """Recommendation pipeline orchestration (no official API calls)."""
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from app.services.auto_pick_incentive import IncentiveParams, IncentiveState
@@ -23,6 +24,7 @@ def _match(
     goal_lean: str | None = "大(2.5)",
     both_score_lean: str | None = "双进:是",
     ah_line: str | None = None,
+    ah_cover_prob: float | None = None,
 ) -> MatchPipelineInput:
     odds = {
         "available": True,
@@ -38,6 +40,8 @@ def _match(
         odds=odds,
         goal_lean=goal_lean,
         both_score_lean=both_score_lean,
+        ah_cover_prob=ah_cover_prob,
+        ah_model_line=float(ah_line) if ah_line is not None else None,
     )
 
 
@@ -82,6 +86,21 @@ def test_build_match_features_in_process_match() -> None:
     assert result.features.get("match_id") == 1
     assert "league_reliability" in result.features
     assert "recommended_choice" in result.strategy
+
+
+def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
+    result = run_pipeline(
+        [_match(1, ah_line="-0.75", ah_cover_prob=0.58)],
+        artifact={},
+        market_artifact={},
+        limit_per_day=4,
+    )
+
+    assert result["selected_count"] == 1
+    assert result["selected"][0]["market"] == "ah"
+    assert result["selected"][0]["lean"] == "让胜(-0.75)"
+    assert result["selected"][0]["result_lean"] == "胜"
+    assert result["selected"][0]["decimal_odd"] == 1.9
 
 
 def test_run_pipeline_keeps_top_four_by_confidence_per_day(monkeypatch) -> None:
@@ -295,6 +314,55 @@ def test_select_daily_picks_respects_match_day_buckets() -> None:
         matches_count_by_day={"2026-08-28": 10, "2026-08-29": 10},
     )
     assert {pick.fixture_id for pick in selected} == {1, 3}
+
+
+def test_daily_four_diversifies_1x2_and_ah_when_both_are_available() -> None:
+    base = DailyRecommendationPick(
+        fixture_id=1,
+        league_id=39,
+        kickoff=datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc),
+        match_day="2026-08-28",
+        market="ah",
+        lean="胜",
+        market_lean="让胜(-0.5)",
+        recommended_choice="home",
+        ev=-0.03,
+        confidence=0.52,
+        reason="风险调整回报最高",
+        decimal_odd=1.95,
+        raw_confidence=0.52,
+        calibrated_home_prob=0.56,
+        calibrated_draw_prob=0.24,
+        calibrated_away_prob=0.20,
+        reliability=0.7,
+        sample_size=100,
+        score=0.90,
+    )
+    picks = [
+        replace(base, fixture_id=fixture_id, score=0.90 - fixture_id / 100)
+        for fixture_id in range(1, 7)
+    ]
+    picks.extend(
+        replace(
+            base,
+            fixture_id=fixture_id,
+            market="1x2",
+            market_lean="胜",
+            score=0.40 - fixture_id / 100,
+        )
+        for fixture_id in range(1, 7)
+    )
+
+    selected = select_daily_picks_by_match_day(
+        picks,
+        limit_per_day=4,
+        matches_count_by_day={"2026-08-28": 6},
+    )
+
+    assert len(selected) == 4
+    assert [pick.market for pick in selected].count("ah") == 3
+    assert [pick.market for pick in selected].count("1x2") == 1
+    assert len({pick.fixture_id for pick in selected}) == 4
 
 
 def test_select_daily_picks_outputs_all_when_day_total_below_six() -> None:

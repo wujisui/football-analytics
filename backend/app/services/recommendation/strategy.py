@@ -1,13 +1,13 @@
-"""Confidence-ranked 1X2 recommendation strategy for the recommendation pipeline.
+"""Risk-adjusted recommendation strategy for the daily-pick pipeline.
 
-日推按「模型最有把握」选场，不按正期望选场：当前 1X2 模型跑不赢市场
-（`inference_mode=market_baseline`），校准概率等于市场去水概率，期望收益恒等于
-负的抽水，正期望在数学上不可能出现。EV 仍然逐场算出来落库供审计，但不参与选优，
-等哪天某个玩法真的跑赢市场再把它提回门槛。
+候选同时覆盖独赢与亚洲让球盘。排序不再只追命中率，也不直接追逐高赔率，而使用
+``命中概率 × sqrt(净赔率)``：平方根保留收益奖励，同时抑制长赔方差。EV 仍逐场
+落库供审计并用于同分决胜；当前模型没有稳定市场边际，因此不把正 EV 作为门槛。
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from app.services.prediction import _odd_float
@@ -16,7 +16,8 @@ OUTCOMES = ("home", "draw", "away")
 # 平局本身概率低、方差大，即便偶尔算出正 EV 也会拖垮日推整体中奖率，
 # 因此日推只在主客两侧里选，平局仍参与 EV 计算供审计与解释使用。
 DAILY_PICK_OUTCOMES = ("home", "away")
-REASON_TOP_CONFIDENCE = "置信度最高"
+MIN_DAILY_CONFIDENCE = 0.40
+REASON_RISK_ADJUSTED_RETURN = "风险调整回报最高"
 REASON_NO_MARKET = "缺少可用赔率，不推荐"
 
 
@@ -47,6 +48,24 @@ def expected_value(decimal_odd: float, calibrated_prob: float) -> float:
     return float(decimal_odd) * float(calibrated_prob) - 1.0
 
 
+def risk_adjusted_return_score(
+    calibrated_prob: float,
+    decimal_odd: float,
+    *,
+    stake_share: float = 1.0,
+) -> float:
+    """Balance hit probability and payout without blindly chasing long odds.
+
+    ``sqrt(net payout)`` is a concave utility: moving from 1.60 to 1.95 is
+    rewarded more than moving from 2.60 to 2.95. ``stake_share`` accounts for
+    quarter/level boards where part of the stake can be refunded.
+    """
+    probability = max(0.0, min(1.0, float(calibrated_prob)))
+    net_payout = max(0.0, float(decimal_odd) - 1.0)
+    at_risk = max(0.0, min(1.0, float(stake_share)))
+    return probability * math.sqrt(net_payout * at_risk)
+
+
 def compute_outcome_evs(
     calibration: dict[str, Any],
     odds: dict[str, Any] | None,
@@ -69,7 +88,7 @@ def decide_match(
     odds: dict[str, Any] | None,
     features: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Pick the highest-confidence home/away outcome; EV rides along for audit."""
+    """Pick the best risk-adjusted home/away outcome; EV rides along for audit."""
     resolved_match_id = int(calibration.get("match_id", match_id))
     evs = compute_outcome_evs(calibration, odds)
     probs = _calibrated_probs(calibration)
@@ -83,8 +102,21 @@ def decide_match(
             "reason": REASON_NO_MARKET,
         }
 
+    prices = _match_winner_odds(odds) or {}
+    eligible = [
+        outcome
+        for outcome in DAILY_PICK_OUTCOMES
+        if probs[outcome] >= MIN_DAILY_CONFIDENCE
+    ]
+    if not eligible:
+        eligible = list(DAILY_PICK_OUTCOMES)
     best_outcome = max(
-        DAILY_PICK_OUTCOMES, key=lambda outcome: (probs[outcome], evs[outcome])
+        eligible,
+        key=lambda outcome: (
+            risk_adjusted_return_score(probs[outcome], prices[outcome]),
+            evs[outcome],
+            probs[outcome],
+        ),
     )
     confidence = float(probs[best_outcome])
     if isinstance(features, dict):
@@ -96,5 +128,5 @@ def decide_match(
         "recommended_choice": best_outcome,
         "ev": float(evs[best_outcome]),
         "confidence": confidence,
-        "reason": REASON_TOP_CONFIDENCE,
+        "reason": REASON_RISK_ADJUSTED_RETURN,
     }

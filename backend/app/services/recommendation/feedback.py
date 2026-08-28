@@ -2,8 +2,8 @@
 
 The strategy decides *which* side of a fixture is recommendable. This module
 applies persisted daily-pick EMA + league×market soft weights to the ranking
-score only — the base score is the calibrated confidence, so a boost always
-moves a pick up and a penalty always moves it down.
+score only — the base is the probability/payout risk-adjusted return score, so
+a boost always moves a pick up and a penalty always moves it down.
 
 Persistence and learning logic live in ``auto_pick_incentive``; this file
 is the pipeline-facing adapter so calibration / strategy stay unchanged.
@@ -43,7 +43,7 @@ def feedback_adjusted_score(
     market: str,
     state: IncentiveState | None,
 ) -> float:
-    """Apply EMA + soft-weight multipliers to a calibrated-confidence base."""
+    """Apply EMA + soft-weight multipliers to a risk-adjusted return base."""
     if state is None:
         return float(base_score)
     return adjust_pick_score(
