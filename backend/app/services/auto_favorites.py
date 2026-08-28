@@ -6,18 +6,9 @@ import logging
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
-from app.models.auto_pick_snapshot import AutoPickSnapshot
-from app.models.favorite_fixture import (
-    FAVORITE_SOURCE_AUTO,
-    FAVORITE_SOURCE_MANUAL,
-    FavoriteFixture,
-)
 from app.models.fixture import Fixture
 from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
@@ -26,7 +17,7 @@ from app.services.ah_features import (
     handicap_pick_from_lean,
     outcome_settlement_units,
 )
-from app.services.auto_pick_incentive import adjust_pick_score, ensure_incentives_for_picks
+from app.services.auto_pick_incentive import adjust_pick_score
 from app.services.prediction import (
     _odd_float,
     _parse_goal_lean,
@@ -35,12 +26,7 @@ from app.services.prediction import (
     resolve_match_probabilities,
 )
 from app.services.prematch_package import package_from_record, rehydrate_odds_markets
-from app.services.probability_calibration import (
-    calibrate_probability,
-    train_from_frozen_history,
-)
-from app.services.results_capture import prematch_list_clause
-from app.services.user_scope import ANON_OWNER_ID
+from app.services.probability_calibration import calibrate_probability
 
 logger = logging.getLogger(__name__)
 
@@ -629,181 +615,12 @@ async def sync_daily_auto_favorites(
     limit: int = AUTO_PICK_LIMIT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Replace guest-bucket ``source=auto`` tips with per-match-day picks.
+    """Replace guest-bucket ``source=auto`` tips via the recommendation pipeline."""
+    from app.services.recommendation.pipeline import sync_daily_recommendations
 
-    Daily tips always live in the anonymous owner bucket (``ANON_OWNER_ID``)
-    so every session can list them; ``user_id`` is ignored for writes.
-
-    Historical hit feedback adjusts candidate scores without eliminating
-    candidates. Each venue-local match day gets up to ``limit`` tips (default 4),
-    ranked by final score among prematch fixtures that already have odds.
-    The day's best pick anchors 5 quality stars and
-    lower score tiers deduct 0.5 stars.
-
-    A 7-day window can therefore yield many more than four auto favorites —
-    never one global cherry-pick across the week. Manual favorites are never
-    touched.
-    """
-    del user_id  # product-wide tips; kept for call-site compat
-    owner = ANON_OWNER_ID
-    settings = get_settings()
-    current = now or _utc_now()
-
-    # Once per scheduler-local day: refresh EMA + soft weights before ranking.
-    incentive_state = await ensure_incentives_for_picks(db, now=current)
-    calibration = await train_from_frozen_history(db, now=current)
-
-    rows = (
-        await db.execute(
-            select(Fixture, PreMatchData, MatchFeature)
-            .join(PreMatchData, PreMatchData.fixture_id == Fixture.id)
-            .outerjoin(MatchFeature, MatchFeature.fixture_id == Fixture.id)
-            .where(
-                prematch_list_clause(current),
-            )
-            .order_by(Fixture.date, Fixture.id)
-        )
-    ).all()
-
-    # Collapse possible duplicate MatchFeature joins.
-    by_fixture: dict[int, tuple[Fixture, PreMatchData, MatchFeature | None]] = {}
-    for fixture, stored, feature in rows:
-        prev = by_fixture.get(fixture.id)
-        if prev is None or (feature is not None and prev[2] is None):
-            by_fixture[fixture.id] = (fixture, stored, feature)
-
-    candidates = score_auto_pick_candidates(
-        list(by_fixture.values()),
-        incentive_state=incentive_state,
-        calibration=calibration,
+    return await sync_daily_recommendations(
+        db,
+        user_id=user_id,
+        limit=limit,
+        now=now,
     )
-
-    # Skip fixtures any user already starred manually in the guest bucket
-    # (logged-in manuals live on their own rows and do not block shared tips).
-    manual_ids = {
-        int(row[0])
-        for row in (
-            await db.execute(
-                select(FavoriteFixture.fixture_id).where(
-                    FavoriteFixture.user_id == owner,
-                    FavoriteFixture.source == FAVORITE_SOURCE_MANUAL,
-                )
-            )
-        ).all()
-    }
-
-    selected = select_auto_picks_by_match_day(
-        candidates,
-        limit_per_day=limit,
-        skip_fixture_ids=manual_ids,
-    )
-
-    ratings = within_day_quality_ratings(selected)
-
-    await db.execute(
-        delete(FavoriteFixture).where(
-            FavoriteFixture.user_id == owner,
-            FavoriteFixture.source == FAVORITE_SOURCE_AUTO,
-        )
-    )
-
-    saved_at = _utc_now()
-    for candidate in selected:
-        db.add(
-            FavoriteFixture(
-                fixture_id=candidate.fixture_id,
-                user_id=owner,
-                source=FAVORITE_SOURCE_AUTO,
-                auto_market=candidate.market,
-                auto_lean=candidate.lean,
-                quality_rating=ratings.get(candidate.fixture_id),
-                saved_at=saved_at,
-            )
-        )
-
-    # Persist learning snapshots: only rewrite still-prematch fixtures so
-    # kicked-off / finished daily tips remain auditable.
-    prematch_ids = set(by_fixture.keys())
-    selected_ids = {item.fixture_id for item in selected}
-    if prematch_ids - selected_ids:
-        await db.execute(
-            delete(AutoPickSnapshot).where(
-                AutoPickSnapshot.fixture_id.in_(prematch_ids - selected_ids)
-            )
-        )
-    if selected_ids:
-        await db.execute(
-            delete(AutoPickSnapshot).where(
-                AutoPickSnapshot.fixture_id.in_(selected_ids)
-            )
-        )
-    for candidate in selected:
-        db.add(
-            AutoPickSnapshot(
-                fixture_id=candidate.fixture_id,
-                match_day=candidate.match_day,
-                market=candidate.market,
-                lean=candidate.lean,
-                raw_confidence=candidate.raw_confidence,
-                confidence=candidate.confidence,
-                decimal_odd=candidate.decimal_odd,
-                expected_return=candidate.expected_return,
-                score=candidate.score,
-                quality_rating=ratings.get(candidate.fixture_id),
-                picked_at=saved_at,
-            )
-        )
-
-    await db.commit()
-
-    tz_name = settings.SCHEDULER_TIMEZONE
-    try:
-        local_day = datetime.now(ZoneInfo(tz_name)).date().isoformat()
-    except Exception:
-        local_day = saved_at.date().isoformat()
-
-    by_day_counts: dict[str, int] = {}
-    for item in selected:
-        key = item.match_day
-        by_day_counts[key] = by_day_counts.get(key, 0) + 1
-
-    result = {
-        "day": local_day,
-        "candidates": len(candidates),
-        "selected_count": len(selected),
-        "calibration": {
-            market: bool(config.get("deployable"))
-            for market, config in (calibration.get("markets") or {}).items()
-        },
-        "by_day": by_day_counts,
-        "selected": [
-            {
-                "fixture_id": item.fixture_id,
-                "match_day": item.match_day,
-                "score": round(item.score, 4),
-                "market": item.market,
-                "lean": item.lean,
-                "raw_confidence": round(item.raw_confidence, 4),
-                "confidence": round(item.confidence, 4),
-                "decimal_odd": round(item.decimal_odd, 3),
-                "expected_return": round(item.expected_return, 4),
-                "quality_rating": ratings.get(item.fixture_id),
-            }
-            for item in selected
-        ],
-        "skipped_manual": sorted(
-            {
-                item.fixture_id
-                for item in candidates
-                if item.fixture_id in manual_ids
-            }
-        ),
-    }
-    logger.info(
-        "Auto-favorites day=%s selected=%s candidates=%s by_day=%s",
-        local_day,
-        len(selected),
-        len(candidates),
-        by_day_counts,
-    )
-    return result
