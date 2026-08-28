@@ -48,6 +48,17 @@ def test_risk_score_rewards_payout_but_dampens_long_odds() -> None:
     )
 
 
+def test_quarter_ball_refund_is_not_penalised_twice() -> None:
+    """同一方向下，退半的 -0.25 应压过全输的独赢。
+
+    主胜 46.1% / 平 27.0% 时，让胜(-0.25) 的条件命中率为 53.3%、赔率 1.83；
+    独赢胜命中率 46.1%、赔率 2.10。前者每单位本金期望更优，综合分必须同向。
+    """
+    assert risk_adjusted_return_score(0.5326, 1.83) > risk_adjusted_return_score(
+        0.4608, 2.10
+    )
+
+
 def test_picks_the_best_risk_adjusted_side() -> None:
     payload = decide_match(
         match_id=1001,

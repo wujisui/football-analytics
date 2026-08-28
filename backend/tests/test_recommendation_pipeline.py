@@ -103,6 +103,34 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
     assert result["selected"][0]["decimal_odd"] == 1.9
 
 
+def test_quarter_ball_refund_beats_the_full_stake_1x2_side() -> None:
+    """浅盘退半不该被罚两次：让胜(-0.25) 1.83 应胜过独赢胜 2.10。
+
+    平局时独赢全输、-0.25 只输一半，赢盘条件却完全相同，因此每单位本金的期望
+    更优（-0.022 对 -0.032）。退半的好处已计入条件命中率、代价已计入更低赔率，
+    综合分不得再乘一次 at_risk。
+    """
+    match = MatchPipelineInput(
+        fixture_id=1,
+        league_id=39,
+        kickoff=datetime(2026, 8, 28, 17, 0, tzinfo=timezone.utc),
+        match_day="2026-08-28",
+        odds={
+            "available": True,
+            "match_winner": {"home": 2.10, "draw": 3.59, "away": 3.59},
+            "asian_handicap": {"line": "-0.25", "home": 1.83, "away": 2.10},
+        },
+        goal_lean="大(2.5)",
+        both_score_lean="双进:是",
+    )
+
+    result = run_pipeline([match], artifact={}, market_artifact={}, limit_per_day=4)
+
+    assert result["selected_count"] == 1
+    assert result["selected"][0]["market"] == "ah"
+    assert result["selected"][0]["lean"].endswith("(-0.25)")
+
+
 def test_run_pipeline_keeps_top_four_by_confidence_per_day(monkeypatch) -> None:
     """EV 与置信度反向排列，验证选场只看置信度、EV 只是随行审计字段。"""
     processed = [
@@ -316,7 +344,7 @@ def test_select_daily_picks_respects_match_day_buckets() -> None:
     assert {pick.fixture_id for pick in selected} == {1, 3}
 
 
-def test_daily_four_diversifies_1x2_and_ah_when_both_are_available() -> None:
+def test_daily_four_follows_pure_score_order_across_markets() -> None:
     base = DailyRecommendationPick(
         fixture_id=1,
         league_id=39,
@@ -359,10 +387,51 @@ def test_daily_four_diversifies_1x2_and_ah_when_both_are_available() -> None:
         matches_count_by_day={"2026-08-28": 6},
     )
 
+    # No per-market quota: a lower-scoring 1X2 candidate must never displace a
+    # higher-scoring AH one just to spread the daily four across markets.
     assert len(selected) == 4
-    assert [pick.market for pick in selected].count("ah") == 3
-    assert [pick.market for pick in selected].count("1x2") == 1
-    assert len({pick.fixture_id for pick in selected}) == 4
+    assert all(pick.market == "ah" for pick in selected)
+    assert [pick.fixture_id for pick in selected] == [1, 2, 3, 4]
+
+
+def test_same_fixture_cannot_occupy_two_slots_with_both_markets() -> None:
+    base = DailyRecommendationPick(
+        fixture_id=1,
+        league_id=39,
+        kickoff=datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc),
+        match_day="2026-08-28",
+        market="ah",
+        lean="胜",
+        market_lean="让胜(-0.25)",
+        recommended_choice="home",
+        ev=-0.02,
+        confidence=0.53,
+        reason="风险调整回报最高",
+        decimal_odd=1.83,
+        raw_confidence=0.53,
+        calibrated_home_prob=0.46,
+        calibrated_draw_prob=0.27,
+        calibrated_away_prob=0.27,
+        reliability=0.7,
+        sample_size=100,
+        score=0.49,
+    )
+    picks = [
+        base,
+        replace(base, market="1x2", market_lean="胜", decimal_odd=2.10, score=0.48),
+        replace(base, fixture_id=2, score=0.40),
+        replace(base, fixture_id=3, score=0.39),
+        replace(base, fixture_id=4, score=0.38),
+    ]
+
+    selected = select_daily_picks_by_match_day(
+        picks,
+        limit_per_day=4,
+        matches_count_by_day={"2026-08-28": 10},
+    )
+
+    assert [pick.fixture_id for pick in selected] == [1, 2, 3, 4]
+    assert selected[0].market == "ah"
 
 
 def test_select_daily_picks_outputs_all_when_day_total_below_six() -> None:

@@ -51,19 +51,21 @@ def expected_value(decimal_odd: float, calibrated_prob: float) -> float:
 def risk_adjusted_return_score(
     calibrated_prob: float,
     decimal_odd: float,
-    *,
-    stake_share: float = 1.0,
 ) -> float:
     """Balance hit probability and payout without blindly chasing long odds.
 
     ``sqrt(net payout)`` is a concave utility: moving from 1.60 to 1.95 is
-    rewarded more than moving from 2.60 to 2.95. ``stake_share`` accounts for
-    quarter/level boards where part of the stake can be refunded.
+    rewarded more than moving from 2.60 to 2.95.
+
+    Quarter/level boards need no extra term here: a partial refund already
+    raises ``calibrated_prob`` (it is conditional on the stake resolving) and
+    already lowers ``decimal_odd``. Scaling by the at-risk share on top of that
+    would penalise refund protection a second time and bias the ranking toward
+    higher-variance full-stake bets.
     """
     probability = max(0.0, min(1.0, float(calibrated_prob)))
     net_payout = max(0.0, float(decimal_odd) - 1.0)
-    at_risk = max(0.0, min(1.0, float(stake_share)))
-    return probability * math.sqrt(net_payout * at_risk)
+    return probability * math.sqrt(net_payout)
 
 
 def compute_outcome_evs(

@@ -68,7 +68,6 @@ MARKET_1X2 = "1x2"
 MARKET_AH = "ah"
 OUTCOME_TO_LEAN = {"home": "胜", "away": "负"}
 MIN_MATCHES_FOR_FULL_QUOTA = 6
-MAX_PICKS_PER_MARKET = 3
 
 
 @dataclass(frozen=True)
@@ -381,11 +380,7 @@ def _to_ah_picks(
                 reason=REASON_RISK_ADJUSTED_RETURN,
                 decimal_odd=decimal_odd,
                 raw_confidence=raw_confidence,
-                score=risk_adjusted_return_score(
-                    confidence,
-                    decimal_odd,
-                    stake_share=stake_share,
-                ),
+                score=risk_adjusted_return_score(confidence, decimal_odd),
             )
         )
     return picks
@@ -433,34 +428,18 @@ def select_daily_picks_by_match_day(
             else len(day_picks)
         )
         count = 0
-        market_counts: dict[str, int] = {}
-
-        def _take(pick: DailyRecommendationPick) -> None:
-            nonlocal count
+        # Ranking by risk-adjusted return is the only cross-fixture criterion:
+        # a per-market quota would let a lower-scoring candidate displace a
+        # higher-scoring one. Only the one-market-per-fixture rule stays, so a
+        # single match cannot occupy two slots with correlated bets.
+        for pick in day_picks:
+            if count >= day_limit:
+                break
+            if pick.fixture_id in skip or pick.fixture_id in selected_fixture_ids:
+                continue
             selected.append(pick)
             selected_fixture_ids.add(pick.fixture_id)
-            market_counts[pick.market] = market_counts.get(pick.market, 0) + 1
             count += 1
-
-        # First pass diversifies model/market risk: no one market may occupy
-        # all four slots when an alternative candidate exists.
-        for pick in day_picks:
-            if count >= day_limit:
-                break
-            if pick.fixture_id in skip or pick.fixture_id in selected_fixture_ids:
-                continue
-            if market_counts.get(pick.market, 0) >= MAX_PICKS_PER_MARKET:
-                continue
-            _take(pick)
-
-        # If the other market cannot supply a valid candidate, still fill the
-        # quota rather than making the daily list artificially short.
-        for pick in day_picks:
-            if count >= day_limit:
-                break
-            if pick.fixture_id in skip or pick.fixture_id in selected_fixture_ids:
-                continue
-            _take(pick)
     return selected
 
 
