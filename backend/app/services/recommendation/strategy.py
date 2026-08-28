@@ -58,6 +58,7 @@ def decide_match(
     match_id: int,
     calibration: dict[str, Any],
     odds: dict[str, Any] | None,
+    features: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Pick the highest positive-EV 1X2 outcome, or skip when none exist."""
     resolved_match_id = int(calibration.get("match_id", match_id))
@@ -86,6 +87,10 @@ def decide_match(
         }
 
     confidence = float(probs[best_outcome])
+    if isinstance(features, dict):
+        reliability = float(features.get("league_reliability") or 0.0)
+        if reliability > 0.0:
+            confidence = min(1.0, confidence * (0.75 + 0.25 * reliability))
     return {
         "match_id": resolved_match_id,
         "recommended_choice": best_outcome,
