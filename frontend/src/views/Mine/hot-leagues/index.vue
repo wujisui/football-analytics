@@ -1201,12 +1201,12 @@ onMounted(() => {
 }
 
 .hot-league-item--selectable:hover {
-  background: color-mix(in srgb, var(--n-primary-color, #18a058) 8%, transparent);
+  background: color-mix(in srgb, var(--fa-accent) 8%, transparent);
 }
 
 .hot-league-item--selected {
-  border-color: var(--n-primary-color, #18a058);
-  background: color-mix(in srgb, var(--n-primary-color, #18a058) 14%, transparent);
+  border-color: var(--fa-accent);
+  background: color-mix(in srgb, var(--fa-accent) 14%, transparent);
 }
 
 .hot-league-item :deep(.n-checkbox) {

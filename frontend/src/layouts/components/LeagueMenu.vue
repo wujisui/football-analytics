@@ -266,8 +266,8 @@ function countOf(leagueId: number): number {
 }
 
 .lm-item.active {
-  color: var(--n-primary-color, #18a058);
-  background: color-mix(in srgb, var(--n-primary-color, #18a058) 14%, transparent);
+  color: var(--fa-accent);
+  background: color-mix(in srgb, var(--fa-accent) 14%, transparent);
   font-weight: 600;
 }
 
@@ -294,7 +294,7 @@ function countOf(leagueId: number): number {
 
 .lm-item.active .lm-chip-all {
   color: inherit;
-  background: color-mix(in srgb, var(--n-primary-color, #18a058) 10%, transparent);
+  background: color-mix(in srgb, var(--fa-accent) 10%, transparent);
 }
 
 .lm-suffix {
