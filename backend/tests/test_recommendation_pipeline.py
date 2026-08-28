@@ -16,16 +16,28 @@ from app.services.recommendation.pipeline import (
 )
 
 
-def _match(fixture_id: int, *, match_day: str = "2026-08-28") -> MatchPipelineInput:
+def _match(
+    fixture_id: int,
+    *,
+    match_day: str = "2026-08-28",
+    recommendation: str | None = None,
+    score_hint: str | None = None,
+    ah_line: str | None = None,
+) -> MatchPipelineInput:
+    odds = {
+        "available": True,
+        "match_winner": {"home": 2.0, "draw": 3.4, "away": 4.0},
+    }
+    if ah_line is not None:
+        odds["asian_handicap"] = {"line": ah_line, "home": 1.90, "away": 1.98}
     return MatchPipelineInput(
         fixture_id=fixture_id,
         league_id=39,
         kickoff=datetime(2026, 8, 28, 15, 0, tzinfo=timezone.utc),
         match_day=match_day,
-        odds={
-            "available": True,
-            "match_winner": {"home": 2.0, "draw": 3.4, "away": 4.0},
-        },
+        odds=odds,
+        recommendation=recommendation,
+        score_hint=score_hint,
     )
 
 
@@ -154,6 +166,42 @@ def test_run_pipeline_does_not_pad_when_fewer_than_four_positive_ev(monkeypatch)
     )
     result = run_pipeline([_match(10), _match(11)], artifact={}, limit_per_day=4)
     assert result["selected_count"] == 1
+
+
+def test_consistency_gate_runs_before_top_four_and_backfills(monkeypatch) -> None:
+    processed = [_processed(i, ev=0.50 - i / 100) for i in range(1, 7)]
+
+    def fake_process(match, *, artifact=None):
+        del artifact
+        return next(item for item in processed if item.fixture_id == match.fixture_id)
+
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        fake_process,
+    )
+    matches = [
+        _match(
+            1,
+            recommendation="胜/平",
+            score_hint="比分:1-1",
+            ah_line="-0.75",
+        ),
+        *[_match(i) for i in range(2, 7)],
+    ]
+    result = run_pipeline(
+        matches,
+        artifact={},
+        limit_per_day=4,
+        stored_handicap_by_fixture={1: "让负(-0.75)"},
+    )
+
+    assert [item["fixture_id"] for item in result["selected"]] == [2, 3, 4, 5]
+    assert result["selected_count"] == 4
+    assert result["consistency_rejected_count"] == 1
+    assert result["rejected"][0]["fixture_id"] == 1
+    assert result["rejected"][0]["is_consistent"] is False
+    assert result["rejected"][0]["conflict_reason"] == "无法修正，跳过"
+    assert all(item["is_consistent"] is True for item in result["selected"])
 
 
 def test_select_daily_picks_respects_match_day_buckets() -> None:

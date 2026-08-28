@@ -205,7 +205,7 @@ python -m unittest discover -s tests -v
 1. 赛前分析 / 赔率入库写入 `match_features` 的 AH 字段
 2. 固定同步批次回写赛果并打 `ah_label`；样本 ≥ `ML_AH_MIN_TRAIN_SAMPLES`（默认 80）且有新增 → 自动训练
 3. 推断优先级：结构性双选 > 参考比分 > ML > multifactor 启发式（相对水位 + 1X2 分歧）
-4. 出口统一过一道互斥闸 `_agree_with_recommendation`：`|让球线| ≤ 0.5` 时结算只看胜平负结果，若当前一侧会在推荐结果上输掉全注（胜/平 配 让负(-0.25)）就改取镜像侧并把原因写进 `handicap_market_note`；四分盘平局只输半、不算互斥，`|让球线| > 0.5` 看净胜球不受约束。写 `match_features` 的 `ah_cover_prob` 不传胜平负推荐，训练标签不受该闸影响
+4. 普通详情出口过 `_agree_with_recommendation` 浅盘互斥闸；日推在 Top-N 截取前另过 `recommendation.consistency.validate_pick_consistency` 严格联合闸，以页面可见 1X2、真实让球线、去水水位和已有比分候选共同判定。无法唯一映射或无法从已有比分中匹配的场次跳过并从后续候选补位，不改盘口线、不编造比分。写 `match_features` 的 `ah_cover_prob` 不传胜平负推荐，训练标签不受展示闸影响
 5. 详情盘口解释由 `market_analysis.py` 统一生成：使用初盘 / 中盘 / 临场 / 即时盘并按采集时间去重，只比较同庄家、同玩法、同档位的去水概率；分别说明主盘升降、同档共振、1X2、大小球及计入赢半/输半/走水后的让球期望收益。中间态来自已有盘口刷新，不增加官方请求；前端不维护平行判断
 
 配置：`ML_AH_MIN_TRAIN_SAMPLES`、`ML_AH_AUTO_TRAIN`。
