@@ -148,6 +148,31 @@ function writeAdminCache<T>(key: string, value: T): T {
   return value
 }
 
+/**
+ * 同一份设置在一次导航里可能被读多次：naive-ui 布局在路由恢复时会把子树
+ * 实例化两次。按缓存键共享在途请求，重复调用复用同一个 Promise。
+ */
+const inflightAdminReads = new Map<string, Promise<unknown>>()
+
+async function readAdminSetting<T>(
+  cacheKey: string,
+  url: string,
+  force: boolean,
+): Promise<T> {
+  if (!force) {
+    const cached = readAdminCache<T>(cacheKey)
+    if (cached) return cached
+  }
+  const pending = inflightAdminReads.get(cacheKey) as Promise<T> | undefined
+  if (pending) return pending
+  const request = apiClient
+    .get<T>(url)
+    .then(({ data }) => writeAdminCache(cacheKey, data))
+    .finally(() => inflightAdminReads.delete(cacheKey))
+  inflightAdminReads.set(cacheKey, request)
+  return request
+}
+
 export function peekSubscriptionSetting(): SubscriptionSetting | null {
   return readAdminCache<SubscriptionSetting>(SUBSCRIPTION_CACHE_KEY)
 }
@@ -172,13 +197,12 @@ export function clearAdminSettingsCache(): void {
 }
 
 /** Admin routes authenticate via the logged-in is_admin session cookie. */
-export async function fetchSubscriptionSetting(force = false): Promise<SubscriptionSetting> {
-  if (!force) {
-    const cached = peekSubscriptionSetting()
-    if (cached) return cached
-  }
-  const { data } = await apiClient.get<SubscriptionSetting>('/admin/settings/subscription')
-  return writeAdminCache(SUBSCRIPTION_CACHE_KEY, data)
+export function fetchSubscriptionSetting(force = false): Promise<SubscriptionSetting> {
+  return readAdminSetting<SubscriptionSetting>(
+    SUBSCRIPTION_CACHE_KEY,
+    '/admin/settings/subscription',
+    force,
+  )
 }
 
 export async function updateSubscriptionSetting(
@@ -223,13 +247,12 @@ export async function fetchAdminTaskStatus(): Promise<{
   return data
 }
 
-export async function fetchHotLeaguesSetting(force = false): Promise<HotLeaguesSetting> {
-  if (!force) {
-    const cached = peekHotLeaguesSetting()
-    if (cached) return cached
-  }
-  const { data } = await apiClient.get<HotLeaguesSetting>('/admin/settings/hot-leagues')
-  return writeAdminCache(HOT_LEAGUES_CACHE_KEY, data)
+export function fetchHotLeaguesSetting(force = false): Promise<HotLeaguesSetting> {
+  return readAdminSetting<HotLeaguesSetting>(
+    HOT_LEAGUES_CACHE_KEY,
+    '/admin/settings/hot-leagues',
+    force,
+  )
 }
 
 export async function updateHotLeaguesSetting(
@@ -333,13 +356,12 @@ export async function deleteCatalogLeague(params: {
   return data
 }
 
-export async function fetchApiSportsKeySetting(force = false): Promise<ApiSportsKeySetting> {
-  if (!force) {
-    const cached = peekApiSportsKeySetting()
-    if (cached) return cached
-  }
-  const { data } = await apiClient.get<ApiSportsKeySetting>('/admin/settings/api-sports-key')
-  return writeAdminCache(API_KEY_CACHE_KEY, data)
+export function fetchApiSportsKeySetting(force = false): Promise<ApiSportsKeySetting> {
+  return readAdminSetting<ApiSportsKeySetting>(
+    API_KEY_CACHE_KEY,
+    '/admin/settings/api-sports-key',
+    force,
+  )
 }
 
 export async function updateApiSportsKeySetting(params: {

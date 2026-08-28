@@ -162,7 +162,7 @@ const bottomItems: {
             content-style="height: 100%; overflow: hidden; position: relative;"
           >
             <router-view v-slot="{ Component }">
-              <keep-alive :include="['FixturesShellLayout', 'Favorites', 'Mine']">
+              <keep-alive :include="['FixturesShellLayout', 'Favorites']">
                 <component :is="Component" />
               </keep-alive>
             </router-view>

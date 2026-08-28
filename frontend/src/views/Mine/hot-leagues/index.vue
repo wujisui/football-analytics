@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useMessage, useModal } from 'naive-ui'
-import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { updateResultsConfiguredLeagueIds } from '@/composables/useResultsLeagues'
@@ -637,20 +637,11 @@ async function confirmDeleteLeague() {
   }
 }
 
-let skipKeepAliveActivate = false
 onMounted(() => {
-  skipKeepAliveActivate = true
   void loadSetting({
     silent: cachedSetting != null,
     keepSelection: false,
   })
-})
-onActivated(() => {
-  if (skipKeepAliveActivate) {
-    skipKeepAliveActivate = false
-    return
-  }
-  void loadSetting({ silent: true, keepSelection: true })
 })
 </script>
 
