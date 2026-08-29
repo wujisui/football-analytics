@@ -11,6 +11,7 @@ import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import ResultPredictionSummary from '@/components/ResultPredictionSummary.vue'
 import ScoreDetailLink from '@/components/ScoreDetailLink.vue'
+import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import {
   formatDate,
   formatTime,
@@ -19,6 +20,7 @@ import {
   statusLabel,
   statusTagType,
 } from '@/utils/format'
+import { adaptHandicapLean } from '@/utils/handicapDisplay'
 import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
 import { isFixtureCardMarkClickIgnored } from '@/utils/fixtureCardMark'
 import {
@@ -28,6 +30,8 @@ import {
 } from '@/utils/fixturesLeagueFilter'
 import { leagueLabel } from '@/utils/leagueNames'
 import {
+  hitTagMissed,
+  hitTagType,
   resultExtraScoreLine,
   resultScoreText,
 } from '@/utils/resultsDisplay'
@@ -100,6 +104,32 @@ const kickoffText = computed(() => {
 })
 const scoreText = computed(() => resultScoreText(props.fixture))
 const extraScoreLine = computed(() => resultExtraScoreLine(props.fixture))
+const { ruleset } = useHandicapRuleset()
+const dailyPickMarket = computed(() => {
+  const fixture = settledFixture.value
+  if (!fixture) return ''
+  return (
+    (fixture as ResultFixture).auto_pick_market
+    ?? (fixture as FavoriteFixtureRecord).auto_market
+    ?? ''
+  ).trim()
+})
+const dailyPickLean = computed(() => {
+  const fixture = settledFixture.value
+  if (!fixture) return ''
+  return (
+    (fixture as ResultFixture).auto_pick_lean
+    ?? (fixture as FavoriteFixtureRecord).auto_lean
+    ?? ''
+  ).trim()
+})
+const dailyPickLabel = computed(() => {
+  if (!dailyPickMarket.value || !dailyPickLean.value) return ''
+  return dailyPickMarket.value === 'ah'
+    ? adaptHandicapLean(dailyPickLean.value, ruleset.value)
+    : dailyPickLean.value
+})
+const dailyPickHit = computed(() => settledFixture.value?.auto_pick_hit ?? null)
 const statusShort = computed(() =>
   'status_short' in props.fixture ? props.fixture.status_short : undefined,
 )
@@ -130,6 +160,11 @@ function openStats() {
       date: props.date,
     }),
   )
+}
+
+function onDailyPickClick() {
+  if (!props.hitFilterable || dailyPickHit.value !== true) return
+  emit('filterHit', 'auto_pick')
 }
 
 /** 卡片内已有自己点击语义的控件（比分/联赛标签/命中标签/收藏）不触发标记 */
@@ -204,6 +239,21 @@ function onLeagueClick(e: Event) {
       <span class="kickoff">
         {{ kickoffText }}
       </span>
+      <n-tag
+        v-if="!isPrematch && dailyPickLabel"
+        class="daily-pick-tag"
+        :class="{
+          clickable: hitFilterable && dailyPickHit === true,
+          'fa-tag-missed': hitTagMissed(dailyPickHit),
+          active: activeHitKey === 'auto_pick',
+        }"
+        size="small"
+        :type="hitTagType(dailyPickHit)"
+        :bordered="false"
+        @click.stop="onDailyPickClick"
+      >
+        <n-ellipsis style="max-width: 100%">[荐] {{ dailyPickLabel }}</n-ellipsis>
+      </n-tag>
       <n-tag
         size="small"
         :type="
@@ -361,6 +411,27 @@ function onLeagueClick(e: Event) {
 
 .card-head > :deep(.n-tag) {
   flex-shrink: 0;
+}
+
+.daily-pick-tag {
+  flex: 0 1 auto !important;
+  min-width: 0;
+  max-width: min(42%, 140px);
+}
+
+.daily-pick-tag.clickable {
+  cursor: pointer;
+}
+
+.daily-pick-tag.active {
+  outline: 1px solid var(--fa-highlight-text);
+  outline-offset: 1px;
+}
+
+:deep(.daily-pick-tag .n-tag__content) {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .score {

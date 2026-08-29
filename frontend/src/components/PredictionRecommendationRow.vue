@@ -3,7 +3,6 @@ import { computed } from 'vue'
 
 import type { AutoFavoriteMarket } from '@/api/favorites'
 import { autoFavoritePick } from '@/composables/useFavoriteFixtures'
-import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
 import { isPredictionPending, adaptHandicapLean } from '@/utils/handicapDisplay'
 import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 
@@ -58,23 +57,24 @@ const recommendationLabel = computed(() =>
     ? '待分析'
     : recommendationText.value,
 )
-const recommendationTagColor = computed(() =>
-  isPredictionPending(recommendationText.value)
-    ? undefined
-    : wdlTagColor(leanWdlTone(recommendationText.value)),
-)
 const { ruleset } = useHandicapRuleset()
 
 const handicapLabel = computed(() =>
   adaptHandicapLean(handicapText.value, ruleset.value),
 )
 const showHandicap = computed(() => !isPredictionPending(handicapText.value))
-const handicapTagColor = computed(() =>
-  wdlTagColor(leanWdlTone(handicapLabel.value)),
-)
 const showGoal = computed(() => !isPredictionPending(props.goalLean))
 const showBothScore = computed(() => !isPredictionPending(props.bothScore))
 const showScore = computed(() => !isPredictionPending(scoreText.value))
+
+/**
+ * 普通场次统一 info；每日推荐场次只突出实际主推，其他预测退为 default。
+ * 赛前没有命中态，主推借用赛果命中 tag 的 error 红色建立一致视觉。
+ */
+function tagType(market?: AutoFavoriteMarket): 'error' | 'default' | 'info' {
+  if (!pick.value) return 'info'
+  return market && isPick(market) ? 'error' : 'default'
+}
 
 function open() {
   if (props.clickable) emit('open')
@@ -96,8 +96,7 @@ function open() {
       class="rec-tag"
       :class="{ 'rec-pick': isPick('1x2') }"
       :bordered="false"
-      :type="recommendationTagColor ? undefined : 'default'"
-      :color="isPick('1x2') ? undefined : recommendationTagColor"
+      :type="tagType('1x2')"
     >
       <span v-if="isPick('1x2')" class="rec-pick-mark">[荐]</span>
       {{ recommendationLabel }}
@@ -108,8 +107,7 @@ function open() {
       class="handicap-tag rec-tag"
       :class="{ 'rec-pick': isPick('ah') }"
       :bordered="false"
-      :type="handicapTagColor ? undefined : 'default'"
-      :color="isPick('ah') ? undefined : handicapTagColor"
+      :type="tagType('ah')"
     >
       <span v-if="isPick('ah')" class="rec-pick-mark">[荐]</span>
       <n-ellipsis style="max-width: 100%">{{ handicapLabel }}</n-ellipsis>
@@ -119,7 +117,7 @@ function open() {
       size="small"
       class="rec-tag"
       :class="{ 'rec-pick': isPick('ou') }"
-      :type="isPick('ou') ? undefined : 'warning'"
+      :type="tagType('ou')"
       :bordered="false"
     >
       <span v-if="isPick('ou')" class="rec-pick-mark">[荐]</span>
@@ -130,6 +128,7 @@ function open() {
       size="small"
       class="rec-tag"
       :class="{ 'rec-pick': isPick('btts') }"
+      :type="tagType('btts')"
       :bordered="false"
     >
       <span v-if="isPick('btts')" class="rec-pick-mark">[荐]</span>
@@ -140,7 +139,7 @@ function open() {
       size="small"
       class="score-tag rec-tag"
       :bordered="false"
-      type="info"
+      :type="tagType()"
     >
       <n-ellipsis style="max-width: 100%">{{ scoreText }}</n-ellipsis>
     </n-tag>
@@ -174,12 +173,6 @@ function open() {
   display: block;
   min-width: 0;
   max-width: 100%;
-}
-
-.rec-tag.rec-pick {
-  color: var(--fa-highlight-text) !important;
-  background: var(--fa-highlight-bg) !important;
-  box-shadow: inset 0 0 0 1px var(--fa-highlight-border);
 }
 
 .rec-pick-mark {
