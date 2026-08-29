@@ -18,6 +18,7 @@ from app.services.ah_features import (
     outcome_settlement_units,
 )
 from app.services.auto_pick_incentive import adjust_pick_score
+from app.services.match_day import fixture_match_day
 from app.services.prediction import (
     _odd_float,
     _parse_goal_lean,
@@ -467,11 +468,6 @@ def _market_candidates(
     return _risk_adjust_candidates(candidates)
 
 
-def _fixture_match_day(fixture: Fixture) -> str:
-    """Persisted venue-local day; UTC fallback only for legacy test fixtures."""
-    return str(getattr(fixture, "match_day", None) or fixture.date.strftime("%Y-%m-%d"))
-
-
 def _best_market(candidates: list[MarketCandidate]) -> MarketCandidate | None:
     if not candidates:
         return None
@@ -552,7 +548,7 @@ def score_auto_pick_candidates(
                 fixture_id=fixture.id,
                 league_id=int(fixture.league_id),
                 kickoff=fixture.date,
-                match_day=_fixture_match_day(fixture),
+                match_day=fixture_match_day(fixture),
                 score=final_score,
                 market=best.market,
                 lean=best.lean,

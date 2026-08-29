@@ -13,7 +13,6 @@ import {
 } from '@/api/favorites'
 import { oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
-import { toScheduleDayKey } from '@/utils/format'
 import { normalizeQualityRating } from '@/utils/qualityRating'
 
 export type { FavoriteFixtureRecord }
@@ -48,6 +47,7 @@ function optimisticFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord 
     league_name: fixture.league_name,
     league_country: fixture.league_country ?? null,
     fixture_date: fixture.fixture_date,
+    match_day: fixture.match_day,
     status: fixture.status,
     home_goals: fixture.home_goals,
     away_goals: fixture.away_goals,
@@ -79,6 +79,7 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     league_name: fixture.league_name,
     league_country: fixture.league_country ?? null,
     fixture_date: fixture.fixture_date,
+    match_day: fixture.match_day,
     status: fixture.status,
     home_goals: fixture.home_goals,
     away_goals: fixture.away_goals,
@@ -175,11 +176,11 @@ function isFavorite(fixtureId: number): boolean {
   return favoriteIds.value.has(fixtureId)
 }
 
-/** Schedule calendar days (YYYY-MM-DD) that have at least one favorite fixture. */
+/** 场地当地比赛日（后端 ``match_day``）中至少有一场关注的那些日子。 */
 export function favoriteFixtureDays(
   favoritesList: readonly FavoriteFixtureRecord[],
 ): Set<string> {
-  return new Set(favoritesList.map((item) => toScheduleDayKey(item.fixture_date)))
+  return new Set(favoritesList.map((item) => item.match_day))
 }
 
 /**

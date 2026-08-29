@@ -338,6 +338,7 @@ class ResultFixtureResponse(BaseModel):
     home_team_name: str
     away_team_name: str
     fixture_date: datetime
+    match_day: str = Field(..., description="场地当地比赛日 YYYY-MM-DD（后端定稿）")
     status: str
     status_short: str | None = Field(
         default=None, description="官方短码 FT/AET/PEN；预测对照用常规时间比分"
@@ -394,6 +395,8 @@ class FavoriteFixtureResponse(BaseModel):
     league_name: str
     league_country: str | None = None
     fixture_date: datetime
+    # 关注列表按场地当地比赛日分组，与【比赛】/【赛果】同一个 key。
+    match_day: str
     status: str | None = None
     home_goals: int | None = None
     away_goals: int | None = None

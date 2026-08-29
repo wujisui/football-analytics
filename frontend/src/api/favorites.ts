@@ -13,6 +13,8 @@ export interface FavoriteFixtureRecord {
   league_name: string
   league_country?: string | null
   fixture_date: string
+  /** 后端定稿的场地当地比赛日 YYYY-MM-DD，关注列表按它分组。 */
+  match_day: string
   status?: string
   home_goals?: number | null
   away_goals?: number | null

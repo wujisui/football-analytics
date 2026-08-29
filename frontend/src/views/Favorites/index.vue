@@ -15,10 +15,9 @@ import {
   useFavoriteFixtures,
 } from '@/composables/useFavoriteFixtures'
 import type { LeagueSummaryResponse } from '@/api/types'
-import { toScheduleDayKey } from '@/utils/format'
 import { fixtureDetailRoute } from '@/utils/detailNav'
 import { sortFixturesFavoritesFirst } from '@/utils/fixtureSort'
-import { scheduleTodayDate, todayDate } from '@/utils/homeDateStrip'
+import { todayDate } from '@/utils/homeDateStrip'
 import { leagueLabel } from '@/utils/leagueNames'
 
 defineOptions({ name: 'Favorites' })
@@ -64,11 +63,10 @@ watch(selectedLeagueId, () => clearMarked())
 
 const favoriteDays = computed(() => favoriteFixtureDays(favorites.value))
 
+/** 与【比赛】/【赛果】同一个 key：后端定稿的场地当地比赛日。 */
 const dayFavorites = computed(() => {
   const day = filterDate.value
-  const list = favorites.value.filter(
-    (item) => toScheduleDayKey(item.fixture_date) === day,
-  )
+  const list = favorites.value.filter((item) => item.match_day === day)
   return sortFixturesFavoritesFirst(list, favoriteIds.value)
 })
 
@@ -130,7 +128,7 @@ function goDetail(fixtureId: number) {
 /** Avoid empty "today" while auto picks sit on later match days. */
 function snapFilterToAvailableDay() {
   if (dayFavorites.value.length > 0) return
-  const next = nearestFavoriteDay(favoriteDays.value, scheduleTodayDate())
+  const next = nearestFavoriteDay(favoriteDays.value, todayDate())
   if (next && next !== filterDate.value) {
     filterDate.value = next
   }
@@ -201,7 +199,7 @@ onActivated(() => {
             <FavoriteDatesPicker
               v-model="filterDate"
               :marked-days="favoriteDays"
-              legend="当天有关注（赛程日）"
+              legend="当天有关注（比赛日）"
             />
           </div>
         </div>
@@ -221,7 +219,7 @@ onActivated(() => {
               <FavoriteDatesPicker
                 v-model="filterDate"
                 :marked-days="favoriteDays"
-                legend="当天有关注（赛程日）"
+                legend="当天有关注（比赛日）"
               />
             </template>
             <div ref="favoritesShellRef" class="favorites-list-shell">

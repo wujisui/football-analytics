@@ -18,6 +18,7 @@ from app.models.fixture import Fixture
 from app.models.pre_match_data import PreMatchData
 from app.schemas.response import FavoriteFixtureResponse
 from app.services.ah_features import handicap_pick_from_lean
+from app.services.match_day import fixture_match_day
 from app.services.user_scope import ANON_OWNER_ID, normalize_owner_id, owner_is
 
 
@@ -104,6 +105,7 @@ def _to_favorite_response(
         league_name=_league_name(fixture),
         league_country=_league_country(fixture),
         fixture_date=fixture.date,
+        match_day=fixture_match_day(fixture),
         status=fixture.status,
         home_goals=fixture.home_goals,
         away_goals=fixture.away_goals,

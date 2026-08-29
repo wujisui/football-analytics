@@ -55,6 +55,17 @@ def fixture_match_day_expr() -> ColumnElement[str]:
     return func.coalesce(Fixture.match_day, func.date(Fixture.date))
 
 
+def fixture_match_day(fixture: Any) -> str:
+    """Persisted venue-local day of one loaded row; UTC fallback for legacy rows.
+
+    Python-side twin of :func:`fixture_match_day_expr` so every response and
+    bucketing path spells the fallback the same way.
+    """
+
+    day = getattr(fixture, "match_day", None)
+    return str(day) if day else fixture.date.strftime("%Y-%m-%d")
+
+
 def _norm(value: str | None) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))

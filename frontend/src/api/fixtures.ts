@@ -72,6 +72,8 @@ export interface ResultFixture {
   home_team_name: string
   away_team_name: string
   fixture_date: string
+  /** 后端定稿的场地当地比赛日 YYYY-MM-DD */
+  match_day: string
   status: string
   /** Official short: FT / AET / PEN */
   status_short?: string | null

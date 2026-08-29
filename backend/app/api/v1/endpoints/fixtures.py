@@ -38,7 +38,7 @@ from app.services.calendar_tz import utc_today
 from app.services.fixtures_sync import official_sync_busy
 from app.services.league_catalog import allowed_league_ids
 from app.services.fetcher import FootballFetcher
-from app.services.match_day import fixture_match_day_expr
+from app.services.match_day import fixture_match_day, fixture_match_day_expr
 from app.services.prediction import (
     OPINION_FACTORS,
     adjust_probabilities_with_factors,
@@ -445,14 +445,11 @@ async def get_today_fixtures(
                     fixture.away_team_id,
                 ),
                 fixture_date=fixture.date,
-                match_day=fixture.match_day or fixture.date.date().isoformat(),
+                match_day=fixture_match_day(fixture),
                 match_timezone=fixture.match_timezone or "UTC",
                 match_day_source=fixture.match_day_source or "utc",
                 match_day_offset=(
-                    date.fromisoformat(
-                        fixture.match_day or fixture.date.date().isoformat()
-                    )
-                    - base_date
+                    date.fromisoformat(fixture_match_day(fixture)) - base_date
                 ).days,
                 status=fixture.status,
                 home_goals=fixture.home_goals,
@@ -630,6 +627,7 @@ async def get_fixture_results(
                     fx.away_team_id,
                 ),
                 fixture_date=fx.date,
+                match_day=fixture_match_day(fx),
                 status=fx.status,
                 status_short=getattr(fx, "status_short", None),
                 home_goals=home_goals,
@@ -829,7 +827,7 @@ async def get_fixture_analysis(
             fixture.away_team_id,
         ),
         fixture_date=fixture.date,
-        match_day=fixture.match_day or fixture.date.date().isoformat(),
+        match_day=fixture_match_day(fixture),
         match_timezone=fixture.match_timezone or "UTC",
         match_day_source=fixture.match_day_source or "utc",
         status=fixture.status,

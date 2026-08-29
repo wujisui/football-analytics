@@ -31,6 +31,7 @@ from app.services.auto_favorites import (
     AutoPickCandidate,
     within_day_quality_ratings,
 )
+from app.services.match_day import fixture_match_day
 from app.services.prediction import implied_probs_from_odds
 from app.services.prematch_package import package_from_record, rehydrate_odds_markets
 from app.services.probability_calibration import (
@@ -598,12 +599,11 @@ def match_input_from_fixture_row(
         if isinstance(odds_raw, dict)
         else None
     )
-    match_day = str(getattr(fixture, "match_day", None) or fixture.date.strftime("%Y-%m-%d"))
     return MatchPipelineInput(
         fixture_id=int(fixture.id),
         league_id=int(fixture.league_id),
         kickoff=fixture.date,
-        match_day=match_day,
+        match_day=fixture_match_day(fixture),
         odds=odds if isinstance(odds, dict) else None,
         package=package if isinstance(package, dict) else None,
         goal_lean=stored.goal_lean,
