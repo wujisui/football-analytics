@@ -37,7 +37,8 @@ export function hitTagType(
   return hit === true ? 'error' : 'default'
 }
 
-export function hitTagDisabled(hit: boolean | null | undefined): boolean {
+/** 已结算且未命中：标签降级为不可点的作废态（样式类 fa-tag-missed）。 */
+export function hitTagMissed(hit: boolean | null | undefined): boolean {
   return hit === false
 }
 

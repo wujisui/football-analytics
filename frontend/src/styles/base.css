@@ -260,6 +260,19 @@ button {
   flex-direction: column;
 }
 
+/*
+ * 结算未命中的标签：视觉降级表示这条预测已作废且不可点筛选。
+ * 不用 Naive 的 disabled——它的 not-allowed 光标像是「控件被禁用」，
+ * 而这里只是一条没命中的结论，悬停不该出现禁止光标。
+ */
+.fa-tag-missed.n-tag {
+  color: var(--fa-text-secondary);
+  /* 不用 --fa-bg-soft：三个主题里它都贴近卡片底色，标签会糊进卡片；
+     --fa-border 天然与卡片差一档（浅色/护眼偏深、深色偏浅），轮廓才立得住 */
+  background-color: var(--fa-border);
+  cursor: default;
+}
+
 /* ---- Native scrollbars (single source; prefer n-scrollbar for major panes) ---- */
 :root {
   --fa-scrollbar-size: 6px;

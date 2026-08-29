@@ -5,7 +5,7 @@ import type { AutoFavoriteMarket } from '@/api/favorites'
 import RecommendationQualityRate from '@/components/RecommendationQualityRate.vue'
 import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import { adaptHandicapLean, handicapLeanLabel } from '@/utils/handicapDisplay'
-import { hitTagDisabled, hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
+import { hitTagMissed, hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
 
 const props = withDefaults(
@@ -53,11 +53,11 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       class="hit-tag"
       :class="{
         clickable: filterable && fixture.result_hit === true,
+        'fa-tag-missed': hitTagMissed(fixture.result_hit),
         active: activeHitKey === 'result',
       }"
       size="small"
       :type="hitTagType(fixture.result_hit)"
-      :disabled="hitTagDisabled(fixture.result_hit)"
       :bordered="false"
       @click.stop="onTagClick('result', fixture.result_hit)"
     >
@@ -69,11 +69,11 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       class="hit-tag"
       :class="{
         clickable: filterable && fixture.score_hit === true,
+        'fa-tag-missed': hitTagMissed(fixture.score_hit),
         active: activeHitKey === 'score',
       }"
       size="small"
       :type="hitTagType(fixture.score_hit)"
-      :disabled="hitTagDisabled(fixture.score_hit)"
       :bordered="false"
       @click.stop="onTagClick('score', fixture.score_hit)"
     >
@@ -84,11 +84,11 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       class="hit-tag"
       :class="{
         clickable: filterable && fixture.ou_hit === true,
+        'fa-tag-missed': hitTagMissed(fixture.ou_hit),
         active: activeHitKey === 'ou',
       }"
       size="small"
       :type="hitTagType(fixture.ou_hit)"
-      :disabled="hitTagDisabled(fixture.ou_hit)"
       :bordered="false"
       @click.stop="onTagClick('ou', fixture.ou_hit)"
     >
@@ -100,11 +100,11 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       class="hit-tag"
       :class="{
         clickable: filterable && fixture.btts_hit === true,
+        'fa-tag-missed': hitTagMissed(fixture.btts_hit),
         active: activeHitKey === 'btts',
       }"
       size="small"
       :type="hitTagType(fixture.btts_hit)"
-      :disabled="hitTagDisabled(fixture.btts_hit)"
       :bordered="false"
       @click.stop="onTagClick('btts', fixture.btts_hit)"
     >
@@ -116,11 +116,11 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       class="hit-tag"
       :class="{
         clickable: filterable && fixture.handicap_hit === true,
+        'fa-tag-missed': hitTagMissed(fixture.handicap_hit),
         active: activeHitKey === 'handicap',
       }"
       size="small"
       :type="hitTagType(fixture.handicap_hit)"
-      :disabled="hitTagDisabled(fixture.handicap_hit)"
       :bordered="false"
       @click.stop="onTagClick('handicap', fixture.handicap_hit)"
     >

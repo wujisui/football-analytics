@@ -300,7 +300,7 @@ onMounted(() => {
                         size="small"
                         :bordered="false"
                         :type="planStatusTagType(dayStatusById.get(plan.id) ?? 'pending')"
-                        :disabled="(dayStatusById.get(plan.id) ?? 'pending') === 'lost'"
+                        :class="{ 'fa-tag-missed': (dayStatusById.get(plan.id) ?? 'pending') === 'lost' }"
                     >
                       {{ planStatusLabel(dayStatusById.get(plan.id) ?? 'pending') }}
                     </n-tag>

@@ -107,7 +107,7 @@ function verdictType(v: LegVerdict): 'error' | 'warning' | 'default' {
   return 'default'
 }
 
-function verdictDisabled(v: LegVerdict): boolean {
+function verdictMissed(v: LegVerdict): boolean {
   return v === 'miss' || v === 'half_loss'
 }
 
@@ -264,7 +264,7 @@ watch(
           <n-tag
             size="small"
             :type="settlementStatusTagType"
-            :disabled="settlement?.status === 'lost'"
+            :class="{ 'fa-tag-missed': settlement?.status === 'lost' }"
             :bordered="false"
           >
             {{ settlement ? planStatusLabel(settlement.status) : '—' }}
@@ -340,7 +340,7 @@ watch(
                 size="small"
                 :bordered="false"
                 :type="verdictType(pick.verdict)"
-                :disabled="verdictDisabled(pick.verdict)"
+                :class="{ 'fa-tag-missed': verdictMissed(pick.verdict) }"
               >
                 {{ pick.label }} · {{ verdictLabel(pick.verdict) }}
               </n-tag>
