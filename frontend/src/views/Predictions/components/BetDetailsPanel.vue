@@ -219,6 +219,7 @@ defineExpose({ openFormula, openDetails })
           size="small"
           :min="1"
           :max="99"
+          :show-button="!props.footerOnly"
           button-placement="both"
         >
           <template #prefix>倍数</template>
@@ -487,7 +488,7 @@ defineExpose({ openFormula, openDetails })
 }
 
 .multiplier-input {
-  flex: 1 1 110px;
+  flex: 1 1 84px;
   min-width: 0;
 }
 
