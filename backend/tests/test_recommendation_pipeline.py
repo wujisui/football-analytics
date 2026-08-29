@@ -174,28 +174,38 @@ def test_equivalent_half_ball_keeps_the_higher_quote_despite_market_feedback(
     )
 
 
-def test_quarter_ball_refund_beats_the_full_stake_1x2_side() -> None:
-    """浅盘退半不该被罚两次：让胜(-0.25) 1.83 应胜过独赢胜 2.10。
+def test_quarter_ball_refund_survives_adverse_market_feedback() -> None:
+    """复现浦和红钻：让胜(-0.25) 的退半兜底不能被玩法历史权重翻掉。
 
-    平局时独赢全输、-0.25 只输一半，赢盘条件却完全相同，因此每单位本金的期望
-    更优（-0.022 对 -0.032）。退半的好处已计入条件命中率、代价已计入更低赔率，
-    综合分不得再乘一次 at_risk。
+    平局时独赢全输、-0.25 只输一半。退半的好处已计入条件命中率，较低水位的
+    代价也已进入基础分；两者必须先完成当场取舍，再应用历史权重做跨场排序。
     """
     match = MatchPipelineInput(
         fixture_id=1,
-        league_id=39,
-        kickoff=datetime(2026, 8, 28, 17, 0, tzinfo=timezone.utc),
-        match_day="2026-08-28",
+        league_id=98,
+        kickoff=datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc),
+        match_day="2026-08-29",
         odds={
             "available": True,
-            "match_winner": {"home": 2.10, "draw": 3.59, "away": 3.59},
-            "asian_handicap": {"line": "-0.25", "home": 1.83, "away": 2.10},
+            "match_winner": {"home": 2.16, "draw": 3.61, "away": 3.39},
+            "asian_handicap": {"line": "-0.25", "home": 1.88, "away": 2.03},
         },
         goal_lean="大(2.5)",
         both_score_lean="双进:是",
     )
+    state = IncentiveState(
+        params=IncentiveParams(),
+        ema_market={"1x2": 0.0006, "ah": -0.1747},
+        soft_weights={"98|1x2": 1.15, "m:ah": 1.011},
+    )
 
-    result = run_pipeline([match], artifact={}, market_artifact={}, limit_per_day=4)
+    result = run_pipeline(
+        [match],
+        artifact={},
+        market_artifact={},
+        incentive_state=state,
+        limit_per_day=4,
+    )
 
     assert result["selected_count"] == 1
     assert result["selected"][0]["market"] == "ah"

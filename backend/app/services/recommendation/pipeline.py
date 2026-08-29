@@ -404,51 +404,58 @@ def _to_daily_picks(
     return picks
 
 
-def _collapse_equivalent_half_ball_picks(
+def _choose_best_shallow_market_per_direction(
     picks: list[DailyRecommendationPick],
     *,
     odds_by_fixture: dict[int, dict[str, Any] | None],
 ) -> list[DailyRecommendationPick]:
-    """Keep the better quote when AH and moneyline settle identically.
+    """Choose 1X2 or shallow AH before market history can alter that choice.
 
-    Home -0.5 + 让胜 is exactly home moneyline; home +0.5 + 让负 is exactly
-    away moneyline. Their probability source is also the same 1X2 calibration,
-    so a market label must not let the lower-paying quote survive. Equal quotes
-    prefer AH for deterministic display.
+    ``|line| <= 0.5`` uses the same calibrated 1X2 probabilities as moneyline
+    and already prices draw refunds / half-losses into its confidence and odds.
+    Pick the higher unweighted risk score for each fixture + result direction,
+    then let EMA and league×market history rank the surviving product across
+    fixtures. Otherwise a historical AH penalty can discard a useful draw
+    cushion even when the current board says it is the better trade-off.
     """
-    equivalent_choice: dict[int, str] = {}
+    shallow_lines: dict[int, float] = {}
     for fixture_id, odds in odds_by_fixture.items():
         line, _home_odd, _away_odd = extract_main_ah_line(odds)
-        if line is None:
-            continue
-        if abs(line + 0.5) < 1e-9:
-            equivalent_choice[fixture_id] = "home"
-        elif abs(line - 0.5) < 1e-9:
-            equivalent_choice[fixture_id] = "away"
+        if line is not None and abs(line) <= 0.5 + 1e-9:
+            shallow_lines[fixture_id] = float(line)
 
     grouped: dict[tuple[int, str], list[DailyRecommendationPick]] = {}
     untouched: list[DailyRecommendationPick] = []
     for pick in picks:
-        choice = equivalent_choice.get(pick.fixture_id)
         if (
-            choice is None
-            or pick.recommended_choice != choice
+            pick.fixture_id not in shallow_lines
             or pick.market not in {MARKET_1X2, MARKET_AH}
         ):
             untouched.append(pick)
             continue
-        grouped.setdefault((pick.fixture_id, choice), []).append(pick)
+        grouped.setdefault((pick.fixture_id, pick.recommended_choice), []).append(pick)
 
-    for equivalent in grouped.values():
-        markets = {pick.market for pick in equivalent}
+    for same_direction in grouped.values():
+        markets = {pick.market for pick in same_direction}
         if markets != {MARKET_1X2, MARKET_AH}:
-            untouched.extend(equivalent)
+            untouched.extend(same_direction)
             continue
+        line = shallow_lines[same_direction[0].fixture_id]
+        choice = same_direction[0].recommended_choice
+        settles_identically = (
+            abs(line + 0.5) < 1e-9 and choice == "home"
+        ) or (
+            abs(line - 0.5) < 1e-9 and choice == "away"
+        )
         untouched.append(
             max(
-                equivalent,
+                same_direction,
                 key=lambda pick: (
-                    float(pick.decimal_odd),
+                    (
+                        float(pick.decimal_odd)
+                        if settles_identically
+                        else float(pick.score)
+                    ),
                     pick.market == MARKET_AH,
                 ),
             )
@@ -536,11 +543,11 @@ def run_pipeline(
             )
         )
 
-    picks = apply_feedback_to_picks(picks, state=incentive_state)
-    picks = _collapse_equivalent_half_ball_picks(
+    picks = _choose_best_shallow_market_per_direction(
         picks,
         odds_by_fixture=odds_by_fixture,
     )
+    picks = apply_feedback_to_picks(picks, state=incentive_state)
     picks.sort(key=pick_rank_key)
     candidate_count = len(picks)
     skipped = skip_fixture_ids or set()
