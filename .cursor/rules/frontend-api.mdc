@@ -11,7 +11,7 @@ alwaysApply: false
 - 调用顺序：`/leagues?days=7` → `/fixtures/today?days=7`（首页全量，联赛筛选在前端）→ `/fixtures/{fixture_id}/analysis`；主观因素：`GET /fixtures/opinion-factors` + `POST /fixtures/{id}/adjust`
 - `/leagues` 与 `/fixtures/today` 只读本地库（列表不做官方 API 分析）；可选 `date`、`days`、`league_id`
 - 首页列表用模块级缓存（`useHomeFixtures`）：详情返回 5 分钟内不重复请求
-- 免费配额开启时，08:05 用 1 次请求只同步当天赛程，11:00 请求昨天赛果与今天赛程/盘口，22:00 只刷今天热门盘口；不请求未来比赛，关闭后才恢复未来窗口
+- 免费配额开启时，07:00 回写昨天和今天赛果，08:05 用 1 次请求只同步当天赛程，11:00 请求昨天/今天赛果与今天赛程/盘口，22:00 只刷今天热门盘口；不请求未来比赛
 - 定时批次写本地库，前端没有公开 sync、SSE 或轮询；关闭免费配额后恢复未来窗口与 00/06/11/16/19/22
 - 打开列表页、F5、下拉刷新只重拉本地列表接口；切换/选中联赛只做本地筛选，不得触发官方
 - 进入详情会请求 `/fixtures/{fixture_id}/analysis`：后端本地优先，缺包时可打官方并落库（前端仍只调自有 API）

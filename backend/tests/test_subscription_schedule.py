@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.fixtures_sync import sync_dates
 from app.tasks.scheduler import (
     FULL_SYNC_HOUR,
+    RESULTS_SYNC_HOUR,
+    RESULTS_SYNC_JOB_ID,
     SUBSCRIBED_DEFAULT_ODDS_SLOTS,
     SUBSCRIBED_DENSE_ODDS_SLOTS,
     SUBSCRIBED_EARLY_ODDS_HOURS,
@@ -19,6 +21,8 @@ from app.tasks.scheduler import (
 
 def test_subscription_schedule_constants() -> None:
     assert FULL_SYNC_HOUR == 11
+    assert RESULTS_SYNC_HOUR == 7
+    assert RESULTS_SYNC_JOB_ID == "scheduled_results_sync_07"
     assert SUBSCRIBED_EARLY_ODDS_HOURS == (4, 6, 8, 10)
     assert SUBSCRIBED_DEFAULT_ODDS_SLOTS == (
         (2, 0), (11, 55), (14, 0), (16, 0), (18, 0), (20, 0),
@@ -43,23 +47,14 @@ def test_unsubscribed_full_batch_dates() -> None:
         free_quota=True,
     )
     assert fixture_days == [today]
-    assert result_days == [date(2026, 8, 16)]
+    assert result_days == [date(2026, 8, 16), today]
 
 
-def test_result_days_admin_results_include_today_when_unsubscribed() -> None:
+def test_result_days_are_yesterday_and_today() -> None:
     from app.services.fixtures_sync import result_days_for_batch
 
     today = date(2026, 8, 17)
-    assert result_days_for_batch(today, free_quota=True) == [date(2026, 8, 16)]
-    assert result_days_for_batch(
-        today, free_quota=True, include_today=True
-    ) == [date(2026, 8, 16), today]
-    assert result_days_for_batch(today, free_quota=False, include_today=True) == [
-        date(2026, 8, 14),
-        date(2026, 8, 15),
-        date(2026, 8, 16),
-        today,
-    ]
+    assert result_days_for_batch(today) == [date(2026, 8, 16), today]
 
 
 def test_subscribed_window_and_result_lookback() -> None:
@@ -70,18 +65,14 @@ def test_subscribed_window_and_result_lookback() -> None:
         free_quota=False,
     )
     assert fixture_days == [date(2026, 8, 17 + offset) for offset in range(8)]
-    assert result_days == [
-        date(2026, 8, 14),
-        date(2026, 8, 15),
-        date(2026, 8, 16),
-        date(2026, 8, 17),
-    ]
+    assert result_days == [date(2026, 8, 16), date(2026, 8, 17)]
 
 
 def test_registered_subscription_jobs_respect_early_switch() -> None:
     register_jobs(subscribed=True, early_odds=False)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
     assert "scheduled_fixtures_sync_11" in job_ids
+    assert RESULTS_SYNC_JOB_ID in job_ids
     assert "scheduled_fixtures_sync_odds_1155" in job_ids
     assert "scheduled_fixtures_sync_odds_02" in job_ids
     assert "scheduled_fixtures_sync_odds_04" not in job_ids
@@ -99,6 +90,7 @@ def test_registered_subscription_jobs_respect_early_switch() -> None:
 
     register_jobs(subscribed=False)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
+    assert RESULTS_SYNC_JOB_ID in job_ids
     assert "scheduled_fixtures_sync_odds_22" in job_ids
     assert "scheduled_fixtures_sync_odds_02" not in job_ids
     assert "scheduled_fixtures_sync_odds_2130" not in job_ids
@@ -110,6 +102,7 @@ def test_registered_subscription_jobs_respect_dense_switch() -> None:
     register_jobs(subscribed=True, early_odds=False, dense_odds=True)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
     assert "scheduled_fixtures_sync_11" in job_ids
+    assert RESULTS_SYNC_JOB_ID in job_ids
     assert "scheduled_fixtures_sync_odds_1155" in job_ids
     assert "scheduled_fixtures_sync_odds_02" in job_ids
     assert "scheduled_fixtures_sync_odds_14" in job_ids

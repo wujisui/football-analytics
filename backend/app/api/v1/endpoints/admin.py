@@ -38,6 +38,7 @@ from app.services.runtime_settings import (
 )
 from app.tasks.scheduler import (
     PREMATCH_ODDS_TASK,
+    RESULTS_SYNC_HOUR,
     RESULTS_SYNC_TASK,
     UNSUBSCRIBED_ODDS_HOURS,
     format_clock,
@@ -245,8 +246,9 @@ async def _subscription_payload(
 ) -> SubscriptionSetting:
     early_odds, _ = await get_subscription_early_odds()
     dense_odds, _ = await get_subscription_dense_odds()
+    results_clock = format_clock(RESULTS_SYNC_HOUR)
     if subscribed:
-        times = ["11:00"] + [
+        times = [results_clock, "11:00"] + [
             format_clock(hour, minute)
             for hour, minute in subscribed_light_odds_slots(
                 early_odds=early_odds,
@@ -255,7 +257,7 @@ async def _subscription_payload(
         ]
         times = sorted(set(times))
     else:
-        times = ["08:05", "11:00"] + [
+        times = [results_clock, "08:05", "11:00"] + [
             format_clock(hour) for hour in UNSUBSCRIBED_ODDS_HOURS
         ]
     last_sync = _last_sync_payload(await get_last_sync_run())

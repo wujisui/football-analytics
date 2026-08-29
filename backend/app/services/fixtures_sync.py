@@ -48,31 +48,21 @@ def sync_dates(
     result lookback.
     """
     if free_quota:
-        return [today], result_days_for_batch(today, free_quota=True)
+        return [today], result_days_for_batch(today)
     window = max(1, min(int(lookahead_days), 14))
     fixture_days = [today + timedelta(days=offset) for offset in range(window)]
-    return fixture_days, result_days_for_batch(today, free_quota=False)
+    return fixture_days, result_days_for_batch(today)
 
 
-def result_days_for_batch(
-    today: date,
-    *,
-    free_quota: bool,
-    include_today: bool = False,
-) -> list[date]:
-    """Calendar days whose worldwide ``date=`` call backfills FT scores.
+def result_days_for_batch(today: date) -> list[date]:
+    """Yesterday and today: two worldwide ``fixtures?date=`` calls.
 
-    Unsubscribed 11:00 only closes yesterday. The admin「只更新赛果」button
-    also includes today so afternoon/evening finishes can land after the
-    full batch has already succeeded. Subscription always looks back 4 days
-    (including today). Callers clip with ``clip_fixture_dates_for_plan``.
+    Yesterday closes overnight finishes (Saturday backfills Friday night).
+    Today lets afternoon/evening FT land the same day instead of waiting for
+    the next 07:00. Older days are not re-fetched. Callers still clip with
+    ``clip_fixture_dates_for_plan``.
     """
-    if free_quota:
-        days = [today - timedelta(days=1)]
-        if include_today:
-            days.append(today)
-        return days
-    return [today - timedelta(days=offset) for offset in range(3, -1, -1)]
+    return [today - timedelta(days=1), today]
 
 
 def official_sync_busy() -> bool:
@@ -180,11 +170,7 @@ async def scheduled_fixtures_sync(
         for offset in range(1, FULL_BATCH_FUTURE_ODDS_DAYS + 1)
     ]
     result_days = clip_fixture_dates_for_plan(
-        result_days_for_batch(
-            today,
-            free_quota=free_quota,
-            include_today=(mode == "results"),
-        ),
+        result_days_for_batch(today),
         today,
     )
 

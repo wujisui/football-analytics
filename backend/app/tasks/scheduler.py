@@ -28,6 +28,7 @@ active_tasks: dict[str, dict[str, Any]] = {}
 _scheduler_started = False
 
 FULL_SYNC_HOUR = 11
+RESULTS_SYNC_HOUR = 7
 UNSUBSCRIBED_ODDS_HOURS = (22,)
 SUBSCRIBED_EARLY_ODDS_HOURS = (4, 6, 8, 10)
 # Complete subscribed default light-odds schedule (excluding optional early slots).
@@ -74,6 +75,7 @@ SUBSCRIBED_DENSE_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
 )
 FREE_QUOTA_ROLLOVER_JOB_ID = "free_quota_fixture_rollover"
 RESULTS_SYNC_TASK = "scheduled_results_sync"
+RESULTS_SYNC_JOB_ID = "scheduled_results_sync_07"
 PREMATCH_ODDS_TASK = "prematch_odds_sync"
 
 
@@ -235,7 +237,7 @@ async def run_scheduled_fixtures_sync(
 
 
 async def run_scheduled_results_sync() -> None:
-    """Admin-only FT backfill; does not consume the day's full-batch slot."""
+    """Yesterday+today FT backfill; 07:00 cron and admin button share this path."""
     await run_scheduled_fixtures_sync(task_name=RESULTS_SYNC_TASK, mode="results")
 
 
@@ -451,7 +453,7 @@ def register_jobs(
     early_odds: bool = True,
     dense_odds: bool = False,
 ) -> None:
-    """Register one 11:00 full batch plus subscription-specific light jobs."""
+    """Register 07:00 results, 11:00 full batch, and subscription odds jobs."""
     settings = get_settings()
     timezone = settings.SCHEDULER_TIMEZONE
     if subscribed is None:
@@ -460,6 +462,16 @@ def register_jobs(
     for job in list(scheduler.get_jobs()):
         if str(job.id).startswith("scheduled_fixtures_sync_"):
             scheduler.remove_job(job.id)
+
+    scheduler.add_job(
+        run_scheduled_results_sync,
+        CronTrigger(hour=RESULTS_SYNC_HOUR, minute=0, timezone=timezone),
+        id=RESULTS_SYNC_JOB_ID,
+        name=RESULTS_SYNC_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
 
     full_job_id = "scheduled_fixtures_sync_11"
     scheduler.add_job(
@@ -529,7 +541,10 @@ async def refresh_fixture_sync_jobs() -> bool:
     )
     if _scheduler_started:
         for job in scheduler.get_jobs():
-            if str(job.id).startswith("scheduled_fixtures_sync_"):
+            job_id = str(job.id)
+            if job_id.startswith("scheduled_fixtures_sync_") or job_id.startswith(
+                "scheduled_results_sync_"
+            ):
                 logger.info(
                     "Refreshed scheduler job: id=%s trigger=%s next_run=%s "
                     "(subscribed=%s early_odds=%s dense_odds=%s source=%s)",

@@ -83,7 +83,7 @@ def test_subscribed_sync_times_include_evening_half_hours() -> None:
     assert payload.subscribed is True
     assert payload.dense_odds_enabled is False
     assert payload.api_remaining == 7000
-    for clock in ("11:00", "11:55", "21:30", "22:30", "23:30", "00:00"):
+    for clock in ("07:00", "11:00", "11:55", "21:30", "22:30", "23:30", "00:00"):
         assert clock in payload.sync_times
     # Early switch off keeps 04/06/08/10 out of the advertised times.
     assert "04:00" not in payload.sync_times
@@ -103,10 +103,10 @@ def test_subscribed_dense_sync_times_replace_default_evening() -> None:
         assert clock not in payload.sync_times
 
 
-def test_unsubscribed_sync_times_stay_on_three_slots() -> None:
+def test_unsubscribed_sync_times_include_morning_results() -> None:
     payload = _subscription_payload(False, early_odds=True)
 
-    assert payload.sync_times == ["08:05", "11:00", "22:00"]
+    assert payload.sync_times == ["07:00", "08:05", "11:00", "22:00"]
     assert payload.dense_odds_enabled is False
 
 
