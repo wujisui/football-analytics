@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 import logging
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
@@ -76,6 +77,19 @@ router = APIRouter(prefix="/fixtures", tags=["fixtures"])
 logger = logging.getLogger(__name__)
 
 
+def _odds_refresh_allowed(fixture: Fixture) -> bool:
+    """One boundary for UI and API: today's catalog fixture still in 【比赛】."""
+    today = datetime.now(
+        ZoneInfo(get_settings().SCHEDULER_TIMEZONE)
+    ).date().isoformat()
+    return bool(
+        fixture.league
+        and fixture.league.is_catalog
+        and fixture_match_day(fixture) == today
+        and fixture.date > datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+
+
 @router.get("/data-revision")
 async def client_data_revision(
     response: Response,
@@ -98,14 +112,20 @@ async def refresh_fixture_odds(
             status_code=409,
             detail="后台官方同步正在执行，本次盘口未更新，请稍后再试",
         )
-    fixture = await db.get(Fixture, fixture_id)
+    fixture = (
+        await db.execute(
+            select(Fixture)
+            .where(Fixture.id == fixture_id)
+            .options(selectinload(Fixture.league))
+        )
+    ).scalar_one_or_none()
     if fixture is None:
         raise HTTPException(status_code=404, detail="比赛不存在")
-    if not (
-        fixture.status == "pending"
-        and fixture.date > datetime.utcnow()
-    ):
-        raise HTTPException(status_code=409, detail="仅未开赛场次允许更新盘口")
+    if not _odds_refresh_allowed(fixture):
+        raise HTTPException(
+            status_code=409,
+            detail="仅今天仍在【比赛】中的目录联赛允许更新盘口",
+        )
     async with FootballFetcher(session=db) as fetcher:
         updated = await fetcher.refresh_odds_for_fixture(fixture_id)
         remaining = fetcher.last_remaining_requests
@@ -166,7 +186,16 @@ def _list_analysis_from_fixture(
     analyzed_at = datetime.now(timezone.utc)
 
     if stored is not None:
-        odds = rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
+        from app.services.odds_snapshot import normalize_odds_snapshot
+
+        odds = rehydrate_odds_markets(
+            normalize_odds_snapshot(
+                loads_json(stored.odds_json, {"available": False}),
+                match_start_time=fixture.date,
+                fixture_id=fixture.id,
+                stage="current",
+            )
+        )
         if None not in (
             stored.home_win_prob,
             stored.draw_prob,
@@ -281,19 +310,33 @@ def _odds_snippet_from_package(
         goals_ou=odds.get("goals_ou"),
         both_teams_score=odds.get("both_teams_score"),
         captured_at=odds.get("captured_at"),
+        scraped_at=odds.get("scraped_at") or odds.get("captured_at"),
+        match_start_time=odds.get("match_start_time"),
+        is_live=bool(odds.get("is_live")),
+        valid=odds.get("valid") is not False,
     )
 
 
 def _odds_snippet_from_stored(
     stored: PreMatchData | None,
+    fixture: Fixture,
     *,
     opening: bool = False,
 ) -> FixtureOddsSnippetResponse | None:
     if stored is None:
         return None
+    from app.services.odds_snapshot import normalize_odds_snapshot
+
     raw = stored.odds_opening_json if opening else stored.odds_json
     return _odds_snippet_from_package(
-        rehydrate_odds_markets(loads_json(raw, {"available": False}))
+        rehydrate_odds_markets(
+            normalize_odds_snapshot(
+                loads_json(raw, {"available": False}),
+                match_start_time=fixture.date,
+                fixture_id=fixture.id,
+                stage="opening" if opening else "current",
+            )
+        )
     )
 
 
@@ -426,8 +469,10 @@ async def get_today_fixtures(
     for fixture in fixtures:
         stored = stored_by_id.get(fixture.id)
         home_rank, away_rank = _ranks_from_maps(fixture, standings_maps, stored)
-        odds_snippet = _odds_snippet_from_stored(stored)
-        odds_opening_snippet = _odds_snippet_from_stored(stored, opening=True)
+        odds_snippet = _odds_snippet_from_stored(stored, fixture)
+        odds_opening_snippet = _odds_snippet_from_stored(
+            stored, fixture, opening=True
+        )
         fixture_responses.append(
             FixtureResponse(
                 fixture_id=fixture.id,
@@ -451,6 +496,7 @@ async def get_today_fixtures(
                 match_day_offset=(
                     date.fromisoformat(fixture_match_day(fixture)) - base_date
                 ).days,
+                odds_refresh_allowed=_odds_refresh_allowed(fixture),
                 status=fixture.status,
                 home_goals=fixture.home_goals,
                 away_goals=fixture.away_goals,
@@ -746,7 +792,16 @@ async def adjust_fixture_prediction(
         "away": stored.away_win_prob,
     }
     fixture = await db.get(Fixture, fixture_id)
-    odds = rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
+    from app.services.odds_snapshot import normalize_odds_snapshot
+
+    odds = rehydrate_odds_markets(
+        normalize_odds_snapshot(
+            loads_json(stored.odds_json, {"available": False}),
+            match_start_time=fixture.date if fixture else None,
+            fixture_id=fixture_id,
+            stage="current",
+        )
+    )
     known = {f["id"] for f in OPINION_FACTORS}
     factors = [f for f in body.factors if f in known]
     adjusted = adjust_probabilities_with_factors(base, factors)
@@ -830,6 +885,7 @@ async def get_fixture_analysis(
         match_day=fixture_match_day(fixture),
         match_timezone=fixture.match_timezone or "UTC",
         match_day_source=fixture.match_day_source or "utc",
+        odds_refresh_allowed=_odds_refresh_allowed(fixture),
         status=fixture.status,
         home_goals=fixture.home_goals,
         away_goals=fixture.away_goals,

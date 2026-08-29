@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import PredictionResult from '@/views/Detail/components/PredictionResult.vue'
 import type { FixtureResponse } from '@/api/types'
-import { formatDateTime, hasKickedOff } from '@/utils/format'
+import { formatDateTime } from '@/utils/format'
 import { useAuthSession } from '@/composables/useAuthSession'
 import { hasOddsMarkets, isOpeningDistinct } from '@/utils/oddsDisplay'
 
@@ -25,6 +25,12 @@ const showCurrent = computed(() => hasOddsMarkets(oddsCurrent.value))
 const showOpening = computed(() =>
   isOpeningDistinct(oddsOpening.value, oddsCurrent.value),
 )
+const currentCapturedAt = computed(
+  () => oddsCurrent.value?.scraped_at || oddsCurrent.value?.captured_at || '',
+)
+const openingCapturedAt = computed(
+  () => oddsOpening.value?.scraped_at || oddsOpening.value?.captured_at || '',
+)
 const showAnyBoard = computed(() => showCurrent.value || showOpening.value)
 
 const isFinished = computed(
@@ -33,8 +39,7 @@ const isFinished = computed(
 const canRefreshOdds = computed(
   () =>
     isAdmin.value
-    && (props.fixture.status ?? '').toLowerCase() === 'pending'
-    && !hasKickedOff(props.fixture.fixture_date),
+    && props.fixture.odds_refresh_allowed === true,
 )
 </script>
 
@@ -49,8 +54,8 @@ const canRefreshOdds = computed(
       >
         <template #header-extra>
           <n-flex align="center" :size="8">
-            <n-text v-if="oddsCurrent?.captured_at" depth="3" style="font-size: 12px;">
-              {{ formatDateTime(oddsCurrent.captured_at) }}
+            <n-text v-if="currentCapturedAt" depth="3" style="font-size: 12px;">
+              采集 {{ formatDateTime(currentCapturedAt) }}
             </n-text>
             <n-button
               v-if="canRefreshOdds"
@@ -76,8 +81,8 @@ const canRefreshOdds = computed(
       >
         <template #header-extra>
           <n-flex align="center" :size="8">
-            <n-text v-if="oddsOpening?.captured_at" depth="3" style="font-size: 12px;">
-              {{ formatDateTime(oddsOpening.captured_at) }}
+            <n-text v-if="openingCapturedAt" depth="3" style="font-size: 12px;">
+              采集 {{ formatDateTime(openingCapturedAt) }}
             </n-text>
             <n-button
               v-if="canRefreshOdds && !showCurrent"

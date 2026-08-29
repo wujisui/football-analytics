@@ -56,7 +56,11 @@ class OddsPackageResponse(BaseModel):
     both_teams_score: LineOddsResponse | None = None
     bookmakers: list[dict[str, Any]] = Field(default_factory=list)
     role: str | None = Field(default=None, description="opening|mid|late|current")
-    captured_at: str | None = None
+    captured_at: str | None = Field(default=None, description="兼容字段，等同 scraped_at")
+    scraped_at: str | None = Field(default=None, description="盘口采集时间（UTC）")
+    match_start_time: str | None = Field(default=None, description="比赛开赛时间（UTC）")
+    is_live: bool = Field(default=False, description="是否在开赛后采集")
+    valid: bool = Field(default=True, description="是否可用于赛前分析")
 
 
 class StandingsSnippetResponse(BaseModel):
@@ -282,7 +286,11 @@ class FixtureOddsSnippetResponse(BaseModel):
     asian_handicap: LineOddsResponse | None = None
     goals_ou: LineOddsResponse | None = None
     both_teams_score: LineOddsResponse | None = None
-    captured_at: str | None = None
+    captured_at: str | None = Field(default=None, description="兼容字段，等同 scraped_at")
+    scraped_at: str | None = Field(default=None, description="盘口采集时间（UTC）")
+    match_start_time: str | None = Field(default=None, description="比赛开赛时间（UTC）")
+    is_live: bool = False
+    valid: bool = True
 
 
 class FixtureResponse(BaseModel):
@@ -301,6 +309,10 @@ class FixtureResponse(BaseModel):
     )
     match_day_offset: int | None = Field(
         default=None, description="相对本次查询起始比赛日的偏移；列表分组文案使用"
+    )
+    odds_refresh_allowed: bool = Field(
+        default=False,
+        description="是否属于今天的目录【比赛】，允许管理员更新盘口",
     )
     status: str = Field(..., description="比赛状态")
     home_goals: int | None = Field(default=None, description="主队进球（常规时间 90'）")

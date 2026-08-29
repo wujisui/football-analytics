@@ -153,6 +153,9 @@ def test_subscribed_full_batch_only_fetches_missing_future_days() -> None:
             patch.object(
                 fs, "get_hot_league_ids", AsyncMock(return_value=([39], "db"))
             ),
+            patch.object(
+                fs, "get_catalog_league_ids", AsyncMock(return_value=([39, 140], "db"))
+            ),
             patch.object(fs, "missing_subscribed_fixture_days", missing),
             patch.object(fs, "sync_league_standings_for_dates", standings),
             patch.object(fs, "importlib", MagicMock()),
@@ -182,9 +185,9 @@ def test_subscribed_full_batch_only_fetches_missing_future_days() -> None:
         assert len(future_days) == fs.FULL_BATCH_FUTURE_ODDS_DAYS
         assert future_days[0] + timedelta(days=2) == future_days[-1]
         assert future_call.kwargs["refresh_existing"] is False
-        assert future_call.kwargs["set_opening"] is True
+        assert future_call.kwargs["league_ids"] == [39, 140]
         assert today_call.kwargs["refresh_existing"] is True
-        assert today_call.kwargs["set_opening"] is True
+        assert today_call.kwargs["league_ids"] == [39, 140]
         detail.assert_awaited_once()
     finally:
         asyncio.set_event_loop(asyncio.new_event_loop())
@@ -215,6 +218,9 @@ def test_light_batch_only_refreshes_today_odds() -> None:
             patch.object(
                 fs, "get_hot_league_ids", AsyncMock(return_value=([39], "db"))
             ),
+            patch.object(
+                fs, "get_catalog_league_ids", AsyncMock(return_value=([39, 140], "db"))
+            ),
             patch(
                 "app.services.auto_favorites.sync_daily_auto_favorites",
                 AsyncMock(return_value={"selected": []}),
@@ -230,7 +236,7 @@ def test_light_batch_only_refreshes_today_odds() -> None:
         fetcher.fetch_fixtures_for_date.assert_not_awaited()
         fetcher.sync_odds_for_dates.assert_awaited_once()
         assert fetcher.sync_odds_for_dates.await_args.kwargs["refresh_existing"] is True
-        assert fetcher.sync_odds_for_dates.await_args.kwargs["set_opening"] is False
+        assert fetcher.sync_odds_for_dates.await_args.kwargs["league_ids"] == [39, 140]
     finally:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
@@ -267,6 +273,9 @@ def test_prematch_odds_batch_only_refreshes_explicit_fixture_ids() -> None:
             ),
             patch.object(
                 fs, "get_hot_league_ids", AsyncMock(return_value=([39], "db"))
+            ),
+            patch.object(
+                fs, "get_catalog_league_ids", AsyncMock(return_value=([39, 140], "db"))
             ),
             patch(
                 "app.services.auto_favorites.sync_daily_auto_favorites",
@@ -341,6 +350,9 @@ def test_results_batch_only_captures_scores() -> None:
             ),
             patch.object(
                 fs, "get_hot_league_ids", AsyncMock(return_value=([39], "db"))
+            ),
+            patch.object(
+                fs, "get_catalog_league_ids", AsyncMock(return_value=([39, 140], "db"))
             ),
             patch(
                 "app.services.auto_favorites.sync_daily_auto_favorites",

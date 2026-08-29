@@ -283,11 +283,26 @@ async def touch_client_data_revision(session: AsyncSession) -> str:
 async def get_hot_league_ids(
     session: AsyncSession | None = None,
 ) -> tuple[list[int], SettingSource]:
-    """Database catalog leagues that scheduled batches refresh odds for."""
+    """Catalog leagues highlighted by the administrator as hot."""
     from app.services.league_catalog import hot_league_ids
 
     async def _read(db: AsyncSession) -> tuple[list[int], SettingSource]:
         return await hot_league_ids(db), "db"
+
+    if session is not None:
+        return await _read(session)
+    async with AsyncSessionLocal() as db:
+        return await _read(db)
+
+
+async def get_catalog_league_ids(
+    session: AsyncSession | None = None,
+) -> tuple[list[int], SettingSource]:
+    """All leagues visible on the Hot Leagues administration page."""
+    from app.services.league_catalog import catalog_league_ids
+
+    async def _read(db: AsyncSession) -> tuple[list[int], SettingSource]:
+        return await catalog_league_ids(db), "db"
 
     if session is not None:
         return await _read(session)

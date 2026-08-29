@@ -39,6 +39,10 @@ export interface OddsPackage {
   /** opening = 初盘；current = 即时盘 */
   role?: string | null
   captured_at?: string | null
+  scraped_at?: string | null
+  match_start_time?: string | null
+  is_live?: boolean
+  valid?: boolean
 }
 
 export interface StandingsSnippet {
@@ -223,6 +227,10 @@ export interface FixtureOddsSnippet {
   goals_ou?: LineOdds | null
   both_teams_score?: LineOdds | null
   captured_at?: string | null
+  scraped_at?: string | null
+  match_start_time?: string | null
+  is_live?: boolean
+  valid?: boolean
 }
 
 export interface FixtureResponse {
@@ -238,6 +246,7 @@ export interface FixtureResponse {
   match_timezone: string
   match_day_source: 'venue_city' | 'league_country' | 'home_team' | 'utc'
   match_day_offset?: number | null
+  odds_refresh_allowed?: boolean
   status: string
   home_goals?: number | null
   away_goals?: number | null

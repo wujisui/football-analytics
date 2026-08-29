@@ -22,6 +22,7 @@ from app.services.cache import fixtures_cache_key
 from app.services.fetcher import FootballFetcher
 from app.services.league_standings import sync_league_standings_for_dates
 from app.services.runtime_settings import (
+    get_catalog_league_ids,
     get_enable_free_quota,
     get_hot_league_ids,
 )
@@ -164,6 +165,7 @@ async def scheduled_fixtures_sync(
     free_quota, _ = await get_enable_free_quota()
     subscribed = not free_quota
     primary_league_ids, _ = await get_hot_league_ids()
+    odds_league_ids, _ = await get_catalog_league_ids()
     tomorrow = today + timedelta(days=1)
     future_odds_days = [
         today + timedelta(days=offset)
@@ -215,13 +217,12 @@ async def scheduled_fixtures_sync(
                     odds_updated = await fetcher.sync_odds_for_dates(
                         [today],
                         refresh_existing=True,
-                        league_ids=primary_league_ids,
+                        league_ids=odds_league_ids,
                         budget=(
                             SUBSCRIBED_LIGHT_ODDS_BUDGET
                             if subscribed
                             else FREE_QUOTA_EVENING_ODDS_BUDGET
                         ),
-                        set_opening=False,
                     )
                 logger.info(
                     "scheduled_fixtures_sync odds-light subscribed=%s day=%s",
@@ -255,27 +256,25 @@ async def scheduled_fixtures_sync(
                         league_ids=None,
                     )
 
-                # 3) Any first successful pull has already frozen 初盘. The full
-                # batch also repairs legacy current-only rows via set_opening.
+                # 3) Future three days only fill missing boards; the first
+                # successful pull freezes opening. Existing future boards stay untouched.
                 if subscribed and not fetcher.quota_exhausted:
                     odds_updated += await fetcher.sync_odds_for_dates(
                         future_odds_days,
                         refresh_existing=False,
-                        league_ids=primary_league_ids,
+                        league_ids=odds_league_ids,
                         budget=SUBSCRIBED_LIGHT_ODDS_BUDGET,
-                        set_opening=True,
                     )
                 if not fetcher.quota_exhausted:
                     odds_updated += await fetcher.sync_odds_for_dates(
                         [today],
                         refresh_existing=True,
-                        league_ids=primary_league_ids,
+                        league_ids=odds_league_ids,
                         budget=(
                             SUBSCRIBED_LIGHT_ODDS_BUDGET
                             if subscribed
                             else FREE_QUOTA_EVENING_ODDS_BUDGET
                         ),
-                        set_opening=True,
                     )
 
                 # 4) Subscription standings only. Details stay today/tomorrow;

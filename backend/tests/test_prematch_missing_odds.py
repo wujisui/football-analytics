@@ -38,7 +38,7 @@ def _odds_json() -> str:
 
 
 class PrematchBatchOddsTests(unittest.TestCase):
-    def test_only_explicit_today_hot_fixtures_are_refreshed(self) -> None:
+    def test_only_explicit_today_catalog_fixtures_are_refreshed(self) -> None:
         async def run() -> None:
             engine = _sqlite_engine()
             async with engine.begin() as conn:
@@ -138,12 +138,12 @@ class PrematchBatchOddsTests(unittest.TestCase):
                     [48001, 48002, 48003, 49001]
                 )
 
-                self.assertEqual(report["candidates"], 2)
-                self.assertEqual(report["attempted"], 2)
-                self.assertEqual(report["updated"], 2)
+                self.assertEqual(report["candidates"], 3)
+                self.assertEqual(report["attempted"], 3)
+                self.assertEqual(report["updated"], 3)
                 self.assertEqual(
                     fetcher.refresh_odds_for_fixture.await_args_list,
-                    [call(48001), call(48002)],
+                    [call(48001), call(48002), call(49001)],
                 )
             await engine.dispose()
 

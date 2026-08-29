@@ -29,7 +29,6 @@ from app.services.prematch_package import (
     package_from_record,
     parse_injuries_payload,
     parse_lineups_payload,
-    parse_odds_payload,
     parse_predictions_payload,
     rehydrate_odds_markets,
     summarize_form_payload,
@@ -42,7 +41,7 @@ from app.services.ttl_policy import (
     refresh_ttl_seconds,
     should_stop_api_refresh,
 )
-from app.services.runtime_settings import get_enable_free_quota, get_hot_league_ids
+from app.services.runtime_settings import get_enable_free_quota
 
 logger = logging.getLogger(__name__)
 
@@ -234,16 +233,19 @@ class AnalyzerService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.cache = get_cache_service()
-        self._hot_league_ids: set[int] | None = None
+        self._catalog_league_ids: set[int] | None = None
 
-    async def _hot_league_id_set(self) -> set[int]:
-        if self._hot_league_ids is None:
-            ids, _ = await get_hot_league_ids(self.session)
-            self._hot_league_ids = set(ids)
-        return self._hot_league_ids
+    async def _catalog_league_id_set(self) -> set[int]:
+        if self._catalog_league_ids is None:
+            from app.services.league_catalog import catalog_league_ids
+
+            self._catalog_league_ids = set(
+                await catalog_league_ids(self.session)
+            )
+        return self._catalog_league_ids
 
     async def _league_allows_official_odds(self, league_id: int) -> bool:
-        return int(league_id) in await self._hot_league_id_set()
+        return int(league_id) in await self._catalog_league_id_set()
 
     async def _load_fixture(self, fixture_id: int) -> Fixture | None:
         stmt = (
@@ -350,7 +352,19 @@ class AnalyzerService:
             if not _keep_existing("briefing_json", briefing_pkg):
                 fields["briefing_json"] = dumps_json(briefing_pkg)
         # Never wipe a good local board with an empty package result.
+        # After kickoff, keep the frozen odds JSON as stored.
         odds_pkg = package.get("odds") if isinstance(package.get("odds"), dict) else None
+        if exam_locked:
+            odds_pkg = None
+        if odds_pkg and odds_pkg.get("available"):
+            from app.services.odds_snapshot import normalize_odds_snapshot
+
+            odds_pkg = normalize_odds_snapshot(
+                odds_pkg,
+                match_start_time=fixture.date if fixture else None,
+                fixture_id=fixture_id,
+                stage="current",
+            )
         if odds_pkg and odds_pkg.get("available"):
             fields["odds_json"] = dumps_json(odds_pkg)
         elif odds_pkg and odds_pkg.get("fetched"):
@@ -363,7 +377,7 @@ class AnalyzerService:
                 fields["odds_json"] = dumps_json(
                     {"available": False, "fetched": True}
                 )
-        elif record is None:
+        elif record is None and not exam_locked:
             fields["odds_json"] = dumps_json({"available": False})
 
         # Exam lock: after kickoff never write/overwrite prediction snapshot.
@@ -463,7 +477,7 @@ class AnalyzerService:
 
         frozen_rec = (getattr(stored, "recommendation", None) or "").strip()
         has_frozen = bool(frozen_rec and frozen_rec != "待分析")
-        pkg = package_from_record(stored)
+        pkg = package_from_record(stored, match_start_time=fixture.date)
         pkg["standings"] = await resolve_fixture_standings(
             self.session,
             fixture,
@@ -566,8 +580,10 @@ class AnalyzerService:
         )
         stored = result.scalar_one_or_none()
         local = (
-            rehydrate_odds_markets(loads_json(stored.odds_json, {"available": False}))
-            if stored and stored.odds_json
+            package_from_record(stored, match_start_time=fixture.date).get(
+                "odds", {"available": False}
+            )
+            if stored
             else {"available": False}
         )
         if local.get("available"):
@@ -576,17 +592,43 @@ class AnalyzerService:
         if local.get("fetched"):
             package["odds"] = {"available": False, "fetched": True}
             return
-        if should_stop_api_refresh(fixture.date, fixture.status):
+        from zoneinfo import ZoneInfo
+
+        from app.services.match_day import fixture_match_day
+
+        today = datetime.now(
+            ZoneInfo(get_settings().SCHEDULER_TIMEZONE)
+        ).date().isoformat()
+        if fixture_match_day(fixture) != today:
             package["odds"] = local if isinstance(local, dict) else {"available": False}
             return
         if not await self._league_allows_official_odds(fixture.league_id):
-            # 非热门：不打官方盘口、也不标 fetched，勾选热门后仍可补拉。
+            # 目录外赛事只入赛程，不打官方盘口。
             package["odds"] = local if isinstance(local, dict) else {"available": False}
             return
-        raw = await fetcher.fetch_odds(fixture.id, ttl=ttl)
-        parsed = rehydrate_odds_markets(parse_odds_payload(raw))
-        if parsed.get("available"):
-            package["odds"] = parsed
+        from app.services.odds_snapshot import is_fixture_prematch
+
+        if not is_fixture_prematch(
+            match_start_time=fixture.date,
+        ):
+            logger.warning(
+                "Skip analysis odds pull for non-prematch fixture=%s status=%s kickoff=%s",
+                fixture.id,
+                fixture.status,
+                fixture.date,
+            )
+            package["odds"] = {"available": False}
+            return
+        # All official odds writes converge on the fetcher guard/metadata path.
+        if await fetcher.refresh_odds_for_fixture(fixture.id):
+            refreshed = await self._get_stored_pre_match_row(fixture.id)
+            package["odds"] = (
+                package_from_record(
+                    refreshed, match_start_time=fixture.date
+                ).get("odds", {"available": False})
+                if refreshed is not None
+                else {"available": False}
+            )
         else:
             package["odds"] = {"available": False, "fetched": True}
 
@@ -597,7 +639,11 @@ class AnalyzerService:
         ttl: int,
     ) -> PreMatchData | None:
         """One odds API call, persist immediately so list cards can refresh."""
-        package = package_from_record(stored) if stored else self._empty_prematch_package()
+        package = (
+            package_from_record(stored, match_start_time=fixture.date)
+            if stored
+            else self._empty_prematch_package()
+        )
         if not package_needs_odds_fetch(package):
             return stored
 
@@ -660,7 +706,7 @@ class AnalyzerService:
         """One odds API call + persist; return when list/detail can render immediately."""
         stored_any = await self._get_stored_pre_match_row(fixture_id)
         if stored_any is None or package_needs_odds_fetch(
-            package_from_record(stored_any)
+            package_from_record(stored_any, match_start_time=fixture.date)
         ):
             stored_any = (
                 await self._early_fetch_and_store_odds(fixture, stored_any, refresh_ttl)
@@ -672,7 +718,9 @@ class AnalyzerService:
             stored_any.away_win_prob,
         ):
             return None
-        odds_state = package_from_record(stored_any).get("odds") or {}
+        odds_state = package_from_record(
+            stored_any, match_start_time=fixture.date
+        ).get("odds") or {}
         if not (odds_state.get("available") or odds_state.get("fetched")):
             return None
         result = await self._result_from_pre_match(

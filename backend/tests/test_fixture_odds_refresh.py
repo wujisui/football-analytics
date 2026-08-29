@@ -10,8 +10,8 @@ from fastapi import HTTPException
 from app.api.v1.endpoints import fixtures
 
 
-def test_admin_refresh_accepts_non_hot_prematch_fixture() -> None:
-    """Manual detail refresh is scoped by admin + kickoff, not hot leagues."""
+def test_admin_refresh_accepts_today_catalog_prematch_fixture() -> None:
+    """Manual detail refresh uses the same today/catalog boundary as 【比赛】."""
 
     async def _run() -> None:
         fixture = SimpleNamespace(
@@ -21,7 +21,9 @@ def test_admin_refresh_accepts_non_hot_prematch_fixture() -> None:
             date=datetime.utcnow() + timedelta(hours=2),
         )
         db = MagicMock()
-        db.get = AsyncMock(return_value=fixture)
+        query_result = MagicMock()
+        query_result.scalar_one_or_none.return_value = fixture
+        db.execute = AsyncMock(return_value=query_result)
 
         fetcher = MagicMock()
         fetcher.refresh_odds_for_fixture = AsyncMock(return_value=True)
@@ -33,6 +35,7 @@ def test_admin_refresh_accepts_non_hot_prematch_fixture() -> None:
         with (
             patch.object(fixtures, "FootballFetcher", return_value=fetcher),
             patch.object(fixtures, "official_sync_busy", return_value=False),
+            patch.object(fixtures, "_odds_refresh_allowed", return_value=True),
             patch.object(fixtures, "touch_client_data_revision", publish),
         ):
             result = await fixtures.refresh_fixture_odds(987, None, db)
@@ -60,7 +63,7 @@ def test_admin_refresh_rejects_while_official_batch_is_running() -> None:
                 assert exc.detail == "后台官方同步正在执行，本次盘口未更新，请稍后再试"
             else:
                 raise AssertionError("Expected busy refresh to return HTTP 409")
-        db.get.assert_not_awaited()
+        db.execute.assert_not_called()
 
     asyncio.run(_run())
 

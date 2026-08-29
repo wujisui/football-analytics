@@ -16,6 +16,8 @@ export function ahLinesOf(market?: LineOdds | null) {
 export function hasOddsMarkets(odds: OddsLike): boolean {
   if (!odds) return false
   if ('available' in odds && odds.available === false) return false
+  if ('is_live' in odds && odds.is_live) return false
+  if ('valid' in odds && odds.valid === false) return false
   return !!(
     odds.match_winner ||
     odds.goals_ou ||
@@ -24,7 +26,12 @@ export function hasOddsMarkets(odds: OddsLike): boolean {
 }
 
 function capturedAtMs(odds: OddsLike): number | null {
-  const at = odds && 'captured_at' in odds ? odds.captured_at : null
+  const at =
+    odds && 'scraped_at' in odds && odds.scraped_at
+      ? odds.scraped_at
+      : odds && 'captured_at' in odds
+        ? odds.captured_at
+        : null
   if (!at) return null
   const ms = Date.parse(at)
   return Number.isFinite(ms) ? ms : null
@@ -57,7 +64,11 @@ export function oddsPackageToSnippet(
     asian_handicap: odds.asian_handicap,
     goals_ou: odds.goals_ou,
     both_teams_score: odds.both_teams_score,
-    captured_at: odds.captured_at ?? null,
+    captured_at: odds.captured_at ?? odds.scraped_at ?? null,
+    scraped_at: odds.scraped_at ?? odds.captured_at ?? null,
+    match_start_time: odds.match_start_time ?? null,
+    is_live: odds.is_live ?? false,
+    valid: odds.valid !== false,
   }
 }
 

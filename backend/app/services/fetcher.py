@@ -1318,28 +1318,49 @@ class FootballFetcher:
         self,
         fixture_id: int,
     ) -> bool:
-        """Force one official odds pull, freeze the first board, and recompute."""
+        """Pull odds only while the fixture is still a verified prematch."""
         from app.services.prematch_package import parse_odds_payload
+        from app.services.odds_snapshot import is_fixture_prematch
 
+        assert self.session is not None
+        fixture = await self.session.get(Fixture, fixture_id)
+        league = (
+            await self.session.get(League, fixture.league_id)
+            if fixture is not None
+            else None
+        )
+        if (
+            fixture is None
+            or league is None
+            or not league.is_catalog
+            or not is_fixture_prematch(match_start_time=fixture.date)
+        ):
+            logger.warning(
+                "Skip official odds pull outside catalog prematch scope "
+                "fixture=%s catalog=%s kickoff=%s",
+                fixture_id,
+                getattr(league, "is_catalog", None),
+                getattr(fixture, "date", None),
+            )
+            return False
         await self.cache.delete(odds_cache_key(fixture_id))
         raw = await self._fetch_odds_with_rate_limit(fixture_id)
         parsed = parse_odds_payload(raw)
         if not parsed.get("available"):
             logger.info("No official odds yet for fixture %s", fixture_id)
             return False
-        await self._upsert_odds_and_recompute(
+        return await self._upsert_odds_and_recompute(
             fixture_id,
             parsed,
             raw,
         )
-        return True
 
     async def _upsert_odds_and_recompute(
         self,
         fixture_id: int,
         parsed: dict[str, Any],
         raw: dict[str, Any],
-    ) -> None:
+    ) -> bool:
         """Write 即时盘 and freeze the first available pre-kickoff board as 初盘."""
         from sqlalchemy import select
 
@@ -1347,6 +1368,11 @@ class FootballFetcher:
         from app.models.pre_match_data import PreMatchData
         from app.services.cache import analysis_cache_key
         from app.services.ml_predictor import persist_match_features, predict_probabilities
+        from app.services.odds_snapshot import (
+            annotate_odds_snapshot,
+            is_fixture_prematch,
+            normalize_odds_snapshot,
+        )
         from app.services.prediction import build_prediction_snapshot, implied_probs_from_odds
         from app.services.prematch_package import (
             SNAPSHOT_LATE,
@@ -1357,20 +1383,33 @@ class FootballFetcher:
             should_write_opening,
             timed_snapshot_json,
         )
-        from app.services.ttl_policy import is_prediction_exam_locked
-
         assert self.session is not None
-        captured_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        current_payload = {**parsed, "role": "current", "captured_at": captured_at}
-        odds_text = dumps_json(current_payload)
-        odds_pkg = rehydrate_odds_markets(parsed)
+        captured_at = datetime.now(timezone.utc)
 
         async with self._db_lock:
             fixture = await self.session.get(Fixture, fixture_id)
-            exam_locked = bool(
-                fixture
-                and is_prediction_exam_locked(fixture.date, fixture.status)
+            if fixture is None or not is_fixture_prematch(
+                match_start_time=fixture.date,
+                now=captured_at,
+            ):
+                logger.warning(
+                    "Discard odds fetched after prematch boundary fixture=%s "
+                    "status=%s scraped_at=%s kickoff=%s",
+                    fixture_id,
+                    getattr(fixture, "status", None),
+                    captured_at,
+                    getattr(fixture, "date", None),
+                )
+                return False
+            current_payload = annotate_odds_snapshot(
+                parsed,
+                scraped_at=captured_at,
+                match_start_time=fixture.date,
+                role="current",
             )
+            captured_at_iso = current_payload["scraped_at"]
+            odds_text = dumps_json(current_payload)
+            odds_pkg = rehydrate_odds_markets(current_payload)
             row = (
                 await self.session.execute(
                     select(PreMatchData).where(PreMatchData.fixture_id == fixture_id)
@@ -1378,12 +1417,22 @@ class FootballFetcher:
             ).scalar_one_or_none()
 
             existing_open = (
-                loads_json(getattr(row, "odds_opening_json", None), {})
+                normalize_odds_snapshot(
+                    loads_json(getattr(row, "odds_opening_json", None), {}),
+                    match_start_time=fixture.date,
+                    fixture_id=fixture_id,
+                    stage="opening",
+                )
                 if row is not None
                 else {}
             )
             existing_current = (
-                loads_json(getattr(row, "odds_json", None), {})
+                normalize_odds_snapshot(
+                    loads_json(getattr(row, "odds_json", None), {}),
+                    match_start_time=fixture.date,
+                    fixture_id=fixture_id,
+                    stage="current",
+                )
                 if row is not None
                 else {}
             )
@@ -1397,7 +1446,7 @@ class FootballFetcher:
                 and not should_write_opening(
                     existing_current,
                     parsed,
-                    locked=exam_locked,
+                    locked=False,
                 )
             ):
                 opening_candidate = existing_current
@@ -1405,27 +1454,40 @@ class FootballFetcher:
             if should_write_opening(
                 existing_open,
                 opening_candidate,
-                locked=exam_locked,
+                locked=False,
             ):
                 opening_captured_at = (
-                    opening_candidate.get("captured_at") or captured_at
+                    opening_candidate.get("scraped_at")
+                    or opening_candidate.get("captured_at")
+                    or captured_at_iso
                 )
                 opening_text = dumps_json(
-                    {
-                        **opening_candidate,
-                        "role": "opening",
-                        "captured_at": opening_captured_at,
-                    }
+                    annotate_odds_snapshot(
+                        opening_candidate,
+                        scraped_at=opening_captured_at,
+                        match_start_time=fixture.date,
+                        role="opening",
+                    )
                 )
 
             kickoff = fixture.date if fixture is not None else None
             existing_mid = (
-                loads_json(getattr(row, "odds_mid_json", None), {})
+                normalize_odds_snapshot(
+                    loads_json(getattr(row, "odds_mid_json", None), {}),
+                    match_start_time=fixture.date,
+                    fixture_id=fixture_id,
+                    stage="mid",
+                )
                 if row is not None
                 else {}
             )
             existing_late = (
-                loads_json(getattr(row, "odds_late_json", None), {})
+                normalize_odds_snapshot(
+                    loads_json(getattr(row, "odds_late_json", None), {}),
+                    match_start_time=fixture.date,
+                    fixture_id=fixture_id,
+                    stage="late",
+                )
                 if row is not None
                 else {}
             )
@@ -1433,49 +1495,26 @@ class FootballFetcher:
                 existing_mid,
                 parsed,
                 kickoff=kickoff,
-                captured_at=captured_at,
+                captured_at=captured_at_iso,
                 stage=SNAPSHOT_MID["stage"],
                 target_hours=SNAPSHOT_MID["target_hours"],
                 min_hours=SNAPSHOT_MID["min_hours"],
                 max_hours=SNAPSHOT_MID["max_hours"],
-                locked=exam_locked,
+                locked=False,
                 policy=SNAPSHOT_MID["policy"],
             )
             late_text = timed_snapshot_json(
                 existing_late,
                 parsed,
                 kickoff=kickoff,
-                captured_at=captured_at,
+                captured_at=captured_at_iso,
                 stage=SNAPSHOT_LATE["stage"],
                 target_hours=SNAPSHOT_LATE["target_hours"],
                 min_hours=SNAPSHOT_LATE["min_hours"],
                 max_hours=SNAPSHOT_LATE["max_hours"],
-                locked=exam_locked,
+                locked=False,
                 policy=SNAPSHOT_LATE["policy"],
             )
-
-            # After kickoff: odds board may still update; prediction exam fields must not.
-            if exam_locked:
-                if row is None:
-                    row = PreMatchData(
-                        fixture_id=fixture_id,
-                        odds_json=odds_text,
-                        odds_opening_json=opening_text,
-                    )
-                    self.session.add(row)
-                else:
-                    row.odds_json = odds_text
-                    if opening_text is not None:
-                        row.odds_opening_json = opening_text
-                row.updated_at = datetime.now(timezone.utc)
-                await self.session.commit()
-                await self.cache.delete(analysis_cache_key(fixture_id))
-                await self.cache.set(odds_cache_key(fixture_id), raw, TTL_HEADTOHEAD)
-                logger.info(
-                    "Odds updated for fixture %s but prediction exam locked — snapshot unchanged",
-                    fixture_id,
-                )
-                return
 
             package: dict[str, Any] = {
                 "odds": odds_pkg,
@@ -1577,6 +1616,7 @@ class FootballFetcher:
 
         await self.cache.delete(analysis_cache_key(fixture_id))
         await self.cache.set(odds_cache_key(fixture_id), raw, TTL_HEADTOHEAD)
+        return True
 
     async def sync_odds_for_dates(
         self,
@@ -1585,9 +1625,8 @@ class FootballFetcher:
         refresh_existing: bool = False,
         budget: int = 40,
         league_ids: list[int] | None = None,
-        set_opening: bool = False,
     ) -> int:
-        """Sync pre-match odds for tracked pending fixtures in the date window.
+        """Sync catalog fixtures that are still in 【比赛】 on each local match day.
 
         Free-plan constraints (API-Sports):
         - ``/odds?league=&season=`` blocked for current seasons (2025/2026).
@@ -1598,18 +1637,13 @@ class FootballFetcher:
         Focused sync (single day or explicit ``league_ids``): fill **all** missing
         boards for the selected leagues (round-robin so evening leagues are not
         starved), then optionally refresh existing boards up to ``budget``.
-        Every successful first pull freezes 初盘. ``set_opening=True`` additionally
-        promotes legacy stored current boards that are not pulled in this batch.
+        Every successful first pull freezes 初盘. Existing frozen rows are never
+        repaired or rewritten outside a real pre-match refresh.
         """
         from sqlalchemy import select
 
         from app.models.pre_match_data import PreMatchData
-        from app.services.prematch_package import (
-            dumps_json,
-            loads_json,
-            should_write_opening,
-        )
-        from app.services.ttl_policy import is_prediction_exam_locked
+        from app.services.prematch_package import loads_json
 
         assert self.session is not None
         allowed_filter: set[int] | None = None
@@ -1620,19 +1654,21 @@ class FootballFetcher:
         if not days:
             return 0
 
-        start = datetime.combine(min(days), datetime.min.time())
-        end = datetime.combine(max(days), datetime.max.time())
         updated = 0
 
         filters = [
-            Fixture.date >= start,
-            Fixture.date <= end,
-            Fixture.status == "pending",
+            fixture_match_day_expr().in_([day.isoformat() for day in days]),
+            League.is_catalog.is_(True),
+            Fixture.date > datetime.now(timezone.utc).replace(tzinfo=None),
         ]
         if allowed_filter is not None:
             filters.append(Fixture.league_id.in_(list(allowed_filter)))
 
-        result = await self.session.execute(select(Fixture).where(*filters))
+        result = await self.session.execute(
+            select(Fixture)
+            .join(League, League.id == Fixture.league_id)
+            .where(*filters)
+        )
         fixtures = list(result.scalars().all())
         fixtures.sort(key=lambda fx: fx.date)
         odds_rows = (
@@ -1679,7 +1715,7 @@ class FootballFetcher:
         logger.info(
             "Odds sync: missing=%s refreshable=%s take_missing=%s "
             "take_refresh=%s/%s pending focused=%s "
-            "(refresh_existing=%s set_opening=%s)",
+            "(refresh_existing=%s)",
             len(missing),
             len(refreshable),
             len(missing_queue),
@@ -1687,7 +1723,6 @@ class FootballFetcher:
             len(fixtures),
             focused,
             refresh_existing,
-            set_opening,
         )
 
         for index, fixture_id in enumerate(queue):
@@ -1708,39 +1743,6 @@ class FootballFetcher:
                 # does not feel stuck for a minute on large league selections.
                 await asyncio.sleep(0.35)
 
-        # Full batch repair: promote legacy 即时盘 → 初盘 when the row is not
-        # otherwise pulled, or upgrade a fallback opening from stored current.
-        if set_opening:
-            promoted = 0
-            fresh_rows = (
-                await self.session.execute(
-                    select(PreMatchData).where(
-                        PreMatchData.fixture_id.in_([fx.id for fx in fixtures] or [0])
-                    )
-                )
-            ).scalars().all()
-            for stored in fresh_rows:
-                current = loads_json(getattr(stored, "odds_json", None), {}) or {}
-                opening = loads_json(getattr(stored, "odds_opening_json", None), {}) or {}
-                fx = fixtures_by_id.get(stored.fixture_id)
-                locked = fx is None or is_prediction_exam_locked(fx.date, fx.status)
-                if should_write_opening(
-                    opening, current, locked=locked
-                ):
-                    # Keep the board's original capture time as 初盘 clock.
-                    captured_at = current.get("captured_at") or (
-                        datetime.now(timezone.utc)
-                        .isoformat()
-                        .replace("+00:00", "Z")
-                    )
-                    stored.odds_opening_json = dumps_json(
-                        {**current, "role": "opening", "captured_at": captured_at}
-                    )
-                    promoted += 1
-            if promoted:
-                await self.session.commit()
-                logger.info("Odds sync: promoted %s current boards to opening", promoted)
-
         logger.info(
             "Odds sync done: upserted=%s missing=%s refreshed_candidates=%s (window %s..%s)",
             updated,
@@ -1755,7 +1757,7 @@ class FootballFetcher:
         self,
         fixture_ids: list[int],
     ) -> dict[str, int]:
-        """Refresh selected fixtures only when they are today's hot prematches."""
+        """Refresh explicit ids only within today's catalog 【比赛】 scope."""
         from sqlalchemy import select
 
         from app.services.results_capture import prematch_list_clause
@@ -1778,7 +1780,7 @@ class FootballFetcher:
                     .where(
                         Fixture.id.in_(requested_ids),
                         fixture_match_day_expr() == today,
-                        League.is_hot.is_(True),
+                        League.is_catalog.is_(True),
                         prematch_list_clause(now),
                     )
                     .order_by(Fixture.date, Fixture.id)
