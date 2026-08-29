@@ -1763,14 +1763,19 @@ class FootballFetcher:
         from app.services.results_capture import prematch_list_clause
 
         assert self.session is not None
+        from app.services.league_catalog import allowed_league_ids
+        from app.services.match_day import current_prematch_match_day
+
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-        today = datetime.now(
-            ZoneInfo(get_settings().SCHEDULER_TIMEZONE)
-        ).date().isoformat()
+        today = await current_prematch_match_day(
+            self.session,
+            now=now,
+            league_ids=await allowed_league_ids(self.session),
+        )
         requested_ids = sorted(
             {int(fixture_id) for fixture_id in fixture_ids if int(fixture_id) > 0}
         )
-        if not requested_ids:
+        if not requested_ids or not today:
             return {"candidates": 0, "attempted": 0, "updated": 0, "truncated": 0}
         fixtures = list(
             (

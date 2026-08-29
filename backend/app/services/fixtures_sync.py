@@ -20,6 +20,8 @@ from app.services.api_quota import (
 )
 from app.services.cache import fixtures_cache_key
 from app.services.fetcher import FootballFetcher
+from app.services.league_catalog import allowed_league_ids
+from app.services.match_day import current_prematch_match_day
 from app.services.league_standings import sync_league_standings_for_dates
 from app.services.runtime_settings import (
     get_catalog_league_ids,
@@ -31,8 +33,18 @@ logger = logging.getLogger(__name__)
 
 _sync_lock = asyncio.Lock()
 SUBSCRIBED_LIGHT_ODDS_BUDGET = 100
-# 11:00 / 立即同步：今天刷即时盘，另拉未来三天缺盘（首次可用冻初盘）。
+# 11:00 / 立即同步：当前比赛日刷即时盘，另拉未来三天缺盘（首次可用冻初盘）。
 FULL_BATCH_FUTURE_ODDS_DAYS = 3
+
+
+async def resolve_odds_today() -> date | None:
+    """【比赛】列表的今天，不是调度时区日历日。"""
+    async with AsyncSessionLocal() as db:
+        iso = await current_prematch_match_day(
+            db,
+            league_ids=await allowed_league_ids(db),
+        )
+    return date.fromisoformat(iso) if iso else None
 
 
 def sync_dates(
@@ -166,6 +178,7 @@ async def scheduled_fixtures_sync(
     subscribed = not free_quota
     primary_league_ids, _ = await get_hot_league_ids()
     odds_league_ids, _ = await get_catalog_league_ids()
+    odds_today = await resolve_odds_today()
     tomorrow = today + timedelta(days=1)
     future_odds_days = [
         today + timedelta(days=offset)
@@ -213,9 +226,9 @@ async def scheduled_fixtures_sync(
                     today,
                 )
             elif mode == "odds":
-                if not fetcher.quota_exhausted:
+                if odds_today is not None and not fetcher.quota_exhausted:
                     odds_updated = await fetcher.sync_odds_for_dates(
-                        [today],
+                        [odds_today],
                         refresh_existing=True,
                         league_ids=odds_league_ids,
                         budget=(
@@ -265,9 +278,9 @@ async def scheduled_fixtures_sync(
                         league_ids=odds_league_ids,
                         budget=SUBSCRIBED_LIGHT_ODDS_BUDGET,
                     )
-                if not fetcher.quota_exhausted:
+                if odds_today is not None and not fetcher.quota_exhausted:
                     odds_updated += await fetcher.sync_odds_for_dates(
-                        [today],
+                        [odds_today],
                         refresh_existing=True,
                         league_ids=odds_league_ids,
                         budget=(

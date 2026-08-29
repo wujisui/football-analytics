@@ -35,6 +35,12 @@ def test_admin_refresh_accepts_today_catalog_prematch_fixture() -> None:
         with (
             patch.object(fixtures, "FootballFetcher", return_value=fetcher),
             patch.object(fixtures, "official_sync_busy", return_value=False),
+            patch.object(
+                fixtures, "current_prematch_match_day", AsyncMock(return_value="2026-08-30")
+            ),
+            patch.object(
+                fixtures, "allowed_league_ids", AsyncMock(return_value={39})
+            ),
             patch.object(fixtures, "_odds_refresh_allowed", return_value=True),
             patch.object(fixtures, "touch_client_data_revision", publish),
         ):

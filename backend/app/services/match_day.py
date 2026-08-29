@@ -66,6 +66,33 @@ def fixture_match_day(fixture: Any) -> str:
     return str(day) if day else fixture.date.strftime("%Y-%m-%d")
 
 
+async def current_prematch_match_day(
+    session: AsyncSession,
+    *,
+    now: datetime | None = None,
+    league_ids: list[int] | set[int] | None = None,
+) -> str | None:
+    """【比赛】列表的「今天」：尚未开赛场次里最早的场地当地比赛日。
+
+    This is not the operator's wall-clock calendar day. Around midnight the
+    local date has already rolled, but Saturday night venues can still be
+    sitting in 【比赛】 as 今天.
+    """
+    from app.models.fixture import Fixture
+    from app.services.results_capture import prematch_list_clause
+
+    filters = [prematch_list_clause(now)]
+    if league_ids is not None:
+        wanted = {int(league_id) for league_id in league_ids}
+        if not wanted:
+            return None
+        filters.append(Fixture.league_id.in_(list(wanted)))
+    value = await session.scalar(
+        select(func.min(fixture_match_day_expr())).where(*filters)
+    )
+    return str(value) if value else None
+
+
 def _norm(value: str | None) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))

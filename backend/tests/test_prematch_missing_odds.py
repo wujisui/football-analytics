@@ -149,6 +149,60 @@ class PrematchBatchOddsTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_batch_keeps_earliest_unstarted_match_day_after_midnight(self) -> None:
+        async def run() -> None:
+            engine = _sqlite_engine()
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                session.add(
+                    League(
+                        id=48,
+                        name="目录联赛",
+                        country="Japan",
+                        season=str(now.year),
+                        is_catalog=True,
+                        is_hot=True,
+                        is_protected=False,
+                    )
+                )
+                session.add_all((Team(id=1, name="A"), Team(id=2, name="B")))
+                await session.flush()
+                session.add_all(
+                    (
+                        Fixture(
+                            id=1,
+                            league_id=48,
+                            home_team_id=1,
+                            away_team_id=2,
+                            date=now + timedelta(hours=2),
+                            match_day="2026-08-29",
+                        ),
+                        Fixture(
+                            id=2,
+                            league_id=48,
+                            home_team_id=1,
+                            away_team_id=2,
+                            date=now + timedelta(hours=12),
+                            match_day="2026-08-30",
+                        ),
+                    )
+                )
+                await session.commit()
+                fetcher = FootballFetcher(session=session, cache=MagicMock())
+                fetcher.refresh_odds_for_fixture = AsyncMock(return_value=True)
+                report = await fetcher.sync_odds_for_prematch_fixtures([1, 2])
+                self.assertEqual(report["candidates"], 1)
+                self.assertEqual(
+                    fetcher.refresh_odds_for_fixture.await_args_list,
+                    [call(1)],
+                )
+            await engine.dispose()
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

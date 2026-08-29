@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.services.match_day import (
+    current_prematch_match_day,
     fixture_match_day,
     fixture_match_day_expr,
     infer_team_timezone,
@@ -117,6 +118,55 @@ def test_fixture_match_day_falls_back_to_utc_kickoff_day() -> None:
         date = datetime.fromisoformat("2026-08-30T00:30:00")
 
     assert fixture_match_day(_Row()) == "2026-08-30"
+
+
+def test_current_prematch_match_day_ignores_wall_clock_calendar() -> None:
+    """凌晨过了日历日，【比赛】今天仍是尚未开赛的最早比赛日。"""
+    from datetime import timedelta, timezone
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.database import Base
+    from app.models.fixture import Fixture
+    from app.models.league import League
+    from app.models.team import Team
+
+    async def _run() -> None:
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        db = async_sessionmaker(engine, expire_on_commit=False)()
+        try:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.add(League(id=39, name="英超", country="England", season="2026"))
+            db.add(Team(id=1, name="A"))
+            db.add(Team(id=2, name="B"))
+            db.add(
+                Fixture(
+                    id=1,
+                    league_id=39,
+                    home_team_id=1,
+                    away_team_id=2,
+                    date=now + timedelta(hours=3),
+                    match_day="2026-08-29",
+                )
+            )
+            db.add(
+                Fixture(
+                    id=2,
+                    league_id=39,
+                    home_team_id=1,
+                    away_team_id=2,
+                    date=now + timedelta(hours=10),
+                    match_day="2026-08-30",
+                )
+            )
+            await db.commit()
+            assert await current_prematch_match_day(db) == "2026-08-29"
+        finally:
+            await db.close()
+            await engine.dispose()
+
+    asyncio.run(_run())
 
 
 def test_team_catalog_city_resolves_sao_paulo_timezone() -> None:

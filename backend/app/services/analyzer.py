@@ -592,14 +592,14 @@ class AnalyzerService:
         if local.get("fetched"):
             package["odds"] = {"available": False, "fetched": True}
             return
-        from zoneinfo import ZoneInfo
+        from app.services.league_catalog import allowed_league_ids
+        from app.services.match_day import current_prematch_match_day, fixture_match_day
 
-        from app.services.match_day import fixture_match_day
-
-        today = datetime.now(
-            ZoneInfo(get_settings().SCHEDULER_TIMEZONE)
-        ).date().isoformat()
-        if fixture_match_day(fixture) != today:
+        today = await current_prematch_match_day(
+            self.session,
+            league_ids=await allowed_league_ids(self.session),
+        )
+        if not today or fixture_match_day(fixture) != today:
             package["odds"] = local if isinstance(local, dict) else {"available": False}
             return
         if not await self._league_allows_official_odds(fixture.league_id):

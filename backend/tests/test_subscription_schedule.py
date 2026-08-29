@@ -1,8 +1,9 @@
 """Subscription schedule and rolling fixture-window helpers."""
 
 import asyncio
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 from app.services.fixtures_sync import sync_dates
 from app.tasks.scheduler import (
@@ -17,6 +18,8 @@ from app.tasks.scheduler import (
     register_jobs,
     scheduler,
 )
+
+ODDS_TODAY = datetime.now(ZoneInfo("Asia/Shanghai")).date()
 
 
 def test_subscription_schedule_constants() -> None:
@@ -156,6 +159,9 @@ def test_subscribed_full_batch_only_fetches_missing_future_days() -> None:
             patch.object(
                 fs, "get_catalog_league_ids", AsyncMock(return_value=([39, 140], "db"))
             ),
+            patch.object(
+                fs, "resolve_odds_today", AsyncMock(return_value=ODDS_TODAY)
+            ),
             patch.object(fs, "missing_subscribed_fixture_days", missing),
             patch.object(fs, "sync_league_standings_for_dates", standings),
             patch.object(fs, "importlib", MagicMock()),
@@ -221,6 +227,9 @@ def test_light_batch_only_refreshes_today_odds() -> None:
             patch.object(
                 fs, "get_catalog_league_ids", AsyncMock(return_value=([39, 140], "db"))
             ),
+            patch.object(
+                fs, "resolve_odds_today", AsyncMock(return_value=ODDS_TODAY)
+            ),
             patch(
                 "app.services.auto_favorites.sync_daily_auto_favorites",
                 AsyncMock(return_value={"selected": []}),
@@ -276,6 +285,9 @@ def test_prematch_odds_batch_only_refreshes_explicit_fixture_ids() -> None:
             ),
             patch.object(
                 fs, "get_catalog_league_ids", AsyncMock(return_value=([39, 140], "db"))
+            ),
+            patch.object(
+                fs, "resolve_odds_today", AsyncMock(return_value=ODDS_TODAY)
             ),
             patch(
                 "app.services.auto_favorites.sync_daily_auto_favorites",
@@ -353,6 +365,9 @@ def test_results_batch_only_captures_scores() -> None:
             ),
             patch.object(
                 fs, "get_catalog_league_ids", AsyncMock(return_value=([39, 140], "db"))
+            ),
+            patch.object(
+                fs, "resolve_odds_today", AsyncMock(return_value=ODDS_TODAY)
             ),
             patch(
                 "app.services.auto_favorites.sync_daily_auto_favorites",

@@ -1,7 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
 import logging
 from typing import Any, Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
@@ -39,7 +38,11 @@ from app.services.calendar_tz import utc_today
 from app.services.fixtures_sync import official_sync_busy
 from app.services.league_catalog import allowed_league_ids
 from app.services.fetcher import FootballFetcher
-from app.services.match_day import fixture_match_day, fixture_match_day_expr
+from app.services.match_day import (
+    current_prematch_match_day,
+    fixture_match_day,
+    fixture_match_day_expr,
+)
 from app.services.prediction import (
     OPINION_FACTORS,
     adjust_probabilities_with_factors,
@@ -77,15 +80,17 @@ router = APIRouter(prefix="/fixtures", tags=["fixtures"])
 logger = logging.getLogger(__name__)
 
 
-def _odds_refresh_allowed(fixture: Fixture) -> bool:
-    """One boundary for UI and API: today's catalog fixture still in 【比赛】."""
-    today = datetime.now(
-        ZoneInfo(get_settings().SCHEDULER_TIMEZONE)
-    ).date().isoformat()
+def _odds_refresh_allowed(
+    fixture: Fixture,
+    *,
+    today_match_day: str | None,
+) -> bool:
+    """One boundary for UI and API: catalog 【比赛】 on the list's 今天."""
     return bool(
-        fixture.league
+        today_match_day
+        and fixture.league
         and fixture.league.is_catalog
-        and fixture_match_day(fixture) == today
+        and fixture_match_day(fixture) == today_match_day
         and fixture.date > datetime.now(timezone.utc).replace(tzinfo=None)
     )
 
@@ -121,10 +126,14 @@ async def refresh_fixture_odds(
     ).scalar_one_or_none()
     if fixture is None:
         raise HTTPException(status_code=404, detail="比赛不存在")
-    if not _odds_refresh_allowed(fixture):
+    today_match_day = await current_prematch_match_day(
+        db,
+        league_ids=await allowed_league_ids(db),
+    )
+    if not _odds_refresh_allowed(fixture, today_match_day=today_match_day):
         raise HTTPException(
             status_code=409,
-            detail="仅今天仍在【比赛】中的目录联赛允许更新盘口",
+            detail="仅当前比赛日仍在【比赛】中的目录联赛允许更新盘口",
         )
     async with FootballFetcher(session=db) as fetcher:
         updated = await fetcher.refresh_odds_for_fixture(fixture_id)
@@ -465,6 +474,10 @@ async def get_today_fixtures(
     }
     standings_maps = await load_standings_maps(db, standings_keys)
 
+    today_match_day = await current_prematch_match_day(
+        db,
+        league_ids=competition_ids,
+    )
     fixture_responses: list[FixtureResponse] = []
     for fixture in fixtures:
         stored = stored_by_id.get(fixture.id)
@@ -496,7 +509,9 @@ async def get_today_fixtures(
                 match_day_offset=(
                     date.fromisoformat(fixture_match_day(fixture)) - base_date
                 ).days,
-                odds_refresh_allowed=_odds_refresh_allowed(fixture),
+                odds_refresh_allowed=_odds_refresh_allowed(
+                    fixture, today_match_day=today_match_day
+                ),
                 status=fixture.status,
                 home_goals=fixture.home_goals,
                 away_goals=fixture.away_goals,
@@ -885,7 +900,13 @@ async def get_fixture_analysis(
         match_day=fixture_match_day(fixture),
         match_timezone=fixture.match_timezone or "UTC",
         match_day_source=fixture.match_day_source or "utc",
-        odds_refresh_allowed=_odds_refresh_allowed(fixture),
+        odds_refresh_allowed=_odds_refresh_allowed(
+            fixture,
+            today_match_day=await current_prematch_match_day(
+                db,
+                league_ids=await allowed_league_ids(db),
+            ),
+        ),
         status=fixture.status,
         home_goals=fixture.home_goals,
         away_goals=fixture.away_goals,

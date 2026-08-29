@@ -21,7 +21,7 @@ import TextSwitch from '@/components/TextSwitch.vue'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
 import { formatLocalDateMinute } from '@/utils/format'
-import { prematchFetchParams, todayDate } from '@/utils/homeDateStrip'
+import { prematchFetchParams } from '@/utils/homeDateStrip'
 import { useAdminSync } from '@/views/Mine/admin/useAdminSync'
 import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 
@@ -40,19 +40,14 @@ const {
   hydrateStatus,
 } = useAdminSync()
 const { allFixtures, loadHomeFixtures } = useHomeFixtures()
-const { filterOptions, trackedIds, loadFilterOptions } = useTrackedLeagues()
+const { trackedIds, loadFilterOptions } = useTrackedLeagues()
 const prematchFixtureIds = computed(() => {
   const selected = new Set(trackedIds.value)
-  const hot = new Set(
-    (filterOptions.value?.configured ?? []).map((league) => league.league_id),
-  )
-  const today = todayDate()
   return allFixtures.value
     .filter(
       (fixture) =>
-        fixture.match_day === today &&
-        selected.has(fixture.league_id) &&
-        hot.has(fixture.league_id),
+        (fixture.match_day_offset ?? 0) === 0 &&
+        selected.has(fixture.league_id),
     )
     .map((fixture) => fixture.fixture_id)
 })
