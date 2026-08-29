@@ -655,7 +655,7 @@ def match_input_from_fixture_row(
     stored: PreMatchData,
     feature: MatchFeature | None = None,
 ) -> MatchPipelineInput:
-    package = package_from_record(stored)
+    package = package_from_record(stored, match_start_time=fixture.date)
     odds_raw = package.get("odds") if isinstance(package, dict) else None
     odds = (
         rehydrate_odds_markets(odds_raw)

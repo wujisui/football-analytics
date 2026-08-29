@@ -141,7 +141,9 @@ const ahBoards = computed(() => {
     boards.push({
       key: 'opening',
       label: '初盘',
-      capturedAt: capturedAtText(openingOdds.value?.captured_at),
+      capturedAt: capturedAtText(
+        openingOdds.value?.scraped_at || openingOdds.value?.captured_at,
+      ),
       lines: openingAhLines.value,
     })
   }
@@ -149,7 +151,9 @@ const ahBoards = computed(() => {
     boards.push({
       key: 'current',
       label: '即时盘',
-      capturedAt: capturedAtText(currentOdds.value?.captured_at),
+      capturedAt: capturedAtText(
+        currentOdds.value?.scraped_at || currentOdds.value?.captured_at,
+      ),
       lines: currentAhLines.value,
     })
   }

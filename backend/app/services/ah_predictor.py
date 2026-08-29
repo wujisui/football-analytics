@@ -616,7 +616,7 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
     from app.models.fixture import Fixture
     from app.models.match_feature import MatchFeature
     from app.models.pre_match_data import PreMatchData
-    from app.services.prematch_package import loads_json, package_from_record
+    from app.services.prematch_package import package_from_record
 
     rows: list[tuple[dict[str, float], str]] = []
     seen: set[int] = set()
@@ -640,9 +640,7 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
         ):
             features = loads_ah_features(feat.ah_features_json)
         elif stored:
-            pkg = package_from_record(stored) or {
-                "odds": loads_json(stored.odds_json, {"available": False}),
-            }
+            pkg = package_from_record(stored, match_start_time=fixture.date)
             features, _, _, _ = build_ah_features(
                 pkg, league_id=fixture.league_id
             )
@@ -671,9 +669,7 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
             continue
         line_f = feat.ah_line
         if line_f is None and stored:
-            pkg = package_from_record(stored) or {
-                "odds": loads_json(stored.odds_json, {"available": False}),
-            }
+            pkg = package_from_record(stored, match_start_time=fixture.date)
             _, line_f, _, _ = build_ah_features(pkg, league_id=fixture.league_id)
         label = settle_ah_label(fixture.home_goals, fixture.away_goals, line_f)
         if label not in TRAIN_LABELS:
@@ -681,9 +677,7 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
         if feat.ah_features_json:
             features = loads_ah_features(feat.ah_features_json)
         elif stored:
-            pkg = package_from_record(stored) or {
-                "odds": loads_json(stored.odds_json, {"available": False}),
-            }
+            pkg = package_from_record(stored, match_start_time=fixture.date)
             features, _, _, _ = build_ah_features(
                 pkg, league_id=fixture.league_id
             )
@@ -705,7 +699,7 @@ async def backfill_ah_features(session: Any) -> int:
     from app.models.fixture import Fixture
     from app.models.match_feature import MatchFeature
     from app.models.pre_match_data import PreMatchData
-    from app.services.prematch_package import loads_json, package_from_record
+    from app.services.prematch_package import package_from_record
 
     q = await session.execute(
         select(MatchFeature, Fixture, PreMatchData)
@@ -718,14 +712,7 @@ async def backfill_ah_features(session: Any) -> int:
     for feat, fixture, stored in q.all():
         if not stored:
             continue
-        package = package_from_record(stored) or {
-            "odds": loads_json(stored.odds_json, {"available": False}),
-            "home_form": loads_json(stored.home_form_json, {}),
-            "away_form": loads_json(stored.away_form_json, {}),
-            "head_to_head": loads_json(stored.h2h_json, {}),
-            "standings": loads_json(stored.standings_json, {}),
-            "injuries": loads_json(stored.injuries_json, {}),
-        }
+        package = package_from_record(stored, match_start_time=fixture.date)
         label = None
         if fixture.status == "finished" and fixture.home_goals is not None:
             ah_features, line_f, _, _ = build_ah_features(

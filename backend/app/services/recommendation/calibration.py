@@ -380,16 +380,7 @@ async def collect_calibration_history(db: Any) -> list[_HistoryRow]:
         label = outcome_label(fixture.home_goals, fixture.away_goals)
         if label not in OUTCOMES:
             continue
-        package = package_from_record(stored)
-        if not package:
-            package = {
-                "home_form": loads_json(stored.home_form_json, {}),
-                "away_form": loads_json(stored.away_form_json, {}),
-                "head_to_head": loads_json(stored.h2h_json, {}),
-                "odds": loads_json(stored.odds_json, {"available": False}),
-                "standings": loads_json(stored.standings_json, {}),
-                "injuries": loads_json(stored.injuries_json, {}),
-            }
+        package = package_from_record(stored, match_start_time=fixture.date)
         features = extract_features(package)
         if float(features.get("has_odds") or 0.0) < 0.5:
             continue

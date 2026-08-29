@@ -651,7 +651,7 @@ async def collect_training_rows(
     for stored, fixture in result.all():
         if fixture.id in seen:
             continue
-        package = package_from_record(stored)
+        package = package_from_record(stored, match_start_time=fixture.date)
         base = extract_features(package)
         if float(base.get("has_odds", 0.0)) <= 0:
             continue

@@ -1,5 +1,6 @@
 """Risk-adjusted recommendation strategy (no official API calls)."""
 
+from app.services.recommendation import strategy
 from app.services.recommendation.strategy import (
     REASON_NO_MARKET,
     REASON_RISK_ADJUSTED_RETURN,
@@ -39,23 +40,47 @@ def test_expected_value_formula() -> None:
     assert abs(expected_value(2.0, 0.55) - 0.10) < 1e-9
 
 
-def test_risk_score_peaks_on_modest_favourites_not_coin_flips() -> None:
-    """同一条公平赔率线上，甜点应落在 1.50 附近，而不是 2.00。
+def test_risk_score_keeps_even_money_reachable() -> None:
+    """2.00 附近必须留在可入选范围，不能被幂次人为封顶。
 
     概率来自去水市场（``p ≈ 1 / 赔率``）时下列候选 EV 全为 0，唯一差别是水位。
-    ``e = 0.5`` 会把最高分固定在 2.00，也就是主客五五开、方差最大的比赛；
-    ``e = 1/3`` 把甜点移到 1.50，同时既不追 1.15 的死低赔，也不追 4.00 的长赔。
+    ``e = 0.5`` 的极大值落在 2.00；一旦压低幂次，净赔率 < 1 的低赔候选会被整体
+    抬分并压平原始分差，历史权重就能挤掉高概率的 1.9 档候选。命中率偏好靠
+    ``MIN_DAILY_CONFIDENCE`` 下限实现，不靠压这个幂次。
     """
     fair = {
         1.15: risk_adjusted_return_score(1 / 1.15, 1.15),
         1.50: risk_adjusted_return_score(1 / 1.50, 1.50),
-        1.60: risk_adjusted_return_score(1 / 1.60, 1.60),
         2.00: risk_adjusted_return_score(1 / 2.00, 2.00),
         4.00: risk_adjusted_return_score(1 / 4.00, 4.00),
     }
-    assert fair[1.50] == max(fair.values())
-    assert fair[1.60] > fair[2.00] > fair[4.00]
-    assert fair[1.15] < fair[2.00]
+    assert fair[2.00] == max(fair.values())
+    assert fair[2.00] > fair[1.50] > fair[1.15]
+    assert fair[2.00] > fair[4.00]
+
+
+def test_low_exponent_would_flatten_the_score_gap_across_odds() -> None:
+    """记录压幂次的副作用：原始分差被压平，历史权重更容易反超。
+
+    62% @1.93 与 63% @1.52 两个真实候选，``e = 0.5`` 下原始分相差约 1.31 倍，
+    ``e = 1/3`` 下只剩约 1.19 倍。实际历史乘数（约 0.9）足以在后者翻盘，
+    这正是 1.93 高概率候选掉出四强的机制。
+    """
+    high_odds, low_odds = (0.620, 1.93), (0.632, 1.52)
+    wide = risk_adjusted_return_score(*high_odds) / risk_adjusted_return_score(*low_odds)
+
+    original = strategy.PAYOUT_EXPONENT
+    try:
+        strategy.PAYOUT_EXPONENT = 1.0 / 3.0
+        narrow = risk_adjusted_return_score(*high_odds) / risk_adjusted_return_score(
+            *low_odds
+        )
+    finally:
+        strategy.PAYOUT_EXPONENT = original
+
+    assert wide > narrow > 1.0
+    assert wide > 1.30
+    assert narrow < 1.20
 
 
 def test_risk_score_still_rewards_payout_at_equal_probability() -> None:
@@ -88,26 +113,15 @@ def test_picks_the_best_risk_adjusted_side() -> None:
 
 
 def test_negative_ev_still_produces_a_payout_aware_pick() -> None:
-    """EV 为负仍可入池；水位差足够大时，较高赔率仍能胜过单纯高置信度。
-
-    2.40 对 2.00 是 0.41 概率一侧换来的实质溢价；若价差只有 2.30 对 2.00，
-    风险调整后应回到概率更高的主队一侧。
-    """
+    """EV 为负仍可入池；较高赔率在风险调整后可以胜过单纯高置信度。"""
     payload = decide_match(
         match_id=1002,
         calibration=_calibration(home=0.45, draw=0.14, away=0.41),
-        odds=_odds(home=2.0, draw=6.0, away=2.4),
+        odds=_odds(home=2.0, draw=6.0, away=2.3),
     )
     assert payload["recommended_choice"] == "away"
     assert payload["ev"] < 0.0
     assert abs(payload["confidence"] - 0.41) < 1e-9
-
-    narrow = decide_match(
-        match_id=1003,
-        calibration=_calibration(home=0.45, draw=0.14, away=0.41),
-        odds=_odds(home=2.0, draw=6.0, away=2.3),
-    )
-    assert narrow["recommended_choice"] == "home"
 
 
 def test_draw_is_never_picked_even_when_most_likely() -> None:

@@ -48,7 +48,7 @@ def _signed_pp(value: float) -> str:
 
 
 def _captured_at(board: dict[str, Any]) -> datetime | None:
-    raw = board.get("captured_at")
+    raw = board.get("scraped_at") or board.get("captured_at")
     if not raw:
         return None
     try:
@@ -59,7 +59,12 @@ def _captured_at(board: dict[str, Any]) -> datetime | None:
 
 
 def _available(board: Any) -> bool:
-    return isinstance(board, dict) and bool(board.get("available"))
+    return (
+        isinstance(board, dict)
+        and bool(board.get("available"))
+        and board.get("is_live") is not True
+        and board.get("valid") is not False
+    )
 
 
 def _stage_boards(package: dict[str, Any] | None) -> list[tuple[str, dict[str, Any]]]:

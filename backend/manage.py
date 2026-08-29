@@ -268,6 +268,30 @@ async def run_audit_team_names() -> None:
         _out("No conflicts. Short forms such as 拜仁 / 多特 are kept on purpose.")
 
 
+async def run_audit_odds_capture() -> None:
+    """Print a read-only live-odds contamination report; never rewrite frozen boards."""
+    from app.core.database import AsyncSessionLocal, init_db
+    from app.services.odds_snapshot import audit_stored_live_odds
+
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        result = await audit_stored_live_odds(session)
+    print(
+        f"Odds capture audit — rows {result['rows_scanned']}, "
+        f"boards {result['boards_scanned']}"
+    )
+    print(f"  live boards (scraped_at >= kickoff): {result['live_boards']}")
+    print(f"  fixtures with live boards: {result['live_board_fixtures']}")
+    print(f"  available boards missing capture clock: {result['missing_clock_boards']}")
+    for item in result["items"][:50]:
+        print(
+            f"  {item['fixture_id']} {item.get('home')} vs {item.get('away')} "
+            f"kickoff={item['kickoff']} live={','.join(item['live_stages'])}"
+        )
+    if len(result["items"]) > 50:
+        print(f"  … {len(result['items']) - 50} more")
+
+
 async def run_translate_catalog_teams(dry_run: bool = False) -> None:
     """Auto-translate unmapped clubs that appear in database catalog leagues."""
     import sys
@@ -628,6 +652,10 @@ def main() -> None:
         "audit-team-names",
         help="Cross-check curated team ids against official names in api_snapshots",
     )
+    subparsers.add_parser(
+        "audit-odds-capture",
+        help="Read-only report of stored odds boards captured at or after kickoff",
+    )
     translate_parser = subparsers.add_parser(
         "translate-catalog-teams",
         help=(
@@ -805,6 +833,7 @@ def main() -> None:
         "backfill-team-names": run_backfill_team_names,
         "backfill-match-days": run_backfill_match_days,
         "audit-team-names": run_audit_team_names,
+        "audit-odds-capture": run_audit_odds_capture,
         "backfill-features": run_backfill_features,
         "refresh-pending-predictions": run_refresh_pending_predictions,
         "repair-finished-odds": run_repair_finished_odds,

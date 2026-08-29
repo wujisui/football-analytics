@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from app.services.prematch_package import (
@@ -339,9 +340,13 @@ class FullMatchBoardTests(unittest.TestCase):
             odds_json=_board("-0.5", "2026-08-25T01:00:00Z"),
             odds_opening_json=_board("-0.25", "2026-08-23T03:00:00Z"),
         )
+        fixture = SimpleNamespace(
+            id=1,
+            date=datetime(2026, 8, 26, 12, 0, tzinfo=timezone.utc),
+        )
 
-        current = _odds_snippet_from_stored(stored)
-        opening = _odds_snippet_from_stored(stored, opening=True)
+        current = _odds_snippet_from_stored(stored, fixture)
+        opening = _odds_snippet_from_stored(stored, fixture, opening=True)
 
         self.assertEqual(current.asian_handicap.line, "-0.5")
         self.assertEqual(opening.asian_handicap.line, "-0.25")

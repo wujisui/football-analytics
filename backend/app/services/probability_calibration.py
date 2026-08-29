@@ -232,7 +232,7 @@ async def train_from_frozen_history(
 
     samples: list[tuple[datetime, str, float, bool]] = []
     for fixture, stored, feature in by_fixture.values():
-        package = package_from_record(stored)
+        package = package_from_record(stored, match_start_time=fixture.date)
         odds_raw = package.get("odds") if isinstance(package, dict) else None
         odds = (
             rehydrate_odds_markets(odds_raw)

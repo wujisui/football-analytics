@@ -644,7 +644,11 @@ def should_write_timed_snapshot(
     ) and hours <= max_hours
     if not inside:
         return False
-    existing_at = (existing or {}).get("captured_at") if isinstance(existing, dict) else None
+    existing_at = (
+        (existing or {}).get("scraped_at") or (existing or {}).get("captured_at")
+        if isinstance(existing, dict)
+        else None
+    )
     if not (existing or {}).get("available"):
         return True
     existing_hours = hours_before_kickoff(kickoff, existing_at)
@@ -668,6 +672,8 @@ def timed_snapshot_json(
     locked: bool,
     policy: str = "closest",
 ) -> str | None:
+    from app.services.odds_snapshot import annotate_odds_snapshot
+
     if not should_write_timed_snapshot(
         existing,
         candidate,
@@ -681,12 +687,15 @@ def timed_snapshot_json(
     ):
         return None
     return dumps_json(
-        {
+        annotate_odds_snapshot(
+            {
             **(candidate or {}),
-            "role": stage,
             "snapshot_stage": stage,
-            "captured_at": captured_at,
-        }
+            },
+            scraped_at=captured_at,
+            match_start_time=kickoff,
+            role=stage,
+        )
     )
 
 
@@ -1014,39 +1023,55 @@ def rehydrate_odds_markets(odds: dict[str, Any] | None) -> dict[str, Any]:
     )
     if odds.get("role") is not None:
         merged["role"] = odds.get("role")
-    if odds.get("captured_at") is not None:
-        merged["captured_at"] = odds.get("captured_at")
+    for metadata_key in (
+        "captured_at",
+        "scraped_at",
+        "match_start_time",
+        "is_live",
+        "valid",
+        "invalid",
+        "invalid_reason",
+    ):
+        if odds.get(metadata_key) is not None:
+            merged[metadata_key] = odds.get(metadata_key)
     return merged
 
 
-def package_from_record(record: Any) -> dict[str, Any]:
-    """Build API package dict from PreMatchData ORM row."""
+def package_from_record(
+    record: Any,
+    *,
+    match_start_time: datetime | str | None = None,
+) -> dict[str, Any]:
+    """Build an API package. Live boards (scraped_at >= kickoff) are skipped;
+    frozen pre-match rows without clocks stay available.
+    """
+    from app.services.odds_snapshot import normalize_odds_snapshot
+
+    fixture = getattr(record, "__dict__", {}).get("fixture")
+    kickoff = match_start_time or getattr(fixture, "date", None)
+    fixture_id = getattr(record, "fixture_id", None)
+
+    def _odds_board(attr: str, stage: str) -> dict[str, Any]:
+        raw = loads_json(getattr(record, attr, None), {"available": False})
+        normalized = normalize_odds_snapshot(
+            raw,
+            match_start_time=kickoff,
+            fixture_id=fixture_id,
+            stage=stage,
+        )
+        return rehydrate_odds_markets(normalized)
+
     lineups = loads_json(getattr(record, "lineups_json", None), {})
     injuries = loads_json(getattr(record, "injuries_json", None), {})
     briefing = loads_json(getattr(record, "briefing_json", None), {})
-    odds = rehydrate_odds_markets(
-        loads_json(getattr(record, "odds_json", None), {"available": False})
-    )
-    odds_opening_raw = loads_json(
-        getattr(record, "odds_opening_json", None), {"available": False}
-    )
-    odds_opening = (
-        rehydrate_odds_markets(odds_opening_raw)
-        if isinstance(odds_opening_raw, dict) and odds_opening_raw.get("available")
-        else {"available": False}
-    )
-
-    def _stage_board(attr: str) -> dict[str, Any]:
-        raw = loads_json(getattr(record, attr, None), {"available": False})
-        if isinstance(raw, dict) and raw.get("available"):
-            return rehydrate_odds_markets(raw)
-        return {"available": False}
+    odds = _odds_board("odds_json", "current")
+    odds_opening = _odds_board("odds_opening_json", "opening")
 
     return {
         "odds": odds,
         "odds_opening": odds_opening,
-        "odds_mid": _stage_board("odds_mid_json"),
-        "odds_late": _stage_board("odds_late_json"),
+        "odds_mid": _odds_board("odds_mid_json", "mid"),
+        "odds_late": _odds_board("odds_late_json", "late"),
         "lineups": lineups if lineups else {"available": False, "home": None, "away": None},
         "injuries": injuries if injuries else {"available": False, "home": [], "away": []},
         "head_to_head": localize_matches_block(

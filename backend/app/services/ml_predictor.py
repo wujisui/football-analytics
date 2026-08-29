@@ -505,17 +505,7 @@ async def collect_training_rows(session: Any) -> list[tuple[dict[str, float], st
     for stored, fixture in q2.all():
         if fixture.id in seen:
             continue
-        package = package_from_record(stored)
-        if not package:
-            # Minimal package from JSON fields
-            package = {
-                "home_form": loads_json(stored.home_form_json, {}),
-                "away_form": loads_json(stored.away_form_json, {}),
-                "head_to_head": loads_json(stored.h2h_json, {}),
-                "odds": loads_json(stored.odds_json, {"available": False}),
-                "standings": loads_json(stored.standings_json, {}),
-                "injuries": loads_json(stored.injuries_json, {}),
-            }
+        package = package_from_record(stored, match_start_time=fixture.date)
         label = outcome_label(fixture.home_goals, fixture.away_goals)
         if not label:
             continue
@@ -675,7 +665,7 @@ async def refresh_pending_prediction_snapshots(session: Any) -> dict[str, int]:
     boards_fixed = 0
     cache = get_cache_service()
     for stored, fixture in rows:
-        package = package_from_record(stored)
+        package = package_from_record(stored, match_start_time=fixture.date)
         odds = package.get("odds") if isinstance(package, dict) else None
         if not isinstance(odds, dict) or not odds.get("available"):
             skipped += 1

@@ -195,7 +195,7 @@ def evaluate_fixture_prediction(
         # Older rows may lack score_hint; still count 1X2 / O/U / BTTS if present.
         score_hint = ""
 
-    package = package_from_record(stored)
+    package = package_from_record(stored, match_start_time=fixture.date)
     odds = package.get("odds") if isinstance(package, dict) else None
     line_f, _, _ = extract_main_ah_line(odds if isinstance(odds, dict) else None)
     if line_f is None:
