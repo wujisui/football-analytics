@@ -47,6 +47,7 @@ const showDetails = ref(false)
 const showFormula = ref(false)
 const showSave = ref(false)
 const saveName = ref('')
+const savingPlan = ref(false)
 const savingImage = ref(false)
 const detailsExportRef = ref<HTMLElement | null>(null)
 const previewUrl = ref<string | null>(null)
@@ -85,21 +86,27 @@ function openSave() {
 }
 
 async function confirmSave(): Promise<boolean> {
+  if (savingPlan.value) return false
   if (!requireLogin()) return false
   if (!selections.value.length) return false
-  const plan = await savePlan({
-    name: saveName.value,
-    fold: fold.value,
-    multiplier: multiplier.value,
-    selections: selections.value,
-  })
-  if (!plan) {
-    message.error('保存失败，请稍后重试')
-    return false
+  savingPlan.value = true
+  try {
+    const plan = await savePlan({
+      name: saveName.value,
+      fold: fold.value,
+      multiplier: multiplier.value,
+      selections: selections.value,
+    })
+    if (!plan) {
+      message.error('保存失败，请稍后重试')
+      return false
+    }
+    showSave.value = false
+    message.success(`已保存「${plan.name}」`)
+    return true
+  } finally {
+    savingPlan.value = false
   }
-  showSave.value = false
-  message.success(`已保存「${plan.name}」`)
-  return true
 }
 
 /** 输入框回车 = 点「保存」（naive dialog 不会默认绑 Enter） */
@@ -419,7 +426,11 @@ defineExpose({ openFormula, openDetails })
       :auto-focus="false"
       positive-text="保存"
       negative-text="取消"
-      :positive-button-props="{ disabled: !matchCount }"
+      :positive-button-props="{ disabled: !matchCount || savingPlan, loading: savingPlan }"
+      :negative-button-props="{ disabled: savingPlan }"
+      :closable="!savingPlan"
+      :close-on-esc="!savingPlan"
+      :mask-closable="!savingPlan"
       @positive-click="() => confirmSave()"
     >
       <n-space vertical :size="10">
@@ -436,7 +447,8 @@ defineExpose({ openFormula, openDetails })
             text
             type="primary"
             size="tiny"
-            :disabled="!matchCount"
+            :loading="savingPlan"
+            :disabled="!matchCount || savingPlan"
             @click="saveAndGoPlans"
           >
             保存并查看

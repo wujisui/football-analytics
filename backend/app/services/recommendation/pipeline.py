@@ -404,6 +404,58 @@ def _to_daily_picks(
     return picks
 
 
+def _collapse_equivalent_half_ball_picks(
+    picks: list[DailyRecommendationPick],
+    *,
+    odds_by_fixture: dict[int, dict[str, Any] | None],
+) -> list[DailyRecommendationPick]:
+    """Keep the better quote when AH and moneyline settle identically.
+
+    Home -0.5 + 让胜 is exactly home moneyline; home +0.5 + 让负 is exactly
+    away moneyline. Their probability source is also the same 1X2 calibration,
+    so a market label must not let the lower-paying quote survive. Equal quotes
+    prefer AH for deterministic display.
+    """
+    equivalent_choice: dict[int, str] = {}
+    for fixture_id, odds in odds_by_fixture.items():
+        line, _home_odd, _away_odd = extract_main_ah_line(odds)
+        if line is None:
+            continue
+        if abs(line + 0.5) < 1e-9:
+            equivalent_choice[fixture_id] = "home"
+        elif abs(line - 0.5) < 1e-9:
+            equivalent_choice[fixture_id] = "away"
+
+    grouped: dict[tuple[int, str], list[DailyRecommendationPick]] = {}
+    untouched: list[DailyRecommendationPick] = []
+    for pick in picks:
+        choice = equivalent_choice.get(pick.fixture_id)
+        if (
+            choice is None
+            or pick.recommended_choice != choice
+            or pick.market not in {MARKET_1X2, MARKET_AH}
+        ):
+            untouched.append(pick)
+            continue
+        grouped.setdefault((pick.fixture_id, choice), []).append(pick)
+
+    for equivalent in grouped.values():
+        markets = {pick.market for pick in equivalent}
+        if markets != {MARKET_1X2, MARKET_AH}:
+            untouched.extend(equivalent)
+            continue
+        untouched.append(
+            max(
+                equivalent,
+                key=lambda pick: (
+                    float(pick.decimal_odd),
+                    pick.market == MARKET_AH,
+                ),
+            )
+        )
+    return untouched
+
+
 def select_daily_picks_by_match_day(
     picks: list[DailyRecommendationPick],
     *,
@@ -485,6 +537,10 @@ def run_pipeline(
         )
 
     picks = apply_feedback_to_picks(picks, state=incentive_state)
+    picks = _collapse_equivalent_half_ball_picks(
+        picks,
+        odds_by_fixture=odds_by_fixture,
+    )
     picks.sort(key=pick_rank_key)
     candidate_count = len(picks)
     skipped = skip_fixture_ids or set()

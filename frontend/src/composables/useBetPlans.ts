@@ -23,6 +23,7 @@ const MIGRATED_KEY = 'fa-bet-plans-migrated-v1'
 const CACHE_KEY = 'fa-bet-plans-cache-v1'
 const FILTER_DATE_KEY = 'fa-bet-plans-filter-date'
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+let savePlanPromise: Promise<SavedBetPlan | null> | null = null
 
 function readSavedFilterDate(): string {
   try {
@@ -157,21 +158,30 @@ export function useBetPlans() {
     multiplier: number
     selections: CalcSelection[]
   }): Promise<SavedBetPlan | null> {
-    const draft = buildLocalPlan(input)
+    if (savePlanPromise) return savePlanPromise
+    savePlanPromise = (async () => {
+      const draft = buildLocalPlan(input)
+      try {
+        const row = await apiCreate({
+          id: draft.id,
+          name: draft.name,
+          plan_day: draft.planDay,
+          fold: draft.fold,
+          multiplier: draft.multiplier,
+          selections: draft.selections,
+        })
+        const plan = dtoToPlan(row)
+        plans.value = [plan, ...plans.value.filter((p) => p.id !== plan.id)]
+        persistSession()
+        return plan
+      } catch {
+        return null
+      }
+    })()
     try {
-      const row = await apiCreate({
-        name: draft.name,
-        plan_day: draft.planDay,
-        fold: draft.fold,
-        multiplier: draft.multiplier,
-        selections: draft.selections,
-      })
-      const plan = dtoToPlan(row)
-      plans.value = [plan, ...plans.value.filter((p) => p.id !== plan.id)]
-      persistSession()
-      return plan
-    } catch {
-      return null
+      return await savePlanPromise
+    } finally {
+      savePlanPromise = null
     }
   }
 

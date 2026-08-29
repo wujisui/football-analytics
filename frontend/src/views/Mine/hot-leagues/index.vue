@@ -222,6 +222,7 @@ function invertSelection() {
 }
 
 async function save() {
+  if (saving.value) return
   saving.value = true
   try {
     applySetting(await updateHotLeaguesSetting(selectedIds.value.map(Number)))
@@ -251,7 +252,7 @@ function closeAddCategory() {
 }
 
 async function submitAddCategory() {
-  if (isPhone.value) return
+  if (isPhone.value || catalogBusy.value) return
   const name = addCategoryName.value.trim()
   if (!name) {
     message.warning('请填写分类名称')
@@ -271,7 +272,7 @@ async function submitAddCategory() {
 }
 
 async function confirmRemoveCategory(category: HotLeagueCategory) {
-  if (isPhone.value || category.leagues.length) return
+  if (isPhone.value || category.leagues.length || catalogBusy.value) return
   catalogBusy.value = true
   try {
     applySetting(await deleteLeagueCategory(category.category_id), true)
@@ -314,7 +315,7 @@ function closeAddLeague() {
 }
 
 async function lookupAddLeague() {
-  if (isPhone.value) return
+  if (isPhone.value || addLookupBusy.value) return
   const leagueId = addLeague.league_id
   if (!Number.isInteger(leagueId) || leagueId == null || leagueId < 1) {
     message.warning('请填写正整数官方联赛 ID')
@@ -378,7 +379,7 @@ function editLookupBlocksSave(): boolean {
 }
 
 async function lookupEditLeague() {
-  if (isPhone.value) return
+  if (isPhone.value || editLookupBusy.value) return
   const item = selectedLeague.value
   const leagueId = editLeague.league_id
   if (editLeague.protected) return
@@ -414,7 +415,7 @@ async function lookupEditLeague() {
 }
 
 async function submitEditLeague() {
-  if (isPhone.value) return
+  if (isPhone.value || catalogBusy.value) return
   const item = selectedLeague.value
   const nextLeagueId = editLeague.league_id
   const leagueName = editLeague.league_name.trim()
@@ -489,7 +490,7 @@ async function submitEditLeague() {
 }
 
 async function submitAddLeague() {
-  if (isPhone.value) return
+  if (isPhone.value || catalogBusy.value) return
   const leagueId = addLeague.league_id
   const leagueName = addLeague.league_name.trim()
   const country = addLeague.country.trim()
@@ -603,7 +604,7 @@ function closeDeleteLeague() {
 }
 
 async function confirmDeleteLeague() {
-  if (isPhone.value) return
+  if (isPhone.value || deleteSubmitting.value) return
   const item = deleteTarget.value
   const password = deletePassword.value.trim()
   if (!item) return

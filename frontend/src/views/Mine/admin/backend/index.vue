@@ -77,6 +77,7 @@ function closeApiKeyModal() {
 }
 
 async function saveApiSportsKeys() {
+  if (apiKeySaving.value) return
   const password = apiKeyPassword.value.trim()
   if (!password) {
     message.warning('请输入管理员登录密码')
@@ -135,6 +136,7 @@ function closeResetModal() {
 }
 
 async function confirmResetMatchHistory() {
+  if (resetSubmitting.value) return
   const password = resetPassword.value.trim()
   if (!password) {
     message.warning('请输入管理员登录密码')

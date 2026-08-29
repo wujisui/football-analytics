@@ -59,6 +59,7 @@ function writeCachedUser(user: AuthUserCache | null) {
 
 const user = ref<AuthUserCache | null>(readCachedUser())
 const loginModalShow = ref(false)
+let logoutPromise: Promise<void> | null = null
 
 function clearLocalUser() {
   user.value = null
@@ -164,13 +165,21 @@ export function useAuthSession() {
   }
 
   async function logout() {
+    if (logoutPromise) return logoutPromise
+    logoutPromise = (async () => {
+      try {
+        await logoutAccount()
+      } catch {
+        /* still clear local state */
+      }
+      clearLocalUser()
+      await refreshPrivateCaches('guest')
+    })()
     try {
-      await logoutAccount()
-    } catch {
-      /* still clear local state */
+      await logoutPromise
+    } finally {
+      logoutPromise = null
     }
-    clearLocalUser()
-    await refreshPrivateCaches('guest')
   }
 
   /** Confirm the cookie is still valid once after boot (401 → guest). */

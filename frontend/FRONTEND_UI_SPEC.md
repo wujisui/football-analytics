@@ -44,6 +44,8 @@
 
 主题固定为「深色 / 浅色 / 护眼」三项，下拉选择并保存在本机，新用户默认护眼。浅色使用原始高亮配色；护眼采用暖调米灰（纸感）：页面、卡片与输入控件不使用大面积纯白，页面底色明显低于卡片一档以拉开层级，配柔和暖阴影；胜/平/负、推荐标签、链接等业务强调色保持现有辨识度。表面色真源为 `src/styles/themes/{dark,light,eye-care}.css`（`html[data-theme]`），由 `src/styles/index.ts` 统一导入；`src/styles/base.css` 只放布局与共用 token。`theme/presets.ts` 只保留下拉选项、是否深色、Naive `overrides`（护眼组件表面）。`index.html` 同步脚本在首屏写入 `data-theme`，JS 只改这个属性，不再行内注入颜色。选中 / 激活态（热门联赛勾选块、左侧联赛菜单当前项）统一用 `--fa-accent` 着色，**禁止**引用 Naive 组件作用域变量 `--n-primary-color` 或给它写死十六进制兜底：该变量在普通 DOM 上解析不到，兜底色会成为实际生效色并脱离主题。`utils/format.ts` 的联赛色板与 `utils/accuracyColors.ts` 的玩法色板属于定性分类色，不随主题变化，不在此约束内。
 
+所有会触发后端写操作的按钮（保存、删除、更新、同步、提交）在 Promise 完成前必须进入 `loading` / `disabled`，处理函数入口同时检查 in-flight 状态，避免鼠标连点、回车与弹窗确认走不同入口时重复提交。关键创建操作还应在数据层做 single-flight 或提交稳定客户端 ID；普通导航、筛选和纯本地切换不做这种限制。
+
 ---
 
 ## 3. 页面一：计算器（唯一赛前列表）

@@ -16,8 +16,9 @@ export function confirmLogout(
     content: '退出后仍可浏览公开内容；收藏与方案会保留在账号下。',
     positiveText: '退出登录',
     negativeText: '取消',
-    onPositiveClick: () => {
-      void logout().then(() => onDone?.())
+    onPositiveClick: async () => {
+      await logout()
+      onDone?.()
     },
   })
 }

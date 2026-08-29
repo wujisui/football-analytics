@@ -21,6 +21,7 @@ const favorites = ref<FavoriteFixtureRecord[]>([])
 const autoPicks = ref<FavoriteFixtureRecord[]>([])
 let loadPromise: Promise<void> | null = null
 let loading = false
+const pendingFavoriteIds = ref(new Set<number>())
 
 function predictionFieldsFromSnapshot(snapshot: ReturnType<typeof snapshotFromAnalysis>) {
   return {
@@ -152,6 +153,7 @@ void ensureLoaded()
 export function clearPrivateFavorites() {
   favorites.value = []
   autoPicks.value = []
+  pendingFavoriteIds.value.clear()
   loadPromise = null
   loading = false
 }
@@ -174,6 +176,10 @@ const dailyPickIds = computed(
 
 function isFavorite(fixtureId: number): boolean {
   return favoriteIds.value.has(fixtureId)
+}
+
+function isFavoritePending(fixtureId: number): boolean {
+  return pendingFavoriteIds.value.has(fixtureId)
 }
 
 /** 场地当地比赛日（后端 ``match_day``）中至少有一场关注的那些日子。 */
@@ -231,6 +237,8 @@ function upsertLocal(record: FavoriteFixtureRecord) {
 }
 
 async function remove(fixtureId: number): Promise<void> {
+  if (pendingFavoriteIds.value.has(fixtureId)) return
+  pendingFavoriteIds.value.add(fixtureId)
   await ensureLoaded()
   const prev = favorites.value
   favorites.value = prev.filter((f) => f.fixture_id !== fixtureId)
@@ -238,15 +246,21 @@ async function remove(fixtureId: number): Promise<void> {
     await deleteFavorite(fixtureId)
   } catch {
     favorites.value = prev
+  } finally {
+    pendingFavoriteIds.value.delete(fixtureId)
   }
 }
 
 async function toggleFixture(fixture: FixtureResponse): Promise<boolean> {
+  if (pendingFavoriteIds.value.has(fixture.fixture_id)) {
+    return isFavorite(fixture.fixture_id)
+  }
   await ensureLoaded()
   if (isFavorite(fixture.fixture_id)) {
     await remove(fixture.fixture_id)
     return false
   }
+  pendingFavoriteIds.value.add(fixture.fixture_id)
   const optimistic = optimisticFromFixture(fixture)
   upsertLocal(optimistic)
   try {
@@ -259,15 +273,21 @@ async function toggleFixture(fixture: FixtureResponse): Promise<boolean> {
   } catch {
     favorites.value = favorites.value.filter((f) => f.fixture_id !== fixture.fixture_id)
     return false
+  } finally {
+    pendingFavoriteIds.value.delete(fixture.fixture_id)
   }
 }
 
 async function toggleResultFixture(fixture: ResultFixture): Promise<boolean> {
+  if (pendingFavoriteIds.value.has(fixture.fixture_id)) {
+    return isFavorite(fixture.fixture_id)
+  }
   await ensureLoaded()
   if (isFavorite(fixture.fixture_id)) {
     await remove(fixture.fixture_id)
     return false
   }
+  pendingFavoriteIds.value.add(fixture.fixture_id)
   const optimistic = optimisticFromResult(fixture)
   upsertLocal(optimistic)
   try {
@@ -277,6 +297,8 @@ async function toggleResultFixture(fixture: ResultFixture): Promise<boolean> {
   } catch {
     favorites.value = favorites.value.filter((f) => f.fixture_id !== fixture.fixture_id)
     return false
+  } finally {
+    pendingFavoriteIds.value.delete(fixture.fixture_id)
   }
 }
 
@@ -330,6 +352,7 @@ export function useFavoriteFixtures() {
     favoriteIds,
     dailyPickIds,
     isFavorite,
+    isFavoritePending,
     toggleFixture,
     toggleResultFixture,
     remove,

@@ -165,6 +165,7 @@ async function loadSetting(force = false) {
 }
 
 async function applySubscriptionToggle(next: boolean) {
+  if (subscriptionSaving.value) return
   subscriptionSaving.value = true
   const previous = subscribed.value
   subscribed.value = next
@@ -223,6 +224,7 @@ function onDenseOddsToggle(next: boolean) {
 }
 
 async function applyDenseOddsToggle(next: boolean) {
+  if (denseOddsSaving.value) return
   denseOddsSaving.value = true
   const previous = denseOddsEnabled.value
   denseOddsEnabled.value = next
@@ -238,6 +240,7 @@ async function applyDenseOddsToggle(next: boolean) {
 }
 
 async function applyEarlyOddsToggle(next: boolean) {
+  if (earlyOddsSaving.value) return
   earlyOddsSaving.value = true
   const previous = earlyOddsEnabled.value
   earlyOddsEnabled.value = next

@@ -37,6 +37,7 @@ const PLAN_STAT_ITEMS = [
 
 const message = useMessage()
 const modal = useModal()
+const mutatingPlanIds = new Set<string>()
 const isPhone = useIsPhone()
 const {requireLogin} = useAuthSession()
 const {ruleset} = useHandicapRuleset()
@@ -145,6 +146,7 @@ function openPlan(id: string) {
 
 function openRename(plan: SavedBetPlan) {
   if (!requireLogin()) return
+  if (mutatingPlanIds.has(plan.id)) return
   const draft = ref(plan.name)
   modal.create({
     preset: 'dialog',
@@ -163,24 +165,34 @@ function openRename(plan: SavedBetPlan) {
           },
         }),
     onPositiveClick: async () => {
+      if (mutatingPlanIds.has(plan.id)) return false
       if (!requireLogin()) return false
-      if (!(await renamePlan(plan.id, draft.value))) {
-        message.warning('名称不能为空或保存失败')
-        return false
+      mutatingPlanIds.add(plan.id)
+      try {
+        if (!(await renamePlan(plan.id, draft.value))) {
+          message.warning('名称不能为空或保存失败')
+          return false
+        }
+        message.success('已改名')
+        return true
+      } finally {
+        mutatingPlanIds.delete(plan.id)
       }
-      message.success('已改名')
-      return true
     },
   })
 }
 
 async function confirmDelete(plan: SavedBetPlan) {
+  if (mutatingPlanIds.has(plan.id)) return
   if (!requireLogin()) return
+  mutatingPlanIds.add(plan.id)
   try {
     await removePlan(plan.id)
   } catch {
     message.error('删除失败，请稍后重试')
     return
+  } finally {
+    mutatingPlanIds.delete(plan.id)
   }
   if (detailPlanId === plan.id) {
     detailModal?.destroy()

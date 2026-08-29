@@ -19,13 +19,21 @@ const props = withDefaults(
   { size: 'small', stopPropagation: true },
 )
 
-const { isFavorite, toggleFixture, toggleResultFixture, remove } = useFavoriteFixtures()
+const {
+  isFavorite,
+  isFavoritePending,
+  toggleFixture,
+  toggleResultFixture,
+  remove,
+} = useFavoriteFixtures()
 const { requireLogin } = useAuthSession()
 
 const active = computed(() => isFavorite(props.fixtureId))
+const pending = computed(() => isFavoritePending(props.fixtureId))
 
 function onClick(event: MouseEvent) {
   if (props.stopPropagation) event.stopPropagation()
+  if (pending.value) return
   if (!requireLogin()) return
   if (active.value) {
     void remove(props.fixtureId)
@@ -47,6 +55,8 @@ function onClick(event: MouseEvent) {
     circle
     :size="size"
     :type="active ? 'warning' : 'default'"
+    :loading="pending"
+    :disabled="pending"
     :aria-label="active ? '取消关注' : '关注'"
     @click="onClick"
   >
