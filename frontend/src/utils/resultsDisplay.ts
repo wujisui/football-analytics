@@ -33,10 +33,12 @@ export interface HitTagFixture {
 
 export function hitTagType(
   hit: boolean | null | undefined,
-): 'success' | 'error' | 'default' {
-  if (hit === true) return 'success'
-  if (hit === false) return 'error'
-  return 'default'
+): 'error' | 'default' {
+  return hit === true ? 'error' : 'default'
+}
+
+export function hitTagDisabled(hit: boolean | null | undefined): boolean {
+  return hit === false
 }
 
 /** Main board = regulation 90'. */

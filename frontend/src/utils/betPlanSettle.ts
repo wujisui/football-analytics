@@ -378,9 +378,9 @@ export function planStatusLabel(status: PlanSettlement['status']): string {
 
 export function planStatusTagType(
   status: PlanSettlement['status'],
-): 'success' | 'error' | 'warning' | 'default' {
-  if (status === 'won') return 'success'
-  if (status === 'lost') return 'error'
+): 'error' | 'warning' | 'default' {
+  if (status === 'won') return 'error'
+  if (status === 'lost') return 'default'
   if (status === 'void') return 'warning'
   return 'default'
 }

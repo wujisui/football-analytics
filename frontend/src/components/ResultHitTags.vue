@@ -5,7 +5,7 @@ import type { AutoFavoriteMarket } from '@/api/favorites'
 import RecommendationQualityRate from '@/components/RecommendationQualityRate.vue'
 import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import { adaptHandicapLean, handicapLeanLabel } from '@/utils/handicapDisplay'
-import { hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
+import { hitTagDisabled, hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
 
 const props = withDefaults(
@@ -41,7 +41,7 @@ function isPick(market: AutoFavoriteMarket): boolean {
 }
 
 function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
-  if (!props.filterable || hit == null) return
+  if (!props.filterable || hit !== true) return
   emit('filterHit', key)
 }
 </script>
@@ -52,11 +52,12 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       v-if="fixture.has_prediction"
       class="hit-tag"
       :class="{
-        clickable: filterable && fixture.result_hit != null,
+        clickable: filterable && fixture.result_hit === true,
         active: activeHitKey === 'result',
       }"
       size="small"
       :type="hitTagType(fixture.result_hit)"
+      :disabled="hitTagDisabled(fixture.result_hit)"
       :bordered="false"
       @click.stop="onTagClick('result', fixture.result_hit)"
     >
@@ -67,11 +68,12 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       v-if="fixture.has_prediction"
       class="hit-tag"
       :class="{
-        clickable: filterable && fixture.score_hit != null,
+        clickable: filterable && fixture.score_hit === true,
         active: activeHitKey === 'score',
       }"
       size="small"
       :type="hitTagType(fixture.score_hit)"
+      :disabled="hitTagDisabled(fixture.score_hit)"
       :bordered="false"
       @click.stop="onTagClick('score', fixture.score_hit)"
     >
@@ -81,11 +83,12 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       v-if="fixture.has_prediction"
       class="hit-tag"
       :class="{
-        clickable: filterable && fixture.ou_hit != null,
+        clickable: filterable && fixture.ou_hit === true,
         active: activeHitKey === 'ou',
       }"
       size="small"
       :type="hitTagType(fixture.ou_hit)"
+      :disabled="hitTagDisabled(fixture.ou_hit)"
       :bordered="false"
       @click.stop="onTagClick('ou', fixture.ou_hit)"
     >
@@ -96,11 +99,12 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       v-if="fixture.has_prediction"
       class="hit-tag"
       :class="{
-        clickable: filterable && fixture.btts_hit != null,
+        clickable: filterable && fixture.btts_hit === true,
         active: activeHitKey === 'btts',
       }"
       size="small"
       :type="hitTagType(fixture.btts_hit)"
+      :disabled="hitTagDisabled(fixture.btts_hit)"
       :bordered="false"
       @click.stop="onTagClick('btts', fixture.btts_hit)"
     >
@@ -111,11 +115,12 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       v-if="fixture.handicap_lean"
       class="hit-tag"
       :class="{
-        clickable: filterable && fixture.handicap_hit != null,
+        clickable: filterable && fixture.handicap_hit === true,
         active: activeHitKey === 'handicap',
       }"
       size="small"
       :type="hitTagType(fixture.handicap_hit)"
+      :disabled="hitTagDisabled(fixture.handicap_hit)"
       :bordered="false"
       @click.stop="onTagClick('handicap', fixture.handicap_hit)"
     >
