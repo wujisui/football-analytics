@@ -17,6 +17,7 @@ import { formatDate, formatLocalDateMinute, formatTime, leagueTagColor } from '@
 import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import {
   planStatusLabel,
+  planStatusTagType,
   settleBetPlan,
   type FixtureScoreSnap,
   type LegVerdict,
@@ -86,11 +87,7 @@ function verdictLabel(v: LegVerdict): string {
 }
 
 const settlementStatusTagType = computed(() => {
-  const status = settlement.value?.status
-  if (status === 'won') return 'success'
-  if (status === 'lost') return 'error'
-  if (status === 'void') return 'warning'
-  return 'default'
+  return planStatusTagType(settlement.value?.status ?? 'pending')
 })
 
 const actualPrizeText = computed(() => {
@@ -104,12 +101,14 @@ const actualPrizeTextType = computed(() =>
   settlement.value?.status === 'won' ? 'error' : undefined,
 )
 
-function verdictType(v: LegVerdict): 'success' | 'error' | 'warning' | 'default' {
-  if (v === 'hit' || v === 'half_win') return 'success'
-  if (v === 'half_loss') return 'warning'
-  if (v === 'miss') return 'error'
+function verdictType(v: LegVerdict): 'error' | 'warning' | 'default' {
+  if (v === 'hit' || v === 'half_win') return 'error'
   if (v === 'void') return 'warning'
   return 'default'
+}
+
+function verdictDisabled(v: LegVerdict): boolean {
+  return v === 'miss' || v === 'half_loss'
 }
 
 const OUTCOME_ORDER: CalcOutcome[] = [
@@ -262,7 +261,12 @@ watch(
           / {{ selectedFixtureIds(plan.selections).length }} 场
         </n-descriptions-item>
         <n-descriptions-item label="状态">
-          <n-tag size="small" :type="settlementStatusTagType" :bordered="false">
+          <n-tag
+            size="small"
+            :type="settlementStatusTagType"
+            :disabled="settlement?.status === 'lost'"
+            :bordered="false"
+          >
             {{ settlement ? planStatusLabel(settlement.status) : '—' }}
           </n-tag>
         </n-descriptions-item>
@@ -336,6 +340,7 @@ watch(
                 size="small"
                 :bordered="false"
                 :type="verdictType(pick.verdict)"
+                :disabled="verdictDisabled(pick.verdict)"
               >
                 {{ pick.label }} · {{ verdictLabel(pick.verdict) }}
               </n-tag>

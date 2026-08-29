@@ -300,6 +300,7 @@ onMounted(() => {
                         size="small"
                         :bordered="false"
                         :type="planStatusTagType(dayStatusById.get(plan.id) ?? 'pending')"
+                        :disabled="(dayStatusById.get(plan.id) ?? 'pending') === 'lost'"
                     >
                       {{ planStatusLabel(dayStatusById.get(plan.id) ?? 'pending') }}
                     </n-tag>
@@ -373,13 +374,19 @@ onMounted(() => {
 }
 
 .plans-gap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   padding: 0 12px;
+  overflow: hidden;
 }
 
 .plans-card {
   display: flex;
   flex-direction: column;
   flex: 1;
+  width: 100%;
   min-height: 0;
   background: transparent;
 }

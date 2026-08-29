@@ -3,6 +3,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +24,11 @@ from app.services.league_catalog import (
     catalog_leagues,
 )
 from app.services.league_names import league_name_zh
-from app.services.match_day import infer_team_timezone, resolve_match_day
+from app.services.match_day import (
+    fixture_match_day_expr,
+    infer_team_timezone,
+    resolve_match_day,
+)
 from app.services.results_capture import (
     is_stale_live_row,
     results_capture_cutoff,
@@ -1750,13 +1755,16 @@ class FootballFetcher:
         self,
         fixture_ids: list[int],
     ) -> dict[str, int]:
-        """Refresh exactly the admin-selected fixtures visible in 【比赛】."""
+        """Refresh selected fixtures only when they are today's hot prematches."""
         from sqlalchemy import select
 
         from app.services.results_capture import prematch_list_clause
 
         assert self.session is not None
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+        today = datetime.now(
+            ZoneInfo(get_settings().SCHEDULER_TIMEZONE)
+        ).date().isoformat()
         requested_ids = sorted(
             {int(fixture_id) for fixture_id in fixture_ids if int(fixture_id) > 0}
         )
@@ -1766,8 +1774,11 @@ class FootballFetcher:
             (
                 await self.session.execute(
                     select(Fixture)
+                    .join(League, League.id == Fixture.league_id)
                     .where(
                         Fixture.id.in_(requested_ids),
+                        fixture_match_day_expr() == today,
+                        League.is_hot.is_(True),
                         prematch_list_clause(now),
                     )
                     .order_by(Fixture.date, Fixture.id)
