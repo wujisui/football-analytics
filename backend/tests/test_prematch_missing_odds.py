@@ -3,6 +3,7 @@ import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, call
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -37,7 +38,7 @@ def _odds_json() -> str:
 
 
 class PrematchBatchOddsTests(unittest.TestCase):
-    def test_only_explicit_fixture_ids_are_refreshed_including_existing_odds(self) -> None:
+    def test_only_explicit_today_hot_fixtures_are_refreshed(self) -> None:
         async def run() -> None:
             engine = _sqlite_engine()
             async with engine.begin() as conn:
@@ -56,8 +57,20 @@ class PrematchBatchOddsTests(unittest.TestCase):
                         is_protected=False,
                     )
                 )
+                session.add(
+                    League(
+                        id=49,
+                        name="非热门杯赛",
+                        country="Japan",
+                        season=str(now.year),
+                        is_catalog=True,
+                        is_hot=False,
+                        is_protected=False,
+                    )
+                )
                 session.add_all((Team(id=1, name="A"), Team(id=2, name="B")))
                 await session.flush()
+                local_today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
                 fixtures = (
                     Fixture(
                         id=48001,
@@ -65,15 +78,15 @@ class PrematchBatchOddsTests(unittest.TestCase):
                         home_team_id=1,
                         away_team_id=2,
                         date=now + timedelta(hours=2),
-                        match_day=(now + timedelta(hours=2)).date().isoformat(),
+                        match_day=local_today,
                     ),
                     Fixture(
                         id=48002,
                         league_id=48,
                         home_team_id=1,
                         away_team_id=2,
-                        date=now + timedelta(days=1, hours=2),
-                        match_day=(now + timedelta(days=1)).date().isoformat(),
+                        date=now + timedelta(hours=3),
+                        match_day=local_today,
                     ),
                     Fixture(
                         id=48003,
@@ -81,7 +94,18 @@ class PrematchBatchOddsTests(unittest.TestCase):
                         home_team_id=1,
                         away_team_id=2,
                         date=now + timedelta(days=2, hours=2),
-                        match_day=(now + timedelta(days=2)).date().isoformat(),
+                        match_day=(
+                            datetime.now(ZoneInfo("Asia/Shanghai")).date()
+                            + timedelta(days=1)
+                        ).isoformat(),
+                    ),
+                    Fixture(
+                        id=49001,
+                        league_id=49,
+                        home_team_id=1,
+                        away_team_id=2,
+                        date=now + timedelta(hours=4),
+                        match_day=local_today,
                     ),
                 )
                 session.add_all(fixtures)
@@ -111,7 +135,7 @@ class PrematchBatchOddsTests(unittest.TestCase):
                     side_effect=fake_refresh
                 )
                 report = await fetcher.sync_odds_for_prematch_fixtures(
-                    [48001, 48002]
+                    [48001, 48002, 48003, 49001]
                 )
 
                 self.assertEqual(report["candidates"], 2)

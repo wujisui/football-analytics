@@ -21,7 +21,7 @@ import TextSwitch from '@/components/TextSwitch.vue'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
 import { formatLocalDateMinute } from '@/utils/format'
-import { prematchFetchParams } from '@/utils/homeDateStrip'
+import { prematchFetchParams, todayDate } from '@/utils/homeDateStrip'
 import { useAdminSync } from '@/views/Mine/admin/useAdminSync'
 import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 
@@ -40,11 +40,20 @@ const {
   hydrateStatus,
 } = useAdminSync()
 const { allFixtures, loadHomeFixtures } = useHomeFixtures()
-const { trackedIds, loadFilterOptions } = useTrackedLeagues()
+const { filterOptions, trackedIds, loadFilterOptions } = useTrackedLeagues()
 const prematchFixtureIds = computed(() => {
   const selected = new Set(trackedIds.value)
+  const hot = new Set(
+    (filterOptions.value?.configured ?? []).map((league) => league.league_id),
+  )
+  const today = todayDate()
   return allFixtures.value
-    .filter((fixture) => selected.has(fixture.league_id))
+    .filter(
+      (fixture) =>
+        fixture.match_day === today &&
+        selected.has(fixture.league_id) &&
+        hot.has(fixture.league_id),
+    )
     .map((fixture) => fixture.fixture_id)
 })
 
@@ -86,11 +95,11 @@ const resultsSyncDetail = computed(() =>
 
 const prematchOddsSummary = computed(() =>
   prematchFixtureIds.value.length
-    ? `更新【比赛】当前筛选的 ${prematchFixtureIds.value.length} 场盘口。`
-    : '请先进入【比赛】并勾选要显示的联赛。',
+    ? `更新【比赛】当前筛选中今天的 ${prematchFixtureIds.value.length} 场热门赛事盘口。`
+    : '当前筛选没有今天的热门未开赛赛事。',
 )
 const prematchOddsDetail =
-  '只处理【比赛】当前筛选已勾选联赛对应的未开赛场次；未勾选的“其他”赛事不会进入名单。已有盘口更新即时盘，没有盘口的场次补齐；不拉赛程、赛果、积分榜或详情。每场通常消耗一次官方盘口请求，尚未开盘的比赛仍可能为空。'
+  '只处理【比赛】当前筛选中比赛日为今天的热门未开赛场次；明天及非热门赛事即使在列表中也排除。后端会再次校验比赛日和热门状态。已有盘口更新即时盘，没有盘口的场次补齐；不拉赛程、赛果、积分榜或详情。每场通常消耗一次官方盘口请求，尚未开盘的比赛仍可能为空。'
 
 const lastSyncText = computed(() => {
   if (syncing.value) return '同步进行中，完成后会全局提示'
@@ -270,7 +279,7 @@ function syncPrematchOddsOnly() {
     title: '确认批量更新盘口？',
     type: 'warning',
     content:
-      `将逐场更新【比赛】当前筛选的 ${prematchFixtureIds.value.length} 场：已有盘口刷新即时盘，缺盘口则补齐。每场通常消耗一次官方请求。`,
+      `将逐场更新【比赛】当前筛选中今天的 ${prematchFixtureIds.value.length} 场热门赛事：已有盘口刷新即时盘，缺盘口则补齐。每场通常消耗一次官方请求。`,
     positiveText: '开始更新',
     negativeText: '取消',
     autoFocus: false,
