@@ -357,7 +357,8 @@ onMounted(() => {
   min-height: 0;
   box-sizing: border-box;
   gap: 10px;
-  padding: 10px 0 0;
+  /* 手机端本页隐藏底栏导航，底部留白与安全区只能由本页承担。 */
+  padding: 10px 0 calc(var(--fa-content-block-end) + env(safe-area-inset-bottom, 0px));
 }
 
 .plans-stats {
@@ -436,6 +437,11 @@ onMounted(() => {
 .plans-scroll {
   flex: 1;
   min-height: 0;
+}
+
+/* 末条方案不要贴住卡片内下边缘。 */
+.plans-scroll :deep(.n-scrollbar-content) {
+  padding-bottom: 8px;
 }
 
 .plans-empty {
