@@ -106,19 +106,23 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
 
 
 @pytest.mark.parametrize(
-    ("choice", "line", "moneyline_odd", "ah_odd", "expected_lean"),
+    ("choice", "line", "moneyline_odd", "ah_odd", "expected_market", "expected_lean"),
     [
-        ("away", "+0.5", 1.99, 2.00, "让负(+0.5)"),
-        ("home", "-0.5", 2.07, 2.08, "让胜(-0.5)"),
-        ("away", "+0.5", 2.00, 2.00, "让负(+0.5)"),
+        ("away", "+0.5", 1.99, 2.00, "ah", "让负(+0.5)"),
+        ("home", "-0.5", 2.07, 2.08, "ah", "让胜(-0.5)"),
+        # 同赔固定取 AH，避免展示随机漂移。
+        ("away", "+0.5", 2.00, 2.00, "ah", "让负(+0.5)"),
+        # 反向：独赢水位更高时保留独赢，收敛规则不是「一律偏向让球」。
+        ("away", "+0.5", 2.12, 2.00, "1x2", "负"),
     ],
 )
-def test_equivalent_half_ball_prefers_higher_ah_quote_despite_market_feedback(
+def test_equivalent_half_ball_keeps_the_higher_quote_despite_market_feedback(
     monkeypatch,
     choice: str,
     line: str,
     moneyline_odd: float,
     ah_odd: float,
+    expected_market: str,
     expected_lean: str,
 ) -> None:
     """Equivalent half-ball bets use the same 1X2 signal; the better quote wins."""
@@ -163,9 +167,11 @@ def test_equivalent_half_ball_prefers_higher_ah_quote_despite_market_feedback(
     )
 
     assert result["selected_count"] == 1
-    assert result["selected"][0]["market"] == "ah"
+    assert result["selected"][0]["market"] == expected_market
     assert result["selected"][0]["lean"] == expected_lean
-    assert result["selected"][0]["decimal_odd"] == ah_odd
+    assert result["selected"][0]["decimal_odd"] == (
+        ah_odd if expected_market == "ah" else moneyline_odd
+    )
 
 
 def test_quarter_ball_refund_beats_the_full_stake_1x2_side() -> None:

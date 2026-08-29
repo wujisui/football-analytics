@@ -33,12 +33,20 @@ const handicapTagLabel = computed(() =>
 
 const showTags = computed(() => !!props.fixture.has_prediction)
 
-const pickMarket = computed(() => (props.fixture.auto_pick_market ?? '').trim())
+const pickMarket = computed(
+  () => (props.fixture.auto_pick_market ?? '').trim() as AutoFavoriteMarket | '',
+)
 
-/** 对齐【比赛】：不额外加标签，只在被推荐的玩法前面标 [荐]。 */
-function isPick(market: AutoFavoriteMarket): boolean {
-  return pickMarket.value === market
-}
+/**
+ * 日推与分析器是两条轨道：让球盘可以一边推 让胜、一边推 让负。
+ * 因此 [荐] 单独成一枚标签，显示冻结快照里的投注项与它自己的结算，
+ * 不再挂在分析器标签上借用分析器的命中色（那会让未命中的日推显示为红）。
+ */
+const pickLabel = computed(() => {
+  const lean = (props.fixture.auto_pick_lean ?? '').trim()
+  if (!pickMarket.value || !lean) return ''
+  return pickMarket.value === 'ah' ? adaptHandicapLean(lean, ruleset.value) : lean
+})
 
 function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
   if (!props.filterable || hit !== true) return
@@ -61,8 +69,23 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       :bordered="false"
       @click.stop="onTagClick('result', fixture.result_hit)"
     >
-      <span v-if="isPick('1x2')" class="hit-pick-mark">[荐]</span>
       胜平负
+    </n-tag>
+    <n-tag
+      v-if="pickLabel"
+      class="hit-tag"
+      :class="{
+        clickable: filterable && fixture.auto_pick_hit === true,
+        'fa-tag-missed': hitTagMissed(fixture.auto_pick_hit),
+        active: activeHitKey === 'auto_pick',
+      }"
+      size="small"
+      :type="hitTagType(fixture.auto_pick_hit)"
+      :bordered="false"
+      @click.stop="onTagClick('auto_pick', fixture.auto_pick_hit)"
+    >
+      <span class="hit-pick-mark">[荐]</span>
+      {{ pickLabel }}
     </n-tag>
     <n-tag
       v-if="fixture.has_prediction"
@@ -92,7 +115,6 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       :bordered="false"
       @click.stop="onTagClick('ou', fixture.ou_hit)"
     >
-      <span v-if="isPick('ou')" class="hit-pick-mark">[荐]</span>
       大小
     </n-tag>
     <n-tag
@@ -108,7 +130,6 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       :bordered="false"
       @click.stop="onTagClick('btts', fixture.btts_hit)"
     >
-      <span v-if="isPick('btts')" class="hit-pick-mark">[荐]</span>
       双进
     </n-tag>
     <n-tag
@@ -124,7 +145,6 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       :bordered="false"
       @click.stop="onTagClick('handicap', fixture.handicap_hit)"
     >
-      <span v-if="isPick('ah')" class="hit-pick-mark">[荐]</span>
       {{ handicapTagLabel }}
     </n-tag>
     <RecommendationQualityRate

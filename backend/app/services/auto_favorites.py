@@ -9,7 +9,6 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.fixture import Fixture
 from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
 from app.services.ah_features import (
@@ -17,8 +16,6 @@ from app.services.ah_features import (
     handicap_pick_from_lean,
     outcome_settlement_units,
 )
-from app.services.auto_pick_incentive import adjust_pick_score
-from app.services.match_day import fixture_match_day
 from app.services.prediction import (
     _odd_float,
     _parse_goal_lean,
@@ -26,13 +23,11 @@ from app.services.prediction import (
     recommendation_outcomes,
     resolve_match_probabilities,
 )
-from app.services.prematch_package import package_from_record, rehydrate_odds_markets
 from app.services.probability_calibration import calibrate_probability
 
 logger = logging.getLogger(__name__)
 
 AUTO_PICK_LIMIT = 4
-MIN_CONFIDENCE = 0.01
 QUALITY_RATING_MAX = 5.0
 QUALITY_RATING_MIN = 0.5
 
@@ -466,142 +461,6 @@ def _market_candidates(
             )
         )
     return _risk_adjust_candidates(candidates)
-
-
-def _best_market(candidates: list[MarketCandidate]) -> MarketCandidate | None:
-    if not candidates:
-        return None
-    return max(
-        candidates,
-        key=lambda item: (item.ranking_score, item.confidence, -abs(item.decimal_odd - 2.0)),
-    )
-
-
-def score_fixture_confidence(
-    stored: PreMatchData,
-    *,
-    odds: dict[str, Any] | None,
-    feature: MatchFeature | None = None,
-    calibration: dict[str, Any] | None = None,
-) -> tuple[float, str, str]:
-    """Return (ranking_score, market, lean) for the best single-lean market."""
-    best = _best_market(
-        _market_candidates(
-            stored,
-            odds=odds,
-            feature=feature,
-            calibration=calibration,
-        )
-    )
-    if best is None:
-        return 0.0, "", ""
-    return best.ranking_score, best.market, best.lean
-
-
-def score_auto_pick_candidates(
-    rows: list[tuple[Fixture, PreMatchData, MatchFeature | None]],
-    *,
-    min_confidence: float = MIN_CONFIDENCE,
-    incentive_state: Any | None = None,
-    calibration: dict[str, Any] | None = None,
-) -> list[AutoPickCandidate]:
-    """Score every scorable single-lean fixture (no day / count cap).
-
-    缺盘口的场次自然出不了候选：每个玩法都要求对应盘口报价才能算期望收益，
-    占位倾向（待分析 / 缺少盘口）也拿不到 lean。
-    """
-    ranked: list[AutoPickCandidate] = []
-    for fixture, stored, feature in rows:
-        package = package_from_record(stored)
-        odds_raw = package.get("odds") if isinstance(package, dict) else None
-        odds = (
-            rehydrate_odds_markets(odds_raw)
-            if isinstance(odds_raw, dict)
-            else None
-        )
-        best = _best_market(
-            [
-                item
-                for item in _market_candidates(
-                    stored,
-                    odds=odds if isinstance(odds, dict) else None,
-                    feature=feature,
-                    calibration=calibration,
-                )
-                if item.confidence >= min_confidence
-            ]
-        )
-        if best is None:
-            continue
-        base_score = best.ranking_score
-        if incentive_state is not None:
-            final_score = adjust_pick_score(
-                base_score,
-                league_id=int(fixture.league_id),
-                market=best.market,
-                state=incentive_state,
-            )
-        else:
-            final_score = base_score
-        ranked.append(
-            AutoPickCandidate(
-                fixture_id=fixture.id,
-                league_id=int(fixture.league_id),
-                kickoff=fixture.date,
-                match_day=fixture_match_day(fixture),
-                score=final_score,
-                market=best.market,
-                lean=best.lean,
-                raw_confidence=best.raw_confidence,
-                confidence=best.confidence,
-                decimal_odd=best.decimal_odd,
-                expected_return=best.expected_return,
-            )
-        )
-    ranked.sort(key=lambda item: (-item.score, item.kickoff, item.fixture_id))
-    return ranked
-
-
-def rank_auto_pick_candidates(
-    rows: list[tuple[Fixture, PreMatchData, MatchFeature | None]],
-    *,
-    limit: int = AUTO_PICK_LIMIT,
-    min_confidence: float = MIN_CONFIDENCE,
-    incentive_state: Any | None = None,
-    calibration: dict[str, Any] | None = None,
-) -> list[AutoPickCandidate]:
-    """Rank one pool and keep top ``limit`` (single-day helper / tests)."""
-    return score_auto_pick_candidates(
-        rows,
-        min_confidence=min_confidence,
-        incentive_state=incentive_state,
-        calibration=calibration,
-    )[: max(0, limit)]
-
-
-def select_auto_picks_by_match_day(
-    candidates: list[AutoPickCandidate],
-    *,
-    limit_per_day: int = AUTO_PICK_LIMIT,
-    skip_fixture_ids: set[int] | None = None,
-) -> list[AutoPickCandidate]:
-    """Pick up to ``limit_per_day`` per persisted venue-local match day."""
-    skip = skip_fixture_ids or set()
-    by_day: dict[str, list[AutoPickCandidate]] = {}
-    for candidate in candidates:
-        by_day.setdefault(candidate.match_day, []).append(candidate)
-
-    selected: list[AutoPickCandidate] = []
-    for day in sorted(by_day):
-        day_picks: list[AutoPickCandidate] = []
-        for candidate in by_day[day]:
-            if candidate.fixture_id in skip:
-                continue
-            day_picks.append(candidate)
-            if len(day_picks) >= limit_per_day:
-                break
-        selected.extend(day_picks)
-    return selected
 
 
 async def sync_daily_auto_favorites(
