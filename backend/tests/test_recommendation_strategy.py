@@ -39,13 +39,28 @@ def test_expected_value_formula() -> None:
     assert abs(expected_value(2.0, 0.55) - 0.10) < 1e-9
 
 
-def test_risk_score_rewards_payout_but_dampens_long_odds() -> None:
-    assert risk_adjusted_return_score(0.50, 2.0) > risk_adjusted_return_score(
-        0.625, 1.6
-    )
-    assert risk_adjusted_return_score(0.50, 2.0) > risk_adjusted_return_score(
-        0.25, 4.0
-    )
+def test_risk_score_peaks_on_modest_favourites_not_coin_flips() -> None:
+    """同一条公平赔率线上，甜点应落在 1.50 附近，而不是 2.00。
+
+    概率来自去水市场（``p ≈ 1 / 赔率``）时下列候选 EV 全为 0，唯一差别是水位。
+    ``e = 0.5`` 会把最高分固定在 2.00，也就是主客五五开、方差最大的比赛；
+    ``e = 1/3`` 把甜点移到 1.50，同时既不追 1.15 的死低赔，也不追 4.00 的长赔。
+    """
+    fair = {
+        1.15: risk_adjusted_return_score(1 / 1.15, 1.15),
+        1.50: risk_adjusted_return_score(1 / 1.50, 1.50),
+        1.60: risk_adjusted_return_score(1 / 1.60, 1.60),
+        2.00: risk_adjusted_return_score(1 / 2.00, 2.00),
+        4.00: risk_adjusted_return_score(1 / 4.00, 4.00),
+    }
+    assert fair[1.50] == max(fair.values())
+    assert fair[1.60] > fair[2.00] > fair[4.00]
+    assert fair[1.15] < fair[2.00]
+
+
+def test_risk_score_still_rewards_payout_at_equal_probability() -> None:
+    assert risk_adjusted_return_score(0.50, 2.2) > risk_adjusted_return_score(0.50, 2.0)
+    assert risk_adjusted_return_score(0.50, 2.0) > risk_adjusted_return_score(0.25, 4.0)
 
 
 def test_quarter_ball_refund_is_not_penalised_twice() -> None:
@@ -73,15 +88,26 @@ def test_picks_the_best_risk_adjusted_side() -> None:
 
 
 def test_negative_ev_still_produces_a_payout_aware_pick() -> None:
-    """EV 为负仍可入池；较高赔率在风险调整后可以胜过单纯高置信度。"""
+    """EV 为负仍可入池；水位差足够大时，较高赔率仍能胜过单纯高置信度。
+
+    2.40 对 2.00 是 0.41 概率一侧换来的实质溢价；若价差只有 2.30 对 2.00，
+    风险调整后应回到概率更高的主队一侧。
+    """
     payload = decide_match(
         match_id=1002,
         calibration=_calibration(home=0.45, draw=0.14, away=0.41),
-        odds=_odds(home=2.0, draw=6.0, away=2.3),
+        odds=_odds(home=2.0, draw=6.0, away=2.4),
     )
     assert payload["recommended_choice"] == "away"
     assert payload["ev"] < 0.0
     assert abs(payload["confidence"] - 0.41) < 1e-9
+
+    narrow = decide_match(
+        match_id=1003,
+        calibration=_calibration(home=0.45, draw=0.14, away=0.41),
+        odds=_odds(home=2.0, draw=6.0, away=2.3),
+    )
+    assert narrow["recommended_choice"] == "home"
 
 
 def test_draw_is_never_picked_even_when_most_likely() -> None:

@@ -1,18 +1,23 @@
 """Risk-adjusted recommendation strategy for the daily-pick pipeline.
 
 候选同时覆盖独赢与亚洲让球盘。排序不再只追命中率，也不直接追逐高赔率，而使用
-``命中概率 × sqrt(净赔率)``：平方根保留收益奖励，同时抑制长赔方差。EV 仍逐场
-落库供审计并用于同分决胜；当前模型没有稳定市场边际，因此不把正 EV 作为门槛。
+``命中概率 × 净赔率 ** PAYOUT_EXPONENT``：凹效用保留收益奖励，同时抑制长赔方差。
+EV 仍逐场落库供审计并用于同分决胜；当前模型没有稳定市场边际，因此不把正 EV
+作为门槛。
 """
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from app.services.prediction import _odd_float
 
 OUTCOMES = ("home", "draw", "away")
+# 概率来自去水后的市场隐含赔率（``market_baseline``），即 ``p ≈ 1 / 赔率``，
+# 于是基础分正比于 ``(赔率 - 1) ** e / 赔率``，其极大值落在 ``赔率 = 1 / (1 - e)``。
+# e = 0.5 会把甜点固定在 2.00，也就是主客五五开、方差最大的比赛上；取 1/3 把甜点
+# 移到 1.50，同时 1.40~2.00 之间分值仍然平坦，不会退化成一味追低赔。
+PAYOUT_EXPONENT = 1.0 / 3.0
 # 平局本身概率低、方差大，即便偶尔算出正 EV 也会拖垮日推整体中奖率，
 # 因此日推只在主客两侧里选，平局仍参与 EV 计算供审计与解释使用。
 DAILY_PICK_OUTCOMES = ("home", "away")
@@ -54,8 +59,10 @@ def risk_adjusted_return_score(
 ) -> float:
     """Balance hit probability and payout without blindly chasing long odds.
 
-    ``sqrt(net payout)`` is a concave utility: moving from 1.60 to 1.95 is
-    rewarded more than moving from 2.60 to 2.95.
+    ``net payout ** PAYOUT_EXPONENT`` is a concave utility: moving from 1.60 to
+    1.95 is rewarded more than moving from 2.60 to 2.95. The exponent also fixes
+    where the ranking peaks against market-implied probabilities — see the
+    module-level note on ``PAYOUT_EXPONENT``.
 
     Quarter/level boards need no extra term here: a partial refund already
     raises ``calibrated_prob`` (it is conditional on the stake resolving) and
@@ -65,7 +72,7 @@ def risk_adjusted_return_score(
     """
     probability = max(0.0, min(1.0, float(calibrated_prob)))
     net_payout = max(0.0, float(decimal_odd) - 1.0)
-    return probability * math.sqrt(net_payout)
+    return probability * net_payout**PAYOUT_EXPONENT
 
 
 def compute_outcome_evs(
