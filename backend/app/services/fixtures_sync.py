@@ -68,12 +68,12 @@ def sync_dates(
 
 
 def result_days_for_batch(today: date) -> list[date]:
-    """Yesterday and today: two worldwide ``fixtures?date=`` calls.
+    """Yesterday and today relative to 【比赛】的比赛日「今天」.
 
-    Yesterday closes overnight finishes (Saturday backfills Friday night).
-    Today lets afternoon/evening FT land the same day instead of waiting for
-    the next 07:00. Older days are not re-fetched. Callers still clip with
-    ``clip_fixture_dates_for_plan``.
+    Yesterday closes overnight finishes. Today lets afternoon/evening FT land
+    the same match day instead of waiting for the next 07:00. Callers still
+    clip with ``clip_fixture_dates_for_plan`` against the scheduler calendar
+    so free-plan ``date=`` windows stay valid.
     """
     return [today - timedelta(days=1), today]
 
@@ -179,13 +179,14 @@ async def scheduled_fixtures_sync(
     primary_league_ids, _ = await get_hot_league_ids()
     odds_league_ids, _ = await get_catalog_league_ids()
     odds_today = await resolve_odds_today()
+    odds_anchor = odds_today or today
     tomorrow = today + timedelta(days=1)
     future_odds_days = [
-        today + timedelta(days=offset)
+        odds_anchor + timedelta(days=offset)
         for offset in range(1, FULL_BATCH_FUTURE_ODDS_DAYS + 1)
     ]
     result_days = clip_fixture_dates_for_plan(
-        result_days_for_batch(today),
+        result_days_for_batch(odds_anchor),
         today,
     )
 

@@ -2,7 +2,7 @@
 
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.odds_snapshot import (
     annotate_odds_snapshot,
@@ -166,6 +166,38 @@ class RefreshGuardTests(unittest.IsolatedAsyncioTestCase):
         fetcher._fetch_odds_with_rate_limit = AsyncMock()
 
         updated = await FootballFetcher.refresh_odds_for_fixture(fetcher, 43)
+        self.assertFalse(updated)
+        fetcher._fetch_odds_with_rate_limit.assert_not_awaited()
+
+    async def test_refresh_skips_fixture_not_on_current_match_day(self) -> None:
+        from app.services.fetcher import FootballFetcher
+
+        fixture = MagicMock()
+        fixture.league_id = 39
+        fixture.date = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+            hours=2
+        )
+        fixture.match_day = "2026-08-30"
+        league = MagicMock(is_catalog=True)
+        session = AsyncMock()
+        session.get = AsyncMock(side_effect=[fixture, league])
+        fetcher = FootballFetcher.__new__(FootballFetcher)
+        fetcher.session = session
+        fetcher.cache = MagicMock()
+        fetcher._fetch_odds_with_rate_limit = AsyncMock()
+
+        with (
+            patch(
+                "app.services.league_catalog.allowed_league_ids",
+                AsyncMock(return_value={39}),
+            ),
+            patch(
+                "app.services.match_day.current_prematch_match_day",
+                AsyncMock(return_value="2026-08-29"),
+            ),
+        ):
+            updated = await FootballFetcher.refresh_odds_for_fixture(fetcher, 44)
+
         self.assertFalse(updated)
         fetcher._fetch_odds_with_rate_limit.assert_not_awaited()
 

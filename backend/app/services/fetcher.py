@@ -25,6 +25,8 @@ from app.services.league_catalog import (
 )
 from app.services.league_names import league_name_zh
 from app.services.match_day import (
+    current_prematch_match_day,
+    fixture_match_day,
     fixture_match_day_expr,
     infer_team_timezone,
     resolve_match_day,
@@ -1317,8 +1319,11 @@ class FootballFetcher:
     async def refresh_odds_for_fixture(
         self,
         fixture_id: int,
+        *,
+        restrict_to_current_match_day: bool = True,
     ) -> bool:
         """Pull odds only while the fixture is still a verified prematch."""
+        from app.services.league_catalog import allowed_league_ids
         from app.services.prematch_package import parse_odds_payload
         from app.services.odds_snapshot import is_fixture_prematch
 
@@ -1343,6 +1348,20 @@ class FootballFetcher:
                 getattr(fixture, "date", None),
             )
             return False
+        if restrict_to_current_match_day:
+            today = await current_prematch_match_day(
+                self.session,
+                league_ids=await allowed_league_ids(self.session),
+            )
+            if not today or fixture_match_day(fixture) != today:
+                logger.warning(
+                    "Skip official odds pull outside current match day "
+                    "fixture=%s match_day=%s current=%s",
+                    fixture_id,
+                    fixture_match_day(fixture),
+                    today,
+                )
+                return False
         await self.cache.delete(odds_cache_key(fixture_id))
         raw = await self._fetch_odds_with_rate_limit(fixture_id)
         parsed = parse_odds_payload(raw)
@@ -1734,7 +1753,10 @@ class FootballFetcher:
                 )
                 break
             try:
-                if await self.refresh_odds_for_fixture(fixture_id):
+                if await self.refresh_odds_for_fixture(
+                    fixture_id,
+                    restrict_to_current_match_day=False,
+                ):
                     updated += 1
             except Exception as exc:
                 logger.warning("Fixture odds %s failed: %s", fixture_id, exc)
@@ -1804,7 +1826,10 @@ class FootballFetcher:
             fixture_id = int(fixture.id)
             attempted += 1
             try:
-                if await self.refresh_odds_for_fixture(fixture_id):
+                if await self.refresh_odds_for_fixture(
+                    fixture_id,
+                    restrict_to_current_match_day=False,
+                ):
                     updated += 1
             except Exception as exc:
                 logger.warning(

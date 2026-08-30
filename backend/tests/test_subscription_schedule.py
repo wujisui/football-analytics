@@ -188,10 +188,13 @@ def test_subscribed_full_batch_only_fetches_missing_future_days() -> None:
         assert fetcher.sync_odds_for_dates.await_count == 2
         future_call, today_call = fetcher.sync_odds_for_dates.await_args_list
         future_days = future_call.args[0]
-        assert len(future_days) == fs.FULL_BATCH_FUTURE_ODDS_DAYS
-        assert future_days[0] + timedelta(days=2) == future_days[-1]
+        assert future_days == [
+            ODDS_TODAY + timedelta(days=offset)
+            for offset in range(1, fs.FULL_BATCH_FUTURE_ODDS_DAYS + 1)
+        ]
         assert future_call.kwargs["refresh_existing"] is False
         assert future_call.kwargs["league_ids"] == [39, 140]
+        assert today_call.args[0] == [ODDS_TODAY]
         assert today_call.kwargs["refresh_existing"] is True
         assert today_call.kwargs["league_ids"] == [39, 140]
         detail.assert_awaited_once()
@@ -244,6 +247,7 @@ def test_light_batch_only_refreshes_today_odds() -> None:
         fetcher.capture_finished_results.assert_not_awaited()
         fetcher.fetch_fixtures_for_date.assert_not_awaited()
         fetcher.sync_odds_for_dates.assert_awaited_once()
+        assert fetcher.sync_odds_for_dates.await_args.args[0] == [ODDS_TODAY]
         assert fetcher.sync_odds_for_dates.await_args.kwargs["refresh_existing"] is True
         assert fetcher.sync_odds_for_dates.await_args.kwargs["league_ids"] == [39, 140]
     finally:
@@ -385,7 +389,7 @@ def test_results_batch_only_captures_scores() -> None:
         assert result["odds_updated"] == 0
         fetcher.capture_finished_results.assert_awaited_once()
         on_days = fetcher.capture_finished_results.await_args.kwargs["on_days"]
-        assert len(on_days) == 2
+        assert on_days == [ODDS_TODAY - timedelta(days=1), ODDS_TODAY]
         fetcher.fetch_fixtures_for_date.assert_not_awaited()
         fetcher.sync_odds_for_dates.assert_not_awaited()
         auto_fav.assert_not_awaited()

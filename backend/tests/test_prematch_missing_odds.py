@@ -112,7 +112,11 @@ class PrematchBatchOddsTests(unittest.TestCase):
                 session.add(PreMatchData(fixture_id=48002, odds_json=_odds_json()))
                 await session.commit()
 
-                async def fake_refresh(fixture_id: int) -> bool:
+                async def fake_refresh(
+                    fixture_id: int,
+                    *,
+                    restrict_to_current_match_day: bool = True,
+                ) -> bool:
                     row = await session.scalar(
                         select(PreMatchData).where(
                             PreMatchData.fixture_id == fixture_id
@@ -143,7 +147,11 @@ class PrematchBatchOddsTests(unittest.TestCase):
                 self.assertEqual(report["updated"], 3)
                 self.assertEqual(
                     fetcher.refresh_odds_for_fixture.await_args_list,
-                    [call(48001), call(48002), call(49001)],
+                    [
+                        call(48001, restrict_to_current_match_day=False),
+                        call(48002, restrict_to_current_match_day=False),
+                        call(49001, restrict_to_current_match_day=False),
+                    ],
                 )
             await engine.dispose()
 
@@ -197,7 +205,7 @@ class PrematchBatchOddsTests(unittest.TestCase):
                 self.assertEqual(report["candidates"], 1)
                 self.assertEqual(
                     fetcher.refresh_odds_for_fixture.await_args_list,
-                    [call(1)],
+                    [call(1, restrict_to_current_match_day=False)],
                 )
             await engine.dispose()
 
