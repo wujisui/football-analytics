@@ -229,7 +229,7 @@ defineExpose({ openFormula, openDetails })
           :show-button="!props.footerOnly"
           button-placement="both"
         >
-          <template #prefix>倍数</template>
+          <template #suffix>倍</template>
         </n-input-number>
         <n-button
           class="save-button"
