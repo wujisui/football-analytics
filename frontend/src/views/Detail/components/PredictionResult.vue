@@ -47,6 +47,10 @@ const recommendationTagColor = computed(() =>
 const handicapTagColor = computed(() =>
   wdlTagColor(leanWdlTone(handicapLabel.value)),
 )
+const matchupText = computed(
+  () =>
+    `${props.fixture.home_team_name || '—'} vs ${props.fixture.away_team_name || '—'}`,
+)
 
 </script>
 
@@ -66,9 +70,15 @@ const handicapTagColor = computed(() =>
         title="赛前结果预测"
         class="panel"
       >
+        <template #header-extra>
+          <n-text depth="3" class="matchup">{{ matchupText }}</n-text>
+        </template>
         <AlgorithmPredictionCard :fixture="fixture" />
       </n-card>
       <n-card v-else size="small" title="算法原始预测" class="panel">
+        <template #header-extra>
+          <n-text depth="3" class="matchup">{{ matchupText }}</n-text>
+        </template>
         <div class="algo-body" :class="{ 'no-chart': !original.probabilitiesAvailable }">
           <div class="algo-copy">
             <div class="rec">
@@ -117,6 +127,9 @@ const handicapTagColor = computed(() =>
       </n-card>
 
       <n-card size="small" class="panel" :title="explanation.title">
+        <template #header-extra>
+          <n-text depth="3" class="matchup">{{ matchupText }}</n-text>
+        </template>
         <div class="explain">
           <p
             v-for="(p, idx) in explanation.paragraphs"
@@ -192,6 +205,15 @@ const handicapTagColor = computed(() =>
 .panel {
   background: var(--fa-bg-elevated);
   min-height: 0;
+}
+
+.matchup {
+  display: block;
+  max-width: min(46vw, 220px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
 .rec {
