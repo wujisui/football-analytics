@@ -16,6 +16,7 @@ from app.tasks.scheduler import (
     UNSUBSCRIBED_ODDS_HOURS,
     odds_job_id,
     register_jobs,
+    run_daily_full_sync,
     scheduler,
 )
 
@@ -105,17 +106,14 @@ def test_subscribed_dense_jobs_run_continuously() -> None:
 
 
 def test_1055_dense_refresh_runs_after_full_batch() -> None:
-    from app.tasks import scheduler as scheduler_module
-
     run_sync = AsyncMock()
 
     async def _run() -> None:
-        with patch.object(
-            scheduler_module,
-            "run_scheduled_fixtures_sync",
+        with patch(
+            "app.tasks.scheduler.run_scheduled_fixtures_sync",
             run_sync,
         ):
-            await scheduler_module.run_daily_full_sync(include_dense_odds=True)
+            await run_daily_full_sync(include_dense_odds=True)
 
     asyncio.run(_run())
     assert run_sync.await_count == 2

@@ -858,6 +858,17 @@ class AnalyzerService:
                     "%s package fetch failed for %s: %s", label, fixture.id, exc
                 )
 
+        # 初盘 / 中盘 / 临场只由同步批次按采集时刻冻结落库，补包路径从不重拉。
+        # 放在拉取之后带过来，既接住本趟刚冻结的初盘，也避免详情与盘口解释
+        # 只剩即时盘一档。
+        stored = await self._get_stored_pre_match_row(fixture.id)
+        if stored is not None:
+            frozen = package_from_record(stored, match_start_time=fixture.date)
+            for stage_key in ("odds_opening", "odds_mid", "odds_late"):
+                board = frozen.get(stage_key)
+                if isinstance(board, dict) and board.get("available"):
+                    package[stage_key] = board
+
         return package
 
     def _analysis_refresh_ttl(self, fixture: Fixture) -> int | None:

@@ -2,6 +2,7 @@
 
 import unittest
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.odds_snapshot import (
@@ -128,6 +129,66 @@ class PackageFromRecordTests(unittest.TestCase):
         package = package_from_record(stored, match_start_time=KICKOFF)
         self.assertFalse(package["odds"].get("available"))
         self.assertTrue(package["odds_opening"].get("available"))
+
+
+class CollectPackageFrozenBoardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_enriched_package_keeps_frozen_opening_board(self) -> None:
+        """补包只拉即时盘：冻结的初盘必须从本地行带进展示包。"""
+        import json
+
+        from app.services.analyzer import AnalyzerService
+
+        stored = MagicMock()
+        stored.fixture_id = 77
+        stored.fixture = MagicMock(date=KICKOFF)
+        stored.odds_json = None
+        stored.odds_opening_json = json.dumps(
+            {
+                "available": True,
+                "captured_at": _iso(KICKOFF - timedelta(days=1)),
+                "match_winner": {"home": "1.97", "draw": "3.50", "away": "3.60"},
+            }
+        )
+        for attr in (
+            "odds_mid_json",
+            "odds_late_json",
+            "lineups_json",
+            "injuries_json",
+            "briefing_json",
+            "h2h_json",
+            "home_form_json",
+            "away_form_json",
+            "standings_json",
+            "home_formation",
+            "away_formation",
+        ):
+            setattr(stored, attr, None)
+
+        service = AnalyzerService.__new__(AnalyzerService)
+        service.session = AsyncMock()
+        service.cache = MagicMock()
+        service._get_stored_pre_match_row = AsyncMock(return_value=stored)
+        service._fetch_odds_for_package = AsyncMock()
+
+        fixture = SimpleNamespace(
+            id=77,
+            league_id=39,
+            home_team_id=1,
+            away_team_id=2,
+            date=KICKOFF,
+            league=SimpleNamespace(name="英超", season="2026"),
+        )
+
+        with patch(
+            "app.services.analyzer.resolve_fixture_standings",
+            AsyncMock(return_value={"available": True, "fetched": True}),
+        ):
+            package = await AnalyzerService._collect_prematch_package(
+                service, AsyncMock(), fixture, 60
+            )
+
+        self.assertTrue(package["odds_opening"].get("available"))
+        self.assertFalse(package["odds"].get("available"))
 
 
 class RefreshGuardTests(unittest.IsolatedAsyncioTestCase):
