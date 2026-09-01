@@ -131,13 +131,6 @@ class DailyRecommendationPick:
     conflict_detail: str = ""
 
 
-def _count_matches_by_day(matches: list[MatchPipelineInput]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for match in matches:
-        counts[match.match_day] = counts.get(match.match_day, 0) + 1
-    return counts
-
-
 def log_sync_summary(
     *,
     total_matches: int,
@@ -476,11 +469,9 @@ def select_daily_picks_by_match_day(
     *,
     limit_per_day: int = AUTO_PICK_LIMIT,
     skip_fixture_ids: set[int] | None = None,
-    matches_count_by_day: dict[str, int] | None = None,
 ) -> list[DailyRecommendationPick]:
     """Keep one market per fixture, up to the daily venue-local quota."""
     skip = skip_fixture_ids or set()
-    day_totals = matches_count_by_day or {}
     by_day: dict[str, list[DailyRecommendationPick]] = {}
     for pick in picks:
         by_day.setdefault(pick.match_day, []).append(pick)
@@ -489,12 +480,10 @@ def select_daily_picks_by_match_day(
     selected_fixture_ids: set[int] = set()
     for day in sorted(by_day):
         day_picks = sorted(by_day[day], key=pick_rank_key)
-        day_total = int(day_totals.get(day, 0))
-        day_limit = (
-            limit_per_day
-            if day_total >= MIN_MATCHES_FOR_FULL_QUOTA
-            else len(day_picks)
-        )
+        # `MIN_MATCHES_FOR_FULL_QUOTA` 只决定「选不满要不要告警」，不放宽上限。
+        # 曾写成候选少时 day_limit = len(day_picks)，等于在清淡日取消配额：09-03
+        # 只有 5 场进管线，5 个候选全部入池，超出每日 4 场。
+        day_limit = min(limit_per_day, len(day_picks))
         count = 0
         # Ranking by risk-adjusted return is the only cross-fixture criterion:
         # a per-market quota would let a lower-scoring candidate displace a
@@ -532,8 +521,6 @@ def run_pipeline(
     both_score_lean_by_fixture = {
         match.fixture_id: match.both_score_lean for match in matches
     }
-    matches_count_by_day = _count_matches_by_day(matches)
-
     processed: list[PipelineMatchResult] = []
     for match in matches:
         result = process_match(match, artifact=artifact)
@@ -589,7 +576,6 @@ def run_pipeline(
         picks,
         limit_per_day=limit_per_day,
         skip_fixture_ids=skip_fixture_ids,
-        matches_count_by_day=matches_count_by_day,
     )
 
     ratings = within_day_quality_ratings(

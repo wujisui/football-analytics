@@ -15,7 +15,6 @@ from app.services.recommendation.pipeline import (
     process_match,
     run_pipeline,
     select_daily_picks_by_match_day,
-    MIN_MATCHES_FOR_FULL_QUOTA,
 )
 
 
@@ -472,7 +471,6 @@ def test_select_daily_picks_respects_match_day_buckets() -> None:
     selected = select_daily_picks_by_match_day(
         picks,
         limit_per_day=1,
-        matches_count_by_day={"2026-08-28": 10, "2026-08-29": 10},
     )
     assert {pick.fixture_id for pick in selected} == {1, 3}
 
@@ -517,7 +515,6 @@ def test_daily_four_follows_pure_score_order_across_markets() -> None:
     selected = select_daily_picks_by_match_day(
         picks,
         limit_per_day=4,
-        matches_count_by_day={"2026-08-28": 6},
     )
 
     # No per-market quota: a lower-scoring 1X2 candidate must never displace a
@@ -560,59 +557,47 @@ def test_same_fixture_cannot_occupy_two_slots_with_both_markets() -> None:
     selected = select_daily_picks_by_match_day(
         picks,
         limit_per_day=4,
-        matches_count_by_day={"2026-08-28": 10},
     )
 
     assert [pick.fixture_id for pick in selected] == [1, 2, 3, 4]
     assert selected[0].market == "ah"
 
 
-def test_select_daily_picks_outputs_all_when_day_total_below_six() -> None:
-    picks = [
-        DailyRecommendationPick(
-            fixture_id=1,
-            league_id=39,
-            kickoff=datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc),
-            match_day="2026-08-28",
-            market="1x2",
-            lean="胜",
-            recommended_choice="home",
-            ev=0.20,
-            confidence=0.56,
-            reason="置信度最高",
-            decimal_odd=2.0,
-            raw_confidence=0.50,
-            calibrated_home_prob=0.56,
-            calibrated_draw_prob=0.24,
-            calibrated_away_prob=0.20,
-            reliability=0.7,
-            sample_size=100,
-            score=0.20,
-        ),
-        DailyRecommendationPick(
-            fixture_id=2,
-            league_id=39,
-            kickoff=datetime(2026, 8, 28, 14, 0, tzinfo=timezone.utc),
-            match_day="2026-08-28",
-            market="1x2",
-            lean="胜",
-            recommended_choice="home",
-            ev=0.10,
-            confidence=0.56,
-            reason="置信度最高",
-            decimal_odd=2.0,
-            raw_confidence=0.50,
-            calibrated_home_prob=0.56,
-            calibrated_draw_prob=0.24,
-            calibrated_away_prob=0.20,
-            reliability=0.7,
-            sample_size=100,
-            score=0.10,
-        ),
-    ]
-    selected = select_daily_picks_by_match_day(
-        picks,
-        limit_per_day=4,
-        matches_count_by_day={"2026-08-28": MIN_MATCHES_FOR_FULL_QUOTA - 1},
+def test_quiet_day_still_caps_at_the_daily_limit() -> None:
+    """清淡日不放宽上限。
+
+    曾按「当日进管线场次 < MIN_MATCHES_FOR_FULL_QUOTA 就取全部候选」处理，等于在
+    清淡日取消配额：09-03 只有 5 场有盘口，5 个候选全部入池，超出每日 4 场。
+    该常量只决定选不满要不要告警。
+    """
+    base = DailyRecommendationPick(
+        fixture_id=1,
+        league_id=39,
+        kickoff=datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc),
+        match_day="2026-08-28",
+        market="1x2",
+        lean="胜",
+        recommended_choice="home",
+        ev=0.20,
+        confidence=0.56,
+        reason="置信度最高",
+        decimal_odd=2.0,
+        raw_confidence=0.50,
+        calibrated_home_prob=0.56,
+        calibrated_draw_prob=0.24,
+        calibrated_away_prob=0.20,
+        reliability=0.7,
+        sample_size=100,
+        score=0.20,
     )
-    assert len(selected) == 2
+    picks = [
+        replace(base, fixture_id=fixture_id, score=0.20 - fixture_id / 100)
+        for fixture_id in range(1, 6)
+    ]
+
+    selected = select_daily_picks_by_match_day(picks, limit_per_day=4)
+
+    assert [pick.fixture_id for pick in selected] == [1, 2, 3, 4]
+
+    # 候选真的不足 4 场时按实际数量给，不硬塞。
+    assert len(select_daily_picks_by_match_day(picks[:2], limit_per_day=4)) == 2

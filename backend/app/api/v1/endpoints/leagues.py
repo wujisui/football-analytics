@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.http_cache import set_no_store_headers
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.models.favorite_fixture import FAVORITE_SOURCE_AUTO, FavoriteFixture
 from app.models.fixture import Fixture
 from app.models.league import League
 from app.schemas.response import (
@@ -21,6 +22,7 @@ from app.services.league_catalog import (
     allowed_league_ids,
     catalog_leagues,
 )
+from app.services.favorites import is_stale_ah_push_row
 from app.services.league_names import league_name_zh
 from app.services.match_day import fixture_match_day_expr
 from app.services.results_capture import prematch_list_clause, results_list_clause
@@ -161,6 +163,12 @@ async def get_league_filter_options(
             settings=settings,
         )
 
+    # 日推池按目录联赛选（所有 is_catalog 都拉盘口），而默认勾选只认热门。两套
+    # 范围不一致时，落在未勾热门目录联赛上的 [荐] 会被默认筛选整场藏掉，用户看到
+    # 的推荐数少于实际选出的数量（真实案例：09-01 推 4 场，其中德国杯不在热门，
+    # 列表只剩 3 场）。这里把带 [荐] 的联赛一并默认勾上，分组仍归「其他」。
+    auto_pick_league_ids = await _auto_pick_league_ids(db, day, end_day)
+
     configured: list[LeagueFilterOptionResponse] = []
     extra: list[LeagueFilterOptionResponse] = []
     for league_id in sorted(playing_ids):
@@ -171,8 +179,8 @@ async def get_league_filter_options(
             country=_country(league_id),
             fixtures_count=local_counts.get(league_id, 0),
             tier=tier,
-            # Lists default to primary (configured) leagues only.
-            default_checked=tier == "configured",
+            # 默认勾热门，外加当日有 [荐] 的联赛，保证日推不被筛选藏掉。
+            default_checked=tier == "configured" or league_id in auto_pick_league_ids,
         )
         (configured if tier == "configured" else extra).append(option)
 
@@ -181,6 +189,29 @@ async def get_league_filter_options(
         configured=configured,
         extra=extra,
     )
+
+
+async def _auto_pick_league_ids(
+    db: AsyncSession,
+    day: date,
+    end_day: date,
+) -> set[int]:
+    """Leagues holding a visible `[荐]` fixture in the checklist window."""
+    day_expr = fixture_match_day_expr()
+    rows = await db.execute(
+        select(Fixture.league_id, FavoriteFixture)
+        .join(FavoriteFixture, FavoriteFixture.fixture_id == Fixture.id)
+        .where(
+            FavoriteFixture.source == FAVORITE_SOURCE_AUTO,
+            day_expr >= day.isoformat(),
+            day_expr < end_day.isoformat(),
+        )
+    )
+    return {
+        int(league_id)
+        for league_id, fav in rows.all()
+        if league_id is not None and not is_stale_ah_push_row(fav)
+    }
 
 
 @router.get("", response_model=LeaguesListResponse)
