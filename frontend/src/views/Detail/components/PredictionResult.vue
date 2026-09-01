@@ -64,22 +64,16 @@ const matchupText = computed(
     </div>
 
     <div class="compare-grid">
-      <n-card
-        v-if="isFinished"
-        size="small"
-        title="赛前结果预测"
-        class="panel"
-      >
+      <n-card size="small" title="赛前结果预测" class="panel">
         <template #header-extra>
           <n-text depth="3" class="matchup">{{ matchupText }}</n-text>
         </template>
-        <AlgorithmPredictionCard :fixture="fixture" />
-      </n-card>
-      <n-card v-else size="small" title="算法原始预测" class="panel">
-        <template #header-extra>
-          <n-text depth="3" class="matchup">{{ matchupText }}</n-text>
-        </template>
-        <div class="algo-body" :class="{ 'no-chart': !original.probabilitiesAvailable }">
+        <AlgorithmPredictionCard v-if="isFinished" :fixture="fixture" />
+        <div
+          v-else
+          class="algo-body"
+          :class="{ 'no-chart': !original.probabilitiesAvailable }"
+        >
           <div class="algo-copy">
             <div class="rec">
               推荐
@@ -102,6 +96,9 @@ const matchupText = computed(
               </n-tag>
             </div>
             <p v-if="handicapMarketNote" class="handicap-note">{{ handicapMarketNote }}</p>
+            <p v-if="original.probabilitiesAvailable" class="prob-source">
+              胜平负概率为主盘赔率去水后的市场定价
+            </p>
             <ul v-if="original.probabilitiesAvailable" class="rows">
               <li class="tone-win">主胜 {{ toPercent(original.home_win_prob) }}</li>
               <li class="tone-draw">平局 {{ toPercent(original.draw_prob) }}</li>
@@ -235,6 +232,13 @@ const matchupText = computed(
 
 .handicap-note {
   margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fa-text-faint);
+}
+
+.prob-source {
+  margin: 0 0 6px;
   font-size: 12px;
   line-height: 1.45;
   color: var(--fa-text-faint);
