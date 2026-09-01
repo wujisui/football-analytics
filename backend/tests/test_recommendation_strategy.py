@@ -45,8 +45,9 @@ def test_risk_score_keeps_even_money_reachable() -> None:
 
     概率来自去水市场（``p ≈ 1 / 赔率``）时下列候选 EV 全为 0，唯一差别是水位。
     ``e = 0.5`` 的极大值落在 2.00；一旦压低幂次，净赔率 < 1 的低赔候选会被整体
-    抬分并压平原始分差，历史权重就能挤掉高概率的 1.9 档候选。命中率偏好靠
-    ``MIN_DAILY_CONFIDENCE`` 下限实现，不靠压这个幂次。
+    抬分并压平原始分差，历史权重就能挤掉高概率的 1.9 档候选。命中率偏好不靠压这个
+    幂次：让球两侧走 ``pipeline._to_ah_picks`` 的同盘命中率闸，独赢走
+    ``MIN_DAILY_CONFIDENCE`` 下限。
     """
     fair = {
         1.15: risk_adjusted_return_score(1 / 1.15, 1.15),

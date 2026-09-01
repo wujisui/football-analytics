@@ -11,6 +11,7 @@ from app.services.auto_favorites import (
     _market_candidates,
     within_day_quality_ratings,
 )
+from app.services.favorites import is_stale_ah_push_row
 
 
 def _stored(**kwargs):
@@ -241,3 +242,46 @@ def test_within_day_ratings_equal_scores_all_five() -> None:
     picks = [pick(1, "2026-08-12T12:00:00"), pick(2, "2026-08-12T13:00:00")]
     ratings = within_day_quality_ratings(picks)
     assert ratings == {1: 5.0, 2: 5.0}
+
+
+def test_stale_ah_push_is_hidden_from_either_lean_column() -> None:
+    """Read-path hide covers both pre-split auto_lean and post-split handicap lean."""
+
+    old_column = SimpleNamespace(
+        auto_market="ah",
+        auto_lean="让平(0)",
+        auto_handicap_lean=None,
+    )
+    new_column = SimpleNamespace(
+        auto_market="ah",
+        auto_lean="胜",
+        auto_handicap_lean="让平(0)",
+    )
+    live_cover = SimpleNamespace(
+        auto_market="ah",
+        auto_lean="胜",
+        auto_handicap_lean="让胜(-0.5)",
+    )
+    level_cover = SimpleNamespace(
+        auto_market="ah",
+        auto_lean="胜",
+        auto_handicap_lean="让胜(0)",
+    )
+    moneyline = SimpleNamespace(
+        auto_market="1x2",
+        auto_lean="胜",
+        auto_handicap_lean="让胜(0)",
+    )
+    dual = SimpleNamespace(
+        auto_market="ah",
+        auto_lean="胜",
+        auto_handicap_lean="让胜/平(-1)",
+    )
+
+    assert is_stale_ah_push_row(old_column) is True
+    assert is_stale_ah_push_row(new_column) is True
+    assert is_stale_ah_push_row(live_cover) is False
+    assert is_stale_ah_push_row(level_cover) is False
+    assert is_stale_ah_push_row(moneyline) is False
+    assert is_stale_ah_push_row(dual) is False
+

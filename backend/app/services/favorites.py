@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,23 @@ from app.schemas.response import FavoriteFixtureResponse
 from app.services.ah_features import handicap_pick_from_lean
 from app.services.match_day import fixture_match_day
 from app.services.user_scope import ANON_OWNER_ID, normalize_owner_id, owner_is
+
+
+def is_stale_ah_push_row(row: Any) -> bool:
+    """True when an auto-pick row is a leftover standalone AH push.
+
+    Independent 「让平」 was excluded from generation; leftover rows may still
+    sit in ``favorite_fixtures`` until the next ranking pass deletes them.
+    Before the lean split the push lived in ``auto_lean``; afterwards it lives
+    in ``auto_handicap_lean``. Hide either form.
+    """
+    if getattr(row, "auto_market", None) != "ah":
+        return False
+    return (
+        handicap_pick_from_lean(getattr(row, "auto_lean", None)) == "让平"
+        or handicap_pick_from_lean(getattr(row, "auto_handicap_lean", None))
+        == "让平"
+    )
 
 
 def _utc_now() -> datetime:
@@ -215,14 +233,7 @@ async def list_auto_pick_responses(
     ).scalars().all()
     # Hide stale rows written before standalone AH pushes were excluded from
     # auto-pick generation. The next ranking pass deletes/replaces them.
-    fav_rows = [
-        row
-        for row in fav_rows
-        if not (
-            row.auto_market == "ah"
-            and handicap_pick_from_lean(row.auto_lean) == "让平"
-        )
-    ]
+    fav_rows = [row for row in fav_rows if not is_stale_ah_push_row(row)]
     return await _hydrate_favorite_responses(
         db, fav_rows, handicap_ruleset=handicap_ruleset
     )

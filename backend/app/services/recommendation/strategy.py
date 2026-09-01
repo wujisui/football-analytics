@@ -18,7 +18,9 @@ OUTCOMES = ("home", "draw", "away")
 # 保持 e = 0.5 让 2.00 附近仍可入选：降幂次会整体抬高净赔率 < 1 的低赔候选
 # （0.52 的立方根比平方根高约 11%，0.93 只高约 1.2%），把各候选原始分压平，
 # 历史 EMA 与联赛软权重因此更容易反超，反而挤掉高概率的 1.9 档候选。
-# 要偏向命中率就调 ``MIN_DAILY_CONFIDENCE`` 下限，不要压这个幂次。
+# 幂次不是命中率旋钮，压它只会同时改甜点与压平分差。命中率偏好一律在打分之前
+# 表达：让球两侧走 ``pipeline._to_ah_picks`` 的同盘命中率闸，独赢走
+# ``MIN_DAILY_CONFIDENCE`` 下限。
 PAYOUT_EXPONENT = 0.5
 # 平局本身概率低、方差大，即便偶尔算出正 EV 也会拖垮日推整体中奖率，
 # 因此日推只在主客两侧里选，平局仍参与 EV 计算供审计与解释使用。
@@ -71,6 +73,12 @@ def risk_adjusted_return_score(
     already lowers ``decimal_odd``. Scaling by the at-risk share on top of that
     would penalise refund protection a second time and bias the ranking toward
     higher-variance full-stake bets.
+
+    This score cannot express a hit-rate preference between the two sides of one
+    two-way board. With ``p ≈ 1 / decimal_odd`` it reduces to ``√(p(1-p))``,
+    which is symmetric about 0.5, so 让胜 0.519 and 让负 0.481 score identically
+    on the probability term and only the bookmaker margin separates them. Gate
+    the side upstream (``pipeline._to_ah_picks``); never expect this function to.
     """
     probability = max(0.0, min(1.0, float(calibrated_prob)))
     net_payout = max(0.0, float(decimal_odd) - 1.0)

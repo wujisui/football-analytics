@@ -69,6 +69,8 @@ MARKET_1X2 = "1x2"
 MARKET_AH = "ah"
 OUTCOME_TO_LEAN = {"home": "胜", "away": "负"}
 MIN_MATCHES_FOR_FULL_QUOTA = 6
+# 两侧命中率相差在此以内视为同档，交回基础分按回报决胜。
+AH_SIDE_TIE_EPSILON = 1e-9
 
 
 @dataclass(frozen=True)
@@ -347,16 +349,35 @@ def _to_ah_picks(
     if line is None or home_odd is None or away_odd is None:
         return []
     fair_home, fair_away = _two_way_fair_probs(home_odd, away_odd)
-    picks: list[DailyRecommendationPick] = []
-    for side, decimal_odd, market_probability in (
-        ("home", home_odd, fair_home),
-        ("away", away_odd, fair_away),
-    ):
+    odd_by_side = {"home": home_odd, "away": away_odd}
+    fair_by_side = {"home": fair_home, "away": fair_away}
+    measured: dict[str, tuple[float, float, float]] = {}
+    for side in ("home", "away"):
         probability = _ah_side_probability(side=side, line=line, result=result)
         if probability is None:
             continue
         raw_confidence, stake_share = probability
-        confidence = calibrate_probability(market_artifact, MARKET_AH, raw_confidence)
+        measured[side] = (
+            raw_confidence,
+            stake_share,
+            calibrate_probability(market_artifact, MARKET_AH, raw_confidence),
+        )
+    if not measured:
+        return []
+    # 命中率是下限，回报只在存活侧之间比：让球盘两侧的条件命中概率之和恒为 1
+    # （退半与走水已计入条件概率），所以「只留命中率更高的一侧」等价于「只买过半
+    # 的那一侧」。这道闸必须在算基础分之前：``p × 净赔率 ** e`` 代入去水概率
+    # ``p ≈ 1 / 赔率`` 后正比于 ``√(p(1-p))``，关于 0.5 对称，对「哪侧更可能赢」
+    # 不敏感，两选一盘上真正决定排序的只剩抽水差，于是会系统性买进水位更高的
+    # 低概率侧（主胜 51.9% 却推 48.1% 的让负）。
+    best_hit_rate = max(hit_rate for _, _, hit_rate in measured.values())
+    picks: list[DailyRecommendationPick] = []
+    for side, (raw_confidence, stake_share, hit_rate) in measured.items():
+        if hit_rate < best_hit_rate - AH_SIDE_TIE_EPSILON:
+            continue
+        decimal_odd = odd_by_side[side]
+        market_probability = fair_by_side[side]
+        confidence = hit_rate
         # The AH model has not shown a stable time-holdout edge. Treat a gap
         # above the market as uncertainty and keep only half of it.
         if confidence > market_probability:

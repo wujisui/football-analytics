@@ -174,6 +174,58 @@ def test_equivalent_half_ball_keeps_the_higher_quote_despite_market_feedback(
     )
 
 
+def test_shallow_board_never_buys_the_lower_probability_side(monkeypatch) -> None:
+    """复现布拉加：主胜 51.9% 时不得推对面 48.1% 的高水让负。
+
+    让球盘两侧的条件命中概率之和恒为 1，而基础分 ``p × 净赔率 ** e`` 代入去水
+    概率后正比于 ``√(p(1-p))``，关于 0.5 对称。让胜 0.519 与让负 0.481 的概率项
+    实测完全相等（各 0.249639），排序只剩抽水差（让胜 -3.0% / 让负 -1.8%），
+    没有这道闸就会买进水位更高的低概率侧。
+    """
+    match = MatchPipelineInput(
+        fixture_id=1,
+        league_id=94,
+        kickoff=datetime(2026, 8, 28, 15, 0, tzinfo=timezone.utc),
+        match_day="2026-08-28",
+        odds={
+            "available": True,
+            "match_winner": {"home": 1.85, "draw": 3.60, "away": 4.60},
+            "asian_handicap": {"line": "-0.5", "home": 1.869, "away": 2.042},
+        },
+        goal_lean="小(2.5)",
+        both_score_lean="双进:否",
+    )
+    processed = replace(
+        _processed(1, choice="home", confidence=0.519),
+        calibration={
+            "match_id": 1,
+            "calibrated_home_prob": 0.519,
+            "calibrated_draw_prob": 0.272,
+            "calibrated_away_prob": 0.209,
+            "reliability": 0.7,
+            "sample_size": 100,
+            "calibration_bias": {"home": 0.0, "draw": 0.0, "away": 0.0},
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        lambda _match, *, artifact=None: processed,
+    )
+
+    result = run_pipeline(
+        [match],
+        artifact={},
+        market_artifact={},
+        limit_per_day=4,
+    )
+
+    assert result["selected_count"] == 1
+    selected = result["selected"][0]
+    assert selected["market"] == "ah"
+    assert selected["lean"] == "让胜(-0.5)"
+    assert selected["handicap_lean"] == "让胜(-0.5)"
+
+
 def test_quarter_ball_refund_survives_adverse_market_feedback() -> None:
     """复现浦和红钻：让胜(-0.25) 的退半兜底不能被玩法历史权重翻掉。
 

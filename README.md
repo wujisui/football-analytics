@@ -106,6 +106,32 @@ npm run dev
 
 **前端**：Vue 3 · Vite · TypeScript · Naive UI · ECharts · Axios · Vue Router
 
+## 部署
+- 项目根目录执行，打包整个项目
+tar -czvf football-analytics_$(date +%Y%m%d_%H%M%S).tar.gz \
+--exclude="backend/.venv" \
+--exclude="backend/__pycache__" \
+--exclude="backend/data/*.db" \
+--exclude="backend/data/models/*" \
+--exclude="backend/logs/*" \
+--exclude="backend/.env" \
+--exclude="frontend/node_modules" \
+--exclude="frontend/dist" \
+--exclude=".git" \
+football-analytics/
+
+- 服务器上
+cd /var/www/football-analytics/backend
+
+- 创建虚拟环境
+python3 -m venv .venv
+
+- 激活
+source .venv/bin/activate
+
+- 安装依赖
+pip install -r requirements.txt
+
 ## 许可证
 
 私有项目，仅供学习与内部使用。
