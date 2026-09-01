@@ -80,11 +80,13 @@ const resultsSyncDetail =
 
 const prematchOddsSummary = computed(() =>
   prematchFixtureIds.value.length
-    ? `更新【比赛】当前筛选中今天的 ${prematchFixtureIds.value.length} 场热门赛事盘口。`
+    ? `更新【比赛】当前筛选中今天的 ${prematchFixtureIds.value.length} 场未开赛盘口，并重算推荐。`
     : '当前筛选没有今天的热门未开赛赛事。',
 )
-const prematchOddsDetail =
-  '只处理【比赛】当前筛选中比赛日为今天的热门未开赛场次；明天及非热门赛事即使在列表中也排除。后端会再次校验比赛日和热门状态。已有盘口更新即时盘，没有盘口的场次补齐；不拉赛程、赛果、积分榜或详情。每场通常消耗一次官方盘口请求，尚未开盘的比赛仍可能为空。'
+const prematchOddsDetail = [
+  '更新比赛日为今天、仍未开赛的热门场次盘口，每场约一次官方请求。',
+  '成功后按新盘口重算这些场次的算法预测，并重排当天日推 [荐]；不重训模型。',
+].join('\n')
 
 const lastSyncText = computed(() => {
   if (syncing.value) return '同步进行中，完成后会全局提示'
@@ -335,7 +337,7 @@ watch(syncing, (value, previous) => {
               :loading="prematchOddsSyncing"
               @click="syncPrematchOddsOnly"
             >
-              {{ prematchOddsSyncing ? '更新中' : '更新' }}
+              {{ prematchOddsSyncing ? '更新中' : '更新盘口' }}
             </n-button>
           </template>
         </n-list-item>
@@ -355,6 +357,8 @@ watch(syncing, (value, previous) => {
           <template #suffix>
             <n-button
               size="small"
+              type="primary"
+              tertiary
               :disabled="busy"
               :loading="resultsSyncing"
               @click="syncResultsOnly"

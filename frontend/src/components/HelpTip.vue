@@ -37,7 +37,7 @@ function onTriggerClick() {
         @keydown.enter="onTriggerClick"
       />
     </template>
-    {{ text }}
+    <span class="help-text">{{ text }}</span>
   </n-tooltip>
 
   <n-modal
@@ -54,11 +54,16 @@ function onTriggerClick() {
       margin: 'auto',
     }"
   >
-    <n-text depth="1" style="line-height: 1.6;">{{ text }}</n-text>
+    <n-text depth="1" class="help-text" style="line-height: 1.6;">{{ text }}</n-text>
   </n-modal>
 </template>
 
 <style scoped>
+/* 文案用换行分段，`?` 里逐条列而不是一大坨。 */
+.help-text {
+  white-space: pre-line;
+}
+
 .help-tip {
   flex-shrink: 0;
   color: var(--fa-text-secondary);
