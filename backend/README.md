@@ -312,41 +312,53 @@ python manage.py fetch-upcoming
 **API 配额不足**  
 用 `python manage.py check-quota` 查看剩余次数；缓存开启后可减少重复请求。
 
-**本机打包（项目根目录）**  
+## 代码更新打包（zip）
+
+本机只作测试，**不要把 `data/`（含 `data/models/`、SQLite）打进包**，否则会覆盖线上模型和库。包内的 `app/models/` 是表定义 `.py`，不是训练权重，必须带上。
+
+线上是 venv + systemd（`/root/update.sh`），不带 Docker 模板、测试、脚本、文档。在**仓库根目录**执行：
+
 ```powershell
 if (Test-Path football-backend.zip) { Remove-Item football-backend.zip -Force }
 tar -a -cf football-backend.zip `
   --exclude="backend/.venv" `
---exclude="backend/venv" `
+  --exclude="backend/venv" `
   --exclude="backend/__pycache__" `
---exclude="backend/**/__pycache__" `
+  --exclude="backend/**/__pycache__" `
   --exclude="backend/*.py[cod]" `
---exclude="backend/.pytest_cache" `
+  --exclude="backend/.pytest_cache" `
   --exclude="backend/.coverage" `
---exclude="backend/htmlcov" `
+  --exclude="backend/htmlcov" `
   --exclude="backend/tests" `
---exclude="backend/scripts" `
+  --exclude="backend/scripts" `
   --exclude="backend/PHASE" `
---exclude="backend/logs" `
+  --exclude="backend/logs" `
   --exclude="backend/.env" `
---exclude="backend/.env.*" `
+  --exclude="backend/.env.*" `
   --exclude="backend/secrets.local.env" `
---exclude="backend/*.local.env" `
+  --exclude="backend/*.local.env" `
   --exclude="backend/.idea" `
---exclude="backend/.vscode" `
+  --exclude="backend/.vscode" `
   --exclude="backend/data" `
---exclude="backend/README.md" `
+  --exclude="backend/README.md" `
   --exclude="backend/.gitignore" `
-backend/main.py `
+  backend/main.py `
   backend/manage.py `
-backend/requirements.txt `
-  backend/Dockerfile `
-backend/.dockerignore `
-  backend/.env.example `
-backend/app `
-backend/config
+  backend/requirements.txt `
+  backend/app `
+  backend/config
 ```
-把前/后端代码打包上传到服务器的 /root 后，SSH登录执行:
+
+打完后确认没有模型和库（应无输出）：
+
+```powershell
+tar -tf football-backend.zip | Select-String -Pattern "data/models|\.npz|\.db"
 ```
-/root/update.sh
+
+把 `football-backend.zip`（以及可选的前端 `dist.zip`）上传到服务器 `/root`，SSH 登录后：
+
+```bash
+bash /root/update.sh
 ```
+
+脚本会拦截含 `data/models` 或 `.db` 的包，再覆盖解压到 `/var/www/football-analytics`，保留线上 `.venv`、`data/`、`logs/`，并重启 `football-api`。
