@@ -11,12 +11,11 @@ from app.core.database import AsyncSessionLocal
 from app.services.data_cleanup import prune_low_value_data, slim_expired_packages
 from app.services.fixtures_sync import (
     scheduled_fixtures_sync,
-    sync_free_quota_rollover_fixtures,
+    sync_fixture_rollover_fixtures,
 )
 from app.services.cache import get_cache_service
 from app.services.runtime_settings import (
     get_subscription_dense_odds,
-    get_subscription_early_odds,
     get_subscription_enabled,
     set_last_sync_run,
 )
@@ -27,53 +26,15 @@ scheduler = AsyncIOScheduler()
 active_tasks: dict[str, dict[str, Any]] = {}
 _scheduler_started = False
 
-FULL_SYNC_HOUR = 11
+FULL_SYNC_HOUR = 10
+FULL_SYNC_MINUTE = 55
 RESULTS_SYNC_HOUR = 7
 UNSUBSCRIBED_ODDS_HOURS = (22,)
-SUBSCRIBED_EARLY_ODDS_HOURS = (4, 6, 8, 10)
-# Complete subscribed default light-odds schedule (excluding optional early slots).
-SUBSCRIBED_DEFAULT_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
-    (2, 0),
-    (11, 55),
-    (14, 0),
-    (16, 0),
-    (18, 0),
-    (20, 0),
-    (21, 0),
-    (21, 30),
-    (22, 0),
-    (22, 30),
-    (23, 0),
-    (23, 30),
-    (0, 0),
+# Dense refresh is a continuous 30-minute cycle anchored at 11:25.
+SUBSCRIBED_DENSE_ODDS_SLOTS: tuple[tuple[int, int], ...] = tuple(
+    (hour, minute) for hour in range(24) for minute in (25, 55)
 )
-# Complete subscribed dense light-odds schedule (excluding optional early slots).
-SUBSCRIBED_DENSE_ODDS_SLOTS: tuple[tuple[int, int], ...] = (
-    (2, 0),
-    (11, 55),
-    (14, 0),
-    (16, 0),
-    (16, 55),
-    (17, 25),
-    (17, 55),
-    (18, 25),
-    (18, 55),
-    (19, 25),
-    (19, 55),
-    (20, 25),
-    (20, 55),
-    (21, 25),
-    (21, 55),
-    (22, 25),
-    (22, 55),
-    (23, 25),
-    (23, 55),
-    (0, 25),
-    (0, 55),
-    (1, 25),
-    (1, 55),
-)
-FREE_QUOTA_ROLLOVER_JOB_ID = "free_quota_fixture_rollover"
+FIXTURE_ROLLOVER_JOB_ID = "fixture_rollover"
 RESULTS_SYNC_TASK = "scheduled_results_sync"
 RESULTS_SYNC_JOB_ID = "scheduled_results_sync_07"
 PREMATCH_ODDS_TASK = "prematch_odds_sync"
@@ -85,23 +46,25 @@ def odds_job_id(hour: int, minute: int = 0) -> str:
     return f"scheduled_fixtures_sync_odds_{hour:02d}"
 
 
-def subscribed_light_odds_slots(
-    *,
-    early_odds: bool,
-    dense_odds: bool = False,
-) -> list[tuple[int, int]]:
-    slots = list(
-        SUBSCRIBED_DENSE_ODDS_SLOTS
-        if dense_odds
-        else SUBSCRIBED_DEFAULT_ODDS_SLOTS
-    )
-    if early_odds:
-        slots.extend((hour, 0) for hour in SUBSCRIBED_EARLY_ODDS_HOURS)
-    return sorted(set(slots), key=lambda item: (item[0], item[1]))
-
-
 def format_clock(hour: int, minute: int = 0) -> str:
     return f"{hour:02d}:{minute:02d}"
+
+
+def uses_sparse_sync_schedule(*, subscribed: bool, dense_odds: bool) -> bool:
+    return not subscribed or not dense_odds
+
+
+def light_odds_slots(
+    *,
+    subscribed: bool,
+    dense_odds: bool,
+) -> list[tuple[int, int]]:
+    if uses_sparse_sync_schedule(
+        subscribed=subscribed,
+        dense_odds=dense_odds,
+    ):
+        return [(hour, 0) for hour in UNSUBSCRIBED_ODDS_HOURS]
+    return list(SUBSCRIBED_DENSE_ODDS_SLOTS)
 
 
 def _utc_now() -> datetime:
@@ -241,6 +204,16 @@ async def run_scheduled_results_sync() -> None:
     await run_scheduled_fixtures_sync(task_name=RESULTS_SYNC_TASK, mode="results")
 
 
+async def run_daily_full_sync(*, include_dense_odds: bool = False) -> None:
+    """Run the 10:55 full batch, then its overlapping dense refresh when enabled."""
+    await run_scheduled_fixtures_sync(mode="full")
+    if include_dense_odds:
+        await run_scheduled_fixtures_sync(
+            task_name=odds_job_id(FULL_SYNC_HOUR, FULL_SYNC_MINUTE),
+            mode="odds",
+        )
+
+
 async def run_prematch_odds_sync(fixture_ids: list[int]) -> None:
     """Admin-only odds refresh for the fixtures selected in 【比赛】."""
     await run_scheduled_fixtures_sync(
@@ -250,15 +223,15 @@ async def run_prematch_odds_sync(fixture_ids: list[int]) -> None:
     )
 
 
-async def run_free_quota_fixture_rollover() -> None:
+async def run_fixture_rollover() -> None:
     """One-call UTC-day schedule ingest; no odds or enrichment."""
     from app.services.fetcher import ApiAccountBlockedError, ApiKeyNotConfiguredError
 
-    task_name = FREE_QUOTA_ROLLOVER_JOB_ID
+    task_name = FIXTURE_ROLLOVER_JOB_ID
     _set_task_status(task_name, "running", started_at=_utc_now().isoformat())
     start_count = get_cache_service().api_request_count
     try:
-        saved = await sync_free_quota_rollover_fixtures()
+        saved = await sync_fixture_rollover_fixtures()
         from app.services.runtime_settings import touch_client_data_revision
 
         async with AsyncSessionLocal() as session:
@@ -450,10 +423,9 @@ async def trigger_task(
 def register_jobs(
     *,
     subscribed: bool | None = None,
-    early_odds: bool = True,
     dense_odds: bool = False,
 ) -> None:
-    """Register 07:00 results, 11:00 full batch, and subscription odds jobs."""
+    """Register results, the 10:55 full batch, and the selected odds schedule."""
     settings = get_settings()
     timezone = settings.SCHEDULER_TIMEZONE
     if subscribed is None:
@@ -473,26 +445,37 @@ def register_jobs(
         coalesce=True,
     )
 
-    full_job_id = "scheduled_fixtures_sync_11"
+    full_job_id = "scheduled_fixtures_sync_1055"
     scheduler.add_job(
-        run_scheduled_fixtures_sync,
-        CronTrigger(hour=FULL_SYNC_HOUR, minute=0, timezone=timezone),
+        run_daily_full_sync,
+        CronTrigger(
+            hour=FULL_SYNC_HOUR,
+            minute=FULL_SYNC_MINUTE,
+            timezone=timezone,
+        ),
         id=full_job_id,
         name=full_job_id,
-        kwargs={"mode": "full"},
+        kwargs={"include_dense_odds": bool(subscribed and dense_odds)},
         replace_existing=True,
         max_instances=1,
         coalesce=True,
     )
 
-    odds_slots: list[tuple[int, int]]
-    if subscribed:
-        odds_slots = subscribed_light_odds_slots(
-            early_odds=early_odds,
-            dense_odds=dense_odds,
-        )
-    else:
-        odds_slots = [(hour, 0) for hour in UNSUBSCRIBED_ODDS_HOURS]
+    odds_slots = light_odds_slots(
+        subscribed=bool(subscribed),
+        dense_odds=dense_odds,
+    )
+    if not uses_sparse_sync_schedule(
+        subscribed=bool(subscribed),
+        dense_odds=dense_odds,
+    ):
+        # 10:55 is executed sequentially by run_daily_full_sync so both the
+        # full batch and overlapping dense refresh run despite the global lock.
+        odds_slots = [
+            slot
+            for slot in odds_slots
+            if slot != (FULL_SYNC_HOUR, FULL_SYNC_MINUTE)
+        ]
     for hour, minute in odds_slots:
         job_id = odds_job_id(hour, minute)
         scheduler.add_job(
@@ -506,14 +489,17 @@ def register_jobs(
             coalesce=True,
         )
 
-    if scheduler.get_job(FREE_QUOTA_ROLLOVER_JOB_ID) is not None:
-        scheduler.remove_job(FREE_QUOTA_ROLLOVER_JOB_ID)
-    if not subscribed:
+    if scheduler.get_job(FIXTURE_ROLLOVER_JOB_ID) is not None:
+        scheduler.remove_job(FIXTURE_ROLLOVER_JOB_ID)
+    if uses_sparse_sync_schedule(
+        subscribed=bool(subscribed),
+        dense_odds=dense_odds,
+    ):
         scheduler.add_job(
-            run_free_quota_fixture_rollover,
+            run_fixture_rollover,
             CronTrigger(hour=0, minute=5, timezone="UTC"),
-            id=FREE_QUOTA_ROLLOVER_JOB_ID,
-            name=FREE_QUOTA_ROLLOVER_JOB_ID,
+            id=FIXTURE_ROLLOVER_JOB_ID,
+            name=FIXTURE_ROLLOVER_JOB_ID,
             replace_existing=True,
             max_instances=1,
             coalesce=True,
@@ -523,7 +509,7 @@ def register_jobs(
     if scheduler.get_job("daily_auto_favorites") is not None:
         scheduler.remove_job("daily_auto_favorites")
 
-    # Low-value cleanup runs after the 11:00 full sync (and admin「立即同步」),
+    # Low-value cleanup runs after the 10:55 full sync (and admin「立即同步」),
     # not as a separate Monday 03:00 cron — machines often off overnight.
     if scheduler.get_job("clean_old_data") is not None:
         scheduler.remove_job("clean_old_data")
@@ -532,11 +518,9 @@ def register_jobs(
 async def refresh_fixture_sync_jobs() -> bool:
     """Re-read subscription flags and rewrite fixture/odds cron slots."""
     subscribed, source = await get_subscription_enabled()
-    early_odds, _ = await get_subscription_early_odds()
     dense_odds, _ = await get_subscription_dense_odds()
     register_jobs(
         subscribed=subscribed,
-        early_odds=early_odds,
         dense_odds=dense_odds,
     )
     if _scheduler_started:
@@ -547,12 +531,11 @@ async def refresh_fixture_sync_jobs() -> bool:
             ):
                 logger.info(
                     "Refreshed scheduler job: id=%s trigger=%s next_run=%s "
-                    "(subscribed=%s early_odds=%s dense_odds=%s source=%s)",
+                    "(subscribed=%s dense_odds=%s source=%s)",
                     job.id,
                     job.trigger,
                     job.next_run_time,
                     subscribed,
-                    early_odds,
                     dense_odds,
                     source,
                 )

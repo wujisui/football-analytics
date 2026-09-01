@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 
 _sync_lock = asyncio.Lock()
 SUBSCRIBED_LIGHT_ODDS_BUDGET = 100
-# 11:00 / 立即同步：当前比赛日刷即时盘，另拉未来三天缺盘（首次可用冻初盘）。
-FULL_BATCH_FUTURE_ODDS_DAYS = 3
+# 10:55 / 立即同步：当前比赛日刷即时盘，明天补缺盘并冻结为初盘。
+FULL_BATCH_FUTURE_ODDS_DAYS = 1
 
 
 async def resolve_odds_today() -> date | None:
@@ -127,24 +127,18 @@ async def missing_subscribed_fixture_days(
     return [day for day in wanted if day not in known]
 
 
-async def sync_free_quota_rollover_fixtures() -> int:
+async def sync_fixture_rollover_fixtures() -> int:
     """At official UTC-day rollover, ingest today's worldwide schedule in one call.
 
-    The free API plan cannot request tomorrow. Running just after the official
-    UTC date rolls over makes that date legal early enough for 08:30+ Beijing
-    American fixtures to enter 【比赛】 before kickoff. This path deliberately skips
-    odds, standings, details, training, and recommendations.
+    This runs in unsubscribed scheduling and when a subscriber disables dense
+    refresh. It deliberately skips odds, standings, details, training, and
+    recommendations.
     """
     if _sync_lock.locked():
         logger.info("Fixture rollover sync already running elsewhere; skipping overlap")
         return 0
 
     today = datetime.now(timezone.utc).date()
-    free_quota, _ = await get_enable_free_quota()
-    if not free_quota:
-        logger.info("Fixture rollover sync skipped because free quota is disabled")
-        return 0
-
     async with _sync_lock:
         async with FootballFetcher() as fetcher:
             saved = await fetcher.fetch_fixtures_for_date(
@@ -270,8 +264,8 @@ async def scheduled_fixtures_sync(
                         league_ids=None,
                     )
 
-                # 3) Future three days only fill missing boards; the first
-                # successful pull freezes opening. Existing future boards stay untouched.
+                # 3) Tomorrow only fills missing boards; the first successful
+                # pull freezes opening. Existing tomorrow boards stay untouched.
                 if subscribed and not fetcher.quota_exhausted:
                     odds_updated += await fetcher.sync_odds_for_dates(
                         future_odds_days,
@@ -292,7 +286,7 @@ async def scheduled_fixtures_sync(
                     )
 
                 # 4) Subscription standings only. Details stay today/tomorrow;
-                # odds already covered today plus the next three days above.
+                # odds already covered today and tomorrow above.
                 if subscribed and not fetcher.quota_exhausted:
                     standings_stats = await sync_league_standings_for_dates(
                         fetcher,

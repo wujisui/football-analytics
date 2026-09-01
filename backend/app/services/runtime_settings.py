@@ -17,7 +17,6 @@ from app.models.app_setting import AppSetting
 logger = logging.getLogger(__name__)
 
 KEY_ENABLE_FREE_QUOTA = "enable_free_quota"
-KEY_SUBSCRIPTION_EARLY_ODDS = "subscription_early_odds"
 KEY_SUBSCRIPTION_DENSE_ODDS = "subscription_dense_odds"
 KEY_LAST_SYNC_RUN = "last_sync_run"
 KEY_API_SPORTS_KEY = "api_sports_key"
@@ -188,28 +187,15 @@ async def set_subscription_enabled(
     subscribed: bool,
 ) -> bool:
     await set_enable_free_quota(session, not subscribed)
+    await set_subscription_dense_odds(session, subscribed)
     return bool(subscribed)
-
-
-async def get_subscription_early_odds(
-    session: AsyncSession | None = None,
-) -> tuple[bool, SettingSource]:
-    """Whether subscribed 04/06/08/10 light odds jobs run; defaults on."""
-    return await _get_bool_setting(KEY_SUBSCRIPTION_EARLY_ODDS, True, session)
-
-
-async def set_subscription_early_odds(
-    session: AsyncSession,
-    enabled: bool,
-) -> bool:
-    return await _set_bool_setting(session, KEY_SUBSCRIPTION_EARLY_ODDS, enabled)
 
 
 async def get_subscription_dense_odds(
     session: AsyncSession | None = None,
 ) -> tuple[bool, SettingSource]:
-    """Whether subscribed dense evening odds jobs replace the default night slots."""
-    return await _get_bool_setting(KEY_SUBSCRIPTION_DENSE_ODDS, False, session)
+    """Whether a subscriber uses the continuous 30-minute odds schedule."""
+    return await _get_bool_setting(KEY_SUBSCRIPTION_DENSE_ODDS, True, session)
 
 
 async def set_subscription_dense_odds(

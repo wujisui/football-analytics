@@ -53,7 +53,7 @@ export const sectionMeta: Record<
   adminOps: {
     routeName: 'mine-admin-ops',
     title: '运维管理',
-    hint: '同步官方数据、赛果回写、订阅与早间盘口调度',
+    hint: '同步官方数据、赛果回写、订阅与全天密刷调度',
     icon: ConstructOutline,
   },
   adminBackend: {

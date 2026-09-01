@@ -8,11 +8,11 @@ from zoneinfo import ZoneInfo
 from app.services.fixtures_sync import sync_dates
 from app.tasks.scheduler import (
     FULL_SYNC_HOUR,
+    FULL_SYNC_MINUTE,
+    FIXTURE_ROLLOVER_JOB_ID,
     RESULTS_SYNC_HOUR,
     RESULTS_SYNC_JOB_ID,
-    SUBSCRIBED_DEFAULT_ODDS_SLOTS,
     SUBSCRIBED_DENSE_ODDS_SLOTS,
-    SUBSCRIBED_EARLY_ODDS_HOURS,
     UNSUBSCRIBED_ODDS_HOURS,
     odds_job_id,
     register_jobs,
@@ -23,20 +23,17 @@ ODDS_TODAY = datetime.now(ZoneInfo("Asia/Shanghai")).date()
 
 
 def test_subscription_schedule_constants() -> None:
-    assert FULL_SYNC_HOUR == 11
+    assert (FULL_SYNC_HOUR, FULL_SYNC_MINUTE) == (10, 55)
     assert RESULTS_SYNC_HOUR == 7
     assert RESULTS_SYNC_JOB_ID == "scheduled_results_sync_07"
-    assert SUBSCRIBED_EARLY_ODDS_HOURS == (4, 6, 8, 10)
-    assert SUBSCRIBED_DEFAULT_ODDS_SLOTS == (
-        (2, 0), (11, 55), (14, 0), (16, 0), (18, 0), (20, 0),
-        (21, 0), (21, 30), (22, 0), (22, 30), (23, 0), (23, 30), (0, 0),
-    )
     assert UNSUBSCRIBED_ODDS_HOURS == (22,)
-    assert SUBSCRIBED_DENSE_ODDS_SLOTS[:5] == (
-        (2, 0), (11, 55), (14, 0), (16, 0), (16, 55),
+    assert SUBSCRIBED_DENSE_ODDS_SLOTS[:4] == (
+        (0, 25), (0, 55), (1, 25), (1, 55),
     )
-    assert SUBSCRIBED_DENSE_ODDS_SLOTS[-1] == (1, 55)
-    assert len(SUBSCRIBED_DENSE_ODDS_SLOTS) == 23
+    assert SUBSCRIBED_DENSE_ODDS_SLOTS[-2:] == ((23, 25), (23, 55))
+    assert (11, 25) in SUBSCRIBED_DENSE_ODDS_SLOTS
+    assert (10, 55) in SUBSCRIBED_DENSE_ODDS_SLOTS
+    assert len(SUBSCRIBED_DENSE_ODDS_SLOTS) == 48
     assert odds_job_id(21, 30) == "scheduled_fixtures_sync_odds_2130"
     assert odds_job_id(16, 55) == "scheduled_fixtures_sync_odds_1655"
     assert odds_job_id(0) == "scheduled_fixtures_sync_odds_00"
@@ -71,59 +68,85 @@ def test_subscribed_window_and_result_lookback() -> None:
     assert result_days == [date(2026, 8, 16), date(2026, 8, 17)]
 
 
-def test_registered_subscription_jobs_respect_early_switch() -> None:
-    register_jobs(subscribed=True, early_odds=False)
+def test_subscriber_without_dense_refresh_uses_sparse_schedule() -> None:
+    register_jobs(subscribed=True, dense_odds=False)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
-    assert "scheduled_fixtures_sync_11" in job_ids
+    assert "scheduled_fixtures_sync_1055" in job_ids
     assert RESULTS_SYNC_JOB_ID in job_ids
-    assert "scheduled_fixtures_sync_odds_1155" in job_ids
-    assert "scheduled_fixtures_sync_odds_02" in job_ids
-    assert "scheduled_fixtures_sync_odds_04" not in job_ids
-    assert "scheduled_fixtures_sync_odds_2130" in job_ids
     assert "scheduled_fixtures_sync_odds_22" in job_ids
-    assert "scheduled_fixtures_sync_odds_2330" in job_ids
-    assert "scheduled_fixtures_sync_odds_00" in job_ids
-    assert "free_quota_fixture_rollover" not in job_ids
-
-    register_jobs(subscribed=True, early_odds=True)
-    job_ids = {str(job.id) for job in scheduler.get_jobs()}
-    assert "scheduled_fixtures_sync_odds_04" in job_ids
-    assert "scheduled_fixtures_sync_odds_10" in job_ids
-    assert "scheduled_fixtures_sync_odds_2130" in job_ids
+    assert "scheduled_fixtures_sync_odds_1125" not in job_ids
+    assert FIXTURE_ROLLOVER_JOB_ID in job_ids
+    full_job = scheduler.get_job("scheduled_fixtures_sync_1055")
+    assert full_job.kwargs == {"include_dense_odds": False}
 
     register_jobs(subscribed=False)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
     assert RESULTS_SYNC_JOB_ID in job_ids
     assert "scheduled_fixtures_sync_odds_22" in job_ids
-    assert "scheduled_fixtures_sync_odds_02" not in job_ids
-    assert "scheduled_fixtures_sync_odds_2130" not in job_ids
-    assert "scheduled_fixtures_sync_odds_00" not in job_ids
-    assert "free_quota_fixture_rollover" in job_ids
+    assert "scheduled_fixtures_sync_odds_1125" not in job_ids
+    assert FIXTURE_ROLLOVER_JOB_ID in job_ids
 
 
-def test_registered_subscription_jobs_respect_dense_switch() -> None:
-    register_jobs(subscribed=True, early_odds=False, dense_odds=True)
+def test_subscribed_dense_jobs_run_continuously() -> None:
+    register_jobs(subscribed=True, dense_odds=True)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
-    assert "scheduled_fixtures_sync_11" in job_ids
+    assert "scheduled_fixtures_sync_1055" in job_ids
     assert RESULTS_SYNC_JOB_ID in job_ids
+    assert "scheduled_fixtures_sync_odds_1125" in job_ids
     assert "scheduled_fixtures_sync_odds_1155" in job_ids
-    assert "scheduled_fixtures_sync_odds_02" in job_ids
-    assert "scheduled_fixtures_sync_odds_14" in job_ids
-    assert "scheduled_fixtures_sync_odds_16" in job_ids
-    assert "scheduled_fixtures_sync_odds_1655" in job_ids
-    assert "scheduled_fixtures_sync_odds_1725" in job_ids
-    assert "scheduled_fixtures_sync_odds_0155" in job_ids
-    assert "scheduled_fixtures_sync_odds_18" not in job_ids
-    assert "scheduled_fixtures_sync_odds_20" not in job_ids
-    assert "scheduled_fixtures_sync_odds_2130" not in job_ids
+    assert "scheduled_fixtures_sync_odds_0025" in job_ids
+    assert "scheduled_fixtures_sync_odds_1025" in job_ids
+    assert "scheduled_fixtures_sync_odds_1055" not in job_ids
+    assert "scheduled_fixtures_sync_odds_2355" in job_ids
     assert "scheduled_fixtures_sync_odds_22" not in job_ids
-    assert "scheduled_fixtures_sync_odds_00" not in job_ids
+    assert FIXTURE_ROLLOVER_JOB_ID not in job_ids
+    full_job = scheduler.get_job("scheduled_fixtures_sync_1055")
+    assert full_job.kwargs == {"include_dense_odds": True}
 
-    register_jobs(subscribed=True, early_odds=True, dense_odds=True)
-    job_ids = {str(job.id) for job in scheduler.get_jobs()}
-    assert "scheduled_fixtures_sync_odds_04" in job_ids
-    assert "scheduled_fixtures_sync_odds_1655" in job_ids
-    assert "scheduled_fixtures_sync_odds_18" not in job_ids
+
+def test_1055_dense_refresh_runs_after_full_batch() -> None:
+    from app.tasks import scheduler as scheduler_module
+
+    run_sync = AsyncMock()
+
+    async def _run() -> None:
+        with patch.object(
+            scheduler_module,
+            "run_scheduled_fixtures_sync",
+            run_sync,
+        ):
+            await scheduler_module.run_daily_full_sync(include_dense_odds=True)
+
+    asyncio.run(_run())
+    assert run_sync.await_count == 2
+    assert run_sync.await_args_list[0].kwargs == {"mode": "full"}
+    assert run_sync.await_args_list[1].kwargs == {
+        "task_name": "scheduled_fixtures_sync_odds_1055",
+        "mode": "odds",
+    }
+
+
+def test_subscription_toggle_keeps_dense_switch_bound() -> None:
+    from app.services import runtime_settings
+
+    set_free = AsyncMock()
+    set_dense = AsyncMock()
+
+    async def _run(subscribed: bool) -> None:
+        with (
+            patch.object(runtime_settings, "set_enable_free_quota", set_free),
+            patch.object(runtime_settings, "set_subscription_dense_odds", set_dense),
+        ):
+            result = await runtime_settings.set_subscription_enabled(
+                AsyncMock(),
+                subscribed,
+            )
+        assert result is subscribed
+
+    asyncio.run(_run(True))
+    asyncio.run(_run(False))
+    assert [call.args[1] for call in set_free.await_args_list] == [False, True]
+    assert [call.args[1] for call in set_dense.await_args_list] == [True, False]
 
 
 def test_subscribed_full_batch_only_fetches_missing_future_days() -> None:
@@ -188,10 +211,8 @@ def test_subscribed_full_batch_only_fetches_missing_future_days() -> None:
         assert fetcher.sync_odds_for_dates.await_count == 2
         future_call, today_call = fetcher.sync_odds_for_dates.await_args_list
         future_days = future_call.args[0]
-        assert future_days == [
-            ODDS_TODAY + timedelta(days=offset)
-            for offset in range(1, fs.FULL_BATCH_FUTURE_ODDS_DAYS + 1)
-        ]
+        assert fs.FULL_BATCH_FUTURE_ODDS_DAYS == 1
+        assert future_days == [ODDS_TODAY + timedelta(days=1)]
         assert future_call.kwargs["refresh_existing"] is False
         assert future_call.kwargs["league_ids"] == [39, 140]
         assert today_call.args[0] == [ODDS_TODAY]

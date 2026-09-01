@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
             "Set via Mine admin UI or: python manage.py set-api-sports-key key1,key2"
         )
     start_scheduler()
-    # Re-apply subscription + early-odds cron from app_settings.
+    # Re-apply subscription + dense-odds cron from app_settings.
     await refresh_fixture_sync_jobs()
     yield
     shutdown_scheduler()

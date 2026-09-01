@@ -12,7 +12,6 @@ export type LastSyncRun = {
 export type SubscriptionSetting = {
   subscribed: boolean
   source: 'db' | 'env' | string
-  early_odds_enabled: boolean
   dense_odds_enabled: boolean
   sync_times: string[]
   api_remaining: number | null
@@ -125,7 +124,7 @@ export type ResetMatchHistoryReport = {
   kept: string[]
 }
 
-const ADMIN_CACHE_PREFIX = 'fa-admin-setting:v3:'
+const ADMIN_CACHE_PREFIX = 'fa-admin-setting:v4:'
 const SUBSCRIPTION_CACHE_KEY = `${ADMIN_CACHE_PREFIX}subscription`
 const HOT_LEAGUES_CACHE_KEY = `${ADMIN_CACHE_PREFIX}hot-leagues`
 const API_KEY_CACHE_KEY = `${ADMIN_CACHE_PREFIX}api-key`
@@ -211,18 +210,6 @@ export async function updateSubscriptionSetting(
   const { data } = await apiClient.patch<SubscriptionSetting>(
     '/admin/settings/subscription',
     { subscribed },
-  )
-  return writeAdminCache(SUBSCRIPTION_CACHE_KEY, data)
-}
-
-export async function updateSubscriptionEarlyOdds(
-  enabled: boolean,
-): Promise<SubscriptionSetting> {
-  const { data } = await apiClient.patch<SubscriptionSetting>(
-    '/admin/settings/subscription-early-odds',
-    {
-      enabled,
-    },
   )
   return writeAdminCache(SUBSCRIPTION_CACHE_KEY, data)
 }

@@ -428,7 +428,7 @@ async def run_reset_match_history(*, apply: bool) -> None:
         print(f"  {key}: {value}")
     if apply:
         print(
-            "Done. Re-sync fixtures/odds (admin「立即同步」or wait for 11:00), "
+            "Done. Re-sync fixtures/odds (admin「立即同步」or wait for 10:55), "
             "then accumulate new samples before train-model."
         )
 

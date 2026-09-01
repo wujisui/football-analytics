@@ -13,7 +13,6 @@ import {
   type LastSyncRun,
   peekSubscriptionSetting,
   updateSubscriptionDenseOdds,
-  updateSubscriptionEarlyOdds,
   updateSubscriptionSetting,
 } from '@/api/admin'
 import HelpTip from '@/components/HelpTip.vue'
@@ -55,14 +54,12 @@ const prematchFixtureIds = computed(() => {
 const cachedSubscription = peekSubscriptionSetting()
 const subscribed = ref(cachedSubscription?.subscribed ?? false)
 const subscriptionSource = ref(cachedSubscription?.source ?? '')
-const earlyOddsEnabled = ref(cachedSubscription?.early_odds_enabled ?? true)
 const denseOddsEnabled = ref(cachedSubscription?.dense_odds_enabled ?? false)
 const syncTimes = ref<string[]>(cachedSubscription?.sync_times ?? [])
 const apiRemaining = ref<number | null>(cachedSubscription?.api_remaining ?? null)
 const lastSync = ref<LastSyncRun | null>(cachedSubscription?.last_sync ?? null)
 const subscriptionLoading = ref(cachedSubscription == null)
 const subscriptionSaving = ref(false)
-const earlyOddsSaving = ref(false)
 const denseOddsSaving = ref(false)
 
 const settingSourceLabel = (value: string) =>
@@ -73,8 +70,8 @@ const syncSummary = computed(() =>
 )
 const syncDetail = computed(() =>
   subscribed.value
-    ? '每次都会回写昨天和今天赛果、增量补齐 8 天赛程窗口、更新今天及未来三天热门盘口、今天/明天详情、积分榜、训练、日推及清理。不限每日次数，但每次都会消耗官方配额；新增热门联赛后可在这里重新同步。'
-    : '完整同步只在已订阅时开放；未订阅仍按 07:00、08:05、11:00、22:00 固定任务运行。',
+    ? '等同执行一次 10:55 已订阅完整批次：回写昨天和今天赛果、增量补齐 8 天赛程窗口、刷新今天盘口、补齐明天初盘、预拉今天/明天详情，并执行积分榜、训练、日推及清理。不限每日次数，但每次都会消耗官方配额。'
+    : '完整同步只在已订阅时开放；未订阅仍按 07:00、08:05、10:55、22:00 固定任务运行。',
 )
 
 const resultsSyncSummary = '只回写昨天和今天的终场比分，不动盘口与赛程。'
@@ -110,38 +107,33 @@ const subscriptionSummary = computed(() => {
   const scale = count ? `每天 ${count} 个定时任务` : '定时任务待读取'
   const head = subscribed.value
     ? `按 Pro 配额调度，${scale}`
-    : '每天只跑 07:00、08:05、11:00、22:00'
+    : '每天只跑 07:00、08:05、10:55、22:00'
   return `${head}${suffix}`
 })
 const subscriptionDetail = computed(() => {
-  const clocks = syncTimes.value.length
-    ? `时刻 ${syncTimes.value.join('、')}。`
-    : ''
+  const clocks = denseOddsEnabled.value
+    ? '时刻：07:00 赛果回写、10:55 完整批次；密刷按每小时 25/55 分全天循环。'
+    : syncTimes.value.length
+      ? `时刻 ${syncTimes.value.join('、')}。`
+      : ''
   if (subscribed.value) {
-    return `${clocks}07:00 回写昨天和今天赛果；11:00 为每日定时完整批次（含昨天和今天赛果），其余时刻只刷新今天未开赛热门盘口并重算日推。管理员可不限每日次数手动完整同步；赛程保留 8 天滑动窗口，每天只新增末端一天；盘口覆盖今天及未来三天，详情预拉仍只今天、明天。`
+    return `${clocks}07:00 回写昨天和今天赛果；10:55 为每日定时完整批次。赛程保留 8 天滑动窗口且每天只补末端一天；今天盘口刷新为即时盘，明天缺盘补齐并冻结为初盘；详情只预拉今天、明天。关闭密刷后采用 07:00、08:05、10:55、22:00 的稀疏时刻，但 10:55 仍执行已订阅完整批次，立即同步仍可用。`
   }
-  return `${clocks}未订阅每天 07:00 回写昨天和今天赛果，08:05 只拉当天赛程，11:00 跑昨天/今天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。晚间密刷仅已订阅生效。`
+  return `${clocks}未订阅每天 07:00 回写昨天和今天赛果，08:05 只拉当天赛程，10:55 跑昨天/今天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。密刷会随订阅关闭并禁用。`
 })
-
-const earlyOddsSummary = computed(() =>
-  subscribed.value ? '04/06/08/10 是否也轻刷盘口。' : '仅已订阅时生效。',
-)
-const earlyOddsDetail =
-  '控制 04:00、06:00、08:00、10:00 是否也刷新今天未开赛热门盘口并重算日推；这四个时刻会叠加到下面选中的方案上，02:00 与晚间时刻不受此开关影响。'
 
 const denseOddsSummary = computed(() => {
-  if (!subscribed.value) return '仅已订阅时生效。'
+  if (!subscribed.value) return '订阅关闭时同步关闭并禁用。'
   return denseOddsEnabled.value
-    ? '密刷方案：16:55 起每半小时到 01:55。'
-    : '默认方案：21:00 起每半小时到 00:00。'
+    ? '从 11:25 起每 30 分钟循环刷新，全天不停。'
+    : '密刷已关闭，采用未订阅时刻表。'
 })
 const denseOddsDetail =
-  '密刷方案：02:00、11:55、14:00、16:00、16:55、17:25、17:55、18:25、18:55、19:25、19:55、20:25、20:55、21:25、21:55、22:25、22:55、23:25、23:55、00:25、00:55、01:25、01:55（开赛整点/半点前 5 分钟）。早间开关的四个时刻叠加到任一方案。'
+  '打开订阅会自动开启密刷。从 11:25 起按每小时 25 分、55 分持续循环 24 小时，只刷新比赛日为今天且仍未开赛的目录盘口并重算日推。10:55 会先执行完整批次，再执行同刻密刷。手动关闭后采用 07:00、08:05、10:55、22:00 时刻表，但仍保留已订阅完整批次和立即同步能力。'
 
 function applySubscription(data: Awaited<ReturnType<typeof fetchSubscriptionSetting>>) {
   subscribed.value = data.subscribed
   subscriptionSource.value = data.source
-  earlyOddsEnabled.value = data.early_odds_enabled
   denseOddsEnabled.value = data.dense_odds_enabled
   syncTimes.value = data.sync_times
   apiRemaining.value = data.api_remaining
@@ -192,28 +184,18 @@ function onSubscriptionToggle(next: boolean) {
   confirmAdminSwitch(
     next ? '确认设为已订阅？' : '确认设为未订阅？',
     next
-      ? '已订阅按至少 Pro、每日配额 7500 设计；会启用 8 天增量赛程、积分榜、今天及未来三天热门盘口、今天/明天详情及高频盘口任务。开关本身不会立即同步。'
-      : '未订阅将只保留 08:05、11:00、22:00 三个任务，跳过未来赛程、积分榜及详情官方请求。开关本身不会立即同步。',
+      ? '会自动开启全天密刷，并启用 8 天增量赛程、积分榜、今天即时盘、明天初盘及今天/明天详情。开关本身不会立即同步。'
+      : '会同时关闭并禁用密刷，只保留 07:00、08:05、10:55、22:00，跳过未来赛程、积分榜及详情官方请求。开关本身不会立即同步。',
     () => void applySubscriptionToggle(next),
-  )
-}
-
-function onEarlyOddsToggle(next: boolean) {
-  confirmAdminSwitch(
-    next ? '确认开启早间盘口刷新？' : '确认关闭早间盘口刷新？',
-    next
-      ? '将叠加 04:00、06:00、08:00、10:00 四次盘口轻刷。开关改完立刻重注册定时任务，不会马上打官方。'
-      : '04:00、06:00、08:00、10:00 将不再轻刷。开关改完立刻重注册定时任务，不会马上打官方。',
-    () => void applyEarlyOddsToggle(next),
   )
 }
 
 function onDenseOddsToggle(next: boolean) {
   confirmAdminSwitch(
-    next ? '确认切换到密刷方案？' : '确认切回默认方案？',
+    next ? '确认开启密刷？' : '确认关闭密刷？',
     next
-      ? '将使用完整密刷时刻表（16:55 起每半小时到 01:55）。开关改完立刻重注册定时任务，不会马上打官方。'
-      : '将使用完整默认时刻表（21:00 起每半小时到 00:00）。开关改完立刻重注册定时任务，不会马上打官方。',
+      ? '将从 11:25 起每 30 分钟循环刷新全天盘口；10:55 完整批次后还会执行同刻密刷。保存后立刻重排定时任务，但不会马上请求官方。'
+      : '将改用 07:00、08:05、10:55、22:00 时刻表；10:55 仍执行已订阅完整批次，立即同步仍可用。',
     () => void applyDenseOddsToggle(next),
   )
 }
@@ -225,28 +207,12 @@ async function applyDenseOddsToggle(next: boolean) {
   denseOddsEnabled.value = next
   try {
     applySubscription(await updateSubscriptionDenseOdds(next))
-    message.success(next ? '已开启晚间密刷' : '已关闭晚间密刷，恢复默认调度')
+    message.success(next ? '已开启密刷' : '已关闭密刷，改用稀疏调度')
   } catch (err) {
     denseOddsEnabled.value = previous
     message.error(err instanceof Error ? err.message : '保存失败')
   } finally {
     denseOddsSaving.value = false
-  }
-}
-
-async function applyEarlyOddsToggle(next: boolean) {
-  if (earlyOddsSaving.value) return
-  earlyOddsSaving.value = true
-  const previous = earlyOddsEnabled.value
-  earlyOddsEnabled.value = next
-  try {
-    applySubscription(await updateSubscriptionEarlyOdds(next))
-    message.success(next ? '已开启早间盘口刷新' : '已关闭早间盘口刷新')
-  } catch (err) {
-    earlyOddsEnabled.value = previous
-    message.error(err instanceof Error ? err.message : '保存失败')
-  } finally {
-    earlyOddsSaving.value = false
   }
 }
 
@@ -356,7 +322,7 @@ watch(syncing, (value, previous) => {
           <n-thing :description="prematchOddsSummary">
             <template #header>
               <n-flex :size="6" align="center">
-                <span>批量更新盘口</span>
+                <span>更新盘口</span>
                 <HelpTip :text="prematchOddsDetail" />
               </n-flex>
             </template>
@@ -382,7 +348,7 @@ watch(syncing, (value, previous) => {
           <n-thing :description="resultsSyncSummary">
             <template #header>
               <n-flex :size="6" align="center">
-                <span>只更新赛果</span>
+                <span>更新赛果</span>
                 <HelpTip :text="resultsSyncDetail" />
               </n-flex>
             </template>
@@ -406,7 +372,7 @@ watch(syncing, (value, previous) => {
           <n-thing :description="subscriptionSummary">
             <template #header>
               <n-flex :size="6" align="center">
-                <span>订阅</span>
+                <span>打开订阅</span>
                 <HelpTip :text="subscriptionDetail" />
               </n-flex>
             </template>
@@ -428,35 +394,10 @@ watch(syncing, (value, previous) => {
           <template #prefix>
             <n-icon :component="SettingsOutline" :size="20" />
           </template>
-          <n-thing :description="earlyOddsSummary">
-            <template #header>
-              <n-flex :size="6" align="center">
-                <span>早间盘口刷新</span>
-                <HelpTip :text="earlyOddsDetail" />
-              </n-flex>
-            </template>
-          </n-thing>
-          <template #suffix>
-            <TextSwitch
-              :value="earlyOddsEnabled"
-              checked-text="已开启"
-              unchecked-text="已关闭"
-              aria-label="早间盘口刷新"
-              :disabled="subscriptionLoading || earlyOddsSaving || !subscribed"
-              :loading="earlyOddsSaving"
-              @update:value="onEarlyOddsToggle"
-            />
-          </template>
-        </n-list-item>
-
-        <n-list-item>
-          <template #prefix>
-            <n-icon :component="SettingsOutline" :size="20" />
-          </template>
           <n-thing :description="denseOddsSummary">
             <template #header>
               <n-flex :size="6" align="center">
-                <span>晚间密刷盘口</span>
+                <span>开启密刷</span>
                 <HelpTip :text="denseOddsDetail" />
               </n-flex>
             </template>
@@ -466,7 +407,7 @@ watch(syncing, (value, previous) => {
               :value="denseOddsEnabled"
               checked-text="已开启"
               unchecked-text="已关闭"
-              aria-label="晚间密刷盘口"
+              aria-label="开启密刷"
               :disabled="subscriptionLoading || denseOddsSaving || !subscribed"
               :loading="denseOddsSaving"
               @update:value="onDenseOddsToggle"

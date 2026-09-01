@@ -27,25 +27,25 @@ from app.services.runtime_settings import (
     get_api_sports_keys_setting,
     get_last_sync_run,
     get_subscription_dense_odds,
-    get_subscription_early_odds,
     get_subscription_enabled,
     set_api_sports_keys_setting,
     set_hot_league_ids,
     set_subscription_dense_odds,
-    set_subscription_early_odds,
     set_subscription_enabled,
     touch_client_data_revision,
 )
 from app.tasks.scheduler import (
+    FULL_SYNC_HOUR,
+    FULL_SYNC_MINUTE,
     PREMATCH_ODDS_TASK,
     RESULTS_SYNC_HOUR,
     RESULTS_SYNC_TASK,
-    UNSUBSCRIBED_ODDS_HOURS,
     format_clock,
     get_task_status,
+    light_odds_slots,
     refresh_fixture_sync_jobs,
-    subscribed_light_odds_slots,
     trigger_task,
+    uses_sparse_sync_schedule,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -75,7 +75,6 @@ class LastSyncRun(BaseModel):
 class SubscriptionSetting(BaseModel):
     subscribed: bool
     source: str = Field(description="db = 管理员已覆盖；env = 使用环境变量默认值")
-    early_odds_enabled: bool
     dense_odds_enabled: bool
     sync_times: list[str]
     api_remaining: int | None = None
@@ -84,10 +83,6 @@ class SubscriptionSetting(BaseModel):
 
 class SubscriptionUpdate(BaseModel):
     subscribed: bool
-
-
-class SubscriptionEarlyOddsUpdate(BaseModel):
-    enabled: bool
 
 
 class SubscriptionDenseOddsUpdate(BaseModel):
@@ -244,22 +239,23 @@ async def _subscription_payload(
     subscribed: bool,
     source: str,
 ) -> SubscriptionSetting:
-    early_odds, _ = await get_subscription_early_odds()
-    dense_odds, _ = await get_subscription_dense_odds()
+    stored_dense_odds, _ = await get_subscription_dense_odds()
+    dense_odds = bool(subscribed and stored_dense_odds)
     results_clock = format_clock(RESULTS_SYNC_HOUR)
-    if subscribed:
-        times = [results_clock, "11:00"] + [
-            format_clock(hour, minute)
-            for hour, minute in subscribed_light_odds_slots(
-                early_odds=early_odds,
-                dense_odds=dense_odds,
-            )
-        ]
-        times = sorted(set(times))
-    else:
-        times = [results_clock, "08:05", "11:00"] + [
-            format_clock(hour) for hour in UNSUBSCRIBED_ODDS_HOURS
-        ]
+    full_clock = format_clock(FULL_SYNC_HOUR, FULL_SYNC_MINUTE)
+    times = [results_clock, full_clock] + [
+        format_clock(hour, minute)
+        for hour, minute in light_odds_slots(
+            subscribed=subscribed,
+            dense_odds=dense_odds,
+        )
+    ]
+    if uses_sparse_sync_schedule(
+        subscribed=subscribed,
+        dense_odds=dense_odds,
+    ):
+        times.append("08:05")
+    times = sorted(set(times))
     last_sync = _last_sync_payload(await get_last_sync_run())
     # Process memory is empty until this deploy calls the official API again,
     # so fall back to the remaining count persisted with the last batch.
@@ -269,7 +265,6 @@ async def _subscription_payload(
     return SubscriptionSetting(
         subscribed=subscribed,
         source=source,
-        early_odds_enabled=early_odds,
         dense_odds_enabled=dense_odds,
         sync_times=times,
         api_remaining=remaining,
@@ -363,26 +358,16 @@ async def patch_subscription_setting(
     return await _subscription_payload(subscribed, "db")
 
 
-@router.patch("/settings/subscription-early-odds", response_model=SubscriptionSetting)
-async def patch_subscription_early_odds_setting(
-    body: SubscriptionEarlyOddsUpdate,
-    _: None = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-) -> SubscriptionSetting:
-    await set_subscription_early_odds(db, body.enabled)
-    subscribed, source = await get_subscription_enabled(db)
-    await refresh_fixture_sync_jobs()
-    return await _subscription_payload(subscribed, source)
-
-
 @router.patch("/settings/subscription-dense-odds", response_model=SubscriptionSetting)
 async def patch_subscription_dense_odds_setting(
     body: SubscriptionDenseOddsUpdate,
     _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> SubscriptionSetting:
-    await set_subscription_dense_odds(db, body.enabled)
     subscribed, source = await get_subscription_enabled(db)
+    if not subscribed:
+        raise HTTPException(status_code=409, detail="订阅已关闭，不能修改密刷设置")
+    await set_subscription_dense_odds(db, body.enabled)
     await refresh_fixture_sync_jobs()
     return await _subscription_payload(subscribed, source)
 
