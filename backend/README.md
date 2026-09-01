@@ -311,3 +311,42 @@ python manage.py fetch-upcoming
 
 **API 配额不足**  
 用 `python manage.py check-quota` 查看剩余次数；缓存开启后可减少重复请求。
+
+**本机打包（项目根目录）**  
+```powershell
+if (Test-Path football-backend.zip) { Remove-Item football-backend.zip -Force }
+tar -a -cf football-backend.zip `
+  --exclude="backend/.venv" `
+--exclude="backend/venv" `
+  --exclude="backend/__pycache__" `
+--exclude="backend/**/__pycache__" `
+  --exclude="backend/*.py[cod]" `
+--exclude="backend/.pytest_cache" `
+  --exclude="backend/.coverage" `
+--exclude="backend/htmlcov" `
+  --exclude="backend/tests" `
+--exclude="backend/scripts" `
+  --exclude="backend/PHASE" `
+--exclude="backend/logs" `
+  --exclude="backend/.env" `
+--exclude="backend/.env.*" `
+  --exclude="backend/secrets.local.env" `
+--exclude="backend/*.local.env" `
+  --exclude="backend/.idea" `
+--exclude="backend/.vscode" `
+  --exclude="backend/data" `
+--exclude="backend/README.md" `
+  --exclude="backend/.gitignore" `
+backend/main.py `
+  backend/manage.py `
+backend/requirements.txt `
+  backend/Dockerfile `
+backend/.dockerignore `
+  backend/.env.example `
+backend/app `
+backend/config
+```
+把前/后端代码打包上传到服务器的 /root 后，SSH登录执行:
+```
+/root/update.sh
+```
