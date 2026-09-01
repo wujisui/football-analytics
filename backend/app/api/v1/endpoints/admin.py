@@ -213,11 +213,11 @@ class ResetMatchHistoryResponse(BaseModel):
 
 
 SYNC_MODE_LABELS = {
-    "full": "完整批次",
+    "full": "同步数据",
     "odds": "盘口轻刷",
     "fixtures": "当天赛程",
-    "results": "赛果回写",
-    "prematch_odds": "批量更新盘口",
+    "results": "更新赛果",
+    "prematch_odds": "更新盘口",
 }
 
 

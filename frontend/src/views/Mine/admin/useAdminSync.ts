@@ -101,13 +101,13 @@ export function useAdminSync() {
         if (ok) {
           await notifyLocalDataChanged()
           if (kind === 'full') {
-            notifySuccess('同步官方 API 数据完成', '赛程、盘口、赛果与自动推荐已更新')
+            notifySuccess('同步数据完成', '赛程、盘口、赛果与自动推荐已更新')
           } else if (kind === 'results') {
-            notifySuccess('赛果已更新', '终场比分与训练标签已按日回写')
+            notifySuccess('更新赛果完成', '终场比分与训练标签已按日回写')
           } else {
             const stats = task.result?.prematch_odds
             notifySuccess(
-              '批量更新盘口完成',
+              '更新盘口完成',
               stats
                 ? `名单 ${stats.candidates} 场，尝试 ${stats.attempted} 场，成功更新 ${stats.updated} 场`
                 : '已完成当前【比赛】筛选场次的盘口更新',
@@ -116,10 +116,10 @@ export function useAdminSync() {
         } else {
           notifyError(
             kind === 'full'
-              ? '同步官方 API 数据未完成'
+              ? '同步数据未完成'
               : kind === 'results'
                 ? '更新赛果未完成'
-                : '批量更新盘口未完成',
+                : '更新盘口未完成',
             detail,
           )
         }
@@ -205,8 +205,8 @@ export function useAdminSync() {
     await runKind(
       'full',
       triggerScheduledFixturesSync,
-      '同步官方 API 数据未完成',
-      '同步官方 API 数据失败',
+      '同步数据未完成',
+      '同步数据失败',
     )
   }
 
@@ -223,8 +223,8 @@ export function useAdminSync() {
     await runKind(
       'prematchOdds',
       () => triggerPrematchOddsSync(fixtureIds),
-      '批量更新盘口未完成',
-      '批量更新盘口失败',
+      '更新盘口未完成',
+      '更新盘口失败',
     )
   }
 

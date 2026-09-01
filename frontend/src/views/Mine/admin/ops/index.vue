@@ -233,7 +233,7 @@ async function applyPrematchOddsSync() {
 function syncPrematchOddsOnly() {
   modal.create({
     preset: 'dialog',
-    title: '确认批量更新盘口？',
+    title: '确认更新盘口？',
     type: 'warning',
     content:
       `将逐场更新【比赛】当前筛选中今天的 ${prematchFixtureIds.value.length} 场热门赛事：已有盘口刷新即时盘，缺盘口则补齐。每场通常消耗一次官方请求。`,
@@ -335,7 +335,7 @@ watch(syncing, (value, previous) => {
               :loading="prematchOddsSyncing"
               @click="syncPrematchOddsOnly"
             >
-              {{ prematchOddsSyncing ? '更新中' : '批量更新' }}
+              {{ prematchOddsSyncing ? '更新中' : '更新' }}
             </n-button>
           </template>
         </n-list-item>
