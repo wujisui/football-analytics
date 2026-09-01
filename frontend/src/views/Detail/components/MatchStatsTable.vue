@@ -3,7 +3,7 @@ import { computed, h } from 'vue'
 import { NEllipsis, type DataTableColumns } from 'naive-ui'
 
 import type { FormMatch, HistoryAhLine } from '@/api/types'
-import { formatDateYyMmDd, formatOdd, homeResultCode, parseScoreGoals, resultToZh } from '@/utils/format'
+import { formatDateYyMmDd, formatOdd, homeResultCode, leagueTagColor, parseScoreGoals, resultToZh } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
 const props = withDefaults(
@@ -20,6 +20,12 @@ const props = withDefaults(
 
 function competitionLabel(m: FormMatch): string {
   return leagueLabel(m.league_name)
+}
+
+function leagueCellStyle(row: FormMatch) {
+  if (row.league_id == null) return undefined
+  const color = leagueTagColor(Number(row.league_id))
+  return { backgroundColor: `${color}18`, color }
 }
 
 function focusResultCode(m: FormMatch): string {
@@ -94,6 +100,9 @@ const columns = computed<DataTableColumns<FormMatch>>(() => {
       align: 'center',
       width: 88,
       className: 'league-col',
+      cellProps(row) {
+        return { style: leagueCellStyle(row) }
+      },
       render(row) {
         return h(NEllipsis, {}, { default: () => competitionLabel(row) || '—' })
       },
