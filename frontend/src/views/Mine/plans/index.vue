@@ -277,6 +277,7 @@ onMounted(() => {
     </n-grid>
     <div class="plans-gap">
       <n-card
+          size="small"
           class="plans-card"
           :class="{ 'plans-card--mobile': isPhone }"
           :bordered="false"
@@ -414,14 +415,9 @@ onMounted(() => {
   margin: 0;
 }
 
-.plans-card--mobile :deep(.n-card-content) {
-  padding: 0;
-}
-
+/* 手机端表头与列表项同为 14px 内缩；分隔线由 segmented 画，勿再加 border-bottom。 */
 .plans-card--mobile :deep(.n-card-header) {
-  flex-shrink: 0;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--fa-border);
+  padding-inline: 14px;
 }
 
 .plans-card-title {
