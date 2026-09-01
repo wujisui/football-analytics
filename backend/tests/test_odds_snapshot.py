@@ -1,5 +1,6 @@
 """Pre-match odds clocks: keep frozen boards, skip proven live boards."""
 
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -261,6 +262,59 @@ class RefreshGuardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(updated)
         fetcher._fetch_odds_with_rate_limit.assert_not_awaited()
+
+
+class HistoryAhSnippetTests(unittest.IsolatedAsyncioTestCase):
+    def test_opening_board_yields_main_ah_line(self) -> None:
+        from app.services.prematch_package import history_ah_line_from_raw
+
+        raw = json.dumps(
+            {
+                "available": True,
+                "captured_at": _iso(KICKOFF - timedelta(hours=20)),
+                "asian_handicap": {"line": "-0.25", "home": "1.97", "away": "1.88"},
+            }
+        )
+        line = history_ah_line_from_raw(
+            raw,
+            match_start_time=KICKOFF,
+            fixture_id=1,
+            stage="opening",
+        )
+        self.assertEqual(line, {"line": "-0.25", "home": "1.97", "away": "1.88"})
+
+    async def test_attach_stamps_h2h_rows_from_local_pre_match(self) -> None:
+        from app.services.prematch_package import attach_history_ah_snippets
+
+        stored = MagicMock()
+        stored.fixture_id = 77
+        stored.odds_opening_json = json.dumps(
+            {
+                "available": True,
+                "captured_at": _iso(KICKOFF - timedelta(days=1)),
+                "asian_handicap": {"line": "-0.25", "home": "1.97", "away": "1.88"},
+            }
+        )
+        stored.odds_json = json.dumps(
+            {
+                "available": True,
+                "captured_at": _iso(KICKOFF - timedelta(hours=2)),
+                "asian_handicap": {"line": "-0.25", "home": "1.97", "away": "1.92"},
+            }
+        )
+        session = MagicMock()
+        result = MagicMock()
+        result.all.return_value = [(stored, KICKOFF)]
+        session.execute = AsyncMock(return_value=result)
+        package = {
+            "head_to_head": {
+                "matches": [{"fixture_id": 77, "score": "1-0"}],
+            }
+        }
+        await attach_history_ah_snippets(session, package)
+        match = package["head_to_head"]["matches"][0]
+        self.assertEqual(match["ah_opening"]["away"], "1.88")
+        self.assertEqual(match["ah_current"]["away"], "1.92")
 
 
 if __name__ == "__main__":

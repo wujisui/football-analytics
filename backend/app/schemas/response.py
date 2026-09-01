@@ -110,6 +110,12 @@ class InjuriesPackageResponse(BaseModel):
     away: list[InjuryItemResponse] = Field(default_factory=list)
 
 
+class HistoryAhLineResponse(BaseModel):
+    line: str
+    home: str | None = None
+    away: str | None = None
+
+
 class FormMatchResponse(BaseModel):
     fixture_id: int | None = None
     date: str | None = None
@@ -125,6 +131,8 @@ class FormMatchResponse(BaseModel):
     league_country: str = ""
     result: str | None = None
     outcome_for_current_home: str | None = None
+    ah_opening: HistoryAhLineResponse | None = None
+    ah_current: HistoryAhLineResponse | None = None
 
 
 class FormPackageResponse(BaseModel):

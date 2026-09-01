@@ -201,12 +201,12 @@ def get_recommendation(
     probs: dict[str, float],
     *,
     odds: dict[str, Any] | None = None,
-    features: dict[str, float] | None = None,
 ) -> str:
     """Market-structured 1X2 lean; model only breaks ties / upgrades clear edges.
 
-    Uses de-vigged 1X2 odds for market shape (flat vs favorite). Display probabilities
-    may come from ML; recommendation follows盘口胶着度 + AH 水位, not argmax alone.
+    Uses de-vigged 1X2 odds for market shape (flat vs favorite). ``probs`` may come
+    from ML and can affect the recommendation, while published UI probabilities
+    remain market-implied. Recommendation follows盘口胶着度 + AH 水位, not argmax alone.
 
     无可用 1X2 盘口 → 一律「待分析」：没有盘口就没有推断依据，只靠近况模型给出的
     胜平负属于无效预测（既不展示也不该进历史统计）。
@@ -1029,9 +1029,7 @@ def derive_prediction_leans(
         f"大({line_label})" if side == "over" else f"小({line_label})"
     )
 
-    recommendation = get_recommendation(
-        normalized, odds=odds, features=features
-    )
+    recommendation = get_recommendation(normalized, odds=odds)
     btts_yes = _btts_yes(
         normalized,
         ou_side=side,

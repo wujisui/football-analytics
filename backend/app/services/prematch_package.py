@@ -253,6 +253,98 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
     }
 
 
+def history_ah_line_from_raw(
+    raw: str | None,
+    *,
+    match_start_time: datetime | str | None,
+    fixture_id: int | None,
+    stage: str,
+) -> dict[str, str] | None:
+    """Main AH line for history tables; empty when the stored board is unusable."""
+    from app.services.odds_snapshot import normalize_odds_snapshot
+
+    board = rehydrate_odds_markets(
+        normalize_odds_snapshot(
+            loads_json(raw, {"available": False}),
+            match_start_time=match_start_time,
+            fixture_id=fixture_id,
+            stage=stage,
+            log_invalid=False,
+        )
+    )
+    ah = board.get("asian_handicap") if isinstance(board, dict) else None
+    if not isinstance(ah, dict):
+        return None
+    line = ah.get("line")
+    if line is None or str(line).strip() == "":
+        return None
+    snippet: dict[str, str] = {"line": str(line)}
+    if ah.get("home") is not None:
+        snippet["home"] = str(ah.get("home"))
+    if ah.get("away") is not None:
+        snippet["away"] = str(ah.get("away"))
+    return snippet
+
+
+async def attach_history_ah_snippets(session: Any, package: dict[str, Any]) -> None:
+    """Stamp H2H rows with locally stored opening/current AH. No official calls."""
+    h2h = package.get("head_to_head")
+    if not isinstance(h2h, dict):
+        return
+    matches = h2h.get("matches")
+    if not isinstance(matches, list) or not matches:
+        return
+    ids: list[int] = []
+    for match in matches:
+        if not isinstance(match, dict) or match.get("fixture_id") is None:
+            continue
+        try:
+            ids.append(int(match["fixture_id"]))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return
+
+    from sqlalchemy import select
+
+    from app.models.fixture import Fixture
+    from app.models.pre_match_data import PreMatchData
+
+    rows = (
+        await session.execute(
+            select(PreMatchData, Fixture.date)
+            .join(Fixture, Fixture.id == PreMatchData.fixture_id)
+            .where(PreMatchData.fixture_id.in_(ids))
+        )
+    ).all()
+    by_id = {stored.fixture_id: (stored, kickoff) for stored, kickoff in rows}
+    for match in matches:
+        if not isinstance(match, dict) or match.get("fixture_id") is None:
+            continue
+        try:
+            fid = int(match["fixture_id"])
+        except (TypeError, ValueError):
+            continue
+        pair = by_id.get(fid)
+        if pair is None:
+            match.setdefault("ah_opening", None)
+            match.setdefault("ah_current", None)
+            continue
+        stored, kickoff = pair
+        match["ah_opening"] = history_ah_line_from_raw(
+            stored.odds_opening_json,
+            match_start_time=kickoff,
+            fixture_id=fid,
+            stage="opening",
+        )
+        match["ah_current"] = history_ah_line_from_raw(
+            stored.odds_json,
+            match_start_time=kickoff,
+            fixture_id=fid,
+            stage="current",
+        )
+
+
 def _normalize_line_token(token: str) -> str:
     try:
         return "0" if float(token.replace(",", ".")) == 0 else token

@@ -2,14 +2,8 @@
 import { computed, h } from 'vue'
 import { NEllipsis, type DataTableColumns } from 'naive-ui'
 
-import type { FormMatch } from '@/api/types'
-import {
-  formatDateYyMmDd,
-  homeResultCode,
-  htftZh,
-  parseScoreGoals,
-  resultToZh,
-} from '@/utils/format'
+import type { FormMatch, HistoryAhLine } from '@/api/types'
+import { formatDateYyMmDd, formatOdd, homeResultCode, parseScoreGoals, resultToZh } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
 const props = withDefaults(
@@ -18,8 +12,10 @@ const props = withDefaults(
     /** Result / name highlight relative to this team. */
     focusTeamId?: number
     emptyDescription?: string
+    /** H2H: also show locally stored opening / current AH main lines. */
+    showOdds?: boolean
   }>(),
-  { emptyDescription: '暂无赛果' },
+  { emptyDescription: '暂无赛果', showOdds: false },
 )
 
 function competitionLabel(m: FormMatch): string {
@@ -50,13 +46,6 @@ function focusTone(code: string): string {
   return ''
 }
 
-function zhTone(zh: string): string {
-  if (zh === '胜') return 'tone-win'
-  if (zh === '平') return 'tone-draw'
-  if (zh === '负') return 'tone-loss'
-  return ''
-}
-
 function teamTone(m: FormMatch, side: 'home' | 'away'): string {
   const focusTeamId = props.focusTeamId
   if (focusTeamId == null) return ''
@@ -79,79 +68,115 @@ function renderScoreFt(row: FormMatch) {
 }
 
 function renderResultCell(row: FormMatch) {
-  if ((row.status || '').toLowerCase() === 'pending') {
+  if ((row.status ?? '').toLowerCase() === 'pending') {
     return h('span', { class: ['result-text', 'pending'] }, '未开赛')
   }
   const code = focusResultCode(row)
-  const ftZh = resultToZh(code)
-  const htft = htftZh(row.score, row.score_ht)
-  if (!htft) {
-    return h('span', { class: ['result-text', focusTone(code)] }, ftZh)
+  return h('span', { class: ['result-text', focusTone(code)] }, resultToZh(code))
+}
+
+function renderAh(line?: HistoryAhLine | null) {
+  if (!line?.line) {
+    return h('span', { class: 'ah-empty' }, '—')
   }
-  // 全场(关注队视角) / 半全场(该场主队视角), e.g. 胜/平胜
-  return h('span', { class: 'result-text' }, [
-    h('span', { class: focusTone(code) }, ftZh),
-    h('span', { class: 'result-sep' }, '/'),
-    ...[...htft].map((ch) => h('span', { class: zhTone(ch) }, ch)),
+  return h('span', { class: 'ah-cell' }, [
+    h('span', {}, formatOdd(line.home)),
+    h('span', { class: 'ah-line' }, line.line),
+    h('span', {}, formatOdd(line.away)),
   ])
 }
 
-const columns = computed<DataTableColumns<FormMatch>>(() => [
-  {
-    title: '赛事/日期',
-    key: 'meta',
-    align: 'center',
-    width: 108,
-    render(row) {
-      return h('div', { class: 'meta-cell' }, [
-        h(
-          NEllipsis,
-          { class: 'meta-league' },
-          { default: () => competitionLabel(row) || '—' },
-        ),
-        h('div', { class: 'meta-date' }, formatDateYyMmDd(row.date || '')),
-      ])
+const columns = computed<DataTableColumns<FormMatch>>(() => {
+  const cols: DataTableColumns<FormMatch> = [
+    {
+      title: '赛事',
+      key: 'league',
+      align: 'center',
+      width: 88,
+      className: 'league-col',
+      render(row) {
+        return h(NEllipsis, {}, { default: () => competitionLabel(row) || '—' })
+      },
     },
-  },
-  {
-    title: '主队 比分 客队',
-    key: 'matchup',
-    align: 'center',
-    render(row) {
-      return h('div', { class: 'matchup' }, [
-        h(
-          NEllipsis,
-          { class: ['team-name', 'home', teamTone(row, 'home')] },
-          { default: () => row.home || '—' },
-        ),
-        h('span', { class: 'score-block' }, [
+    {
+      title: '日期',
+      key: 'date',
+      align: 'center',
+      width: 78,
+      render(row) {
+        return h('span', { class: 'date-cell' }, formatDateYyMmDd(row.date || ''))
+      },
+    },
+    {
+      title: '半场',
+      key: 'score_ht',
+      align: 'center',
+      width: 52,
+      render(row) {
+        return h('span', { class: 'ht-cell' }, row.score_ht || '—')
+      },
+    },
+    {
+      title: '主队 比分 客队',
+      key: 'matchup',
+      align: 'center',
+      minWidth: 168,
+      render(row) {
+        return h('div', { class: 'matchup' }, [
+          h(
+            NEllipsis,
+            { class: ['team-name', 'home', teamTone(row, 'home')] },
+            { default: () => row.home || '—' },
+          ),
           renderScoreFt(row),
-          row.score_ht
-            ? h('span', { class: 'score-ht' }, `(${row.score_ht})`)
-            : null,
-        ]),
-        h(
-          NEllipsis,
-          { class: ['team-name', 'away', teamTone(row, 'away')] },
-          { default: () => row.away || '—' },
-        ),
-      ])
+          h(
+            NEllipsis,
+            { class: ['team-name', 'away', teamTone(row, 'away')] },
+            { default: () => row.away || '—' },
+          ),
+        ])
+      },
     },
-  },
-  {
+  ]
+  if (props.showOdds) {
+    cols.push(
+      {
+        title: '初盘',
+        key: 'ah_opening',
+        align: 'center',
+        width: 118,
+        render(row) {
+          return renderAh(row.ah_opening)
+        },
+      },
+      {
+        title: '即时盘',
+        key: 'ah_current',
+        align: 'center',
+        width: 118,
+        render(row) {
+          return renderAh(row.ah_current)
+        },
+      },
+    )
+  }
+  cols.push({
     title: '赛果',
     key: 'result',
     align: 'center',
-    width: 88,
+    width: 52,
     render(row) {
       return renderResultCell(row)
     },
-  },
-])
+  })
+  return cols
+})
 
 function rowKey(row: FormMatch): string | number {
   return row.fixture_id ?? `${row.date ?? ''}-${row.home}-${row.away}`
 }
+
+const scrollX = computed(() => (props.showOdds ? 780 : 520))
 </script>
 
 <template>
@@ -162,32 +187,41 @@ function rowKey(row: FormMatch): string | number {
     :bordered="true"
     :single-line="false"
     :pagination="false"
+    :scroll-x="scrollX"
     :columns="columns"
     :data="matches"
     :row-key="rowKey"
+    class="stats-table"
   />
 </template>
 
 <style scoped>
-/* Cell content only — table chrome comes from n-data-table. */
-:deep(.meta-league) {
+.stats-table :deep(.n-data-table-th) {
+  padding: 6px 8px;
   font-size: 12px;
-  color: var(--fa-text-secondary);
-  line-height: 1.3;
 }
 
-:deep(.meta-date) {
-  margin-top: 2px;
+.stats-table :deep(.n-data-table-td) {
+  padding: 4px 8px;
+}
+
+.stats-table :deep(.league-col) {
+  background: var(--fa-bg-soft);
+}
+
+:deep(.date-cell),
+:deep(.ht-cell) {
   font-size: 12px;
-  color: var(--fa-text-faint);
-  line-height: 1.3;
+  color: var(--fa-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 :deep(.matchup) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  column-gap: 10px;
+  column-gap: 8px;
   width: 100%;
 }
 
@@ -204,24 +238,34 @@ function rowKey(row: FormMatch): string | number {
   text-align: left;
 }
 
-:deep(.score-block) {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 2.8em;
-  line-height: 1.15;
-}
-
 :deep(.score-ft) {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--fa-highlight-text);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-:deep(.score-ht) {
-  margin-top: 2px;
-  font-size: 11px;
+:deep(.score-sep) {
+  margin: 0 1px;
+}
+
+:deep(.ah-cell) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--fa-text);
+}
+
+:deep(.ah-line) {
+  font-weight: 700;
+  color: var(--fa-highlight-text);
+}
+
+:deep(.ah-empty) {
   color: var(--fa-text-faint);
 }
 
@@ -233,12 +277,6 @@ function rowKey(row: FormMatch): string | number {
 
 :deep(.result-text.pending) {
   color: var(--fa-text-secondary);
-  font-weight: 500;
-}
-
-:deep(.result-sep) {
-  margin: 0 1px;
-  color: var(--fa-text-faint);
   font-weight: 500;
 }
 

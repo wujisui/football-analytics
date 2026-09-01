@@ -25,6 +25,18 @@ export function hasOddsMarkets(odds: OddsLike): boolean {
   )
 }
 
+/** Main AH line for compact history-table cells. */
+export function primaryAhLine(odds: OddsLike): {
+  line: string
+  home?: string | number | null
+  away?: string | number | null
+} | null {
+  if (!odds || !hasOddsMarkets(odds)) return null
+  const line = ahLinesOf(odds.asian_handicap)[0]
+  if (!line?.line) return null
+  return { line: String(line.line), home: line.home, away: line.away }
+}
+
 function capturedAtMs(odds: OddsLike): number | null {
   const at =
     odds && 'scraped_at' in odds && odds.scraped_at
