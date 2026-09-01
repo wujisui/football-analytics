@@ -291,6 +291,7 @@ def test_prematch_odds_batch_only_refreshes_explicit_fixture_ids() -> None:
     )
     fetcher.__aenter__ = AsyncMock(return_value=fetcher)
     fetcher.__aexit__ = AsyncMock(return_value=False)
+    auto_fav = AsyncMock(return_value={"selected": []})
     settings = MagicMock(
         SCHEDULER_TIMEZONE="Asia/Shanghai",
         FIXTURES_LOOKAHEAD_DAYS=8,
@@ -314,7 +315,7 @@ def test_prematch_odds_batch_only_refreshes_explicit_fixture_ids() -> None:
             ),
             patch(
                 "app.services.auto_favorites.sync_daily_auto_favorites",
-                AsyncMock(return_value={"selected": []}),
+                auto_fav,
             ),
             patch("app.core.database.AsyncSessionLocal"),
         ):
@@ -327,6 +328,7 @@ def test_prematch_odds_batch_only_refreshes_explicit_fixture_ids() -> None:
         result = asyncio.run(_run())
         assert result["odds_updated"] == 2
         assert result["prematch_odds"]["attempted"] == 3
+        auto_fav.assert_awaited()
         fetcher.sync_odds_for_prematch_fixtures.assert_awaited_once_with(
             [101, 102, 103]
         )

@@ -111,7 +111,12 @@ async def refresh_fixture_odds(
     _: None = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Admin-only pull: first board freezes opening; later pulls update current."""
+    """Admin-only pull: first board freezes opening; later pulls update current.
+
+    Recomputes this fixture's analyzer snapshot only. Daily picks stay untouched:
+    ranking needs a same-vintage odds pool, which a single-board refresh cannot
+    provide. Batch odds paths call ``sync_daily_auto_favorites`` instead.
+    """
     if official_sync_busy():
         raise HTTPException(
             status_code=409,

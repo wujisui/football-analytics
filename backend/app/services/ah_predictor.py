@@ -19,10 +19,7 @@ from app.services.ah_features import (
     dumps_ah_features,
     extract_main_ah_line,
     format_handicap_lean_text,
-    iter_ah_quotes,
     loads_ah_features,
-    outcome_settlement_units,
-    parse_score_hint,
     pick_to_lean,
     settle_ah_label,
 )
@@ -42,7 +39,7 @@ TRAIN_LABELS = frozenset(_LABEL_TO_IDX)
 class HandicapPrediction:
     cover_prob: float
     pick: str  # cover | no_cover | push | slash-separated dual pick
-    source: str  # ml | multifactor | structural | score_hint
+    source: str  # market_implied | ml | multifactor
     line_f: float | None = None
     market_note: str = ""
 
@@ -165,217 +162,66 @@ def _clip_logit_term(value: float) -> float:
 
 
 def _structural_pick(
-    line_f: float,
-    recommendation: str,
-) -> HandicapPrediction | None:
-    rec = (recommendation or "").strip()
-    half_giving = -0.85 <= line_f <= -0.4
-    half_receiving = 0.4 <= line_f <= 0.85
-    home_undivided = rec == "胜/平" or "主队不败" in rec or rec.startswith("主胜/平")
-    away_undivided = rec == "负/平" or "客队不败" in rec or rec.startswith("客胜/平")
-    integer_line = abs(line_f - round(line_f)) < 1e-9
-
-    # Single 胜 + home gives up to one goal (-0.5 / -0.75 …): any 1-goal win covers.
-    if rec in {"胜", "主胜"} and -1.0 < line_f < -0.05:
-        return HandicapPrediction(0.72, "cover", "structural", line_f)
-    # Single 负 + home receives up to one goal (+0.5 …): away 1-goal win still fails cover.
-    if rec in {"负", "客胜"} and 0.05 < line_f < 1.0:
-        return HandicapPrediction(0.28, "no_cover", "structural", line_f)
-
-    # 胜/平 + 主让整数盘：平局走水、小胜穿不过，只能给让负/平。
-    # 四分/半球不在这里双选让胜/负——平局在 ±0.25 上赢半、输半对赌，
-    # 同时推荐两侧会把命中率做成必中，交给参考比分或模型单选。
-    if home_undivided and line_f < -0.05 and integer_line:
-        return HandicapPrediction(0.5, "no_cover/push", "structural", line_f)
-    if home_undivided and half_receiving:
-        return HandicapPrediction(0.72, "cover", "structural", line_f)
-    # 负/平 + 客让整数盘与上面镜像。
-    if away_undivided and line_f > 0.05 and integer_line:
-        return HandicapPrediction(0.5, "cover/push", "structural", line_f)
-    if away_undivided and half_giving:
-        return HandicapPrediction(0.32, "no_cover", "structural", line_f)
-    if rec in {"负", "客胜"} and half_receiving:
-        return HandicapPrediction(0.28, "no_cover", "structural", line_f)
-    if rec in {"负", "客胜"} and half_giving:
-        return HandicapPrediction(0.25, "no_cover", "structural", line_f)
-    if rec in {"平", "平局"} and half_giving:
-        return HandicapPrediction(0.30, "no_cover", "structural", line_f)
-    if rec in {"平", "平局"} and half_receiving:
-        return HandicapPrediction(0.70, "cover", "structural", line_f)
-    return None
-
-
-def _score_agrees_with_1x2(score_hint: str | None, recommendation: str) -> bool:
-    """Only let the reference score break a dual AH pick when it sits in the 1X2 set."""
-    from app.services.prediction import recommendation_outcomes
-
-    outcomes = recommendation_outcomes(recommendation)
-    scores = parse_score_hint(score_hint)
-    if not outcomes or not scores:
-        return False
-    home_g, away_g = scores[0]
-    if home_g > away_g:
-        actual = "home"
-    elif home_g < away_g:
-        actual = "away"
-    else:
-        actual = "draw"
-    return actual in outcomes
-
-
-def _pick_from_score_hint(score_hint: str | None, line_f: float) -> HandicapPrediction | None:
-    """Settle main AH line against primary reference score (aligns with score_hint row)."""
-    scores = parse_score_hint(score_hint)
-    if not scores:
-        return None
-    home_g, away_g = scores[0]
-    label = settle_ah_label(home_g, away_g, line_f)
-    if label == "cover":
-        return HandicapPrediction(0.68, "cover", "score_hint", line_f)
-    if label == "no_cover":
-        return HandicapPrediction(0.32, "no_cover", "score_hint", line_f)
-    if label == "push":
-        return HandicapPrediction(0.5, "push", "score_hint", line_f)
-    return None
-
-
-_OPPOSITE_PICK = {"cover": "no_cover", "no_cover": "cover"}
-
-
-def _level_ball_pick(
     odds: dict[str, Any] | None,
-    recommendation: str,
 ) -> HandicapPrediction | None:
-    """Choose a bettable side on level ball; a draw is settlement, never a pick.
+    """Choose the main AH side with the higher de-vig implied probability.
 
-    Prefer the nearest balanced non-zero quote from the same bookmaker board:
-    a negative line identifies the home side as the giving/favoured side, while
-    a positive line identifies the away side. If no auxiliary line survived
-    parsing, use the level-ball prices, then the directional 1X2 recommendation.
+    The handicap analyzer describes its own two-way market. It must not copy a
+    1X2 direction or let a reference score override the quoted AH board.
     """
-    quotes = iter_ah_quotes(odds)
-    auxiliary = [
-        (line_f, home_odd, away_odd)
-        for line_f, home_odd, away_odd in quotes
-        if abs(line_f) >= 0.05
-    ]
-    if auxiliary:
-        line_f, _, _ = min(
-            auxiliary,
-            key=lambda quote: abs(math.log(quote[1] / quote[2])),
+    line_f, home_odd, away_odd = extract_main_ah_line(odds)
+    if line_f is None or home_odd is None or away_odd is None:
+        return None
+    home_inv, away_inv = 1.0 / home_odd, 1.0 / away_odd
+    total = home_inv + away_inv
+    if total <= 0:
+        return None
+    cover_prob = home_inv / total
+    away_prob = away_inv / total
+    if abs(cover_prob - away_prob) <= 1e-9:
+        pick = "cover/no_cover"
+        note = (
+            f"主盘去水概率让胜 {cover_prob:.1%}、让负 {away_prob:.1%}，"
+            "两侧持平"
         )
-        pick = "cover" if line_f < 0 else "no_cover"
-        return HandicapPrediction(
-            0.64 if pick == "cover" else 0.36,
-            pick,
-            "level_aux_line",
-            0.0,
-            f"平手盘按其他让球档位取{pick_to_lean(pick)}",
-        )
-
-    _, home_odd, away_odd = extract_main_ah_line(odds)
-    if home_odd is not None and away_odd is not None:
-        gap = abs(home_odd - away_odd) / max(min(home_odd, away_odd), 1e-6)
-        if gap >= 0.02:
-            pick = "cover" if home_odd < away_odd else "no_cover"
-            return HandicapPrediction(
-                0.6 if pick == "cover" else 0.4,
-                pick,
-                "level_water",
-                0.0,
-                f"平手盘按主盘水位取{pick_to_lean(pick)}",
-            )
-
-    from app.services.prediction import recommendation_outcomes
-
-    outcomes = recommendation_outcomes(recommendation)
-    if outcomes and "home" in outcomes and "away" not in outcomes:
-        return HandicapPrediction(
-            0.58, "cover", "level_1x2", 0.0, "平手盘按胜平负方向取让胜"
-        )
-    if outcomes and "away" in outcomes and "home" not in outcomes:
-        return HandicapPrediction(
-            0.42, "no_cover", "level_1x2", 0.0, "平手盘按胜平负方向取让负"
-        )
-    return None
-
-
-def _loses_outright_on_recommendation(
-    line_f: float | None,
-    pick: str,
-    recommendation: str,
-) -> bool:
-    """True when this side loses the whole stake on a recommended 1X2 outcome."""
-    from app.services.prediction import recommendation_outcomes
-
-    outcomes = recommendation_outcomes(recommendation)
-    if not outcomes:
-        return False
-    units = outcome_settlement_units(line_f, pick_to_lean(pick))
-    if units is None:
-        return False
-    return any(units.get(outcome, 0.0) <= -1.0 for outcome in outcomes)
-
-
-def _agree_with_recommendation(
-    pred: HandicapPrediction,
-    recommendation: str,
-) -> HandicapPrediction:
-    """Never advise the handicap side the 1X2 lean expects to lose outright.
-
-    On ±0.25/±0.5 boards the reference score or the AH model can land on the
-    side that busts whenever the recommended result happens — 胜/平 paired with
-    让负(-0.25) loses the full stake on a home win. A draw only costs half a
-    stake there, so the mirrored side is the honest read of the same view.
-    """
-    opposite = _OPPOSITE_PICK.get(pred.pick)
-    if opposite is None:
-        return pred
-    if not _loses_outright_on_recommendation(pred.line_f, pred.pick, recommendation):
-        return pred
-    if _loses_outright_on_recommendation(pred.line_f, opposite, recommendation):
-        return pred
-    return HandicapPrediction(
-        1.0 - pred.cover_prob,
-        opposite,
-        pred.source,
-        pred.line_f,
-        f"与胜平负推荐冲突，已由{pick_to_lean(pred.pick)}改取{pick_to_lean(opposite)}",
-    )
-
-
-def _market_water_note(ah_features: dict[str, float], score_pick: str) -> str:
-    """Advanced: when odds-implied side differs from score-settled pick."""
-    if score_pick not in {"cover", "no_cover"}:
-        return ""
-    mf = multifactor_cover_prob(ah_features)
-    mf_pick = "cover" if mf >= 0.5 else "no_cover"
-    if mf_pick == score_pick:
-        return ""
-    water_diff = float(ah_features.get("ah_water_diff", 0.0))
-    if water_diff > 0.05:
-        water_side = "客"
-    elif water_diff < -0.05:
-        water_side = "主"
     else:
-        water_side = "均势"
-    return (
-        f"盘口水位偏{water_side}侧"
-        f"（参考比分仍按 {pick_to_lean(score_pick)} 结算）"
-    )
+        pick = "cover" if cover_prob > away_prob else "no_cover"
+        note = (
+            f"主盘去水概率让胜 {cover_prob:.1%}、让负 {away_prob:.1%}，"
+            f"取{pick_to_lean(pick)}"
+        )
+    return HandicapPrediction(cover_prob, pick, "market_implied", line_f, note)
+
+
+def _model_prediction(
+    ah_features: dict[str, float],
+    line_f: float,
+) -> HandicapPrediction:
+    """Keep the AH model available for persistence/audit, not display direction."""
+    model, meta = load_trained_model()
+    threshold = min_train_samples()
+    n_trained = int(meta.get("n_samples", 0)) if meta else 0
+    use_ml = model is not None and n_trained >= threshold
+    if use_ml:
+        X = np.asarray([ah_feature_vector(ah_features)], dtype=np.float64)
+        cover_prob = float(model.predict_proba(X)[0])
+        source = "ml"
+    else:
+        cover_prob = multifactor_cover_prob(ah_features)
+        source = "multifactor"
+    pick = "cover" if cover_prob >= 0.5 else "no_cover"
+    return HandicapPrediction(cover_prob, pick, source, line_f)
 
 
 def predict_handicap(
     odds: dict[str, Any] | None,
-    recommendation: str | None,
     *,
     package: dict[str, Any] | None = None,
     league_id: int | None = None,
     ah_features: dict[str, float] | None = None,
     features: dict[str, float] | None = None,
-    score_hint: str | None = None,
 ) -> HandicapPrediction | None:
-    """Predict home cover for main AH line."""
+    """Read the main AH direction from de-vig prices."""
     pkg = package or {}
     if odds and isinstance(odds, dict):
         pkg = {**pkg, "odds": odds}
@@ -395,46 +241,10 @@ def predict_handicap(
     if line_f is None or ah_features.get("has_ah_market", 0) < 0.5:
         return None
 
-    rec = recommendation or ""
-    structural = _structural_pick(line_f, rec)
-    # 单选结构约束（例如「胜」穿半球）优先；双选只保留整数盘。
-    # 负/平 + 1-1 +0.25 必须先按比分结算成让胜，而不是让胜/负。
-    if structural and "/" not in structural.pick:
-        return _agree_with_recommendation(structural, rec)
-
-    # Level ball still has two bettable sides. A reference draw means either
-    # side pushes; it must not become a standalone 「让平/走水」 recommendation.
-    if abs(line_f) < 1e-9:
-        level_pick = _level_ball_pick(odds, rec)
-        if level_pick is not None:
-            return _agree_with_recommendation(level_pick, rec)
-
-    score_pick = _pick_from_score_hint(score_hint, line_f)
-    if score_pick and score_pick.pick in {"cover", "no_cover", "push"}:
-        if _score_agrees_with_1x2(score_hint, rec):
-            score_pick.market_note = _market_water_note(ah_features, score_pick.pick)
-            return _agree_with_recommendation(score_pick, rec)
-
-    if structural:
-        return structural
-
-    model, meta = load_trained_model()
-    threshold = min_train_samples()
-    n_trained = int(meta.get("n_samples", 0)) if meta else 0
-    use_ml = model is not None and n_trained >= threshold
-
-    if use_ml:
-        X = np.asarray([ah_feature_vector(ah_features)], dtype=np.float64)
-        cover_prob = float(model.predict_proba(X)[0])
-        source = "ml"
-    else:
-        cover_prob = multifactor_cover_prob(ah_features)
-        source = "multifactor"
-
-    pick = "cover" if cover_prob >= 0.5 else "no_cover"
-    return _agree_with_recommendation(
-        HandicapPrediction(cover_prob, pick, source, line_f), rec
-    )
+    market_pick = _structural_pick(odds)
+    if market_pick is not None:
+        return market_pick
+    return _model_prediction(ah_features, line_f)
 
 
 def format_handicap_lean(pred: HandicapPrediction) -> str:
@@ -452,6 +262,7 @@ def handicap_bundle_from_markets(
     score_hint: str | None = None,
 ) -> tuple[str, str]:
     """Return (handicap_lean, handicap_market_note) for product + detail."""
+    del recommendation, score_hint
     if not isinstance(odds, dict) or not odds.get("available", True):
         ah = (odds or {}).get("asian_handicap") if isinstance(odds, dict) else None
         if not isinstance(ah, dict):
@@ -471,11 +282,9 @@ def handicap_bundle_from_markets(
 
     pred = predict_handicap(
         odds,
-        recommendation,
         package=pkg,
         league_id=league_id,
         features=features,
-        score_hint=score_hint,
     )
     if not pred:
         return "缺少盘口数据分析", ""
@@ -557,12 +366,12 @@ async def persist_ah_fields(
     ah_features, line_f, home_f, away_f = build_ah_features(
         package, league_id=league_id
     )
-    pred = predict_handicap(
-        (package or {}).get("odds") if isinstance((package or {}).get("odds"), dict) else None,
-        None,
-        package=package,
-        league_id=league_id,
-        ah_features=ah_features,
+    # Persist the model estimate for deep-board daily-pick audit/training.
+    # The analyzer display direction is read separately from de-vig market odds.
+    pred = (
+        _model_prediction(ah_features, line_f)
+        if line_f is not None and ah_features.get("has_ah_market", 0) >= 0.5
+        else None
     )
 
     result = await session.execute(

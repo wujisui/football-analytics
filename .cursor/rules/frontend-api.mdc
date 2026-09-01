@@ -15,6 +15,7 @@ alwaysApply: false
 - 定时批次写本地库，前端没有公开 sync、SSE 或轮询；已订阅完整批次维持 8 天赛程并处理今天/明天，密刷开关控制全天每 30 分钟或 07:00/08:05/10:55/22:00 时刻表
 - 打开列表页、F5、下拉刷新只重拉本地列表接口；切换/选中联赛只做本地筛选，不得触发官方
 - 进入详情会请求 `/fixtures/{fixture_id}/analysis`：后端本地优先，缺包时可打官方并落库（前端仍只调自有 API）
+- 管理员详情「更新盘口」走 `POST /fixtures/{id}/odds/refresh`：只更新本场盘口与本场算法推荐，前端随后 `reload()`；不要在成功回调里触发日推或整表重排。日推只在运维批量更新盘口 / 定时密刷之后由后端重算
 - 赛果：`GET /fixtures/results?date=`（当日列表 + 准确率）；`GET /fixtures/results/history?days=0`（默认全部本地完场样本 + 按日序列；`days>0` 为近 N 日）
 - 详情统一走 `/fixtures/{fixture_id}/analysis`（首页/赛果/预测入口相同）
 - `league_id`（联赛）与 `fixture_id`（比赛）不要混用

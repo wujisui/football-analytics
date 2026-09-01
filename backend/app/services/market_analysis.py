@@ -334,7 +334,7 @@ def _add_ah_analysis(
                     )
 
     if handicap_lean:
-        bullets.append(f"算法让球倾向：{handicap_lean}。")
+        bullets.append(f"让球主盘倾向：{handicap_lean}。")
     if handicap_market_note:
         bullets.append(f"倾向说明：{handicap_market_note}。")
 

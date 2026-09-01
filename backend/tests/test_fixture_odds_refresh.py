@@ -32,6 +32,7 @@ def test_admin_refresh_accepts_today_catalog_prematch_fixture() -> None:
         fetcher.__aexit__ = AsyncMock(return_value=False)
 
         publish = AsyncMock()
+        auto_fav = AsyncMock()
         with (
             patch.object(fixtures, "FootballFetcher", return_value=fetcher),
             patch.object(fixtures, "official_sync_busy", return_value=False),
@@ -43,11 +44,16 @@ def test_admin_refresh_accepts_today_catalog_prematch_fixture() -> None:
             ),
             patch.object(fixtures, "_odds_refresh_allowed", return_value=True),
             patch.object(fixtures, "touch_client_data_revision", publish),
+            patch(
+                "app.services.auto_favorites.sync_daily_auto_favorites",
+                auto_fav,
+            ),
         ):
             result = await fixtures.refresh_fixture_odds(987, None, db)
 
         fetcher.refresh_odds_for_fixture.assert_awaited_once_with(987)
         publish.assert_awaited_once_with(db)
+        auto_fav.assert_not_awaited()
         assert result == {
             "fixture_id": 987,
             "updated": True,

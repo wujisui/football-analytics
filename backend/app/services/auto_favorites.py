@@ -470,7 +470,12 @@ async def sync_daily_auto_favorites(
     limit: int = AUTO_PICK_LIMIT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Replace guest-bucket ``source=auto`` tips via the recommendation pipeline."""
+    """Replace guest-bucket ``source=auto`` tips via the recommendation pipeline.
+
+    Call only after a batch odds refresh (scheduled light/full sync or ops
+    「更新盘口」). A single-fixture odds refresh must not call this: the pool
+    would mix one fresh board with stale boards.
+    """
     from app.services.recommendation.pipeline import sync_daily_recommendations
 
     return await sync_daily_recommendations(

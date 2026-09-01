@@ -338,8 +338,8 @@ async def scheduled_fixtures_sync(
                         exc,
                     )
 
-        # Odds just refreshed — recompute auto favorites so picks track lines.
-        # Results-only does not touch boards, so skip the pick rewrite.
+        # 批量盘口后重算日推。详情单场 POST /odds/refresh 不得走这里：
+        # 日推是同一批盘口的跨场排序，一场新水位对其余旧盘口没有可比性。
         if mode != "results":
             try:
                 from app.services.auto_favorites import sync_daily_auto_favorites
