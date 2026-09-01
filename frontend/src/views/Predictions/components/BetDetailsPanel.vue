@@ -243,6 +243,7 @@ defineExpose({ openFormula, openDetails })
         </n-button>
         <n-button
           v-if="props.footerOnly"
+          class="detail-button"
           size="small"
           type="primary"
           :disabled="!groupedSelections.length"
@@ -535,6 +536,18 @@ defineExpose({ openFormula, openDetails })
 
 .footer-only .details-footer {
   border-top: none;
+}
+
+/* 手机端没有 +/- 按钮，倍数只需容纳两位数，剩余宽度留给按钮的点击区域。 */
+.footer-only .multiplier-input {
+  flex: 0 0 78px;
+}
+
+.footer-only .save-button,
+.footer-only .detail-button {
+  flex: 1 1 auto;
+  padding-right: 12px;
+  padding-left: 12px;
 }
 
 .details-modal-body {
