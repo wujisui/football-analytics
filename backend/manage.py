@@ -571,9 +571,14 @@ async def run_train_ah_model() -> None:
         print(f"Current labeled samples: {result.get('n_samples', 0)}")
         print(f"Current inference mode: {status['inference_mode']}")
         return
-    print("AH training succeeded — inference will auto-switch to source=ml.")
+    print(
+        "AH training succeeded — inference="
+        f"{'ml' if result.get('deployable') else 'market_implied'}."
+    )
     print(f"Samples: {result.get('n_samples')}")
     print(f"Val log-loss: {result.get('val_metrics', {}).get('log_loss')}")
+    print(f"Market log-loss: {result.get('market_val_metrics', {}).get('log_loss')}")
+    print(f"Deployable: {result.get('deployable')}")
     print(f"Val accuracy: {result.get('val_metrics', {}).get('accuracy')}")
     print(f"Weights: {result.get('weights_path')}")
     print(f"Model status: {status}")

@@ -26,14 +26,24 @@ from app.services.ah_features import (
 from app.services.ah_predictor import (
     HandicapPrediction,
     _BinaryLogReg,
+    _beats_market_baseline,
     _structural_pick,
     format_handicap_lean,
+    handicap_bundle_from_markets,
     load_trained_model,
 )
 from app.services.features import extract_features
 
 
 class AhFeaturesTests(unittest.TestCase):
+    def setUp(self) -> None:
+        model_patcher = patch(
+            "app.services.ah_predictor.load_trained_model",
+            return_value=(None, {}),
+        )
+        model_patcher.start()
+        self.addCleanup(model_patcher.stop)
+
     def test_settle_ah_label_boundaries(self) -> None:
         self.assertEqual(settle_ah_label(2, 1, -0.5), "cover")
         self.assertEqual(settle_ah_label(1, 1, -0.5), "no_cover")
@@ -41,13 +51,13 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertIsNone(settle_ah_label(None, 1, -0.5))
 
     def test_format_handicap_lean_includes_side(self) -> None:
-        pred = HandicapPrediction(0.62, "cover", "multifactor", -0.25)
+        pred = HandicapPrediction(0.62, "cover", "market_implied", -0.25)
         self.assertEqual(format_handicap_lean(pred), "让胜(-0.25)")
-        pred_lose = HandicapPrediction(0.4, "no_cover", "multifactor", -0.25)
+        pred_lose = HandicapPrediction(0.4, "no_cover", "market_implied", -0.25)
         self.assertEqual(format_handicap_lean(pred_lose), "让负(-0.25)")
-        pred_recv = HandicapPrediction(0.55, "cover", "multifactor", 1.0)
+        pred_recv = HandicapPrediction(0.55, "cover", "market_implied", 1.0)
         self.assertEqual(format_handicap_lean(pred_recv), "让胜(+1)")
-        pred_level = HandicapPrediction(0.5, "push", "multifactor", 0.0)
+        pred_level = HandicapPrediction(0.5, "push", "market_implied", 0.0)
         self.assertEqual(format_handicap_lean(pred_level), "让平(0)")
         pred_dual = HandicapPrediction(0.5, "cover/no_cover", "structural", -0.5)
         self.assertEqual(format_handicap_lean(pred_dual), "让胜/负(-0.5)")
@@ -68,8 +78,6 @@ class AhFeaturesTests(unittest.TestCase):
 
     def test_west_ham_regression_market_prices_choose_handicap_loss(self) -> None:
         """胜/平和参考比分不得把 2.06/1.84 的主盘热门侧翻回让胜。"""
-        from app.services.ah_predictor import handicap_bundle_from_markets
-
         west_ham = {
             "available": True,
             "asian_handicap": {"line": "-0.5", "home": 2.06, "away": 1.84},
@@ -80,9 +88,81 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(lean, "让负(-0.5)")
         self.assertIn("取让负", note)
 
-    def test_handicap_direction_is_independent_of_1x2_and_score(self) -> None:
-        from app.services.ah_predictor import handicap_bundle_from_markets
+    def test_only_deployable_model_can_correct_market_direction(self) -> None:
+        class FixedModel:
+            def predict_proba(self, _features):
+                return [0.70]
 
+        odds = {
+            "available": True,
+            "asian_handicap": {"line": "-0.5", "home": 2.06, "away": 1.84},
+        }
+        qualified_meta = {
+            "ah_feature_version": AH_FEATURE_VERSION,
+            "n_samples": 100,
+            "deployable": True,
+        }
+        with (
+            patch(
+                "app.services.ah_predictor.load_trained_model",
+                return_value=(FixedModel(), qualified_meta),
+            ),
+            patch("app.services.ah_predictor.min_train_samples", return_value=80),
+        ):
+            lean, note = handicap_bundle_from_markets(odds)
+
+        self.assertEqual(lean, "让胜(-0.5)")
+        self.assertIn("合格模型估计让胜 70.0%", note)
+        self.assertIn("保守修正为 58.6%", note)
+
+    def test_non_deployable_model_falls_back_to_market(self) -> None:
+        class FixedModel:
+            def predict_proba(self, _features):
+                return [0.90]
+
+        odds = {
+            "available": True,
+            "asian_handicap": {"line": "-0.5", "home": 2.06, "away": 1.84},
+        }
+        rejected_meta = {
+            "ah_feature_version": AH_FEATURE_VERSION,
+            "n_samples": 100,
+            "deployable": False,
+        }
+        with (
+            patch(
+                "app.services.ah_predictor.load_trained_model",
+                return_value=(FixedModel(), rejected_meta),
+            ),
+            patch("app.services.ah_predictor.min_train_samples", return_value=80),
+        ):
+            lean, note = handicap_bundle_from_markets(odds)
+
+        self.assertEqual(lean, "让负(-0.5)")
+        self.assertNotIn("合格模型", note)
+
+    def test_ah_quality_gate_requires_both_metrics_to_beat_market(self) -> None:
+        market = {"log_loss": 0.68, "brier": 0.24}
+        self.assertTrue(
+            _beats_market_baseline(
+                {"log_loss": 0.67, "brier": 0.23},
+                market,
+            )
+        )
+        self.assertFalse(
+            _beats_market_baseline(
+                {"log_loss": 0.67, "brier": 0.25},
+                market,
+            )
+        )
+        self.assertFalse(
+            _beats_market_baseline(
+                {"log_loss": 0.69, "brier": 0.23},
+                market,
+            )
+        )
+
+    def test_handicap_direction_is_independent_of_1x2_and_score(self) -> None:
         home_give = {
             "available": True,
             "asian_handicap": {"line": "-0.25", "home": 1.88, "away": 1.98},
@@ -97,8 +177,6 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(second, first)
 
     def test_level_ball_uses_its_own_main_prices(self) -> None:
-        from app.services.ah_predictor import handicap_bundle_from_markets
-
         home_leaning = {
             "available": True,
             "asian_handicap": {
@@ -136,8 +214,6 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(lean, "让负(0)")
 
     def test_equal_main_prices_return_no_directional_edge(self) -> None:
-        from app.services.ah_predictor import handicap_bundle_from_markets
-
         level = {
             "available": True,
             "asian_handicap": {"line": "0", "home": 1.95, "away": 1.95},
@@ -364,17 +440,6 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertLess(features["ah_away_odd_drift"], 0.0)
         self.assertGreater(features["ah_water_drift"], 0.0)
 
-        from app.services.ah_predictor import multifactor_cover_prob
-
-        current_only = {
-            "odds": package["odds"],
-            "odds_opening": {"available": False},
-        }
-        baseline, *_ = build_ah_features(current_only)
-        self.assertLess(
-            multifactor_cover_prob(features),
-            multifactor_cover_prob(baseline),
-        )
         self.assertEqual(settle_ah_label(1, 1, -0.5), "no_cover")
         self.assertEqual(settle_ah_label(1, 1, 0.0), "push")
 

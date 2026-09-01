@@ -1,10 +1,9 @@
-"""Asian handicap cover probability: multifactor heuristic + binary logistic ML."""
+"""Asian handicap probability: market baseline + validated binary logistic correction."""
 
 from __future__ import annotations
 
 import json
 import logging
-import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,13 +32,15 @@ MODEL_META_NAME = "ah_v3_meta.json"
 
 _LABEL_TO_IDX = {"no_cover": 0, "cover": 1}
 TRAIN_LABELS = frozenset(_LABEL_TO_IDX)
+MIN_HOLDOUT_SAMPLES = 20
+MODEL_MARKET_BLEND = 0.5
 
 
 @dataclass
 class HandicapPrediction:
     cover_prob: float
     pick: str  # cover | no_cover | push | slash-separated dual pick
-    source: str  # market_implied | ml | multifactor
+    source: str  # market_implied | ml
     line_f: float | None = None
     market_note: str = ""
 
@@ -118,47 +119,26 @@ def load_trained_model() -> tuple[_BinaryLogReg | None, dict[str, Any]]:
         return None, {}
 
 
-def multifactor_cover_prob(features: dict[str, float]) -> float:
-    """Heuristic P(home covers) when ML artifact is not ready."""
-    if features.get("has_ah_market", 0) < 0.5:
-        return 0.5
-
-    implied = float(features.get("ah_implied_cover", 0.5))
-    water_diff = float(features.get("ah_water_diff", 0.0))
-    mx_gap = float(features.get("mx_vs_ah_gap", 0.0))
-    rank = float(features.get("rank_diff", 0.0))
-    form_edge = float(features.get("home_gd_avg_5", 0.0)) - float(
-        features.get("away_gd_avg_5", 0.0)
+def _artifact_is_deployable(
+    model: _BinaryLogReg | None,
+    meta: dict[str, Any],
+) -> bool:
+    return (
+        model is not None
+        and int(meta.get("n_samples", 0)) >= min_train_samples()
+        and bool(meta.get("deployable", False))
     )
 
-    # Relative water: higher home odd vs away → lower cover prob.
-    logit = 2.2 * (implied - 0.5) - 0.65 * water_diff + 1.1 * mx_gap
-    logit += 0.35 * rank + 0.25 * form_edge
 
-    shallow = float(features.get("ah_tier_shallow", 0.0))
-    if shallow >= 0.5 and water_diff > 0.12:
-        logit -= 0.45
-    if shallow >= 0.5 and water_diff < -0.12:
-        logit += 0.35
-
-    deep = float(features.get("ah_tier_deep", 0.0))
-    if deep >= 0.5 and implied < 0.52:
-        logit += 0.25
-
-    steam = float(features.get("ah_away_steam", 0.0))
-    water_drift = float(features.get("ah_water_drift", 0.0))
-    level_hot = float(features.get("ah_level_away_hot", 0.0))
-    logit -= 0.55 * steam
-    logit -= 0.45 * _clip_logit_term(water_drift)
-    if shallow >= 0.5:
-        logit -= 0.35 * level_hot
-
-    logit = max(-6.0, min(6.0, logit))
-    return float(1.0 / (1.0 + math.exp(-logit)))
-
-
-def _clip_logit_term(value: float) -> float:
-    return max(-0.4, min(0.4, value))
+def _beats_market_baseline(
+    model_metrics: dict[str, float],
+    market_metrics: dict[str, float],
+) -> bool:
+    """Require the time-holdout model to improve both probability metrics."""
+    return (
+        float(model_metrics["log_loss"]) < float(market_metrics["log_loss"])
+        and float(model_metrics["brier"]) < float(market_metrics["brier"])
+    )
 
 
 def _structural_pick(
@@ -197,20 +177,32 @@ def _model_prediction(
     ah_features: dict[str, float],
     line_f: float,
 ) -> HandicapPrediction:
-    """Keep the AH model available for persistence/audit, not display direction."""
+    """Use a validated model as a conservative correction to market probability."""
+    market_prob = max(
+        0.0, min(1.0, float(ah_features.get("ah_implied_cover", 0.5)))
+    )
     model, meta = load_trained_model()
-    threshold = min_train_samples()
-    n_trained = int(meta.get("n_samples", 0)) if meta else 0
-    use_ml = model is not None and n_trained >= threshold
-    if use_ml:
-        X = np.asarray([ah_feature_vector(ah_features)], dtype=np.float64)
-        cover_prob = float(model.predict_proba(X)[0])
-        source = "ml"
+    if not _artifact_is_deployable(model, meta):
+        pick = (
+            "cover/no_cover"
+            if abs(market_prob - 0.5) <= 1e-9
+            else ("cover" if market_prob > 0.5 else "no_cover")
+        )
+        return HandicapPrediction(market_prob, pick, "market_implied", line_f)
+
+    X = np.asarray([ah_feature_vector(ah_features)], dtype=np.float64)
+    model_prob = max(0.0, min(1.0, float(model.predict_proba(X)[0])))
+    cover_prob = market_prob + MODEL_MARKET_BLEND * (model_prob - market_prob)
+    if abs(cover_prob - 0.5) <= 1e-9:
+        pick = "cover/no_cover"
     else:
-        cover_prob = multifactor_cover_prob(ah_features)
-        source = "multifactor"
-    pick = "cover" if cover_prob >= 0.5 else "no_cover"
-    return HandicapPrediction(cover_prob, pick, source, line_f)
+        pick = "cover" if cover_prob > 0.5 else "no_cover"
+    note = (
+        f"主盘去水概率让胜 {market_prob:.1%}、让负 {1.0 - market_prob:.1%}；"
+        f"合格模型估计让胜 {model_prob:.1%}，保守修正为 {cover_prob:.1%}，"
+        f"取{pick_to_lean(pick)}"
+    )
+    return HandicapPrediction(cover_prob, pick, "ml", line_f, note)
 
 
 def predict_handicap(
@@ -221,7 +213,7 @@ def predict_handicap(
     ah_features: dict[str, float] | None = None,
     features: dict[str, float] | None = None,
 ) -> HandicapPrediction | None:
-    """Read the main AH direction from de-vig prices."""
+    """Read the main AH direction, allowing only a validated model to correct it."""
     pkg = package or {}
     if odds and isinstance(odds, dict):
         pkg = {**pkg, "odds": odds}
@@ -241,10 +233,10 @@ def predict_handicap(
     if line_f is None or ah_features.get("has_ah_market", 0) < 0.5:
         return None
 
-    market_pick = _structural_pick(odds)
-    if market_pick is not None:
-        return market_pick
-    return _model_prediction(ah_features, line_f)
+    model_pick = _model_prediction(ah_features, line_f)
+    if model_pick.source == "ml":
+        return model_pick
+    return _structural_pick(odds) or model_pick
 
 
 def format_handicap_lean(pred: HandicapPrediction) -> str:
@@ -306,7 +298,8 @@ def train_from_rows(rows: list[tuple[dict[str, float], str]]) -> dict[str, Any]:
     X = np.asarray([ah_feature_vector(f) for f, _ in labeled], dtype=np.float64)
     y = np.asarray([_LABEL_TO_IDX[lab] for _, lab in labeled], dtype=np.float64)
 
-    split = max(threshold - 5, int(n * 0.8))
+    holdout_n = max(MIN_HOLDOUT_SAMPLES, int(n * 0.2))
+    split = n - min(holdout_n, n - 1)
     X_train, y_train = X[:split], y[:split]
     X_val, y_val = X[split:], y[split:]
 
@@ -315,26 +308,53 @@ def train_from_rows(rows: list[tuple[dict[str, float], str]]) -> dict[str, Any]:
 
     def _metrics(Xm: np.ndarray, ym: np.ndarray) -> dict[str, float]:
         if len(ym) == 0:
-            return {"log_loss": float("nan"), "accuracy": float("nan")}
+            return {
+                "log_loss": float("nan"),
+                "brier": float("nan"),
+                "accuracy": float("nan"),
+            }
         p = model.predict_proba(Xm)
         eps = 1e-9
         ll = float(-np.mean(ym * np.log(p + eps) + (1 - ym) * np.log(1 - p + eps)))
+        brier = float(np.mean((p - ym) ** 2))
         acc = float(np.mean((p >= 0.5) == (ym >= 0.5)))
-        return {"log_loss": ll, "accuracy": acc}
+        return {"log_loss": ll, "brier": brier, "accuracy": acc}
 
     train_m = _metrics(X_train, y_train)
-    val_m = _metrics(X_val, y_val) if len(y_val) else train_m
+    val_m = _metrics(X_val, y_val)
+    implied_index = AH_FEATURE_NAMES.index("ah_implied_cover")
 
-    model.fit(X, y, epochs=500)
+    def _market_metrics(Xm: np.ndarray, ym: np.ndarray) -> dict[str, float]:
+        p = np.clip(Xm[:, implied_index], 1e-9, 1.0 - 1e-9)
+        return {
+            "log_loss": float(
+                -np.mean(ym * np.log(p) + (1.0 - ym) * np.log(1.0 - p))
+            ),
+            "brier": float(np.mean((p - ym) ** 2)),
+            "accuracy": float(np.mean((p >= 0.5) == (ym >= 0.5))),
+        }
+
+    market_val_m = _market_metrics(X_val, y_val)
+    deployable = _beats_market_baseline(val_m, market_val_m)
+
+    # Refit a fresh estimator on all rows after evaluation. Reusing the holdout
+    # estimator would train early rows twice and make the saved artifact depend
+    # on the validation pass.
+    final_model = _BinaryLogReg(n_features=X.shape[1])
+    final_model.fit(X, y, epochs=500)
     weights_path, meta_path = model_paths()
-    model.save(weights_path)
+    final_model.save(weights_path)
     meta = {
         "ah_feature_version": AH_FEATURE_VERSION,
         "feature_names": AH_FEATURE_NAMES,
         "n_samples": n,
         "min_train_samples": threshold,
+        "fit_samples": len(X_train),
+        "holdout_samples": len(X_val),
         "train_metrics": train_m,
         "val_metrics": val_m,
+        "market_val_metrics": market_val_m,
+        "deployable": deployable,
         "fit_history": history,
         "classes": ["no_cover", "cover"],
         "trained_at": __import__("datetime").datetime.now(
@@ -343,9 +363,11 @@ def train_from_rows(rows: list[tuple[dict[str, float], str]]) -> dict[str, Any]:
     }
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info(
-        "Trained AH model n=%s val_acc=%s → inference will use source=ml",
+        "Trained AH model n=%s val_logloss=%s market_logloss=%s deployable=%s",
         n,
-        val_m.get("accuracy"),
+        val_m.get("log_loss"),
+        market_val_m.get("log_loss"),
+        deployable,
     )
     return {"ok": True, **meta, "weights_path": str(weights_path)}
 
@@ -366,8 +388,8 @@ async def persist_ah_fields(
     ah_features, line_f, home_f, away_f = build_ah_features(
         package, league_id=league_id
     )
-    # Persist the model estimate for deep-board daily-pick audit/training.
-    # The analyzer display direction is read separately from de-vig market odds.
+    # Persist the same validated, market-shrunk estimate used by the analyzer.
+    # Deep-board daily picks consume this frozen probability.
     pred = (
         _model_prediction(ah_features, line_f)
         if line_f is not None and ah_features.get("has_ah_market", 0) >= 0.5
@@ -573,22 +595,25 @@ async def maybe_auto_train_model(session: Any | None = None) -> dict[str, Any]:
                 "reason": "below_threshold",
                 "n_samples": n,
                 "min_train_samples": threshold,
-                "inference": "multifactor",
+                "inference": "market_implied",
             }
 
         if prev_n > 0 and n <= prev_n:
+            deployable = bool(meta.get("deployable", False))
             return {
                 "ok": False,
                 "skipped": True,
                 "reason": "no_new_labels",
                 "n_samples": n,
                 "last_trained_n": prev_n,
-                "inference": "ml",
+                "inference": "ml" if deployable else "market_implied",
             }
 
         result = train_from_rows(rows)
         if result.get("ok"):
-            result["inference"] = "ml"
+            result["inference"] = (
+                "ml" if result.get("deployable") else "market_implied"
+            )
             result["auto"] = True
         return result
 
@@ -606,11 +631,15 @@ def model_status() -> dict[str, Any]:
     model, meta = load_trained_model()
     n_trained = int(meta.get("n_samples", 0)) if meta else 0
     ready = model is not None and n_trained >= threshold
+    deployable = ready and bool(meta.get("deployable", False))
     return {
-        "inference_mode": "ml" if ready else "multifactor",
+        "inference_mode": "ml" if deployable else "market_implied",
         "min_train_samples": threshold,
         "trained_n_samples": n_trained,
         "artifact_ready": ready,
+        "deployable": deployable,
+        "val_metrics": meta.get("val_metrics") if meta else None,
+        "market_val_metrics": meta.get("market_val_metrics") if meta else None,
         "ah_feature_version": AH_FEATURE_VERSION,
         "trained_at": meta.get("trained_at") if meta else None,
     }

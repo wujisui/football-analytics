@@ -299,12 +299,6 @@ def _to_1x2_pick(
     )
 
 
-def _two_way_fair_probs(home_odd: float, away_odd: float) -> tuple[float, float]:
-    home_inv, away_inv = 1.0 / home_odd, 1.0 / away_odd
-    total = home_inv + away_inv
-    return home_inv / total, away_inv / total
-
-
 def _ah_side_probability(
     *,
     side: str,
@@ -348,9 +342,7 @@ def _to_ah_picks(
     line, home_odd, away_odd = extract_main_ah_line(odds)
     if line is None or home_odd is None or away_odd is None:
         return []
-    fair_home, fair_away = _two_way_fair_probs(home_odd, away_odd)
     odd_by_side = {"home": home_odd, "away": away_odd}
-    fair_by_side = {"home": fair_home, "away": fair_away}
     measured: dict[str, tuple[float, float, float]] = {}
     for side in ("home", "away"):
         probability = _ah_side_probability(side=side, line=line, result=result)
@@ -376,12 +368,7 @@ def _to_ah_picks(
         if hit_rate < best_hit_rate - AH_SIDE_TIE_EPSILON:
             continue
         decimal_odd = odd_by_side[side]
-        market_probability = fair_by_side[side]
         confidence = hit_rate
-        # The AH model has not shown a stable time-holdout edge. Treat a gap
-        # above the market as uncertainty and keep only half of it.
-        if confidence > market_probability:
-            confidence = (confidence + market_probability) / 2.0
         if confidence < MIN_DAILY_CONFIDENCE:
             continue
         market_lean = format_handicap_lean_text(
