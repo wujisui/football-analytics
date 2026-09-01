@@ -92,7 +92,7 @@ const lastSyncText = computed(() => {
   if (!run) return '尚无同步记录'
   const when = formatLocalDateMinute(run.finished_at)
   const suffix = run.status === 'failed' ? '失败' : ''
-  return `上次同步${suffix} ${when} · ${run.label}`
+  return `${run.label} · ${suffix} ${when}`
 })
 
 const lastSyncQuotaText = computed(() => {
@@ -268,12 +268,18 @@ watch(syncing, (value, previous) => {
 
 <template>
   <MineSectionBody>
-    <n-card size="small" :bordered="false">
+    <n-card size="small" :bordered="false" class="ops-card">
       <template #header>
-        <span></span>
+        <n-text
+          depth="3"
+          :type="lastSync?.status === 'failed' ? 'error' : undefined"
+          class="ops-last-sync"
+        >
+          {{ lastSyncText }}
+        </n-text>
       </template>
       <template #header-extra>
-        <n-flex :size="6" align="center">
+        <n-flex :size="6" align="center" :wrap="false">
           <n-tag v-if="apiRemaining != null" size="small" :bordered="false" type="info">
             官方剩余 {{ apiRemaining }}
           </n-tag>
@@ -289,16 +295,9 @@ watch(syncing, (value, previous) => {
           </template>
           <n-thing :description="syncSummary">
             <template #header>
-              <n-flex :size="8" align="center" :wrap="true">
-                <span>同步官方 API 数据</span>
+              <n-flex :size="6" align="center">
+                <span>同步数据</span>
                 <HelpTip :text="syncDetail" />
-                <n-text
-                  depth="3"
-                  :type="lastSync?.status === 'failed' ? 'error' : undefined"
-                  style="font-size: 12px"
-                >
-                  {{ lastSyncText }}
-                </n-text>
               </n-flex>
             </template>
           </n-thing>
@@ -418,3 +417,25 @@ watch(syncing, (value, previous) => {
     </n-card>
   </MineSectionBody>
 </template>
+
+<style scoped>
+.ops-card :deep(.n-card-header) {
+  gap: 8px;
+}
+
+.ops-card :deep(.n-card-header__main) {
+  min-width: 0;
+}
+
+.ops-last-sync {
+  display: block;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-card :deep(.n-card-header__extra) {
+  flex-shrink: 0;
+}
+</style>
