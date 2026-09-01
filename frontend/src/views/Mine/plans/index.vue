@@ -281,6 +281,7 @@ onMounted(() => {
           :class="{ 'plans-card--mobile': isPhone }"
           :bordered="false"
           content-style="padding:0; flex: 1; min-height: 0; display: flex; flex-direction: column;"
+          :segmented="{ content: true }"
       >
         <template v-if="isPhone" #header>
           <span class="plans-card-title">方案列表</span>

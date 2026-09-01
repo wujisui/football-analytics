@@ -30,7 +30,12 @@ function onThemeChange(value: ThemePresetId) {
 <template>
   <MineSectionBody>
     <n-flex vertical :size="12">
-      <n-card size="small" title="主题" :bordered="false">
+      <n-card
+        size="small"
+        title="主题"
+        :bordered="false"
+        :segmented="{ content: true }"
+      >
         <n-list>
           <n-list-item>
             <template #prefix>
@@ -56,7 +61,12 @@ function onThemeChange(value: ThemePresetId) {
         </n-list>
       </n-card>
 
-      <n-card size="small" title="让球玩法" :bordered="false">
+      <n-card
+        size="small"
+        title="让球玩法"
+        :bordered="false"
+        :segmented="{ content: true }"
+      >
         <n-list>
           <n-list-item>
             <n-thing

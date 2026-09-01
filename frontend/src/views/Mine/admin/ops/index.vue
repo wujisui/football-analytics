@@ -270,7 +270,12 @@ watch(syncing, (value, previous) => {
 
 <template>
   <MineSectionBody>
-    <n-card size="small" :bordered="false" class="ops-card">
+    <n-card
+      size="small"
+      :bordered="false"
+      class="ops-card"
+      :segmented="{ content: true }"
+    >
       <template #header>
         <n-text
           depth="3"

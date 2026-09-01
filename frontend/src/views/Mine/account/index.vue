@@ -181,7 +181,13 @@ function onLogout() {
       </template>
     </n-card>
 
-    <n-card v-if="isLoggedIn" size="small" title="账号说明" :bordered="false">
+    <n-card
+      v-if="isLoggedIn"
+      size="small"
+      title="账号说明"
+      :bordered="false"
+      :segmented="{ content: true }"
+    >
       <n-alert type="info" :show-icon="false">
         登录会话由服务端安全 Cookie 维护；退出后不会删除账号下已保存的数据。
       </n-alert>

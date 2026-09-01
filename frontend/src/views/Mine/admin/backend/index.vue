@@ -165,7 +165,12 @@ onMounted(() => {
 
 <template>
   <MineSectionBody>
-    <n-card size="small" title="后台管理" :bordered="false">
+    <n-card
+      size="small"
+      title="后台管理"
+      :bordered="false"
+      :segmented="{ content: true }"
+    >
       <n-list>
         <n-list-item>
           <template #prefix>

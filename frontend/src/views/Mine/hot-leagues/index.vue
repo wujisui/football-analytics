@@ -651,6 +651,7 @@ onMounted(() => {
       :bordered="false"
       class="hot-leagues-card"
       content-style="padding: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;"
+      :segmented="{ content: true }"
     >
       <template #header>
         <n-flex :size="8" align="baseline">

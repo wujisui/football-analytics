@@ -90,7 +90,12 @@ const dataNotes: string[] = [
       </n-descriptions>
     </n-card>
 
-    <n-card size="small" :bordered="false" title="产品定位">
+    <n-card
+        size="small"
+        :bordered="false"
+        title="产品定位"
+        :segmented="{ content: true }"
+    >
       <n-p depth="3">
         Football Analytics 是一套人机协同的足球赛前决策辅助系统：机器把上百场比赛、几十种玩法压缩成少量可执行的建议，最终判断仍由你来做。
         开赛后预测快照冻结，只回写比分与命中结果，方便事后逐条验证。
@@ -102,6 +107,7 @@ const dataNotes: string[] = [
         :bordered="false"
         title="页面功能"
         content-style="padding: 0;"
+        :segmented="{ content: true }"
     >
       <n-list>
         <n-list-item v-for="item in pages" :key="item.name">
@@ -115,6 +121,7 @@ const dataNotes: string[] = [
         :bordered="false"
         title="核心推荐逻辑"
         content-style="padding: 0;"
+        :segmented="{ content: true }"
     >
       <n-list>
         <n-list-item v-for="item in logic" :key="item.name">
@@ -123,7 +130,12 @@ const dataNotes: string[] = [
       </n-list>
     </n-card>
 
-    <n-card size="small" :bordered="false" title="产品价值">
+    <n-card
+        size="small"
+        :bordered="false"
+        title="产品价值"
+        :segmented="{ content: true }"
+    >
       <n-ul>
         <n-li v-for="item in values" :key="item">
           <n-text depth="3">{{ item }}</n-text>
@@ -131,7 +143,12 @@ const dataNotes: string[] = [
       </n-ul>
     </n-card>
 
-    <n-card size="small" :bordered="false" title="数据与同步">
+    <n-card
+        size="small"
+        :bordered="false"
+        title="数据与同步"
+        :segmented="{ content: true }"
+    >
       <n-ul>
         <n-li v-for="item in dataNotes" :key="item">
           <n-text depth="3">{{ item }}</n-text>

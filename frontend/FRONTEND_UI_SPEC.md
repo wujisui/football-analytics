@@ -250,6 +250,7 @@ frontend/src/
 - **少写 CSS**：优先依赖 Naive 默认样式与 props；自定义 class 只留给复杂布局（见 `frontend-ui.mdc`「少写 CSS」）
 - **就近组织**：路由与应用级抽屉统一用 `views/<Feature>/index.vue`；专属子组件和 composable 分别放同目录 `components/`、`composables/`，跨功能复用代码才进入全局目录
 - 全屏壳 + 内容区滚动；勿用整站 `max-width` 居中窄栏代替布局
+- **带标题的卡片一律 `:segmented="{ content: true }"`**：标题与正文之间靠 Naive 分隔线分层，赛果统计卡、方案统计卡与「我的」二级页各卡口径一致；无标题卡片加不加都不出线，勿另写 `border-top`
 - 风格：简洁、白/灰为主，信息密度适中
 - Composition API（`<script setup>`）+ TypeScript
 - Loading / 空态 / 错误重试用 `n-spin` / `n-empty` / `n-alert`
