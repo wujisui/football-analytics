@@ -251,6 +251,7 @@ frontend/src/
 - **就近组织**：路由与应用级抽屉统一用 `views/<Feature>/index.vue`；专属子组件和 composable 分别放同目录 `components/`、`composables/`，跨功能复用代码才进入全局目录
 - 全屏壳 + 内容区滚动；勿用整站 `max-width` 居中窄栏代替布局
 - **带标题的卡片一律 `:segmented="{ content: true }"`**：标题与正文之间靠 Naive 分隔线分层，赛果统计卡、方案统计卡与「我的」二级页各卡口径一致；无标题卡片加不加都不出线，勿另写 `border-top`
+- **「我的方案」列表卡**：PC / 手机同一套 `n-card`，标题「方案列表」，`FavoriteDatesPicker` 走 `#header-extra`；内容区 `n-scrollbar` 滚动、标题固定。PC 顶栏不再放日期选择（第二行只显示当日方案数量）
 - 风格：简洁、白/灰为主，信息密度适中
 - Composition API（`<script setup>`）+ TypeScript
 - Loading / 空态 / 错误重试用 `n-spin` / `n-empty` / `n-alert`

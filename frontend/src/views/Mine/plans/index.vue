@@ -283,10 +283,10 @@ onMounted(() => {
           content-style="padding:0; flex: 1; min-height: 0; display: flex; flex-direction: column;"
           :segmented="{ content: true }"
       >
-        <template v-if="isPhone" #header>
+        <template #header>
           <span class="plans-card-title">方案列表</span>
         </template>
-        <template v-if="isPhone" #header-extra>
+        <template #header-extra>
           <FavoriteDatesPicker
               v-model="filterDate"
               :marked-days="planDays"
@@ -402,13 +402,16 @@ onMounted(() => {
   flex: 1;
   width: 100%;
   min-height: 0;
-  background: transparent;
+  overflow: hidden;
+  background: var(--fa-bg-elevated);
+}
+
+.plans-card :deep(.n-card-header) {
+  flex-shrink: 0;
 }
 
 .plans-card--mobile {
   margin: 0;
-  background: var(--fa-bg-elevated);
-  overflow: hidden;
 }
 
 .plans-card--mobile :deep(.n-card-content) {

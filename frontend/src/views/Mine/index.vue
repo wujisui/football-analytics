@@ -8,7 +8,6 @@ import { useAuthSession } from '@/composables/useAuthSession'
 import { useBetPlans } from '@/composables/useBetPlans'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import ShellBreadcrumb from '@/layouts/components/ShellBreadcrumb.vue'
-import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import {
   isAdminOnlySection,
   sectionFromRouteName,
@@ -22,7 +21,7 @@ const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
 const { isAdmin } = useAuthSession()
-const { filterDate, planDays, plansForDay } = useBetPlans()
+const { filterDate, plansForDay } = useBetPlans()
 
 function renderIcon(icon: Component) {
   return () => h(NIcon, null, { default: () => h(icon) })
@@ -187,7 +186,7 @@ watch(
             <span class="fa-toolbar-title">{{ activeMeta.title }}</span>
           </div>
 
-          <!-- PC 对齐比赛/关注：面包屑在上，统计（或说明）与方案日期在下 -->
+          <!-- PC：面包屑在上，分区说明（方案页为当日数量）在下；方案日期在列表卡标题右侧 -->
           <template v-else>
             <div class="fa-toolbar-top">
               <ShellBreadcrumb
@@ -200,12 +199,6 @@ watch(
               <span class="fa-toolbar-day-stat mine-meta-line">
                 {{ sectionMetaLine }}
               </span>
-              <FavoriteDatesPicker
-                v-if="isPlansSection"
-                v-model="filterDate"
-                :marked-days="planDays"
-                legend="当天有方案（赛程日）"
-              />
             </div>
           </template>
         </n-layout-header>
