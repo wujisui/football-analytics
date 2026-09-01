@@ -131,6 +131,13 @@ class DailyRecommendationPick:
     conflict_detail: str = ""
 
 
+def _count_matches_by_day(matches: list[MatchPipelineInput]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for match in matches:
+        counts[match.match_day] = counts.get(match.match_day, 0) + 1
+    return counts
+
+
 def log_sync_summary(
     *,
     total_matches: int,
@@ -139,8 +146,10 @@ def log_sync_summary(
     feedback_written: bool,
     consistency_rejected: int = 0,
     day: str | None = None,
+    matches_by_day: dict[str, int] | None = None,
+    selected_by_day: dict[str, int] | None = None,
 ) -> None:
-    """Emit structured daily sync metrics; warn when picks < 4 on busy days."""
+    """Emit sync metrics; warn per match day when a ≥6 pool still yields <4."""
     day_label = day or "unknown"
     logger.info(
         "Recommendation sync summary day=%s total_matches=%s candidates=%s selected=%s "
@@ -152,23 +161,33 @@ def log_sync_summary(
         feedback_written,
         consistency_rejected,
     )
-    if total_matches >= MIN_MATCHES_FOR_FULL_QUOTA and selected_count < AUTO_PICK_LIMIT:
-        logger.warning(
-            "Recommendation sync alert day=%s selected=%s<%s while total_matches=%s>=%s",
-            day_label,
-            selected_count,
-            AUTO_PICK_LIMIT,
-            total_matches,
-            MIN_MATCHES_FOR_FULL_QUOTA,
-        )
-    elif total_matches < MIN_MATCHES_FOR_FULL_QUOTA:
-        logger.info(
-            "Recommendation sync day=%s total_matches=%s<%s; selected all candidates=%s",
-            day_label,
-            total_matches,
-            MIN_MATCHES_FOR_FULL_QUOTA,
-            selected_count,
-        )
+    # 配额是按比赛日算的，聚合数字判断不出来：多日窗口里 selected 通常是
+    # 4×有赛日，恒大于 4，告警永远不触发。
+    pools = matches_by_day or {}
+    picked = selected_by_day or {}
+    for match_day in sorted(pools):
+        pool = int(pools[match_day])
+        count = int(picked.get(match_day, 0))
+        if pool >= MIN_MATCHES_FOR_FULL_QUOTA and count < AUTO_PICK_LIMIT:
+            logger.warning(
+                "Recommendation sync alert match_day=%s selected=%s<%s "
+                "while pool=%s>=%s",
+                match_day,
+                count,
+                AUTO_PICK_LIMIT,
+                pool,
+                MIN_MATCHES_FOR_FULL_QUOTA,
+            )
+        elif pool < MIN_MATCHES_FOR_FULL_QUOTA:
+            logger.info(
+                "Recommendation sync match_day=%s pool=%s<%s; fewer than %s allowed, "
+                "selected=%s",
+                match_day,
+                pool,
+                MIN_MATCHES_FOR_FULL_QUOTA,
+                AUTO_PICK_LIMIT,
+                count,
+            )
 
 
 def _decimal_odd_for_choice(
@@ -480,9 +499,10 @@ def select_daily_picks_by_match_day(
     selected_fixture_ids: set[int] = set()
     for day in sorted(by_day):
         day_picks = sorted(by_day[day], key=pick_rank_key)
-        # `MIN_MATCHES_FOR_FULL_QUOTA` 只决定「选不满要不要告警」，不放宽上限。
-        # 曾写成候选少时 day_limit = len(day_picks)，等于在清淡日取消配额：09-03
-        # 只有 5 场进管线，5 个候选全部入池，超出每日 4 场。
+        # 每个比赛日恒定最多 4 场。`MIN_MATCHES_FOR_FULL_QUOTA` 管的是「几时
+        # 允许少于 4 场」，不是「几时可以多于 4 场」；曾写成候选少时
+        # day_limit = len(day_picks)，把「允许少推」实现成「取消上限」，
+        # 09-03 只有 5 场进管线就推了 5 场。
         day_limit = min(limit_per_day, len(day_picks))
         count = 0
         # Ranking by risk-adjusted return is the only cross-fixture criterion:
@@ -521,6 +541,7 @@ def run_pipeline(
     both_score_lean_by_fixture = {
         match.fixture_id: match.both_score_lean for match in matches
     }
+    matches_count_by_day = _count_matches_by_day(matches)
     processed: list[PipelineMatchResult] = []
     for match in matches:
         result = process_match(match, artifact=artifact)
@@ -603,6 +624,7 @@ def run_pipeline(
 
     return {
         "total_matches": len(matches),
+        "matches_by_day": matches_count_by_day,
         "processed_count": len(processed),
         "candidate_count": candidate_count,
         "consistency_rejected_count": len(rejected),
@@ -847,5 +869,7 @@ async def sync_daily_recommendations(
         feedback_written=feedback_written,
         consistency_rejected=int(result["consistency_rejected_count"]),
         day=local_day,
+        matches_by_day=pipeline_result.get("matches_by_day"),
+        selected_by_day=pipeline_result["by_day"],
     )
     return result

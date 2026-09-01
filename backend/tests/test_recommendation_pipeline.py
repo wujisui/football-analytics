@@ -563,12 +563,11 @@ def test_same_fixture_cannot_occupy_two_slots_with_both_markets() -> None:
     assert selected[0].market == "ah"
 
 
-def test_quiet_day_still_caps_at_the_daily_limit() -> None:
-    """清淡日不放宽上限。
+def test_quiet_day_may_pick_fewer_but_never_more_than_four() -> None:
+    """池子不足 6 场只是「允许少于 4 场」，不是「可以多于 4 场」。
 
-    曾按「当日进管线场次 < MIN_MATCHES_FOR_FULL_QUOTA 就取全部候选」处理，等于在
-    清淡日取消配额：09-03 只有 5 场有盘口，5 个候选全部入池，超出每日 4 场。
-    该常量只决定选不满要不要告警。
+    曾把这条实现成候选少时 day_limit = len(day_picks)，等于取消上限：
+    09-03 只有 5 场进管线，5 个候选就全部入池。
     """
     base = DailyRecommendationPick(
         fixture_id=1,
@@ -595,9 +594,33 @@ def test_quiet_day_still_caps_at_the_daily_limit() -> None:
         for fixture_id in range(1, 6)
     ]
 
-    selected = select_daily_picks_by_match_day(picks, limit_per_day=4)
-
-    assert [pick.fixture_id for pick in selected] == [1, 2, 3, 4]
+    # 清淡日的 5 个合格候选同样只能占 4 个坑。
+    assert [
+        pick.fixture_id
+        for pick in select_daily_picks_by_match_day(picks, limit_per_day=4)
+    ] == [1, 2, 3, 4]
 
     # 候选真的不足 4 场时按实际数量给，不硬塞。
     assert len(select_daily_picks_by_match_day(picks[:2], limit_per_day=4)) == 2
+
+
+def test_short_pool_is_the_only_excuse_for_fewer_than_four(caplog) -> None:
+    """池子 ≥ 6 场却选不满 4 场才算异常，池子小于 6 场不告警。
+
+    告警必须按比赛日判断：多日窗口的聚合 selected 通常是 4×有赛日，
+    恒大于 4，用聚合数字判断等于告警永不触发。
+    """
+    with caplog.at_level("WARNING"):
+        log_sync_summary(
+            total_matches=11,
+            candidate_count=9,
+            selected_count=7,
+            feedback_written=False,
+            day="2026-09-03",
+            matches_by_day={"2026-09-03": 5, "2026-09-04": 6},
+            selected_by_day={"2026-09-03": 4, "2026-09-04": 3},
+        )
+
+    alerts = [record.getMessage() for record in caplog.records]
+    assert any("match_day=2026-09-04" in message for message in alerts)
+    assert not any("match_day=2026-09-03" in message for message in alerts)
