@@ -600,6 +600,10 @@ day_limit = limit_per_day if day_total >= MIN_MATCHES_FOR_FULL_QUOTA else len(da
 
 回归 `test_quiet_day_may_pick_fewer_but_never_more_than_four`（5 个合格候选只出 4 场，2 个候选仍给 2 场）、`test_short_pool_is_the_only_excuse_for_fewer_than_four`（池子 6 场选 3 场触发告警，池子 5 场选 4 场不告警）。联赛默认勾选修复不受影响。
 
+### 未订阅禁用全部手动配额按钮
+
+关闭订阅后，运维「立即同步」本来就不能点，「更新赛果」和「更新盘口」却仍可手动打官方。现改为与立即同步同一边界：未订阅时三个按钮都禁用；`POST /admin/tasks/trigger` 对完整同步、赛果回写、盘口批量一律 409；详情 `POST /fixtures/{id}/odds/refresh` 同样拒绝；列表/详情的 `odds_refresh_allowed` 在未订阅时为 false，详情按钮直接不出现。定时 07:00 / 08:05 / 10:55 / 22:00 仍按未订阅时刻表跑，不属于额外消耗。回归 `test_manual_quota_tasks_require_subscription`、`test_admin_refresh_requires_subscription`。
+
 ### 待查：深盘候选的置信度天然贴近 50%
 
 同一轮排查发现德国杯那场的可疑之处：主盘 +8、两侧同价 1.92，去水后正好 50.0%/50.0%，是纯抛硬币加约 4% 抽水，却拿到 4.5 星；配套三件套还写成「主胜 / 比分 2-1」，而市场给主队 1.9%。自洽闸放过它，是因为 +8 让球在主胜时必然覆盖，「不会输」这个条件被巨型让球盘轻易满足。

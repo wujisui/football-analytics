@@ -70,6 +70,7 @@ from app.services.results_capture import (
 )
 from app.services.runtime_settings import (
     get_client_data_revision,
+    get_subscription_enabled,
     touch_client_data_revision,
 )
 from app.services.league_names import league_name_zh
@@ -121,6 +122,9 @@ async def refresh_fixture_odds(
     ranking needs a same-vintage odds pool, which a single-board refresh cannot
     provide. Batch odds paths call ``sync_daily_auto_favorites`` instead.
     """
+    subscribed, _ = await get_subscription_enabled(db)
+    if not subscribed:
+        raise HTTPException(status_code=409, detail="订阅已关闭，不能手动消耗官方配额")
     if official_sync_busy():
         raise HTTPException(
             status_code=409,
@@ -487,6 +491,7 @@ async def get_today_fixtures(
         db,
         league_ids=competition_ids,
     )
+    subscribed, _ = await get_subscription_enabled(db)
     fixture_responses: list[FixtureResponse] = []
     for fixture in fixtures:
         stored = stored_by_id.get(fixture.id)
@@ -518,7 +523,8 @@ async def get_today_fixtures(
                 match_day_offset=(
                     date.fromisoformat(fixture_match_day(fixture)) - base_date
                 ).days,
-                odds_refresh_allowed=_odds_refresh_allowed(
+                odds_refresh_allowed=subscribed
+                and _odds_refresh_allowed(
                     fixture, today_match_day=today_match_day
                 ),
                 status=fixture.status,
@@ -911,12 +917,15 @@ async def get_fixture_analysis(
         match_day=fixture_match_day(fixture),
         match_timezone=fixture.match_timezone or "UTC",
         match_day_source=fixture.match_day_source or "utc",
-        odds_refresh_allowed=_odds_refresh_allowed(
-            fixture,
-            today_match_day=await current_prematch_match_day(
-                db,
-                league_ids=await allowed_league_ids(db),
-            ),
+        odds_refresh_allowed=(
+            bool((await get_subscription_enabled(db))[0])
+            and _odds_refresh_allowed(
+                fixture,
+                today_match_day=await current_prematch_match_day(
+                    db,
+                    league_ids=await allowed_league_ids(db),
+                ),
+            )
         ),
         status=fixture.status,
         home_goals=fixture.home_goals,

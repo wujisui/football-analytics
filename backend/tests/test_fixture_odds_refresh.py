@@ -37,6 +37,11 @@ def test_admin_refresh_accepts_today_catalog_prematch_fixture() -> None:
             patch.object(fixtures, "FootballFetcher", return_value=fetcher),
             patch.object(fixtures, "official_sync_busy", return_value=False),
             patch.object(
+                fixtures,
+                "get_subscription_enabled",
+                AsyncMock(return_value=(True, "db")),
+            ),
+            patch.object(
                 fixtures, "current_prematch_match_day", AsyncMock(return_value="2026-08-30")
             ),
             patch.object(
@@ -67,7 +72,14 @@ def test_admin_refresh_rejects_while_official_batch_is_running() -> None:
     async def _run() -> None:
         db = MagicMock()
         db.get = AsyncMock()
-        with patch.object(fixtures, "official_sync_busy", return_value=True):
+        with (
+            patch.object(fixtures, "official_sync_busy", return_value=True),
+            patch.object(
+                fixtures,
+                "get_subscription_enabled",
+                AsyncMock(return_value=(True, "db")),
+            ),
+        ):
             try:
                 await fixtures.refresh_fixture_odds(987, None, db)
             except HTTPException as exc:
@@ -75,6 +87,30 @@ def test_admin_refresh_rejects_while_official_batch_is_running() -> None:
                 assert exc.detail == "后台官方同步正在执行，本次盘口未更新，请稍后再试"
             else:
                 raise AssertionError("Expected busy refresh to return HTTP 409")
+        db.execute.assert_not_called()
+
+    asyncio.run(_run())
+
+
+def test_admin_refresh_requires_subscription() -> None:
+    async def _run() -> None:
+        db = MagicMock()
+        db.execute = AsyncMock()
+        with (
+            patch.object(
+                fixtures,
+                "get_subscription_enabled",
+                AsyncMock(return_value=(False, "db")),
+            ),
+            patch.object(fixtures, "official_sync_busy", return_value=False),
+        ):
+            try:
+                await fixtures.refresh_fixture_odds(987, None, db)
+            except HTTPException as exc:
+                assert exc.status_code == 409
+                assert exc.detail == "订阅已关闭，不能手动消耗官方配额"
+            else:
+                raise AssertionError("Expected unsubscribed refresh to return HTTP 409")
         db.execute.assert_not_called()
 
     asyncio.run(_run())

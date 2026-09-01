@@ -301,10 +301,17 @@ async def trigger_task_endpoint(
     }
     if body.name not in allowed:
         raise HTTPException(status_code=400, detail=f"Unknown task: {body.name}")
-    if body.name == "scheduled_fixtures_sync":
+    if body.name in {
+        "scheduled_fixtures_sync",
+        RESULTS_SYNC_TASK,
+        PREMATCH_ODDS_TASK,
+    }:
         subscribed, _ = await get_subscription_enabled()
         if not subscribed:
-            raise HTTPException(status_code=409, detail="订阅已关闭，不能手动完整同步")
+            raise HTTPException(
+                status_code=409,
+                detail="订阅已关闭，不能手动消耗官方配额",
+            )
     if body.name == PREMATCH_ODDS_TASK and not body.fixture_ids:
         raise HTTPException(status_code=400, detail="当前【比赛】筛选没有可更新的场次")
     if official_sync_busy():

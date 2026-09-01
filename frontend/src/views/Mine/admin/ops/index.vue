@@ -71,22 +71,34 @@ const syncSummary = computed(() =>
 const syncDetail = computed(() =>
   subscribed.value
     ? '等同执行一次 10:55 已订阅完整批次：回写昨天和今天赛果、增量补齐 8 天赛程窗口、刷新今天盘口、补齐明天初盘、预拉今天/明天详情，并执行积分榜、训练、日推及清理。不限每日次数，但每次都会消耗官方配额。'
-    : '完整同步只在已订阅时开放；未订阅仍按 07:00、08:05、10:55、22:00 固定任务运行。',
+    : '完整同步只在已订阅时开放；未订阅只跑 07:00、08:05、10:55、22:00，不能手动消耗配额。',
 )
 
-const resultsSyncSummary = '只回写昨天和今天的终场比分，不动盘口与赛程。'
-const resultsSyncDetail =
-  '只按日回写调度时区昨天和今天的终场比分与训练标签（例如周六回写周五晚场，下午完场当天就能补上）。不拉前几天，不拉盘口/赛程/详情。每天 07:00 定时与此按钮范围相同。与完整批次共用官方请求锁，不能同时跑。'
+const resultsSyncSummary = computed(() =>
+  subscribed.value
+    ? '只回写昨天和今天的终场比分，不动盘口与赛程。'
+    : '订阅关闭时不可用。',
+)
+const resultsSyncDetail = computed(() =>
+  subscribed.value
+    ? '只按日回写调度时区昨天和今天的终场比分与训练标签（例如周六回写周五晚场，下午完场当天就能补上）。不拉前几天，不拉盘口/赛程/详情。每天 07:00 定时与此按钮范围相同。与完整批次共用官方请求锁，不能同时跑。'
+    : '未订阅只保留 07:00 / 08:05 / 10:55 / 22:00 定时批次，不能再手动回写赛果。',
+)
 
-const prematchOddsSummary = computed(() =>
-  prematchFixtureIds.value.length
+const prematchOddsSummary = computed(() => {
+  if (!subscribed.value) return '订阅关闭时不可用。'
+  return prematchFixtureIds.value.length
     ? `更新【比赛】当前筛选中今天的 ${prematchFixtureIds.value.length} 场未开赛盘口，并重算推荐。`
-    : '当前筛选没有今天的热门未开赛赛事。',
+    : '当前筛选没有今天的热门未开赛赛事。'
+})
+const prematchOddsDetail = computed(() =>
+  subscribed.value
+    ? [
+        '更新比赛日为今天、仍未开赛的热门场次盘口，每场约一次官方请求。',
+        '成功后按新盘口重算这些场次的算法预测，并重排当天日推 [荐]；不重训模型。',
+      ].join('\n')
+    : '未订阅只保留固定时刻表，不能再手动更新盘口。',
 )
-const prematchOddsDetail = [
-  '更新比赛日为今天、仍未开赛的热门场次盘口，每场约一次官方请求。',
-  '成功后按新盘口重算这些场次的算法预测，并重排当天日推 [荐]；不重训模型。',
-].join('\n')
 
 const lastSyncText = computed(() => {
   if (syncing.value) return '同步进行中，完成后会全局提示'
@@ -121,7 +133,7 @@ const subscriptionDetail = computed(() => {
   if (subscribed.value) {
     return `${clocks}07:00 回写昨天和今天赛果；10:55 为每日定时完整批次。赛程保留 8 天滑动窗口且每天只补末端一天；今天盘口刷新为即时盘，明天缺盘补齐并冻结为初盘；详情只预拉今天、明天。关闭密刷后采用 07:00、08:05、10:55、22:00 的稀疏时刻，但 10:55 仍执行已订阅完整批次，立即同步仍可用。`
   }
-  return `${clocks}未订阅每天 07:00 回写昨天和今天赛果，08:05 只拉当天赛程，10:55 跑昨天/今天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。密刷会随订阅关闭并禁用。`
+    : '未订阅每天 07:00 回写昨天和今天赛果，08:05 只拉当天赛程，10:55 跑昨天/今天赛果与今天赛程/热门盘口，22:00 只刷新今天未开赛热门盘口并重算日推；跳过积分榜与详情预拉，打开详情只读本地。密刷会随订阅关闭并禁用。立即同步、更新盘口、更新赛果均不可用。'
 })
 
 const denseOddsSummary = computed(() => {
@@ -187,7 +199,7 @@ function onSubscriptionToggle(next: boolean) {
     next ? '确认设为已订阅？' : '确认设为未订阅？',
     next
       ? '会自动开启全天密刷，并启用 8 天增量赛程、积分榜、今天即时盘、明天初盘及今天/明天详情。开关本身不会立即同步。'
-      : '会同时关闭并禁用密刷，只保留 07:00、08:05、10:55、22:00，跳过未来赛程、积分榜及详情官方请求。开关本身不会立即同步。',
+      : '会同时关闭并禁用密刷，并禁用立即同步、更新盘口、更新赛果。只保留 07:00、08:05、10:55、22:00，跳过未来赛程、积分榜及详情官方请求。开关本身不会立即同步。',
     () => void applySubscriptionToggle(next),
   )
 }
@@ -219,10 +231,12 @@ async function applyDenseOddsToggle(next: boolean) {
 }
 
 async function syncOfficialData() {
+  if (!subscribed.value) return
   await runSync()
 }
 
 async function syncResultsOnly() {
+  if (!subscribed.value) return
   await runResultsSync()
   await loadSetting(true)
 }
@@ -233,6 +247,7 @@ async function applyPrematchOddsSync() {
 }
 
 function syncPrematchOddsOnly() {
+  if (!subscribed.value || prematchFixtureIds.value.length === 0) return
   modal.create({
     preset: 'dialog',
     title: '确认更新盘口？',
@@ -338,7 +353,7 @@ watch(syncing, (value, previous) => {
               size="small"
               type="primary"
               tertiary
-              :disabled="busy || prematchFixtureIds.length === 0"
+              :disabled="busy || !subscribed || prematchFixtureIds.length === 0"
               :loading="prematchOddsSyncing"
               @click="syncPrematchOddsOnly"
             >
@@ -364,7 +379,7 @@ watch(syncing, (value, previous) => {
               size="small"
               type="primary"
               tertiary
-              :disabled="busy"
+              :disabled="busy || !subscribed"
               :loading="resultsSyncing"
               @click="syncResultsOnly"
             >

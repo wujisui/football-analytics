@@ -135,3 +135,25 @@ def test_manual_full_sync_requires_subscription_but_has_no_daily_limit() -> None
     asyncio.run(_run_unsubscribed())
     response = asyncio.run(_run_subscribed())
     assert response["status"] == "accepted"
+
+
+def test_manual_quota_tasks_require_subscription() -> None:
+    async def _reject(name: str, fixture_ids: list[int] | None = None) -> None:
+        with patch.object(
+            admin,
+            "get_subscription_enabled",
+            AsyncMock(return_value=(False, "db")),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await admin.trigger_task_endpoint(
+                    admin.TriggerTaskRequest(
+                        name=name,
+                        fixture_ids=list(fixture_ids or []),
+                    ),
+                    None,
+                )
+            assert exc.value.status_code == 409
+            assert exc.value.detail == "订阅已关闭，不能手动消耗官方配额"
+
+    asyncio.run(_reject(admin.RESULTS_SYNC_TASK))
+    asyncio.run(_reject(admin.PREMATCH_ODDS_TASK, [1]))
