@@ -4,6 +4,8 @@
 均势盘是真实读数，必须照常出双选。
 真实案例二：南美杯雷科莱塔曾在完全没有盘口的情况下输出「平 / 比分:0-0 / 小(2.5) / 双进否」——
 纯近况模型概率不是依据，缺 1X2 盘口就整包待分析。
+真实案例三：热门去水后不足五成一度被当成胶着，连领先次选近 20 个点的盘也强制双选——
+「胶着」要由市场差距判定，不是由热门的绝对水平判定。
 """
 
 import unittest
@@ -96,6 +98,30 @@ class EvenMarketPredictionTests(unittest.TestCase):
             {"home": 0.62, "draw": 0.24, "away": 0.14}, odds=favorite_board
         )
         self.assertNotIn("待分析", rec)
+
+    def test_clear_favorite_below_half_still_gets_a_single_pick(self) -> None:
+        """热门不足五成不等于胶着：市场已拉开差距时不许强制双选。
+
+        `weak_home/weak_away` 用的是绝对阈值「热门 < 50%」，而足球热门本来就大多
+        落在 40%~50%，它一度让 m_gap 近 0.2 的明确热门盘也输出双选。
+        """
+        board = {
+            "available": True,
+            "match_winner": {"home": "2.05", "draw": "3.55", "away": "3.70"},
+        }
+        # 去水后约 主 46.9% / 平 27.1% / 客 26.0%：热门不足五成，但领先次选 19.8 个点。
+        probs = {"home": 0.469, "draw": 0.271, "away": 0.260}
+        self.assertEqual(get_recommendation(probs, odds=board), "胜")
+
+    def test_weak_favorite_still_doubles_when_market_has_no_favorite(self) -> None:
+        """收紧只针对「市场已选出热门」的盘，真正没拉开的仍旧双选。"""
+        board = {
+            "available": True,
+            "match_winner": {"home": "2.40", "draw": "3.85", "away": "2.75"},
+        }
+        # 去水后约 主 40.1% / 平 25.0% / 客 35.0%：领先次选仅 5.1 个点。
+        probs = {"home": 0.401, "draw": 0.250, "away": 0.350}
+        self.assertEqual(get_recommendation(probs, odds=board), "胜/平")
 
 
 if __name__ == "__main__":

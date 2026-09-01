@@ -248,8 +248,25 @@ def get_recommendation(
         return _DOUBLE[frozenset({"draw", other})]
 
     # Contested board: tight triangle on market or model, or weak single favorite.
-    weak_home = d_top[0] == "home" and model["home"] < 0.50 and d_draw >= 0.24
-    weak_away = d_top[0] == "away" and model["away"] < 0.50 and d_draw >= 0.24
+    # 「弱热门」只在市场自己也没选出明确热门时才成立。``model[fav] < 0.50`` 是绝对
+    # 阈值，而足球热门本来就大多落在 40%~50%，不加这道前置它几乎恒真，会把 m_gap
+    # 已达 0.2 以上的明确热门盘也拖进双选（并且排在下面「明确热门」分支之前，直接
+    # 短路掉单选路径）。回测 178 场受影响样本：扣掉「双选覆盖两个结果」的机械效应
+    # 后，双选超出市场覆盖度 +1.5%、单选 +2.5%，差异落在噪声内，收紧不损失预测
+    # 质量。真源 backend/scripts/backtest_lean_thresholds.py
+    market_undecided = m_gap < _SINGLE_PICK_GAP
+    weak_home = (
+        market_undecided
+        and d_top[0] == "home"
+        and model["home"] < 0.50
+        and d_draw >= 0.24
+    )
+    weak_away = (
+        market_undecided
+        and d_top[0] == "away"
+        and model["away"] < 0.50
+        and d_draw >= 0.24
+    )
     contested = (
         m_spread <= _MARKET_FLAT_SPREAD
         or d_spread <= _MARKET_FLAT_SPREAD
