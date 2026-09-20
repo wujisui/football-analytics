@@ -189,10 +189,10 @@ def test_valid_half_ball_board_always_uses_ah_despite_market_feedback(
     )
 
 
-def test_one_goal_board_without_ah_probability_falls_back_to_goals_not_moneyline(
+def test_one_goal_board_uses_market_probability_instead_of_moneyline(
     monkeypatch,
 ) -> None:
-    """复现维拉利尔：主让 1 球缺 AH 概率时，不得退化成 1.51 主胜。"""
+    """复现维拉利尔：主让 1 球没有冻结 AH 模型概率时，仍用主盘去水概率推让球。"""
     match = _match(1, ah_line="-1", ah_cover_prob=None, goal_lean="大(3.25)")
     assert match.odds is not None
     match.odds["match_winner"] = {"home": 1.51, "draw": 4.60, "away": 6.00}
@@ -223,9 +223,47 @@ def test_one_goal_board_without_ah_probability_falls_back_to_goals_not_moneyline
     )
 
     assert result["selected_count"] == 1
+    assert result["selected"][0]["market"] == "ah"
+    assert result["selected"][0]["lean"] == "主-1"
+    assert result["selected"][0]["decimal_odd"] == 1.83
+    assert all(item["market"] != "1x2" for item in result["selected"])
+
+
+def test_weak_deep_ah_falls_back_to_goals_not_moneyline(monkeypatch) -> None:
+    """深盘信心不足才降级大小球；线深本身不是降级条件。"""
+    match = _match(1, ah_line="-1", ah_cover_prob=0.35, goal_lean="大(3.25)")
+    assert match.odds is not None
+    match.odds["match_winner"] = {"home": 1.51, "draw": 4.60, "away": 6.00}
+    match.odds["asian_handicap"] = {"line": "-1", "home": 1.83, "away": 2.09}
+    match.odds["goals_ou"] = {"line": "3.25", "home": 1.90, "away": 1.96}
+    processed = replace(
+        _processed(1, choice="home", confidence=0.638),
+        ah_cover_prob=0.35,
+        ah_model_line=-1.0,
+        calibration={
+            "match_id": 1,
+            "calibrated_home_prob": 0.638,
+            "calibrated_draw_prob": 0.198,
+            "calibrated_away_prob": 0.164,
+            "reliability": 0.7,
+            "sample_size": 100,
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        lambda _match, *, artifact=None: processed,
+    )
+
+    result = run_pipeline(
+        [match],
+        artifact={},
+        market_artifact={},
+        limit_per_day=4,
+    )
+
+    assert result["selected_count"] == 1
     assert result["selected"][0]["market"] == "ou"
     assert result["selected"][0]["lean"] == "大(3.25)"
-    assert result["selected"][0]["decimal_odd"] == 1.90
     assert all(item["market"] != "1x2" for item in result["selected"])
 
 
@@ -527,7 +565,7 @@ def test_deep_board_without_ah_probability_is_skipped_and_backfilled(
         "app.services.recommendation.pipeline.process_match",
         fake_process,
     )
-    # 有 AH 盘却缺深盘概率时，不得回退到低赔独赢；该场无其它市场就直接跳过。
+    # 主让 1.5 仍可凭主盘去水概率进候选；比分穿不过盘时自洽闸淘汰，由后续场次补位。
     matches = [
         _match(1, ah_line="-1.5"),
         *[_match(i, ah_line="-0.5") for i in range(2, 7)],
@@ -536,7 +574,9 @@ def test_deep_board_without_ah_probability_is_skipped_and_backfilled(
 
     assert [item["fixture_id"] for item in result["selected"]] == [2, 3, 4, 5]
     assert result["selected_count"] == 4
-    assert result["consistency_rejected_count"] == 0
+    assert result["consistency_rejected_count"] == 1
+    assert result["rejected"][0]["fixture_id"] == 1
+    assert result["rejected"][0]["is_consistent"] is False
     assert all(item["fixture_id"] != 1 for item in result["selected"])
     assert all(item["is_consistent"] is True for item in result["selected"])
     assert all(item["handicap_lean"] == "主-0.5" for item in result["selected"])

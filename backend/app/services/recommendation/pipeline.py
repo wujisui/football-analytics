@@ -288,7 +288,13 @@ def _to_ah_picks(
         return []
     if side not in {"home", "away"}:
         return []
-    probability = _ah_side_probability(side=side, line=line, result=result)
+    probability = _ah_side_probability(
+        side=side,
+        line=line,
+        result=result,
+        home_odd=home_odd,
+        away_odd=away_odd,
+    )
     if probability is None:
         return []
     raw_confidence, stake_share = probability
@@ -519,8 +525,15 @@ def _ah_side_probability(
     side: str,
     line: float,
     result: PipelineMatchResult,
+    home_odd: float | None = None,
+    away_odd: float | None = None,
 ) -> tuple[float, float] | None:
-    """Return (conditional win probability, stake share at risk)."""
+    """Return (conditional win probability, stake share at risk).
+
+    浅盘用 1X2 计入退半/走水。深盘优先读已收缩的 AH 推断概率；没有冻结值时
+    用主盘两侧去水概率。线深本身不是降级条件，过 ``MIN_DAILY_CONFIDENCE``
+    就可以推让球。
+    """
     pick = "让胜" if side == "home" else "让负"
     units = outcome_settlement_units(line, pick)
     calibration = result.calibration or {}
@@ -539,12 +552,21 @@ def _ah_side_probability(
 
     cover = result.ah_cover_prob
     if (
-        cover is None
-        or result.ah_model_line is None
-        or abs(float(result.ah_model_line) - line) > 0.04
+        cover is not None
+        and result.ah_model_line is not None
+        and abs(float(result.ah_model_line) - line) <= 0.04
     ):
+        probability = float(cover) if side == "home" else 1.0 - float(cover)
+        return max(0.0, min(1.0, probability)), 1.0
+
+    if home_odd is None or away_odd is None or home_odd <= 1.0 or away_odd <= 1.0:
         return None
-    probability = float(cover) if side == "home" else 1.0 - float(cover)
+    inv_home, inv_away = 1.0 / home_odd, 1.0 / away_odd
+    total = inv_home + inv_away
+    if total <= 0:
+        return None
+    implied_cover = inv_home / total
+    probability = implied_cover if side == "home" else 1.0 - implied_cover
     return max(0.0, min(1.0, probability)), 1.0
 
 
