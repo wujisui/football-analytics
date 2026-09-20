@@ -644,6 +644,18 @@ day_limit = limit_per_day if day_total >= MIN_MATCHES_FOR_FULL_QUOTA else len(da
 
 展示层每次盘口更新后，在**仍未开赛**的目录场次里重排最多 4 场；开赛那场离开屏幕，允许补新场。结算层按开赛瞬间冻结的 `auto_pick_snapshots` 计命中，一天可以超过 4 注。已开赛快照不再删除，这是滚动推荐的代价，不是「当日固定 4 场」。
 
+### 日推降级补位：核心 → 大小球 → 双进
+
+`recommendation.pipeline` 不再只生成独赢 / 让球候选：
+
+- 第一层仍是独赢与真实主盘让球，保持原有浅盘二选一、动态水位闸和风险调整回报排序。
+- 核心层不足当日 4 场时才用大小球补位；仍不足再用双方进球。通过 `MARKET_FALLBACK_TIER` 硬隔离层级，次级玩法分数再高也不能越过上一层的合格候选。
+- 大小球与双进沿用冻结的分析倾向、对应两项盘口去水概率、分玩法 Platt 校准、历史 EMA / 联赛软权重、同场单玩法限制及 `auto_pick_snapshots` 结算链，不恢复旧 `auto_favorites` 平行排序器。
+- 一致性闸扩到四种玩法：大小/双进主推必须与伴随胜负方向、真实让球和比分同时成立。BTTS 没有大小盘时，以 2.5 中性线生成与双进结论一致的末级兜底比分；其他玩法缺大小结论仍淘汰。
+- 前端本来已支持 `ou` / `btts` 的 `[荐]` 标签和主推高亮，无需新增展示分支。
+
+回归 `test_ou_then_btts_fill_slots_only_after_core_candidates` 与 `test_fallback_markets_never_displace_four_eligible_core_picks`。
+
 ### 部分闭合 09-01「待查」
 
 近似 50/50 的主盘（含深盘两侧同价）现在会进水位差死区：日推不选，展示仍跟低水一侧。非均衡深盘仍跟水位，深盘置信度贴近 50%、排序几乎只看抽水差的问题还在，未做单独深盘禁入。

@@ -31,7 +31,7 @@ const emit = defineEmits<{
 }>()
 
 /**
- * 日推按风险调整回报从独赢/让球中单选，分析器按最可能结果推导。
+ * 日推优先从独赢/让球中单选，不足时按大小球、双进降级补位。
  * 被日推选中的场次整行改用日推那套自洽三件套，禁止两套混排。
  */
 const pick = computed(() => autoFavoritePick(props.fixtureId))

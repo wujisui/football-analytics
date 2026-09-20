@@ -1170,21 +1170,26 @@ def score_hint_for_lean(
     *,
     goal_lean: str | None,
     both_score_lean: str | None,
+    allow_missing_goal: bool = False,
 ) -> str | None:
     """Reference score for one 1X2 direction, using the display generator.
 
     日推按风险调整回报单选，方向常与分析器的最可能结果不同，分析器算好的比分候选
     对它无效。这里换方向跑同一套生成器，大小球与双方进球沿用本场已有结论，
-    因此仍是推导而非另起一套模型。无法落到该方向时返回 None，由调用方淘汰。
+    因此仍是推导而非另起一套模型。仅当调用方明确允许（BTTS 末级日推兜底）时，
+    大小球缺盘可用 2.5 中性总进球线生成与双进结论一致的比分。
     """
     outcomes = recommendation_outcomes(lean)
     if not outcomes or len(outcomes) != 1:
         return None
+    btts_yes = "是" in (both_score_lean or "")
     parsed_ou = _parse_goal_lean(goal_lean or "")
     if parsed_ou is None:
-        return None
-    side, line = parsed_ou
-    btts_yes = "是" in (both_score_lean or "")
+        if not allow_missing_goal:
+            return None
+        side, line = ("over", 2.5) if btts_yes else ("under", 2.5)
+    else:
+        side, line = parsed_ou
     _, lines = _score_hints_for_recommendation(
         lean,
         probs,

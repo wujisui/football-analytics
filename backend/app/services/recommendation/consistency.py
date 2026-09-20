@@ -1,7 +1,8 @@
 """Build one self-consistent bundle for each daily pick's selected market.
 
-日推可选独赢或亚洲让球盘。卡片上标 `[荐]` 的那一行及其胜负方向、比分必须同源；
-无法自洽的市场候选直接淘汰，由同场另一市场或后续场次补位。
+日推核心玩法是独赢 / 亚洲让球，不足时按大小球、双方进球降级补位。卡片上标
+`[荐]` 的那一行及其胜负方向、真实让球和比分必须同源；无法自洽的市场候选直接
+淘汰，由同场下一层玩法或后续场次补位。
 """
 
 from __future__ import annotations
@@ -80,11 +81,14 @@ def validate_pick_consistency(
     if outcome == "draw":
         return _reject("平局命中率低，日推只取主客单选")
 
+    selected_goal_lean = market_lean if market == "ou" else goal_lean
+    selected_both_score_lean = market_lean if market == "btts" else both_score_lean
     score_hint = score_hint_for_lean(
         daily_lean,
         probs,
-        goal_lean=goal_lean,
-        both_score_lean=both_score_lean,
+        goal_lean=selected_goal_lean,
+        both_score_lean=selected_both_score_lean,
+        allow_missing_goal=market == "btts",
     )
     if not score_hint:
         return _reject("无法在大小球/双进结论下给出该方向的比分")
@@ -119,12 +123,12 @@ def validate_pick_consistency(
         is_consistent=True,
         handicap_lean=(
             format_handicap_lean_text(side, line_f)
-            if market == "1x2"
+            if market != "ah"
             else str(market_lean)
         ),
         score_hint=score_hint,
         conflict_reason="自洽",
-        conflict_detail=f"{daily_lean}、{side}与比分候选同向",
+        conflict_detail=f"{market_lean or daily_lean}、{daily_lean}、{side}与比分候选同向",
     )
 
 

@@ -67,7 +67,15 @@ logger = logging.getLogger(__name__)
 
 MARKET_1X2 = "1x2"
 MARKET_AH = "ah"
+MARKET_OU = "ou"
+MARKET_BTTS = "btts"
 OUTCOME_TO_LEAN = {"home": "胜", "away": "负"}
+MARKET_FALLBACK_TIER = {
+    MARKET_1X2: 0,
+    MARKET_AH: 0,
+    MARKET_OU: 1,
+    MARKET_BTTS: 2,
+}
 MIN_MATCHES_FOR_FULL_QUOTA = 6
 
 
@@ -245,16 +253,6 @@ def process_match(
     )
 
 
-def _recommendable_results(
-    results: list[PipelineMatchResult],
-) -> list[PipelineMatchResult]:
-    return [
-        item
-        for item in results
-        if item.strategy.get("recommended_choice") in DAILY_PICK_OUTCOMES
-    ]
-
-
 def _base_pick_fields(
     result: PipelineMatchResult,
 ) -> dict[str, Any]:
@@ -352,25 +350,120 @@ def _to_1x2_pick(
     )
 
 
+def _companion_result_choice(result: PipelineMatchResult) -> str:
+    """Return the single result direction used to build a coherent display bundle."""
+    choice = str(result.strategy.get("recommended_choice") or "")
+    if choice in DAILY_PICK_OUTCOMES:
+        return choice
+    calibration = result.calibration or {}
+    return max(
+        DAILY_PICK_OUTCOMES,
+        key=lambda side: float(calibration.get(f"calibrated_{side}_prob") or 0.0),
+    )
+
+
+def _two_way_market_pick(
+    result: PipelineMatchResult,
+    *,
+    odds: dict[str, Any] | None,
+    market_artifact: dict[str, Any] | None,
+    market: str,
+    lean: str | None,
+) -> DailyRecommendationPick | None:
+    """Build one calibrated O/U or BTTS fallback from its stored market lean."""
+    if market not in {MARKET_OU, MARKET_BTTS} or not isinstance(odds, dict):
+        return None
+    market_lean = str(lean or "").strip()
+    if not market_lean or "待分析" in market_lean:
+        return None
+
+    board_key = "goals_ou" if market == MARKET_OU else "both_teams_score"
+    board = odds.get(board_key)
+    if not isinstance(board, dict):
+        return None
+    try:
+        home_odd = float(board.get("home"))
+        away_odd = float(board.get("away"))
+    except (TypeError, ValueError):
+        return None
+    if home_odd <= 1.0 or away_odd <= 1.0:
+        return None
+
+    if market == MARKET_OU:
+        if market_lean.startswith("大"):
+            selected_odd = home_odd
+            selected_is_home = True
+        elif market_lean.startswith("小"):
+            selected_odd = away_odd
+            selected_is_home = False
+        else:
+            return None
+    elif market_lean.endswith(("：是", ":是", "是")):
+        selected_odd = home_odd
+        selected_is_home = True
+    elif market_lean.endswith(("：否", ":否", "否")):
+        selected_odd = away_odd
+        selected_is_home = False
+    else:
+        return None
+
+    home_inv, away_inv = 1.0 / home_odd, 1.0 / away_odd
+    overround = home_inv + away_inv
+    if overround <= 0:
+        return None
+    raw_confidence = (
+        home_inv / overround if selected_is_home else away_inv / overround
+    )
+    confidence = calibrate_probability(
+        market_artifact,
+        market,
+        raw_confidence,
+    )
+    if confidence < MIN_DAILY_CONFIDENCE:
+        return None
+
+    choice = _companion_result_choice(result)
+    return DailyRecommendationPick(
+        **_base_pick_fields(result),
+        market=market,
+        lean=OUTCOME_TO_LEAN[choice],
+        market_lean=market_lean,
+        recommended_choice=choice,
+        ev=confidence * selected_odd - 1.0,
+        confidence=confidence,
+        reason=(
+            "核心玩法不足，按大小球降级补位"
+            if market == MARKET_OU
+            else "核心玩法与大小球不足，按双进降级补位"
+        ),
+        decimal_odd=selected_odd,
+        raw_confidence=raw_confidence,
+        score=risk_adjusted_return_score(confidence, selected_odd),
+    )
+
+
 def _to_daily_picks(
     result: PipelineMatchResult,
     *,
     odds: dict[str, Any] | None,
     market_artifact: dict[str, Any] | None,
+    goal_lean: str | None,
+    both_score_lean: str | None,
 ) -> list[DailyRecommendationPick]:
     from app.services.ah_market_structure import classify_ah_board
 
     stance = classify_ah_board(odds)
     # 死区是**下注**闸：展示侧照样给最可能的一边（`classify_ah_board` 恒有方向），
     # 这里只是不拿水位差不够的盘口去占当日四个坑。
-    if stance is not None and stance.even:
-        return []
-    if stance is not None:
-        picks = _to_ah_picks(
-            result,
-            odds=odds,
-            market_artifact=market_artifact,
-            side=stance.result_choice,
+    picks: list[DailyRecommendationPick] = []
+    if stance is not None and not stance.even:
+        picks.extend(
+            _to_ah_picks(
+                result,
+                odds=odds,
+                market_artifact=market_artifact,
+                side=stance.result_choice,
+            )
         )
         if stance.allow_moneyline:
             one_x_two = _to_1x2_pick(
@@ -378,13 +471,51 @@ def _to_daily_picks(
             )
             if one_x_two is not None:
                 picks.append(one_x_two)
-        return picks
-    one_x_two = _to_1x2_pick(
-        result,
-        odds=odds,
-        choice=str(result.strategy.get("recommended_choice") or ""),
+    elif stance is None:
+        one_x_two = _to_1x2_pick(
+            result,
+            odds=odds,
+            choice=str(result.strategy.get("recommended_choice") or ""),
+        )
+        if one_x_two is not None:
+            picks.append(one_x_two)
+
+    # O/U and BTTS are genuine fallback tiers. Generate them in the same pool
+    # so they receive calibration, feedback and the consistency gate, but the
+    # selector below can only use them after all eligible core picks.
+    for market, lean in (
+        (MARKET_OU, goal_lean),
+        (MARKET_BTTS, both_score_lean),
+    ):
+        fallback = _two_way_market_pick(
+            result,
+            odds=odds,
+            market_artifact=market_artifact,
+            market=market,
+            lean=lean,
+        )
+        if fallback is not None:
+            picks.append(fallback)
+    return picks
+
+
+def _daily_pick_rank_key(
+    pick: DailyRecommendationPick,
+) -> tuple[int, float, datetime, int]:
+    """Core → O/U → BTTS; risk-adjusted ranking only compares within a tier."""
+    rank = pick_rank_key(pick)
+    return (
+        MARKET_FALLBACK_TIER.get(pick.market, len(MARKET_FALLBACK_TIER)),
+        rank[0],
+        rank[1],
+        rank[2],
     )
-    return [one_x_two] if one_x_two is not None else []
+
+
+def _quality_rank_score(pick: DailyRecommendationPick) -> float:
+    """Encode fallback tier before score so stars cannot invert the pick hierarchy."""
+    tier = MARKET_FALLBACK_TIER.get(pick.market, len(MARKET_FALLBACK_TIER))
+    return (len(MARKET_FALLBACK_TIER) - tier) * 1000.0 + float(pick.score)
 
 
 def _ah_side_probability(
@@ -495,7 +626,7 @@ def select_daily_picks_by_match_day(
     selected: list[DailyRecommendationPick] = []
     selected_fixture_ids: set[int] = set()
     for day in sorted(by_day):
-        day_picks = sorted(by_day[day], key=pick_rank_key)
+        day_picks = sorted(by_day[day], key=_daily_pick_rank_key)
         # 每个比赛日恒定最多 4 场。`MIN_MATCHES_FOR_FULL_QUOTA` 管的是「几时
         # 允许少于 4 场」，不是「几时可以多于 4 场」；曾写成候选少时
         # day_limit = len(day_picks)，把「允许少推」实现成「取消上限」，
@@ -526,7 +657,7 @@ def run_pipeline(
     limit_per_day: int = AUTO_PICK_LIMIT,
     skip_fixture_ids: set[int] | None = None,
 ) -> dict[str, Any]:
-    """Score 1X2/AH candidates and return each match day's risk-adjusted Top-N."""
+    """Rank core picks first, then use O/U and BTTS to fill each day's Top-N."""
     artifact = artifact if artifact is not None else load_calibration_artifact()
     market_artifact = (
         market_artifact
@@ -545,14 +676,15 @@ def run_pipeline(
         if result is not None:
             processed.append(result)
 
-    recommendable = _recommendable_results(processed)
     picks: list[DailyRecommendationPick] = []
-    for result in recommendable:
+    for result in processed:
         picks.extend(
             _to_daily_picks(
                 result,
                 odds=odds_by_fixture.get(result.fixture_id),
                 market_artifact=market_artifact,
+                goal_lean=goal_lean_by_fixture.get(result.fixture_id),
+                both_score_lean=both_score_lean_by_fixture.get(result.fixture_id),
             )
         )
 
@@ -561,7 +693,7 @@ def run_pipeline(
         odds_by_fixture=odds_by_fixture,
     )
     picks = apply_feedback_to_picks(picks, state=incentive_state)
-    picks.sort(key=pick_rank_key)
+    picks.sort(key=_daily_pick_rank_key)
     candidate_count = len(picks)
     skipped = skip_fixture_ids or set()
     consistency_pool = [pick for pick in picks if pick.fixture_id not in skipped]
@@ -603,7 +735,7 @@ def run_pipeline(
                 league_id=pick.league_id,
                 kickoff=pick.kickoff,
                 match_day=pick.match_day,
-                score=pick.score,
+                score=_quality_rank_score(pick),
                 market=pick.market,
                 lean=pick.lean,
                 raw_confidence=pick.raw_confidence,
@@ -729,7 +861,7 @@ async def sync_daily_recommendations(
     limit: int = AUTO_PICK_LIMIT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Replace shared auto tips with risk-adjusted 1X2/AH picks."""
+    """Replace shared auto tips with core picks plus O/U and BTTS fallbacks."""
     del user_id  # product-wide tips; kept for call-site compat
     owner = ANON_OWNER_ID
     settings = get_settings()

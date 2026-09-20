@@ -396,6 +396,85 @@ def test_run_pipeline_does_not_pad_when_fewer_candidates_than_quota(
     assert result["selected_count"] == 1
 
 
+def test_ou_then_btts_fill_slots_only_after_core_candidates(monkeypatch) -> None:
+    """独赢/让球不足时按大小 → 双进降级，不能让高分次级玩法越级。"""
+    matches = [_match(i) for i in range(1, 5)]
+    assert matches[2].odds is not None and matches[3].odds is not None
+    matches[2].odds["goals_ou"] = {"line": 2.5, "home": 1.70, "away": 2.18}
+    matches[2].odds["both_teams_score"] = {"home": 1.72, "away": 2.12}
+    matches[3].odds["both_teams_score"] = {"home": 1.68, "away": 2.20}
+    matches[3] = replace(matches[3], goal_lean="大小：待分析")
+
+    processed = [
+        _processed(1, choice="home", confidence=0.56),
+        _processed(2, choice="home", confidence=0.55),
+        _processed(3, choice=None),
+        _processed(4, choice=None),
+    ]
+
+    def fake_process(match, *, artifact=None):
+        del artifact
+        return next(item for item in processed if item.fixture_id == match.fixture_id)
+
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        fake_process,
+    )
+    result = run_pipeline(
+        matches,
+        artifact={},
+        market_artifact={},
+        limit_per_day=4,
+    )
+
+    assert [(item["fixture_id"], item["market"]) for item in result["selected"]] == [
+        (1, "1x2"),
+        (2, "1x2"),
+        (3, "ou"),
+        (4, "btts"),
+    ]
+    assert result["selected"][2]["lean"] == "大(2.5)"
+    assert result["selected"][3]["lean"] == "双进:是"
+    assert result["selected"][1]["quality_rating"] > result["selected"][2]["quality_rating"]
+    assert result["selected"][2]["quality_rating"] > result["selected"][3]["quality_rating"]
+    ou_home, ou_away = map(
+        int, result["selected"][2]["score_hint"].split(":")[1].split("-")
+    )
+    btts_home, btts_away = map(
+        int, result["selected"][3]["score_hint"].split(":")[1].split("-")
+    )
+    assert ou_home + ou_away > 2.5
+    assert btts_home > 0 and btts_away > 0
+
+
+def test_fallback_markets_never_displace_four_eligible_core_picks(monkeypatch) -> None:
+    matches = [_match(i) for i in range(1, 6)]
+    assert matches[4].odds is not None
+    matches[4].odds["goals_ou"] = {"line": 2.5, "home": 1.20, "away": 5.50}
+    processed = [
+        *[_processed(i, choice="home", confidence=0.60 - i / 100) for i in range(1, 5)],
+        _processed(5, choice=None),
+    ]
+
+    def fake_process(match, *, artifact=None):
+        del artifact
+        return next(item for item in processed if item.fixture_id == match.fixture_id)
+
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        fake_process,
+    )
+    result = run_pipeline(
+        matches,
+        artifact={},
+        market_artifact={},
+        limit_per_day=4,
+    )
+
+    assert [item["fixture_id"] for item in result["selected"]] == [1, 2, 3, 4]
+    assert all(item["market"] == "1x2" for item in result["selected"])
+
+
 def test_consistency_gate_runs_before_top_four_and_backfills(monkeypatch) -> None:
     processed = [_processed(i, ev=0.50 - i / 100) for i in range(1, 7)]
 
