@@ -6,7 +6,6 @@ import type { FixtureResponse } from '@/api/types'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { toPercent } from '@/utils/format'
 import { adaptHandicapLean, HANDICAP_MISSING_LABEL } from '@/utils/handicapDisplay'
-import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
 
 /** echarts is heavy; load the pie only when a prediction renders. */
@@ -34,11 +33,8 @@ const explanation = computed(
       stage_count: 0,
     },
 )
-const { ruleset } = useHandicapRuleset()
 const handicapLabel = computed(
-  () =>
-    adaptHandicapLean(original.value.handicap_lean, ruleset.value) ||
-    HANDICAP_MISSING_LABEL,
+  () => adaptHandicapLean(original.value.handicap_lean) || HANDICAP_MISSING_LABEL,
 )
 
 const recommendationTagColor = computed(() =>

@@ -18,7 +18,6 @@ import {
 } from '@/utils/betCalculator'
 import { formatDate, formatTime, parseApiDate } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
-import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 
 /** Survive tab discard / cold reload within the same browser session. */
 const STORAGE_KEY = 'fa-bet-calculator'
@@ -43,6 +42,8 @@ const OUTCOMES = new Set<CalcOutcome>([
 function isCalcSelection(raw: unknown): raw is CalcSelection {
   if (!raw || typeof raw !== 'object') return false
   const s = raw as Record<string, unknown>
+  // 亚盘让球没有让平这一注，旧草稿里的这条腿一律丢弃。
+  if (s.market === 'ah' && s.outcome === 'draw') return false
   return (
     typeof s.fixtureId === 'number' &&
     typeof s.leagueId === 'number' &&
@@ -135,15 +136,6 @@ watch(matchCount, (n) => {
   const modes = availableFoldModes(n)
   if (!modes.length) return
   fold.value = modes[modes.length - 1]
-})
-
-const { ruleset: handicapRuleset } = useHandicapRuleset()
-watch(handicapRuleset, (mode) => {
-  if (mode !== 'asian') return
-  const next = selections.value.filter(
-    (pick) => !(pick.market === 'ah' && pick.outcome === 'draw'),
-  )
-  if (next.length !== selections.value.length) selections.value = next
 })
 
 watch(

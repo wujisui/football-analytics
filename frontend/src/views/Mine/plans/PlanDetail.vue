@@ -14,7 +14,6 @@ import {
   type CalcSelection,
 } from '@/utils/betCalculator'
 import { formatDate, formatLocalDateMinute, formatTime, leagueTagColor } from '@/utils/format'
-import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import {
   planStatusLabel,
   planStatusTagType,
@@ -33,7 +32,6 @@ const props = defineProps<{
 
 const message = useMessage()
 const { getPlan, ensureLoaded } = useBetPlans()
-const { ruleset } = useHandicapRuleset()
 
 const loadingScores = ref(false)
 const scores = ref<Map<number, FixtureScoreSnap>>(new Map())
@@ -48,7 +46,6 @@ const settlement = computed((): PlanSettlement | null => {
     current.fold,
     current.multiplier,
     scores.value,
-    ruleset.value,
   )
 })
 
@@ -138,10 +135,10 @@ type FixtureLegGroup = {
   }[]
 }
 
-/** 让球标签跟当前口径走：方案存的是原始盘口，竞彩显示实际结算的整数盘。 */
-function playLabelForRuleset(pick: CalcSelection): string {
+/** 让球标签按方案存下的真实盘口重排，旧方案里的整数盘标签同样复位。 */
+function ahPlayLabel(pick: CalcSelection): string {
   if (pick.market !== 'ah') return pick.playLabel
-  const line = effectiveHandicapLine(pick.line, ruleset.value)
+  const line = effectiveHandicapLine(pick.line)
   return line ? `让球 ${line}` : pick.playLabel
 }
 
@@ -174,7 +171,7 @@ const legGroups = computed((): FixtureLegGroup[] => {
       )
       return {
         key,
-        playLabel: playLabelForRuleset(sorted[0].pick),
+        playLabel: ahPlayLabel(sorted[0].pick),
         picks: sorted.map((l) => ({
           key: `${l.pick.market}-${l.pick.outcome}`,
           label: `${outcomeTitle(l.pick.market, l.pick.outcome)}(${l.pick.odd})`,

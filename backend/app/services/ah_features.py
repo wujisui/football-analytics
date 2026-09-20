@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 from typing import Any
 
@@ -339,27 +338,6 @@ ASIAN_PUSH = "push"
 ASIAN_HALF_LOSS = "half_loss"
 ASIAN_LOSS = "loss"
 
-HANDICAP_RULESET_ASIAN = "asian"
-HANDICAP_RULESET_JC = "jc"
-HandicapRuleset = str
-
-
-def parse_handicap_ruleset(value: str | None) -> str:
-    text = (value or "").strip().lower()
-    if text in {"jc", "jingcai", "lottery", "three-way", "three_way"}:
-        return HANDICAP_RULESET_JC
-    return HANDICAP_RULESET_ASIAN
-
-
-def jc_handicap_line(line_f: float) -> float:
-    """竞彩只挂整数让球线：非整数按绝对值向上取整（-0.25/-0.5/-0.75 → -1）。"""
-    value = float(line_f)
-    magnitude = math.ceil(abs(value) - 1e-9)
-    if magnitude <= 0:
-        return 0.0
-    return float(magnitude) if value > 0 else float(-magnitude)
-
-
 def _split_quarter_line(line_f: float) -> tuple[float, ...]:
     """Split x.25/x.75 into the two adjacent half-goal boards."""
     quarters = round(float(line_f) * 4)
@@ -406,31 +384,15 @@ def settle_handicap_pick(
     away_goals: int | None,
     line_f: float | None,
     pick: str,
-    *,
-    ruleset: str = HANDICAP_RULESET_ASIAN,
 ) -> str | None:
-    """Settle one 让胜/让平/让负 selection.
+    """Settle one 让胜/让平/让负 selection in Asian rules.
 
-    Asian (default): integer exact handicap is a walk for every selection;
-    quarter lines use true split boards (赢半 / 输半).
-    Jingcai: the line is first rounded away from zero to a whole goal, then
-    settled three-way — never half win / half loss.
+    Integer exact handicap is a walk for every selection; quarter lines use
+    true split boards (赢半 / 输半).
     """
     if home_goals is None or away_goals is None or line_f is None:
         return None
-    mode = parse_handicap_ruleset(ruleset)
     line = float(line_f)
-    if mode == HANDICAP_RULESET_JC:
-        line = jc_handicap_line(line)
-        margin = float(home_goals) + line - float(away_goals)
-        if abs(margin) < 1e-9:
-            # 平手盘打平没有让球可言，仍按走水处理
-            if abs(line) < 1e-9:
-                return ASIAN_PUSH
-            return ASIAN_WIN if pick == "让平" else ASIAN_LOSS
-        actual = "让胜" if margin > 0 else "让负"
-        return ASIAN_WIN if pick == actual else ASIAN_LOSS
-
     margin = float(home_goals) + line - float(away_goals)
     integer_line = abs(line - round(line)) < 1e-9
     if integer_line:
@@ -524,28 +486,16 @@ def settle_handicap_result(
     home_goals: int | None,
     away_goals: int | None,
     line_f: float | None,
-    *,
-    ruleset: str = HANDICAP_RULESET_ASIAN,
 ) -> str | None:
     """Display the handicap result, including split-board outcomes."""
     if home_goals is None or away_goals is None or line_f is None:
         return None
-    mode = parse_handicap_ruleset(ruleset)
     line = float(line_f)
-    if mode == HANDICAP_RULESET_JC:
-        line = jc_handicap_line(line)
-        margin = float(home_goals) + line - float(away_goals)
-        if abs(margin) < 1e-9:
-            return "走水" if abs(line) < 1e-9 else "让平"
-        return "让胜" if margin > 0 else "让负"
-
     margin = float(home_goals) + line - float(away_goals)
     integer_line = abs(line - round(line)) < 1e-9
     if integer_line and abs(margin) < 1e-9:
         return "走水"
-    home_result = settle_handicap_pick(
-        home_goals, away_goals, line, "让胜", ruleset=mode
-    )
+    home_result = settle_handicap_pick(home_goals, away_goals, line, "让胜")
     if home_result == ASIAN_HALF_WIN:
         return "让胜赢半 / 让负输半"
     if home_result == ASIAN_HALF_LOSS:
@@ -660,17 +610,13 @@ def display_handicap_lean(lean: str | None, line_f: float | None = None) -> str 
     return format_handicap_lean_text(_lean_base(picks), resolved)
 
 
-def adapt_handicap_lean_for_ruleset(
+def display_bettable_handicap_lean(
     lean: str | None,
     line_f: float | None = None,
-    *,
-    ruleset: str = HANDICAP_RULESET_ASIAN,
 ) -> str | None:
-    """Remap frozen lean copy for the reader's ruleset without mutating storage.
+    """Render frozen lean copy as an Asian-bettable side without mutating storage.
 
-    Asian renders a standalone 让平 as non-bettable 走水 and drops 让平 from
-    dual picks. Jingcai shows the whole-goal line it actually settles on, so
-    让胜(-0.5) reads 让胜(-1).
+    A standalone 让平 becomes non-bettable 走水; 让平 is dropped from dual picks.
     """
     shown = display_handicap_lean(lean, line_f)
     if not shown:
@@ -681,10 +627,6 @@ def adapt_handicap_lean_for_ruleset(
     resolved = handicap_line_from_lean(shown)
     if resolved is None:
         resolved = line_f
-    if parse_handicap_ruleset(ruleset) == HANDICAP_RULESET_JC:
-        if resolved is None:
-            return shown
-        return format_handicap_lean_text(_lean_base(picks), jc_handicap_line(resolved))
     if "让平" not in picks:
         return shown
     remaining = {pick for pick in picks if pick != "让平"}

@@ -4,8 +4,6 @@ import { computed } from 'vue'
 import type { AutoFavoriteMarket } from '@/api/favorites'
 import { autoFavoritePick } from '@/composables/useFavoriteFixtures'
 import { isPredictionPending, adaptHandicapLean } from '@/utils/handicapDisplay'
-import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
-
 const props = withDefaults(
   defineProps<{
     recommendation?: string
@@ -61,11 +59,7 @@ const recommendationLabel = computed(() =>
     ? '待分析'
     : recommendationText.value,
 )
-const { ruleset } = useHandicapRuleset()
-
-const handicapLabel = computed(() =>
-  adaptHandicapLean(handicapText.value, ruleset.value),
-)
+const handicapLabel = computed(() => adaptHandicapLean(handicapText.value))
 const showHandicap = computed(() => !isPredictionPending(handicapText.value))
 const showGoal = computed(() => !isPredictionPending(props.goalLean))
 const showBothScore = computed(() => !isPredictionPending(props.bothScore))

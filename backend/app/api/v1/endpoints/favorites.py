@@ -1,6 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Literal
 
 from app.api.deps_auth import CurrentUserId, RequiredUserId
 from app.api.v1.http_cache import set_no_store_headers
@@ -19,34 +18,22 @@ router = APIRouter(prefix="/favorites", tags=["favorites"])
 async def list_favorites(
     response: Response,
     user_id: CurrentUserId,
-    handicap_ruleset: Literal["asian", "jc"] = Query(
-        default="asian",
-        description="asian=亚洲盘整数盘走水；jc=竞彩让胜/让平/让负",
-    ),
     db: AsyncSession = Depends(get_db),
 ) -> FavoriteFixturesResponse:
     """List only the current user's manually starred fixtures."""
     set_no_store_headers(response)
-    items = await favorites_service.list_favorite_responses(
-        db, user_id=user_id, handicap_ruleset=handicap_ruleset
-    )
+    items = await favorites_service.list_favorite_responses(db, user_id=user_id)
     return FavoriteFixturesResponse(total=len(items), favorites=items)
 
 
 @router.get("/auto-picks", response_model=FavoriteFixturesResponse)
 async def list_auto_picks(
     response: Response,
-    handicap_ruleset: Literal["asian", "jc"] = Query(
-        default="asian",
-        description="asian=亚洲盘整数盘走水；jc=竞彩让胜/让平/让负",
-    ),
     db: AsyncSession = Depends(get_db),
 ) -> FavoriteFixturesResponse:
     """List shared daily recommendations for list markers and ordering."""
     set_no_store_headers(response)
-    items = await favorites_service.list_auto_pick_responses(
-        db, handicap_ruleset=handicap_ruleset
-    )
+    items = await favorites_service.list_auto_pick_responses(db)
     return FavoriteFixturesResponse(total=len(items), favorites=items)
 
 

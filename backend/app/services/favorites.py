@@ -51,7 +51,6 @@ def _to_favorite_response(
     *,
     standings_maps: dict[tuple[int, str], dict] | None = None,
     auto_pick: object | None = None,
-    handicap_ruleset: str | None = None,
 ) -> FavoriteFixtureResponse:
     # Import list mappers lazily to avoid circular imports at module load.
     from app.api.v1.endpoints.fixtures import (
@@ -90,9 +89,7 @@ def _to_favorite_response(
     pick = auto_pick
     if pick is None and fav.auto_market and fav.auto_lean:
         pick = SimpleNamespace(market=fav.auto_market, lean=fav.auto_lean)
-    evaluated = evaluate_fixture_prediction(
-        fixture, stored, auto_pick=pick, handicap_ruleset=handicap_ruleset
-    )
+    evaluated = evaluate_fixture_prediction(fixture, stored, auto_pick=pick)
     if evaluated["evaluable"] and evaluated["has_prediction"]:
         has_prediction = True
         recommendation = evaluated["recommendation"]
@@ -195,7 +192,6 @@ async def list_favorite_responses(
     db: AsyncSession,
     *,
     user_id: str | None = None,
-    handicap_ruleset: str | None = None,
 ) -> list[FavoriteFixtureResponse]:
     owner = normalize_owner_id(user_id)
     if owner == ANON_OWNER_ID:
@@ -210,15 +206,11 @@ async def list_favorite_responses(
             .order_by(FavoriteFixture.saved_at.desc())
         )
     ).scalars().all()
-    return await _hydrate_favorite_responses(
-        db, fav_rows, handicap_ruleset=handicap_ruleset
-    )
+    return await _hydrate_favorite_responses(db, fav_rows)
 
 
 async def list_auto_pick_responses(
     db: AsyncSession,
-    *,
-    handicap_ruleset: str | None = None,
 ) -> list[FavoriteFixtureResponse]:
     """List shared algorithm picks without mixing them into user favorites."""
     fav_rows = (
@@ -234,16 +226,12 @@ async def list_auto_pick_responses(
     # Hide stale rows written before standalone AH pushes were excluded from
     # auto-pick generation. The next ranking pass deletes/replaces them.
     fav_rows = [row for row in fav_rows if not is_stale_ah_push_row(row)]
-    return await _hydrate_favorite_responses(
-        db, fav_rows, handicap_ruleset=handicap_ruleset
-    )
+    return await _hydrate_favorite_responses(db, fav_rows)
 
 
 async def _hydrate_favorite_responses(
     db: AsyncSession,
     fav_rows: list[FavoriteFixture],
-    *,
-    handicap_ruleset: str | None = None,
 ) -> list[FavoriteFixtureResponse]:
     if not fav_rows:
         return []
@@ -274,7 +262,6 @@ async def _hydrate_favorite_responses(
                 stored.get(fav.fixture_id),
                 standings_maps=standings_maps,
                 auto_pick=auto_by_id.get(fav.fixture_id),
-                handicap_ruleset=handicap_ruleset,
             )
         )
     return out

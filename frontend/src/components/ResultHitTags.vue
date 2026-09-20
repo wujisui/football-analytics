@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 
 import RecommendationQualityRate from '@/components/RecommendationQualityRate.vue'
-import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import { adaptHandicapLean, handicapLeanLabel } from '@/utils/handicapDisplay'
 import { hitTagMissed, hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
@@ -24,10 +23,8 @@ const emit = defineEmits<{
   filterHit: [key: ResultsHitKey]
 }>()
 
-const { ruleset } = useHandicapRuleset()
-
 const handicapTagLabel = computed(() =>
-  handicapLeanLabel(adaptHandicapLean(props.fixture.handicap_lean, ruleset.value)),
+  handicapLeanLabel(adaptHandicapLean(props.fixture.handicap_lean)),
 )
 
 const showTags = computed(() => !!props.fixture.has_prediction)

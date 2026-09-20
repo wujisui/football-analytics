@@ -1,10 +1,11 @@
-import {
-  formatSignedHandicapLine,
-  jcHandicapLine,
-  type HandicapRuleset,
-} from '@/utils/handicapRuleset'
-
 export const HANDICAP_MISSING_LABEL = '缺少盘口数据分析'
+
+/** 有符号让球线文案：主让为负、客让为正、平手为 0。 */
+export function formatSignedHandicapLine(line: number): string {
+  if (!Number.isFinite(line)) return ''
+  if (Math.abs(line) < 1e-9) return '0'
+  return line > 0 ? `+${line}` : String(line)
+}
 
 export function isPredictionPending(text: string | null | undefined): boolean {
   const value = (text ?? '').trim()
@@ -24,25 +25,13 @@ export function handicapLeanLabel(text: string | null | undefined): string {
     .replace(/\s*[（(]\s*[+-]?\d+(?:\.\d+)?\s*[）)]\s*$/, '')
 }
 
-const LEAN_LINE_RE = /[（(]\s*([+-]?\d+(?:\.\d+)?)\s*[）)]\s*$/
-
 /**
- * Remap a frozen lean for the reader's ruleset: Asian renders a standalone
- * 让平 as non-bettable 走水 and drops 让平 from dual picks; 竞彩 shows the
- * whole-goal line it settles on（让胜(-0.5) → 让胜(-1)）。
+ * Render a frozen lean as an Asian-bettable side: a standalone 让平 becomes
+ * non-bettable 走水, and 让平 is dropped from dual picks.
  */
-export function adaptHandicapLean(
-  text: string | null | undefined,
-  ruleset: HandicapRuleset = 'asian',
-): string {
+export function adaptHandicapLean(text: string | null | undefined): string {
   const value = (text ?? '').trim()
   if (!value) return value
-  if (ruleset === 'jc') {
-    const matched = value.match(LEAN_LINE_RE)
-    if (!matched) return value
-    const rounded = jcHandicapLine(Number(matched[1]))
-    return value.replace(LEAN_LINE_RE, `(${formatSignedHandicapLine(rounded)})`)
-  }
   if (!value.includes('平')) return value
   if (/^让平(?:\s*[（(]|$)/.test(value)) {
     return value.replace('让平', '走水')

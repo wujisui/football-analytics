@@ -7,7 +7,6 @@ import {fetchFixtureScores} from '@/api/fixtures'
 import PlanDetail from '@/views/Mine/plans/PlanDetail.vue'
 import {useAuthSession} from '@/composables/useAuthSession'
 import {useBetPlans} from '@/composables/useBetPlans'
-import {useHandicapRuleset} from '@/composables/useHandicapRuleset'
 import {useIsPhone} from '@/composables/useMediaQuery'
 import {selectedFixtureIds} from '@/utils/betCalculator'
 import {
@@ -40,7 +39,6 @@ const modal = useModal()
 const mutatingPlanIds = new Set<string>()
 const isPhone = useIsPhone()
 const {requireLogin} = useAuthSession()
-const {ruleset} = useHandicapRuleset()
 const {
   plans,
   filterDate,
@@ -62,7 +60,6 @@ function settlementFor(plan: SavedBetPlan): PlanSettlement {
       plan.fold,
       plan.multiplier,
       scores.value,
-      ruleset.value,
   )
 }
 

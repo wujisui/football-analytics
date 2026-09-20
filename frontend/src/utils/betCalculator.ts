@@ -1,11 +1,7 @@
-import type { FixtureResponse, LineOdds } from '@/api/types'
+import type { FixtureResponse } from '@/api/types'
 import { hasKickedOff, parseApiDate, toScheduleDayKey } from '@/utils/format'
 import { scheduleTodayDate } from '@/utils/homeDateStrip'
-import {
-  formatSignedHandicapLine,
-  jcHandicapLine,
-  type HandicapRuleset,
-} from '@/utils/handicapRuleset'
+import { formatSignedHandicapLine } from '@/utils/handicapDisplay'
 import { ahLinesOf, oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 
 export type CalcMarket = 'spf' | 'ah' | 'ou' | 'btts'
@@ -111,16 +107,10 @@ export function outcomeTitle(
   return String(outcome)
 }
 
-function isIntegerHandicapLine(line?: string | null): boolean {
-  if (line == null || line === '') return false
-  const n = Number(String(line).replace(',', '.').trim())
-  return Number.isFinite(n) && Math.abs(n - Math.round(n)) < 1e-9
-}
-
 /** Build selectable rows for one fixture from available odds. */
 export function buildMarketRows(
   fixture: FixtureResponse,
-  options?: { combineOuBtts?: boolean; handicapRuleset?: HandicapRuleset },
+  options?: { combineOuBtts?: boolean },
 ): CalcMarketRow[] {
   const odds = oddsSnippetFromFixture(fixture)
   const rows: CalcMarketRow[] = []
@@ -136,39 +126,18 @@ export function buildMarketRows(
     ],
   })
 
-  const ahMarket = odds?.asian_handicap
-  const ah = ahLinesOf(ahMarket)[0]
+  const ah = ahLinesOf(odds?.asian_handicap)[0]
   const ahLine = ah?.line != null ? String(ah.line) : undefined
-  const ruleset = options?.handicapRuleset ?? 'asian'
-  const asianHandicap = ruleset === 'asian'
-  // 盘口原值随选项落库；标签给出当前口径实际结算的那条线。
-  const shownAhLine = effectiveHandicapLine(ahLine, ruleset)
-  const ahPlay = shownAhLine
-    ? `让球 ${shownAhLine}`
-    : asianHandicap
-      ? '让球'
-      : '让球胜平负'
-  const ahCells: CalcCell[] = [
-    cell('ah', 'home', ahPlay, parseOddNumber(ah?.home), ahLine),
-  ]
-  if (!asianHandicap) {
-    const ahDraw = resolveAhDrawOdd(
-      ahMarket,
-      ahLine,
-      shownAhLine,
-      parseOddNumber(ah?.home),
-      parseOddNumber(ah?.away),
-    )
-    ahCells.push(
-      cell('ah', 'draw', ahPlay, ahDraw, ahLine, ahDraw == null ? '暂无让平赔率' : undefined),
-    )
-  }
-  ahCells.push(cell('ah', 'away', ahPlay, parseOddNumber(ah?.away), ahLine))
+  const shownAhLine = effectiveHandicapLine(ahLine)
+  const ahPlay = shownAhLine ? `让球 ${shownAhLine}` : '让球'
   rows.push({
     market: 'ah',
     playLabel: ahPlay,
     line: ahLine,
-    cells: ahCells,
+    cells: [
+      cell('ah', 'home', ahPlay, parseOddNumber(ah?.home), ahLine),
+      cell('ah', 'away', ahPlay, parseOddNumber(ah?.away), ahLine),
+    ],
   })
 
   const ou = odds?.goals_ou
@@ -208,60 +177,6 @@ export function buildMarketRows(
   return rows
 }
 
-function resolveAhDrawOdd(
-  market: LineOdds | null | undefined,
-  line: string | undefined,
-  effectiveLine: string | undefined,
-  homeOdd: number | null,
-  awayOdd: number | null,
-): number | null {
-  const fromValues = parseAhDrawFromValues(market, line)
-  if (fromValues != null) return fromValues
-  // 整数盘口下亚洲盘为两路，竞彩「让平」可估一个参考赔供计算器使用
-  if (!isIntegerHandicapLine(effectiveLine) || homeOdd == null || awayOdd == null) {
-    return null
-  }
-  return round2(Math.max(2.2, (homeOdd + awayOdd) * 0.95))
-}
-
-function parseAhDrawFromValues(
-  market: LineOdds | null | undefined,
-  line: string | undefined,
-): number | null {
-  const values = market?.values
-  if (!values?.length) return null
-  const lineNorm = line != null ? normalizeLineToken(line) : null
-  for (const v of values) {
-    const label = String(v.label || '').trim().toLowerCase()
-    if (!label) continue
-    const isDraw =
-      label === 'draw'
-      || label === 'x'
-      || label.startsWith('draw ')
-      || label.includes(' draw')
-      || /\bdraw\b/.test(label)
-    if (!isDraw) continue
-    if (lineNorm != null) {
-      const token = extractLineFromLabel(label)
-      if (token != null && normalizeLineToken(token) !== lineNorm) continue
-    }
-    const odd = parseOddNumber(v.odd)
-    if (odd != null) return odd
-  }
-  return null
-}
-
-function extractLineFromLabel(label: string): string | null {
-  const m = label.match(/([+-]?\d+(?:[.,]\d+)?)/)
-  return m ? m[1].replace(',', '.') : null
-}
-
-function normalizeLineToken(line: string): string {
-  const n = Number(String(line).replace(',', '.').trim())
-  if (!Number.isFinite(n)) return String(line).trim()
-  return String(n)
-}
-
 function cell(
   market: CalcMarket,
   outcome: CalcOutcome,
@@ -283,18 +198,14 @@ function cell(
   }
 }
 
-/**
- * Signed line text for the ruleset that actually settles the pick:
- * 竞彩 rounds away from zero（-0.5 → -1），亚盘 uses the book line as is.
- */
+/** Signed line text for the book line that actually settles the pick. */
 export function effectiveHandicapLine(
   line: string | null | undefined,
-  ruleset: HandicapRuleset,
 ): string | undefined {
   if (line == null || line === '') return undefined
   const n = Number(String(line).replace(',', '.').trim())
   if (!Number.isFinite(n)) return String(line)
-  return formatSignedHandicapLine(ruleset === 'jc' ? jcHandicapLine(n) : n)
+  return formatSignedHandicapLine(n)
 }
 
 export function selectedFixtureIds(selections: CalcSelection[]): number[] {
@@ -338,7 +249,7 @@ export interface ParlayResult {
 }
 
 /**
- * 竞彩风格：对已选场次按 M串1 枚举 C(N,M)，
+ * 串关：对已选场次按 M串1 枚举 C(N,M)，
  * 同场多选项（胜平负 / 让球双选）再做笛卡尔积拆注。
  */
 export function calculateParlay(

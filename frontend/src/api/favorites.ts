@@ -1,5 +1,4 @@
 import { apiClient } from './client'
-import { storedHandicapRuleset } from '@/utils/handicapRuleset'
 import type { FixtureOddsSnippet } from './types'
 
 /** Market key written by backend auto-favorites ranking. */
@@ -57,25 +56,14 @@ export interface FavoriteFixturesResponse {
   favorites: FavoriteFixtureRecord[]
 }
 
-export async function fetchFavorites(options?: {
-  handicapRuleset?: string
-}): Promise<FavoriteFixturesResponse> {
-  const { data } = await apiClient.get<FavoriteFixturesResponse>('/favorites', {
-    params: { handicap_ruleset: options?.handicapRuleset ?? storedHandicapRuleset() },
-  })
+export async function fetchFavorites(): Promise<FavoriteFixturesResponse> {
+  const { data } = await apiClient.get<FavoriteFixturesResponse>('/favorites')
   return data
 }
 
-export async function fetchAutoPicks(options?: {
-  handicapRuleset?: string
-}): Promise<FavoriteFixturesResponse> {
+export async function fetchAutoPicks(): Promise<FavoriteFixturesResponse> {
   const { data } = await apiClient.get<FavoriteFixturesResponse>(
     '/favorites/auto-picks',
-    {
-      params: {
-        handicap_ruleset: options?.handicapRuleset ?? storedHandicapRuleset(),
-      },
-    },
   )
   return data
 }

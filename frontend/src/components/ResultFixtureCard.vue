@@ -11,7 +11,6 @@ import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import ResultPredictionSummary from '@/components/ResultPredictionSummary.vue'
 import ScoreDetailLink from '@/components/ScoreDetailLink.vue'
-import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
 import {
   formatDate,
   formatTime,
@@ -104,7 +103,6 @@ const kickoffText = computed(() => {
 })
 const scoreText = computed(() => resultScoreText(props.fixture))
 const extraScoreLine = computed(() => resultExtraScoreLine(props.fixture))
-const { ruleset } = useHandicapRuleset()
 const dailyPickMarket = computed(() => {
   const fixture = settledFixture.value
   if (!fixture) return ''
@@ -126,7 +124,7 @@ const dailyPickLean = computed(() => {
 const dailyPickLabel = computed(() => {
   if (!dailyPickMarket.value || !dailyPickLean.value) return ''
   return dailyPickMarket.value === 'ah'
-    ? adaptHandicapLean(dailyPickLean.value, ruleset.value)
+    ? adaptHandicapLean(dailyPickLean.value)
     : dailyPickLean.value
 })
 const dailyPickHit = computed(() => settledFixture.value?.auto_pick_hit ?? null)

@@ -1,8 +1,6 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import { bumpClientDataEpoch } from '@/composables/clientDataEpoch'
-import { useHandicapRuleset } from '@/composables/useHandicapRuleset'
-
 import type { ResultFixture, ResultsHistoryResponse } from '@/api/fixtures'
 import {
   fetchLeagueCatalog,
@@ -200,11 +198,6 @@ export function invalidateFinishedResultsCache() {
   resultsHistory.value = null
   bumpClientDataEpoch()
 }
-
-const { ruleset: handicapRuleset } = useHandicapRuleset()
-watch(handicapRuleset, () => {
-  invalidateFinishedResultsCache()
-})
 
 function detailHasFinishedScore(detail: FixtureResponse): boolean {
   return (

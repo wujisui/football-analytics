@@ -65,16 +65,6 @@ class AutoPickAccuracyTests(unittest.TestCase):
                 handicap_line=-1.0,
             )
         )
-        self.assertFalse(
-            settle_auto_pick_hit(
-                market="ah",
-                lean="让胜(-1)",
-                home_goals=2,
-                away_goals=1,
-                handicap_line=-1.0,
-                handicap_ruleset="jc",
-            )
-        )
         # 让胜 -0.25 at a draw is 输半 — wrong side, not a hit.
         self.assertFalse(
             settle_auto_pick_hit(

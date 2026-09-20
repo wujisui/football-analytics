@@ -7,7 +7,6 @@ import {
   type ParlayCombo,
 } from '@/utils/betCalculator'
 import { parseApiDate } from '@/utils/format'
-import { jcHandicapLine, type HandicapRuleset } from '@/utils/handicapRuleset'
 
 export type FixtureScoreSnap = {
   fixture_id: number
@@ -138,7 +137,6 @@ function splitMarginVerdict(
 export function settleSelection(
   pick: CalcSelection,
   snap: FixtureScoreSnap | undefined,
-  ruleset: HandicapRuleset = 'asian',
 ): { verdict: LegVerdict; scoreText: string | null } {
   if (!snap) return { verdict: 'pending', scoreText: null }
   if (isCancelledStatus(snap.status)) {
@@ -168,26 +166,8 @@ export function settleSelection(
   }
 
   if (pick.market === 'ah') {
-    const rawLine = parseLine(pick.line)
-    if (rawLine == null) return { verdict: 'pending', scoreText }
-    if (ruleset === 'jc') {
-      // 竞彩先把盘口向上取整，再判三项；没有赢半 / 输半。
-      const line = jcHandicapLine(rawLine)
-      const margin = h + line - a
-      if (Math.abs(margin) < 1e-9) {
-        if (Math.abs(line) < 1e-9) return { verdict: 'void', scoreText }
-        return {
-          verdict: pick.outcome === 'draw' ? 'hit' : 'miss',
-          scoreText,
-        }
-      }
-      return {
-        verdict:
-          pick.outcome === (margin > 0 ? 'home' : 'away') ? 'hit' : 'miss',
-        scoreText,
-      }
-    }
-    const line = rawLine
+    const line = parseLine(pick.line)
+    if (line == null) return { verdict: 'pending', scoreText }
     const margin = h + line - a
     const integerLine = Math.abs(line - Math.round(line)) < 1e-9
     if (integerLine) {
@@ -311,12 +291,11 @@ export function settleBetPlan(
   fold: FoldMode,
   multiplier: number,
   scores: ReadonlyMap<number, FixtureScoreSnap>,
-  ruleset: HandicapRuleset = 'asian',
 ): PlanSettlement {
   const parlay = calculateParlay(selections, fold, multiplier)
   const legs: SettledLeg[] = selections.map((pick) => {
     const snap = scores.get(pick.fixtureId)
-    const { verdict, scoreText } = settleSelection(pick, snap, ruleset)
+    const { verdict, scoreText } = settleSelection(pick, snap)
     return {
       pick,
       verdict,
