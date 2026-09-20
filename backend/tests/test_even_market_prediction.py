@@ -1,7 +1,7 @@
 """盘口决定预测有没有依据。
 
-真实案例一：阿甲 1493067（2.94 / 2.84 / 2.65，亚盘平手 1.95/1.80）曾整场输出「待分析」——
-均势盘是真实读数，必须照常出双选。
+真实案例一：阿甲 1493067（2.94 / 2.84 / 2.65，亚盘平手 1.95/1.80）——
+1X2 胶着时仍以让球主盘水位为准：客队 1.80 低于主队 1.95，输出客胜方向而不是待分析。
 真实案例二：南美杯雷科莱塔曾在完全没有盘口的情况下输出「平 / 比分:0-0 / 小(2.5) / 双进否」——
 纯近况模型概率不是依据，缺 1X2 盘口就整包待分析。
 真实案例三：热门去水后不足五成一度被当成胶着，连领先次选近 20 个点的盘也强制双选——
@@ -39,16 +39,12 @@ class EvenMarketPredictionTests(unittest.TestCase):
     def test_even_board_counts_as_real_probability_source(self) -> None:
         self.assertTrue(has_1x2_market(EVEN_ODDS))
 
-    def test_even_board_gets_double_chance_instead_of_pending(self) -> None:
+    def test_even_1x2_follows_level_handicap_water(self) -> None:
         rec = get_recommendation(EVEN_PROBS, odds=EVEN_ODDS)
-        self.assertNotIn("待分析", rec)
-        # 胶着盘只给双选，不允许升级成单选。
-        self.assertIn(rec, {"胜/平", "负/平", "胜/负"})
-
+        self.assertEqual(rec, "负")
         leans = derive_prediction_leans(EVEN_PROBS, EVEN_ODDS)
-        for key in ("recommendation", "goal_lean", "both_score_lean", "score_hint"):
-            self.assertNotIn("待分析", leans[key], key)
-        self.assertNotIn("待分析", leans["handicap_lean"])
+        self.assertEqual(leans["recommendation"], "负")
+        self.assertEqual(leans["handicap_lean"], "让负(0)")
 
     def test_missing_1x2_board_still_pending(self) -> None:
         self.assertFalse(has_1x2_market(AH_ONLY_ODDS))

@@ -105,42 +105,64 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
 
 
 @pytest.mark.parametrize(
-    ("choice", "line", "moneyline_odd", "ah_odd", "expected_market", "expected_lean"),
+    ("line", "ah_home", "ah_away", "moneyline", "choice", "probs", "expected_market", "expected_lean"),
     [
-        ("away", "+0.5", 1.99, 2.00, "ah", "让负(+0.5)"),
-        ("home", "-0.5", 2.07, 2.08, "ah", "让胜(-0.5)"),
-        # 同赔固定取 AH，避免展示随机漂移。
-        ("away", "+0.5", 2.00, 2.00, "ah", "让负(+0.5)"),
-        # 反向：独赢水位更高时保留独赢，收敛规则不是「一律偏向让球」。
-        ("away", "+0.5", 2.12, 2.00, "1x2", "负"),
+        (
+            "+0.5",
+            2.05,
+            1.82,
+            {"home": 4.0, "draw": 3.4, "away": 1.80},
+            "away",
+            {"home": 0.22, "draw": 0.23, "away": 0.55},
+            "ah",
+            "让负(+0.5)",
+        ),
+        (
+            "-0.5",
+            1.82,
+            2.05,
+            {"home": 1.80, "draw": 3.4, "away": 4.0},
+            "home",
+            {"home": 0.56, "draw": 0.24, "away": 0.20},
+            "ah",
+            "让胜(-0.5)",
+        ),
+        (
+            "+0.5",
+            2.05,
+            1.82,
+            {"home": 4.0, "draw": 3.4, "away": 2.12},
+            "away",
+            {"home": 0.22, "draw": 0.23, "away": 0.55},
+            "1x2",
+            "负",
+        ),
     ],
 )
 def test_equivalent_half_ball_keeps_the_higher_quote_despite_market_feedback(
     monkeypatch,
-    choice: str,
     line: str,
-    moneyline_odd: float,
-    ah_odd: float,
+    ah_home: float,
+    ah_away: float,
+    moneyline: dict[str, float],
+    choice: str,
+    probs: dict[str, float],
     expected_market: str,
     expected_lean: str,
 ) -> None:
-    """Equivalent half-ball bets use the same 1X2 signal; the better quote wins."""
+    """Same-direction shallow AH vs 1X2: follow the letting-side water, then the better quote."""
     match = _match(1, ah_line=line)
     assert match.odds is not None
-    match.odds["match_winner"][choice] = moneyline_odd
-    match.odds["asian_handicap"]["home" if choice == "home" else "away"] = ah_odd
-    # 半球盘的对面是「不败」双选：让胜(+0.5) 覆盖主胜+平。想让单选侧真的入选，
-    # 该侧概率必须过半，否则模型本来就该去买对面那半个球。
-    probabilities = {"home": 0.22, "draw": 0.23, "away": 0.55}
-    if choice == "home":
-        probabilities = {"home": 0.56, "draw": 0.24, "away": 0.20}
+    match.odds["match_winner"] = moneyline
+    match.odds["asian_handicap"]["home"] = ah_home
+    match.odds["asian_handicap"]["away"] = ah_away
     processed = replace(
-        _processed(1, choice=choice, confidence=probabilities[choice]),
+        _processed(1, choice=choice, confidence=probs[choice]),
         calibration={
             "match_id": 1,
-            "calibrated_home_prob": probabilities["home"],
-            "calibrated_draw_prob": probabilities["draw"],
-            "calibrated_away_prob": probabilities["away"],
+            "calibrated_home_prob": probs["home"],
+            "calibrated_draw_prob": probs["draw"],
+            "calibrated_away_prob": probs["away"],
             "reliability": 0.7,
             "sample_size": 100,
         },
@@ -149,8 +171,6 @@ def test_equivalent_half_ball_keeps_the_higher_quote_despite_market_feedback(
         "app.services.recommendation.pipeline.process_match",
         lambda _match, *, artifact=None: processed,
     )
-    # This reproduces the observed state: generic 1X2 history is rewarded while
-    # AH is penalised. It must not distinguish two bets with identical outcomes.
     state = IncentiveState(
         params=IncentiveParams(),
         ema_market={"1x2": 0.5, "ah": -0.5},
@@ -169,7 +189,9 @@ def test_equivalent_half_ball_keeps_the_higher_quote_despite_market_feedback(
     assert result["selected"][0]["market"] == expected_market
     assert result["selected"][0]["lean"] == expected_lean
     assert result["selected"][0]["decimal_odd"] == (
-        ah_odd if expected_market == "ah" else moneyline_odd
+        (ah_away if choice == "away" else ah_home)
+        if expected_market == "ah"
+        else moneyline[choice]
     )
 
 

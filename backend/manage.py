@@ -525,6 +525,15 @@ async def run_model_status() -> None:
     print(f"min_train_samples: {ah_status['min_train_samples']}")
     print(f"ah_labeled: {ah_labeled or 0}")
     print(f"trained_at: {ah_status.get('trained_at')}")
+    from app.services.ah_market_structure import load_thresholds
+
+    ah_board = load_thresholds()
+    print(
+        "board_thresholds: "
+        f"n={ah_board.get('n_samples')} "
+        f"deadzone={ah_board.get('water_deadzone')} "
+        f"giving_median={ah_board.get('giving_odd_median')}"
+    )
     print("--- 进球分布 (Poisson) ---")
     print(f"artifact_ready: {goal_status['artifact_ready']}")
     print(f"deployable: {goal_status['deployable']}")

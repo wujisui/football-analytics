@@ -204,9 +204,9 @@ def get_recommendation(
 ) -> str:
     """Market-structured 1X2 lean; model only breaks ties / upgrades clear edges.
 
-    Uses de-vigged 1X2 odds for market shape (flat vs favorite). ``probs`` may come
-    from ML and can affect the recommendation, while published UI probabilities
-    remain market-implied. Recommendation follows盘口胶着度 + AH 水位, not argmax alone.
+    Uses de-vigged 1X2 odds only when the main AH board is missing. With an
+    Asian line (including 0), the lean follows letting-side vs receiving-side
+    water; near-even water is 观望.
 
     无可用 1X2 盘口 → 一律「待分析」：没有盘口就没有推断依据，只靠近况模型给出的
     胜平负属于无效预测（既不展示也不该进历史统计）。
@@ -215,6 +215,11 @@ def get_recommendation(
     board = implied_probs_from_odds(odds)
     if board is None:
         return "待分析"
+    from app.services.ah_market_structure import recommendation_from_ah_board
+
+    ah_rec = recommendation_from_ah_board(odds)
+    if ah_rec is not None:
+        return ah_rec
     market = board
 
     def _ranked(p: dict[str, float]) -> list[tuple[str, float]]:
@@ -309,7 +314,7 @@ def get_recommendation(
 def recommendation_outcomes(recommendation: str) -> set[str] | None:
     """Map recommendation text → {home,draw,away} outcomes that count as hit."""
     rec = (recommendation or "").strip()
-    if not rec or "待分析" in rec:
+    if not rec or "待分析" in rec or rec == "观望":
         return None
     if rec == "胜/平" or "主队不败" in rec or rec.startswith("主胜/平"):
         return {"home", "draw"}
@@ -1060,6 +1065,22 @@ def derive_prediction_leans(
         and distribution is not None
     ):
         btts_yes = distribution["btts_prob"] >= 0.5
+    if recommendation == "观望":
+        handicap_lean, handicap_market_note = _handicap_bundle(
+            odds if isinstance(odds, dict) else None,
+            recommendation=recommendation,
+            league_id=league_id,
+            features=features,
+            score_hint="比分:待分析",
+        )
+        return {
+            "recommendation": recommendation,
+            "goal_lean": goal_lean,
+            "both_score_lean": "双进:是" if btts_yes else "双进:否",
+            "score_hint": "比分:待分析",
+            "handicap_lean": handicap_lean,
+            "handicap_market_note": handicap_market_note,
+        }
 
     score_lines: list[tuple[int, int]] = []
     if (

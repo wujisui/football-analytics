@@ -721,6 +721,8 @@ def build_ah_features(
 
 def pick_to_lean(pick: str) -> str:
     """Canonical pick token. Display drops 「球」 to keep list tags on one line."""
+    if pick in {"watch", "观望"}:
+        return "观望"
     if pick == "cover/no_cover":
         return "让胜/负"
     if pick == "cover/push":

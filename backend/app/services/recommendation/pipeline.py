@@ -69,8 +69,6 @@ MARKET_1X2 = "1x2"
 MARKET_AH = "ah"
 OUTCOME_TO_LEAN = {"home": "胜", "away": "负"}
 MIN_MATCHES_FOR_FULL_QUOTA = 6
-# 两侧命中率相差在此以内视为同档，交回基础分按回报决胜。
-AH_SIDE_TIE_EPSILON = 1e-9
 
 
 @dataclass(frozen=True)
@@ -280,18 +278,61 @@ def _base_pick_fields(
     }
 
 
+def _to_ah_picks(
+    result: PipelineMatchResult,
+    *,
+    odds: dict[str, Any] | None,
+    market_artifact: dict[str, Any] | None,
+    side: str,
+) -> list[DailyRecommendationPick]:
+    line, home_odd, away_odd = extract_main_ah_line(odds)
+    if line is None or home_odd is None or away_odd is None:
+        return []
+    if side not in {"home", "away"}:
+        return []
+    probability = _ah_side_probability(side=side, line=line, result=result)
+    if probability is None:
+        return []
+    raw_confidence, stake_share = probability
+    hit_rate = calibrate_probability(market_artifact, MARKET_AH, raw_confidence)
+    if hit_rate < MIN_DAILY_CONFIDENCE:
+        return []
+    decimal_odd = home_odd if side == "home" else away_odd
+    market_lean = format_handicap_lean_text(
+        "让胜" if side == "home" else "让负",
+        line,
+    )
+    ev = stake_share * (hit_rate * decimal_odd - 1.0)
+    return [
+        DailyRecommendationPick(
+            **_base_pick_fields(result),
+            market=MARKET_AH,
+            lean=OUTCOME_TO_LEAN[side],
+            market_lean=market_lean,
+            recommended_choice=side,
+            ev=ev,
+            confidence=hit_rate,
+            reason=REASON_RISK_ADJUSTED_RETURN,
+            decimal_odd=decimal_odd,
+            raw_confidence=raw_confidence,
+            score=risk_adjusted_return_score(hit_rate, decimal_odd),
+        )
+    ]
+
+
 def _to_1x2_pick(
     result: PipelineMatchResult,
     *,
     odds: dict[str, Any] | None,
+    choice: str,
 ) -> DailyRecommendationPick | None:
-    choice = result.strategy.get("recommended_choice")
     if choice not in DAILY_PICK_OUTCOMES:
         return None
     decimal_odd = _decimal_odd_for_choice(odds, choice)
     if decimal_odd is None:
         return None
-    confidence = float(result.strategy.get("confidence") or 0.0)
+    calibration = result.calibration or {}
+    confidence = float(calibration.get(f"calibrated_{choice}_prob") or 0.0)
     if confidence < MIN_DAILY_CONFIDENCE:
         return None
     implied = implied_probs_from_odds(odds) or {}
@@ -309,6 +350,39 @@ def _to_1x2_pick(
         raw_confidence=float(implied.get(choice, confidence)),
         score=risk_adjusted_return_score(confidence, decimal_odd),
     )
+
+
+def _to_daily_picks(
+    result: PipelineMatchResult,
+    *,
+    odds: dict[str, Any] | None,
+    market_artifact: dict[str, Any] | None,
+) -> list[DailyRecommendationPick]:
+    from app.services.ah_market_structure import classify_ah_board
+
+    stance = classify_ah_board(odds)
+    if stance is not None and stance.even:
+        return []
+    if stance is not None:
+        picks = _to_ah_picks(
+            result,
+            odds=odds,
+            market_artifact=market_artifact,
+            side=stance.result_choice,
+        )
+        if stance.allow_moneyline:
+            one_x_two = _to_1x2_pick(
+                result, odds=odds, choice=stance.result_choice
+            )
+            if one_x_two is not None:
+                picks.append(one_x_two)
+        return picks
+    one_x_two = _to_1x2_pick(
+        result,
+        odds=odds,
+        choice=str(result.strategy.get("recommended_choice") or ""),
+    )
+    return [one_x_two] if one_x_two is not None else []
 
 
 def _ah_side_probability(
@@ -343,85 +417,6 @@ def _ah_side_probability(
         return None
     probability = float(cover) if side == "home" else 1.0 - float(cover)
     return max(0.0, min(1.0, probability)), 1.0
-
-
-def _to_ah_picks(
-    result: PipelineMatchResult,
-    *,
-    odds: dict[str, Any] | None,
-    market_artifact: dict[str, Any] | None,
-) -> list[DailyRecommendationPick]:
-    line, home_odd, away_odd = extract_main_ah_line(odds)
-    if line is None or home_odd is None or away_odd is None:
-        return []
-    odd_by_side = {"home": home_odd, "away": away_odd}
-    measured: dict[str, tuple[float, float, float]] = {}
-    for side in ("home", "away"):
-        probability = _ah_side_probability(side=side, line=line, result=result)
-        if probability is None:
-            continue
-        raw_confidence, stake_share = probability
-        measured[side] = (
-            raw_confidence,
-            stake_share,
-            calibrate_probability(market_artifact, MARKET_AH, raw_confidence),
-        )
-    if not measured:
-        return []
-    # 命中率是下限，回报只在存活侧之间比：让球盘两侧的条件命中概率之和恒为 1
-    # （退半与走水已计入条件概率），所以「只留命中率更高的一侧」等价于「只买过半
-    # 的那一侧」。这道闸必须在算基础分之前：``p × 净赔率 ** e`` 代入去水概率
-    # ``p ≈ 1 / 赔率`` 后正比于 ``√(p(1-p))``，关于 0.5 对称，对「哪侧更可能赢」
-    # 不敏感，两选一盘上真正决定排序的只剩抽水差，于是会系统性买进水位更高的
-    # 低概率侧（主胜 51.9% 却推 48.1% 的让负）。
-    best_hit_rate = max(hit_rate for _, _, hit_rate in measured.values())
-    picks: list[DailyRecommendationPick] = []
-    for side, (raw_confidence, stake_share, hit_rate) in measured.items():
-        if hit_rate < best_hit_rate - AH_SIDE_TIE_EPSILON:
-            continue
-        decimal_odd = odd_by_side[side]
-        confidence = hit_rate
-        if confidence < MIN_DAILY_CONFIDENCE:
-            continue
-        market_lean = format_handicap_lean_text(
-            "让胜" if side == "home" else "让负",
-            line,
-        )
-        ev = stake_share * (confidence * decimal_odd - 1.0)
-        result_lean = OUTCOME_TO_LEAN[side]
-        picks.append(
-            DailyRecommendationPick(
-                **_base_pick_fields(result),
-                market=MARKET_AH,
-                lean=result_lean,
-                market_lean=market_lean,
-                recommended_choice=side,
-                ev=ev,
-                confidence=confidence,
-                reason=REASON_RISK_ADJUSTED_RETURN,
-                decimal_odd=decimal_odd,
-                raw_confidence=raw_confidence,
-                score=risk_adjusted_return_score(confidence, decimal_odd),
-            )
-        )
-    return picks
-
-
-def _to_daily_picks(
-    result: PipelineMatchResult,
-    *,
-    odds: dict[str, Any] | None,
-    market_artifact: dict[str, Any] | None,
-) -> list[DailyRecommendationPick]:
-    picks = _to_ah_picks(
-        result,
-        odds=odds,
-        market_artifact=market_artifact,
-    )
-    one_x_two = _to_1x2_pick(result, odds=odds)
-    if one_x_two is not None:
-        picks.append(one_x_two)
-    return picks
 
 
 def _choose_best_shallow_market_per_direction(
@@ -739,6 +734,9 @@ async def sync_daily_recommendations(
     current = now or _utc_now()
 
     incentive_state = await ensure_feedback_state(db, now=current)
+    from app.services.ah_market_structure import refresh_ah_market_thresholds
+
+    await refresh_ah_market_thresholds(db)
     calibration = await train_from_frozen_history(db, now=current)
     market_calibration = await train_market_calibration(db, now=current)
     matches = await collect_prematch_pipeline_inputs(db, now=current)
@@ -791,6 +789,9 @@ async def sync_daily_recommendations(
             )
         )
 
+    # Live auto rows cover unstarted picks only. Snapshots for matches that
+    # already kicked off stay for grading, so a rolling day can settle more
+    # than four bets while the screen still shows at most four.
     if prematch_ids - selected_ids:
         await db.execute(
             delete(AutoPickSnapshot).where(

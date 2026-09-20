@@ -144,13 +144,16 @@ def _beats_market_baseline(
 def _structural_pick(
     odds: dict[str, Any] | None,
 ) -> HandicapPrediction | None:
-    """Choose the main AH side with the higher de-vig implied probability.
+    """Choose the main AH side from letting-side vs receiving-side water.
 
-    The handicap analyzer describes its own two-way market. It must not copy a
-    1X2 direction or let a reference score override the quoted AH board.
+    Near-even water is 观望. Home/away is already inside the line; it is not a
+    tie-break. The handicap board must not copy a 1X2 lean or score hint.
     """
+    from app.services.ah_market_structure import classify_ah_board
+
+    stance = classify_ah_board(odds)
     line_f, home_odd, away_odd = extract_main_ah_line(odds)
-    if line_f is None or home_odd is None or away_odd is None:
+    if stance is None or line_f is None or home_odd is None or away_odd is None:
         return None
     home_inv, away_inv = 1.0 / home_odd, 1.0 / away_odd
     total = home_inv + away_inv
@@ -158,17 +161,18 @@ def _structural_pick(
         return None
     cover_prob = home_inv / total
     away_prob = away_inv / total
-    if abs(cover_prob - away_prob) <= 1e-9:
-        pick = "cover/no_cover"
+    if stance.even:
+        pick = "watch"
         note = (
-            f"按主盘赔率折算（已扣掉抽成），买主队 {cover_prob:.1%}、"
-            f"买客队 {away_prob:.1%}，两边一样，不偏任何一边"
+            f"按主盘水位差 {stance.water_diff:+.3f}（死区 {stance.water_deadzone:.3f}），"
+            f"让球方 {stance.giving_odd:.2f}、受让 {stance.receiving_odd:.2f}，"
+            "差距不够，不偏任何一边"
         )
     else:
-        pick = "cover" if cover_prob > away_prob else "no_cover"
+        pick = stance.lean_token
         note = (
-            f"按主盘赔率折算（已扣掉抽成），买主队 {cover_prob:.1%}、"
-            f"买客队 {away_prob:.1%}，所以选{pick_to_lean(pick)}"
+            f"按主盘水位差 {stance.water_diff:+.3f}（让球方 {stance.giving_odd:.2f}、"
+            f"受让 {stance.receiving_odd:.2f}），所以选{pick_to_lean(pick)}"
         )
     return HandicapPrediction(cover_prob, pick, "market_implied", line_f, note)
 
@@ -233,10 +237,13 @@ def predict_handicap(
     if line_f is None or ah_features.get("has_ah_market", 0) < 0.5:
         return None
 
+    structural = _structural_pick(odds)
+    if structural is not None and structural.pick == "watch":
+        return structural
     model_pick = _model_prediction(ah_features, line_f)
     if model_pick.source == "ml":
         return model_pick
-    return _structural_pick(odds) or model_pick
+    return structural or model_pick
 
 
 def format_handicap_lean(pred: HandicapPrediction) -> str:

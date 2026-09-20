@@ -99,7 +99,7 @@ class PredictionCopyTests(unittest.TestCase):
             "available": True,
             "match_winner": {"home": 2.1, "draw": 3.3, "away": 3.4},
             "goals_ou": {"line": 2.5, "home": 1.95, "away": 1.85},
-            "asian_handicap": {"line": -0.25, "home": 1.9, "away": 1.9},
+            "asian_handicap": {"line": -0.25, "home": 1.80, "away": 2.05},
         }
         probs = {"home": 0.46, "draw": 0.28, "away": 0.26}
         fake = GoalPrediction(
@@ -224,7 +224,7 @@ class PredictionCopyTests(unittest.TestCase):
             "available": True,
             "match_winner": {"home": 3.2, "draw": 2.9, "away": 2.6},
             "goals_ou": {"line": 2.5, "home": 1.75, "away": 2.05},
-            "asian_handicap": {"line": 0.0, "home": 1.9, "away": 1.9},
+            "asian_handicap": {"line": 0.0, "home": 1.80, "away": 2.05},
         }
         # Drawish board; market prefers over 2.5.
         probs = {"home": 0.30, "draw": 0.38, "away": 0.32}
