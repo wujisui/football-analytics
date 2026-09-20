@@ -4,7 +4,8 @@ const DEFAULT_THRESHOLD = 48
 
 /**
  * Horizontal swipe → prev/next (phone tab panes).
- * Ignores mostly-vertical gestures and known horizontal pan targets (charts, etc.).
+ * Ignores mostly-vertical gestures and gestures that start inside a horizontally
+ * scrollable area (data tables, charts, badge rows).
  */
 export function useHorizontalSwipe(options: {
   enabled?: MaybeRefOrGetter<boolean>
@@ -18,17 +19,37 @@ export function useHorizontalSwipe(options: {
   let tracking = false
   let blocked = false
 
-  function isBlockedTarget(target: EventTarget | null): boolean {
+  /** 起点落在横向可滚动区域（表格、徽标行）时让它自己滚，不翻页。 */
+  function pansHorizontally(el: Element): boolean {
+    if (el.scrollWidth - el.clientWidth <= 1) return false
+    const overflowX = getComputedStyle(el).overflowX
+    return overflowX === 'auto' || overflowX === 'scroll'
+  }
+
+  function isBlockedTarget(
+    target: EventTarget | null,
+    root: EventTarget | null,
+  ): boolean {
     if (!(target instanceof Element)) return false
-    return !!target.closest(
-      '.echarts, canvas, [data-no-tab-swipe], .n-data-table-base-table-header',
-    )
+    // 数据表头由 Naive 跟随表体程序化滚动，自身 overflow 为 hidden，只能按类名拦。
+    if (
+      target.closest(
+        '.echarts, canvas, [data-no-tab-swipe], .n-data-table-base-table-header',
+      )
+    ) {
+      return true
+    }
+    const boundary = root instanceof Element ? root : null
+    for (let el: Element | null = target; el && el !== boundary; el = el.parentElement) {
+      if (pansHorizontally(el)) return true
+    }
+    return false
   }
 
   function onTouchStart(e: TouchEvent) {
     if (!toValue(options.enabled ?? true)) return
     if (e.touches.length !== 1) return
-    blocked = isBlockedTarget(e.target)
+    blocked = isBlockedTarget(e.target, e.currentTarget)
     if (blocked) {
       tracking = false
       return
