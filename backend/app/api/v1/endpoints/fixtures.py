@@ -356,7 +356,7 @@ def _odds_snippet_from_stored(
                 loads_json(raw, {"available": False}),
                 match_start_time=fixture.date,
                 fixture_id=fixture.id,
-                stage="opening" if opening else "current",
+                stage="initial" if opening else "current",
             )
         )
     )

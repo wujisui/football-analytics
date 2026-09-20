@@ -172,8 +172,12 @@ export interface BriefingPackage {
 export interface PrematchPackage {
   /** 即时盘 */
   odds: OddsPackage
-  /** 初盘（固定同步批次首次落库后冻结） */
+  /** 初盘 initial（首次可用盘口冻结，作为基准锚点） */
   odds_opening?: OddsPackage | null
+  /** 中盘 mid（最接近开赛前 6 小时） */
+  odds_mid?: OddsPackage | null
+  /** 临场 late（最接近开赛前 1 小时） */
+  odds_late?: OddsPackage | null
   lineups: LineupsPackage
   injuries: InjuriesPackage
   head_to_head: H2HPackage

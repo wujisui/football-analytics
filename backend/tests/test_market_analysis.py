@@ -36,9 +36,9 @@ def _board(
             "home": ah_home,
             "away": ah_away,
             "lines": [
-                {"line": "0", "home": "1.82" if role == "opening" else "1.68", "away": "1.99" if role == "opening" else "2.18"},
-                {"line": "-0.25", "home": "2.09" if role == "opening" else ah_home, "away": "1.72" if role == "opening" else ah_away},
-                {"line": "-0.5", "home": "2.34" if role == "opening" else "2.17", "away": "1.56" if role == "opening" else "1.69"},
+                {"line": "0", "home": "1.82" if role == "initial" else "1.68", "away": "1.99" if role == "initial" else "2.18"},
+                {"line": "-0.25", "home": "2.09" if role == "initial" else ah_home, "away": "1.72" if role == "initial" else ah_away},
+                {"line": "-0.5", "home": "2.34" if role == "initial" else "2.17", "away": "1.56" if role == "initial" else "1.69"},
             ],
         },
         "goals_ou": {
@@ -47,8 +47,8 @@ def _board(
             "home": ou_home,
             "away": ou_away,
             "lines": [
-                {"line": "3.0", "home": "1.96" if role == "opening" else "1.64", "away": "1.83" if role == "opening" else "2.25"},
-                {"line": "3.25", "home": "2.20" if role == "opening" else ou_home, "away": "1.64" if role == "opening" else ou_away},
+                {"line": "3.0", "home": "1.96" if role == "initial" else "1.64", "away": "1.83" if role == "initial" else "2.25"},
+                {"line": "3.25", "home": "2.20" if role == "initial" else ou_home, "away": "1.64" if role == "initial" else ou_away},
             ],
         },
     }
@@ -57,7 +57,7 @@ def _board(
 def test_four_stage_analysis_uses_real_line_and_probability_movement() -> None:
     opening = _board(
         "2026-08-26T08:00:00+00:00",
-        role="opening",
+        role="initial",
         ah_line="0",
         ah_home="1.82",
         ah_away="1.99",
@@ -244,7 +244,7 @@ def test_same_capture_is_not_described_as_fake_movement() -> None:
         away="2.81",
     )
     result = build_market_analysis(
-        {"odds_opening": {**current, "role": "opening"}, "odds": current},
+        {"odds_opening": {**current, "role": "initial"}, "odds": current},
         probabilities={"home": 0.43, "draw": 0.24, "away": 0.33},
         recommendation="胜/平",
         handicap_lean="让胜(-0.25)",
@@ -258,7 +258,7 @@ def test_same_capture_is_not_described_as_fake_movement() -> None:
 def test_bookmaker_swap_is_reported_but_not_called_a_market_move() -> None:
     opening = _board(
         "2026-08-26T08:00:00+00:00",
-        role="opening",
+        role="initial",
         ah_line="0",
         ah_home="1.82",
         ah_away="1.99",

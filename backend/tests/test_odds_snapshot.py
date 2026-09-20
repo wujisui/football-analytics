@@ -93,6 +93,37 @@ class NormalizeSnapshotTests(unittest.TestCase):
         self.assertFalse(board["is_live"])
         self.assertTrue(board["valid"])
 
+    def test_legacy_opening_role_is_exposed_as_initial(self) -> None:
+        board = normalize_odds_snapshot(
+            {
+                "available": True,
+                "role": "opening",
+                "captured_at": _iso(KICKOFF - timedelta(days=1)),
+            },
+            match_start_time=KICKOFF,
+            stage="initial",
+        )
+        self.assertEqual(board["role"], "initial")
+
+
+class PrematchPackageResponseTests(unittest.TestCase):
+    def test_api_schema_keeps_all_four_snapshot_slots(self) -> None:
+        from app.schemas.response import PrematchPackageResponse
+
+        package = PrematchPackageResponse.model_validate(
+            {
+                "odds_opening": {"available": True, "role": "initial"},
+                "odds_mid": {"available": True, "role": "mid"},
+                "odds_late": {"available": True, "role": "late"},
+                "odds": {"available": True, "role": "current"},
+            }
+        ).model_dump()
+
+        self.assertEqual(package["odds_opening"]["role"], "initial")
+        self.assertEqual(package["odds_mid"]["role"], "mid")
+        self.assertEqual(package["odds_late"]["role"], "late")
+        self.assertEqual(package["odds"]["role"], "current")
+
 
 class PackageFromRecordTests(unittest.TestCase):
     def test_live_current_board_is_hidden_from_analysis(self) -> None:
@@ -279,7 +310,7 @@ class HistoryAhSnippetTests(unittest.IsolatedAsyncioTestCase):
             raw,
             match_start_time=KICKOFF,
             fixture_id=1,
-            stage="opening",
+            stage="initial",
         )
         self.assertEqual(line, {"line": "-0.25", "home": "1.97", "away": "1.88"})
 

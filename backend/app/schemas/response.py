@@ -55,7 +55,7 @@ class OddsPackageResponse(BaseModel):
     goals_ou: LineOddsResponse | None = None
     both_teams_score: LineOddsResponse | None = None
     bookmakers: list[dict[str, Any]] = Field(default_factory=list)
-    role: str | None = Field(default=None, description="opening|mid|late|current")
+    role: str | None = Field(default=None, description="initial|mid|late|current")
     captured_at: str | None = Field(default=None, description="兼容字段，等同 scraped_at")
     scraped_at: str | None = Field(default=None, description="盘口采集时间（UTC）")
     match_start_time: str | None = Field(default=None, description="比赛开赛时间（UTC）")
@@ -199,7 +199,15 @@ class PrematchPackageResponse(BaseModel):
     )
     odds_opening: OddsPackageResponse = Field(
         default_factory=OddsPackageResponse,
-        description="初盘（任一路径首次成功获取可用盘口时冻结）",
+        description="初盘 initial（首次成功获取可用盘口时冻结）",
+    )
+    odds_mid: OddsPackageResponse = Field(
+        default_factory=OddsPackageResponse,
+        description="中盘 mid（现有刷新中最接近开赛前 6 小时）",
+    )
+    odds_late: OddsPackageResponse = Field(
+        default_factory=OddsPackageResponse,
+        description="临场 late（现有刷新中最接近开赛前 1 小时）",
     )
     lineups: LineupsPackageResponse = Field(default_factory=LineupsPackageResponse)
     injuries: InjuriesPackageResponse = Field(default_factory=InjuriesPackageResponse)

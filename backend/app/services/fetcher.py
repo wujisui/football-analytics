@@ -1380,7 +1380,7 @@ class FootballFetcher:
         parsed: dict[str, Any],
         raw: dict[str, Any],
     ) -> bool:
-        """Write 即时盘 and freeze the first available pre-kickoff board as 初盘."""
+        """Write current and freeze the first available pre-kickoff board as initial."""
         from sqlalchemy import select
 
         from app.models.fixture import Fixture
@@ -1440,7 +1440,7 @@ class FootballFetcher:
                     loads_json(getattr(row, "odds_opening_json", None), {}),
                     match_start_time=fixture.date,
                     fixture_id=fixture_id,
-                    stage="opening",
+                    stage="initial",
                 )
                 if row is not None
                 else {}
@@ -1485,7 +1485,7 @@ class FootballFetcher:
                         opening_candidate,
                         scraped_at=opening_captured_at,
                         match_start_time=fixture.date,
-                        role="opening",
+                        role="initial",
                     )
                 )
 
@@ -1520,7 +1520,6 @@ class FootballFetcher:
                 min_hours=SNAPSHOT_MID["min_hours"],
                 max_hours=SNAPSHOT_MID["max_hours"],
                 locked=False,
-                policy=SNAPSHOT_MID["policy"],
             )
             late_text = timed_snapshot_json(
                 existing_late,
@@ -1532,7 +1531,6 @@ class FootballFetcher:
                 min_hours=SNAPSHOT_LATE["min_hours"],
                 max_hours=SNAPSHOT_LATE["max_hours"],
                 locked=False,
-                policy=SNAPSHOT_LATE["policy"],
             )
 
             package: dict[str, Any] = {

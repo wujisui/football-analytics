@@ -52,9 +52,9 @@ function capturedAtMs(odds: OddsLike): number | null {
 /**
  * 初盘是否值得单独展示，只看采集时间：严格早于即时盘才算两份盘口。
  *
- * 初盘可能刚由当前这份冻结或替换（主庄开盘后顶掉次级庄兜底的那份），此时两者
- * 采集时间相同、内容也相同，按即时盘展示一份即可。判定不逐档比水位：盘口没动
- * 但确实是后一次采集的，仍然是即时盘。旧行缺采集时间时无从判定，同样只展示一份。
+ * 初盘可能刚由当前这份首次冻结，此时两者采集时间相同、内容也相同，按即时盘展示
+ * 一份即可。判定不逐档比水位：盘口没动但确实是后一次采集的，仍然是即时盘。
+ * 旧行缺采集时间时无从判定，同样只展示一份。
  */
 export function isOpeningDistinct(opening: OddsLike, current: OddsLike): boolean {
   if (!hasOddsMarkets(opening)) return false

@@ -34,7 +34,6 @@ def _args(spec: dict, board: dict, *, existing: dict | None = None, locked: bool
         "min_hours": spec["min_hours"],
         "max_hours": spec["max_hours"],
         "locked": locked,
-        "policy": spec["policy"],
     }
 
 
@@ -60,16 +59,22 @@ class TimedSnapshotWindowTests(unittest.TestCase):
         self.assertFalse(should_write_timed_snapshot(**_args(SNAPSHOT_MID, board)))
         self.assertTrue(should_write_timed_snapshot(**_args(SNAPSHOT_LATE, board)))
 
-    def test_late_keeps_the_newest_capture_in_the_window(self) -> None:
+    def test_late_keeps_the_capture_closest_to_one_hour(self) -> None:
         first = _board(2.5)
         self.assertTrue(should_write_timed_snapshot(**_args(SNAPSHOT_LATE, first)))
-        newer = _board(0.4)
+        closer = _board(0.9)
         self.assertTrue(
-            should_write_timed_snapshot(**_args(SNAPSHOT_LATE, newer, existing=first))
+            should_write_timed_snapshot(**_args(SNAPSHOT_LATE, closer, existing=first))
         )
-        older = _board(1.8)
+        nearer_kickoff_but_farther_from_target = _board(0.2)
         self.assertFalse(
-            should_write_timed_snapshot(**_args(SNAPSHOT_LATE, older, existing=newer))
+            should_write_timed_snapshot(
+                **_args(
+                    SNAPSHOT_LATE,
+                    nearer_kickoff_but_farther_from_target,
+                    existing=closer,
+                )
+            )
         )
 
     def test_outside_window_and_after_kickoff_are_ignored(self) -> None:

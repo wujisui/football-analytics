@@ -335,7 +335,7 @@ async def attach_history_ah_snippets(session: Any, package: dict[str, Any]) -> N
             stored.odds_opening_json,
             match_start_time=kickoff,
             fixture_id=fid,
-            stage="opening",
+            stage="initial",
         )
         match["ah_current"] = history_ah_line_from_raw(
             stored.odds_json,
@@ -620,29 +620,6 @@ def parse_odds_payload(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _package_bookmaker_rank(package: dict[str, Any] | None) -> int:
-    """Priority rank of a stored board's bookmaker; lower is sharper."""
-    if not isinstance(package, dict):
-        return len(_BOOKMAKER_RANK)
-    name = package.get("bookmaker")
-    if not name:
-        # Rows written before boards carried a top-level bookmaker.
-        for market in _CORE_MARKETS:
-            block = package.get(market)
-            if isinstance(block, dict) and block.get("bookmaker"):
-                name = block["bookmaker"]
-                break
-    return _name_rank(name)
-
-
-def _board_outranks(
-    candidate: dict[str, Any] | None,
-    existing: dict[str, Any] | None,
-) -> bool:
-    """True when ``candidate`` comes from a sharper bookmaker than ``existing``."""
-    return _package_bookmaker_rank(candidate) < _package_bookmaker_rank(existing)
-
-
 def should_write_opening(
     existing: dict[str, Any] | None,
     candidate: dict[str, Any] | None,
@@ -651,32 +628,27 @@ def should_write_opening(
 ) -> bool:
     """Decide whether ``candidate`` should become the stored 初盘.
 
-    The first available board from any pre-kickoff path is the opening. Replacing
-    one is allowed once a sharper bookmaker opens its board: an opening left on a
-    fallback book makes 初盘 and 即时盘 different sources, so the side-by-side
-    comparison shows a bookmaker swap dressed up as a line move.
+    The first available board from any pre-kickoff path is the immutable initial
+    anchor. Later bookmaker changes belong to current; comparisons already reject
+    stages from different bookmakers instead of rewriting history.
     """
     if not (candidate or {}).get("available"):
         return False
-    if not (existing or {}).get("available"):
-        return not locked
-    return not locked and _board_outranks(candidate, existing)
+    return not locked and not (existing or {}).get("available")
 
 
 # Kickoff-relative boards, tagged from the existing odds refresh schedule (no extra API).
 # Mid: T-10h..T-3h, keep the capture closest to T-6h.
-# Late: T-3h..kickoff, keep the newest capture (evening half-hour slots become the close).
+# Late: T-3h..kickoff, keep the capture closest to T-1h.
 SNAPSHOT_MID = {
     "stage": "mid",
-    "policy": "closest",
     "target_hours": 6.0,
     "min_hours": 3.0,
     "max_hours": 10.0,
 }
 SNAPSHOT_LATE = {
     "stage": "late",
-    "policy": "latest",
-    "target_hours": 0.0,
+    "target_hours": 1.0,
     "min_hours": 0.0,
     "max_hours": 3.0,
 }
@@ -718,13 +690,11 @@ def should_write_timed_snapshot(
     min_hours: float,
     max_hours: float,
     locked: bool,
-    policy: str = "closest",
 ) -> bool:
-    """Tag a mid/late board from an existing refresh.
+    """Tag the board nearest a kickoff-relative target from existing refreshes.
 
-    ``closest`` keeps the capture nearest ``target_hours`` (中盘). ``latest``
-    keeps the newest capture in the window (临场 / 封盘). ``min_hours`` is
-    exclusive when > 0 so T-3h belongs to late, not mid.
+    ``min_hours`` is exclusive when above zero, so T-3h belongs to late rather
+    than mid.
     """
     if locked or not (candidate or {}).get("available"):
         return False
@@ -746,8 +716,6 @@ def should_write_timed_snapshot(
     existing_hours = hours_before_kickoff(kickoff, existing_at)
     if existing_hours is None:
         return True
-    if policy == "latest":
-        return hours < existing_hours
     return abs(hours - target_hours) < abs(existing_hours - target_hours)
 
 
@@ -762,7 +730,6 @@ def timed_snapshot_json(
     min_hours: float,
     max_hours: float,
     locked: bool,
-    policy: str = "closest",
 ) -> str | None:
     from app.services.odds_snapshot import annotate_odds_snapshot
 
@@ -775,7 +742,6 @@ def timed_snapshot_json(
         min_hours=min_hours,
         max_hours=max_hours,
         locked=locked,
-        policy=policy,
     ):
         return None
     return dumps_json(
@@ -1157,7 +1123,7 @@ def package_from_record(
     injuries = loads_json(getattr(record, "injuries_json", None), {})
     briefing = loads_json(getattr(record, "briefing_json", None), {})
     odds = _odds_board("odds_json", "current")
-    odds_opening = _odds_board("odds_opening_json", "opening")
+    odds_opening = _odds_board("odds_opening_json", "initial")
 
     return {
         "odds": odds,

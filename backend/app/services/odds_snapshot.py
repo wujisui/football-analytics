@@ -86,6 +86,7 @@ def normalize_odds_snapshot(
     Legacy ``captured_at`` is accepted as ``scraped_at``. Missing clocks cannot
     prove a live board, so those frozen snapshots remain available for analysis.
     """
+    canonical_stage = "initial" if stage == "opening" else stage
     if not isinstance(board, dict):
         return {"available": False}
     if not board.get("available"):
@@ -126,7 +127,7 @@ def normalize_odds_snapshot(
             board,
             scraped_at=scraped,
             match_start_time=kickoff,
-            role=str(board.get("role")) if board.get("role") is not None else None,
+            role=canonical_stage,
         )
     result = dict(board)
     if scraped is not None:
@@ -134,6 +135,7 @@ def normalize_odds_snapshot(
         result["captured_at"] = utc_iso(scraped)
     if kickoff is not None:
         result["match_start_time"] = utc_iso(kickoff)
+    result["role"] = canonical_stage
     result["is_live"] = False
     result["valid"] = True
     return result
@@ -189,7 +191,7 @@ async def audit_stored_live_odds(session: Any) -> dict[str, Any]:
         live_stages: list[str] = []
         for column, stage in (
             ("odds_json", "current"),
-            ("odds_opening_json", "opening"),
+            ("odds_opening_json", "initial"),
             ("odds_mid_json", "mid"),
             ("odds_late_json", "late"),
         ):

@@ -3,10 +3,10 @@ import { computed } from 'vue'
 
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import PredictionResult from '@/views/Detail/components/PredictionResult.vue'
-import type { FixtureResponse } from '@/api/types'
+import type { FixtureResponse, OddsPackage } from '@/api/types'
 import { formatDateTime } from '@/utils/format'
 import { useAuthSession } from '@/composables/useAuthSession'
-import { hasOddsMarkets, isOpeningDistinct } from '@/utils/oddsDisplay'
+import { hasOddsMarkets } from '@/utils/oddsDisplay'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -17,21 +17,64 @@ const props = defineProps<{
 const emit = defineEmits<{ 'refresh-odds': [] }>()
 const { isAdmin } = useAuthSession()
 
-const oddsCurrent = computed(() => props.fixture.analysis.package?.odds ?? null)
-const oddsOpening = computed(() => props.fixture.analysis.package?.odds_opening ?? null)
+interface OddsStage {
+  key: 'initial' | 'mid' | 'late' | 'current'
+  title: string
+  description: string
+  odds: OddsPackage
+  capturedAt: string
+}
 
-const showCurrent = computed(() => hasOddsMarkets(oddsCurrent.value))
-/** Same capture time = 初盘 was just frozen from this board; show it as 即时盘 only. */
-const showOpening = computed(() =>
-  isOpeningDistinct(oddsOpening.value, oddsCurrent.value),
-)
-const currentCapturedAt = computed(
-  () => oddsCurrent.value?.scraped_at || oddsCurrent.value?.captured_at || '',
-)
-const openingCapturedAt = computed(
-  () => oddsOpening.value?.scraped_at || oddsOpening.value?.captured_at || '',
-)
-const showAnyBoard = computed(() => showCurrent.value || showOpening.value)
+const oddsStages = computed<OddsStage[]>(() => {
+  const pkg = props.fixture.analysis.package
+  const candidates = [
+    {
+      key: 'initial' as const,
+      title: '初盘',
+      description: '首次采集的机构盘口 · 基准锚点',
+      odds: pkg?.odds_opening,
+    },
+    {
+      key: 'mid' as const,
+      title: '中盘',
+      description: 'T-6h · 市场资金已进场，首发未出',
+      odds: pkg?.odds_mid,
+    },
+    {
+      key: 'late' as const,
+      title: '临场',
+      description: 'T-1h · 首发已出，最接近真实概率',
+      odds: pkg?.odds_late,
+    },
+    {
+      key: 'current' as const,
+      title: '即时盘',
+      description: '离开赛最近的赛前盘口',
+      odds: pkg?.odds,
+    },
+  ].filter(
+    (stage): stage is Omit<OddsStage, 'capturedAt'> =>
+      !!stage.odds && hasOddsMarkets(stage.odds),
+  )
+
+  // 同一次采集可能同时命中一个目标槽位和 current，只展示语义更靠后的阶段。
+  const seen = new Set<string>()
+  return candidates
+    .reverse()
+    .filter((stage) => {
+      const capturedAt = stage.odds.scraped_at || stage.odds.captured_at || ''
+      const identity = capturedAt || `${stage.key}-without-clock`
+      if (seen.has(identity)) return false
+      seen.add(identity)
+      return true
+    })
+    .reverse()
+    .map(stage => ({
+      ...stage,
+      capturedAt: stage.odds.scraped_at || stage.odds.captured_at || '',
+    }))
+})
+const showAnyBoard = computed(() => oddsStages.value.length > 0)
 
 const isFinished = computed(
   () => (props.fixture.status ?? '').toLowerCase() === 'finished',
@@ -46,15 +89,24 @@ const canRefreshOdds = computed(
 <template>
   <div class="prediction-tab">
     <template v-if="showAnyBoard">
-      <section v-if="showCurrent" class="fa-section">
+      <section
+        v-for="stage in oddsStages"
+        :key="stage.key"
+        class="fa-section"
+      >
         <div class="board-head">
-          <h3 class="fa-section-title">即时盘</h3>
+          <div class="board-title">
+            <h3 class="fa-section-title">{{ stage.title }}</h3>
+            <n-text depth="3" class="board-description">
+              {{ stage.description }}
+            </n-text>
+          </div>
           <n-flex align="center" :size="8">
-            <n-text v-if="currentCapturedAt" depth="3" class="board-time">
-              采集 {{ formatDateTime(currentCapturedAt) }}
+            <n-text v-if="stage.capturedAt" depth="3" class="board-time">
+              采集 {{ formatDateTime(stage.capturedAt) }}
             </n-text>
             <n-button
-              v-if="canRefreshOdds"
+              v-if="canRefreshOdds && stage.key === 'current'"
               size="tiny"
               secondary
               type="primary"
@@ -66,30 +118,7 @@ const canRefreshOdds = computed(
             </n-button>
           </n-flex>
         </div>
-        <PreMatchOddsTable :odds="oddsCurrent" />
-      </section>
-
-      <section v-if="showOpening" class="fa-section">
-        <div class="board-head">
-          <h3 class="fa-section-title">初盘</h3>
-          <n-flex align="center" :size="8">
-            <n-text v-if="openingCapturedAt" depth="3" class="board-time">
-              采集 {{ formatDateTime(openingCapturedAt) }}
-            </n-text>
-            <n-button
-              v-if="canRefreshOdds && !showCurrent"
-              size="tiny"
-              secondary
-              type="primary"
-              :loading="oddsRefreshing"
-              :disabled="oddsRefreshBlocked"
-              @click="emit('refresh-odds')"
-            >
-              更新盘口
-            </n-button>
-          </n-flex>
-        </div>
-        <PreMatchOddsTable :odds="oddsOpening" />
+        <PreMatchOddsTable :odds="stage.odds" />
       </section>
     </template>
 
@@ -143,6 +172,15 @@ const canRefreshOdds = computed(
   min-width: 0;
 }
 
+.board-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.board-description,
 .board-time {
   font-size: 12px;
 }

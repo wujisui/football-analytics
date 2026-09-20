@@ -181,8 +181,8 @@ class SingleBookmakerBoardTests(unittest.TestCase):
         self.assertEqual(reread["goals_ou"]["bookmaker"], "1xBet")
 
 
-class OpeningUpgradeTests(unittest.TestCase):
-    """初盘可由次级庄兜底，但主庄一开盘就要替换，否则两份盘口不同源。"""
+class InitialSnapshotTests(unittest.TestCase):
+    """初盘是首次成功采集的基准锚点，后续机构变化不能重写历史。"""
 
     def _board(self, bookmaker: str) -> dict:
         return {"available": True, "bookmaker": bookmaker}
@@ -192,14 +192,13 @@ class OpeningUpgradeTests(unittest.TestCase):
         self.assertTrue(should_write_opening({}, candidate, locked=False))
         self.assertFalse(should_write_opening({}, candidate, locked=True))
 
-    def test_sharper_book_replaces_a_fallback_opening_on_any_refresh(self) -> None:
+    def test_sharper_book_does_not_replace_the_initial_anchor(self) -> None:
         opening = self._board("1xBet")
-        self.assertTrue(
+        self.assertFalse(
             should_write_opening(
                 opening, self._board("Pinnacle"), locked=False
             )
         )
-        # 同庄或更次级的盘口不动初盘。
         self.assertFalse(
             should_write_opening(
                 opening, self._board("1xBet"), locked=False
@@ -220,9 +219,9 @@ class OpeningUpgradeTests(unittest.TestCase):
             )
         )
 
-    def test_legacy_openings_without_a_top_level_bookmaker_still_upgrade(self) -> None:
+    def test_legacy_initial_without_a_top_level_bookmaker_stays_frozen(self) -> None:
         legacy = {"available": True, "match_winner": {"bookmaker": "William Hill"}}
-        self.assertTrue(
+        self.assertFalse(
             should_write_opening(
                 legacy, self._board("Pinnacle"), locked=False
             )
