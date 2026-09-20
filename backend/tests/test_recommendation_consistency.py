@@ -81,6 +81,20 @@ def test_market_water_no_longer_blocks_the_pick_direction() -> None:
     assert decision.handicap_lean == "让负(-0.25)"
 
 
+def test_away_pick_on_home_plus_quarter_pairs_with_away_handicap_side() -> None:
+    """客胜日推 + 主受平半(+0.25) 应配让负，不能配让胜。"""
+    decision = validate_pick_consistency(
+        daily_lean="负",
+        probs=_probs(home=0.301, draw=0.278, away=0.421),
+        goal_lean="小(2.5)",
+        both_score_lean="双进:否",
+        odds=_odds(line="+0.25", home=1.92, away=1.99),
+    )
+    assert decision.is_consistent is True
+    assert decision.handicap_lean == "让负(+0.25)"
+    assert "让胜" not in (decision.handicap_lean or "")
+
+
 def test_pick_rejected_when_over_under_lean_is_unavailable() -> None:
     decision = validate_pick_consistency(
         daily_lean="胜",

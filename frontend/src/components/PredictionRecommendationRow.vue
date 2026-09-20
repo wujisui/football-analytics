@@ -42,15 +42,19 @@ function isPick(market: AutoFavoriteMarket): boolean {
   return pick.value?.market === market
 }
 
-const recommendationText = computed(
-  () => pick.value?.lean || props.recommendation,
-)
-const handicapText = computed(
-  () => pick.value?.handicapLean || props.handicapLean,
-)
-const scoreText = computed(
-  () => pick.value?.scoreHint || props.scoreHint,
-)
+/** 有 [荐] 时整行只展示日推自洽三件套，禁止与分析器 handicap/score 混排。 */
+const recommendationText = computed(() => {
+  if (pick.value) return pick.value.lean
+  return props.recommendation
+})
+const handicapText = computed(() => {
+  if (pick.value) return pick.value.handicapLean
+  return props.handicapLean
+})
+const scoreText = computed(() => {
+  if (pick.value) return pick.value.scoreHint
+  return props.scoreHint
+})
 
 const recommendationLabel = computed(() =>
   isPredictionPending(recommendationText.value)
