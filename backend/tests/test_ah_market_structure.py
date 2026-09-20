@@ -92,6 +92,50 @@ def test_equal_water_has_no_direction_and_falls_back_to_1x2() -> None:
     assert get_recommendation({"home": 0.33, "draw": 0.33, "away": 0.34}, odds=odds)
 
 
+def test_deep_board_is_not_a_1x2_direction() -> None:
+    """让 1 球以上时受让侧水位低只说明热门吃不下盘口，不说明谁赢球。
+
+    复现曼城让 1.5 打桑德兰：受让侧 1.80 更低，旧口径把它读成「客胜」，卡片变成
+    「客胜 · 客+1.5 · 比分 0-4」。深盘应交回去水 1X2 盘面，读出主胜。
+    """
+    odds = _odds("-1.5", 2.00, 1.80)
+    odds["match_winner"] = {"home": 1.22, "draw": 6.80, "away": 13.0}
+    stance = classify_ah_board(odds)
+    assert stance is not None and stance.directional and stance.is_deep
+    assert stance.result_choice == "away"
+    assert recommendation_from_ah_board(odds) is None
+    assert get_recommendation({"home": 0.78, "draw": 0.13, "away": 0.09}, odds=odds) == (
+        "主胜"
+    )
+
+
+def test_deep_board_handicap_takes_the_giving_side() -> None:
+    """深盘让球侧取让球方；浅盘仍跟水位，不受影响。"""
+    deep = _odds("-1.5", 2.00, 1.80)
+    lean, note = handicap_bundle_from_markets(deep, "主胜")
+    assert lean == "主-1.5"
+    assert "输一球以内" in note
+
+    shallow = _odds("-0.5", 2.08, 1.85)
+    assert handicap_bundle_from_markets(shallow, "客胜")[0] == "客+0.5"
+
+
+def test_reference_score_never_contradicts_the_handicap_row() -> None:
+    """比分是推导值，让球是市场读数：打架时让比分让步（2-0 而不是 1-0/0-4）。"""
+    odds = _odds("-1.5", 2.00, 1.80)
+    odds["match_winner"] = {"home": 1.22, "draw": 6.80, "away": 13.0}
+    odds["goals_ou"] = {"line": "3", "home": 2.05, "away": 1.75}
+    odds["both_teams_score"] = {"home": 2.10, "away": 1.70}
+
+    leans = derive_prediction_leans({"home": 0.78, "draw": 0.13, "away": 0.09}, odds)
+
+    assert leans["recommendation"] == "主胜"
+    assert leans["handicap_lean"] == "主-1.5"
+    assert leans["score_hint"] == "比分:2-0"
+    assert leans["goal_lean"] == "小(3)"
+    assert leans["both_score_lean"] == "双进:否"
+
+
 def test_missing_1x2_board_falls_back_down_the_market_ladder() -> None:
     odds = {
         "available": True,

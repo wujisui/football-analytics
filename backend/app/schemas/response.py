@@ -739,7 +739,6 @@ def analysis_to_response(analysis) -> AnalysisResponse:
             recommendation,
             league_id=league_id,
             stored=getattr(analysis, "handicap_lean", None),
-            score_hint=score_hint,
             prefer_stored=True,
         )
     else:

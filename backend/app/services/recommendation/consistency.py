@@ -3,6 +3,9 @@
 日推核心玩法是独赢 / 亚洲让球，不足时按大小球、双方进球降级补位。卡片上标
 `[荐]` 的那一行及其胜负方向、真实让球和比分必须同源；无法自洽的市场候选直接
 淘汰，由同场下一层玩法或后续场次补位。
+
+让球行只是伴随展示，不是这注本身：深于 1 球的盘口上任何胜负方向都担保不了某一
+侧，此时隐藏让球行，不淘汰大小球 / 双进候选。
 """
 
 from __future__ import annotations
@@ -48,19 +51,17 @@ def _reject(detail: str) -> ConsistencyDecision:
     )
 
 
-def _handicap_side(outcome: str, line_f: float) -> tuple[str | None, str | None]:
+def _handicap_side(outcome: str, line_f: float) -> str | None:
     """The AH side that cannot lose when this single 1X2 outcome lands.
 
     平手盘同样是可下注的让球盘：主胜配让0胜、客胜配让0负，赛果打平按走水退本，
     不算输，所以这里照常给出方向。只有主客两侧会走到这里，平局在上游已被淘汰。
+    深于 1 球时两侧都担保不了（主胜可能只赢一球、客胜也可能输一球），返回 None
+    表示这张卡没有可展示的让球行。
     """
     if outcome == "home":
-        if line_f < -1.0 - _LINE_EPSILON:
-            return None, "主胜不能保证穿过深于主让1球的盘口"
-        return "让胜", None
-    if line_f > 1.0 + _LINE_EPSILON:
-        return None, "客胜不能保证穿过深于客让1球的盘口"
-    return "让负", None
+        return None if line_f < -1.0 - _LINE_EPSILON else "让胜"
+    return None if line_f > 1.0 + _LINE_EPSILON else "让负"
 
 
 def validate_pick_consistency(
@@ -105,11 +106,23 @@ def validate_pick_consistency(
 
     if market == "ah":
         side = handicap_pick_from_lean(market_lean)
-        line_error = None if side in {"让胜", "让负"} else "让球日推不是主客单选"
+        if side not in {"让胜", "让负"}:
+            return _reject("让球日推不是主客单选")
     else:
-        side, line_error = _handicap_side(outcome, line_f)
-    if side is None:
-        return _reject(line_error or "真实盘口无法表达该日推方向")
+        side = _handicap_side(outcome, line_f)
+        if side is None:
+            # 大小球 / 双进这注本身成立，只是深盘上没有任何让球侧能被该胜负方向
+            # 担保。隐藏让球行即可，不该连候选一起淘汰。
+            return ConsistencyDecision(
+                is_consistent=True,
+                handicap_lean=None,
+                score_hint=score_hint,
+                conflict_reason="自洽",
+                conflict_detail=(
+                    f"{market_lean or daily_lean}与比分候选同向；"
+                    "真实盘口深于该方向可担保的范围，不展示让球行"
+                ),
+            )
 
     scores = parse_score_hint(score_hint)
     if not all(

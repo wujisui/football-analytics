@@ -83,9 +83,7 @@ class AhFeaturesTests(unittest.TestCase):
             "available": True,
             "asian_handicap": {"line": "-0.5", "home": 2.06, "away": 1.84},
         }
-        lean, note = handicap_bundle_from_markets(
-            west_ham, "胜/平", score_hint="比分:2-0/0-0"
-        )
+        lean, note = handicap_bundle_from_markets(west_ham, "胜/平")
         self.assertEqual(lean, "客+0.5")
         self.assertIn("所以选客+0.5", note)
 
@@ -164,16 +162,13 @@ class AhFeaturesTests(unittest.TestCase):
         )
 
     def test_handicap_direction_is_independent_of_1x2_and_score(self) -> None:
+        """让球只读盘口：比分已不是入参，反过来由比分迁就让球。"""
         home_give = {
             "available": True,
             "asian_handicap": {"line": "-0.25", "home": 1.88, "away": 1.98},
         }
-        first, _ = handicap_bundle_from_markets(
-            home_give, "胜/平", score_hint="比分:1-1",
-        )
-        second, _ = handicap_bundle_from_markets(
-            home_give, "负", score_hint="比分:0-3",
-        )
+        first, _ = handicap_bundle_from_markets(home_give, "胜/平")
+        second, _ = handicap_bundle_from_markets(home_give, "负")
         self.assertEqual(first, "主-0.25")
         self.assertEqual(second, first)
 
@@ -191,9 +186,7 @@ class AhFeaturesTests(unittest.TestCase):
                 ],
             },
         }
-        lean, note = handicap_bundle_from_markets(
-            home_leaning, "胜/平", score_hint="比分:1-1"
-        )
+        lean, note = handicap_bundle_from_markets(home_leaning, "胜/平")
         self.assertEqual(lean, "主0")
         self.assertIn("水位差", note)
 
@@ -209,9 +202,7 @@ class AhFeaturesTests(unittest.TestCase):
                 ],
             },
         }
-        lean, _ = handicap_bundle_from_markets(
-            away_leaning, "负/平", score_hint="比分:1-1"
-        )
+        lean, _ = handicap_bundle_from_markets(away_leaning, "负/平")
         self.assertEqual(lean, "客0")
 
     def test_equal_main_prices_return_no_directional_edge(self) -> None:
@@ -219,9 +210,7 @@ class AhFeaturesTests(unittest.TestCase):
             "available": True,
             "asian_handicap": {"line": "0", "home": 1.95, "away": 1.95},
         }
-        lean, note = handicap_bundle_from_markets(
-            level, "胜/平", score_hint="比分:1-1"
-        )
+        lean, note = handicap_bundle_from_markets(level, "胜/平")
         self.assertEqual(lean, "主0")
         self.assertIn("水位差 +0.000", note)
 

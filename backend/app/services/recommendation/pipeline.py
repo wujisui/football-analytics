@@ -456,7 +456,7 @@ def _to_daily_picks(
     goal_lean: str | None,
     both_score_lean: str | None,
 ) -> list[DailyRecommendationPick]:
-    from app.services.ah_market_structure import classify_ah_board
+    from app.services.ah_market_structure import bettable_side, classify_ah_board
 
     stance = classify_ah_board(odds)
     # 死区是**下注**闸：展示侧照样给最可能的一边（`classify_ah_board` 恒有方向），
@@ -468,7 +468,7 @@ def _to_daily_picks(
                 result,
                 odds=odds,
                 market_artifact=market_artifact,
-                side=stance.result_choice,
+                side=bettable_side(stance),
             )
         )
     elif stance is None:

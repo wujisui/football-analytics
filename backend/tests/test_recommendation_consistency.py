@@ -56,16 +56,20 @@ def test_level_ball_keeps_a_bettable_side_with_a_push_downside() -> None:
     assert decision.handicap_lean == "主0"
 
 
-def test_home_pick_rejected_on_a_board_deeper_than_one_goal() -> None:
+def test_board_deeper_than_one_goal_only_hides_the_handicap_row() -> None:
+    """主胜担保不了主-1.5，也担保不了客+1.5；让球行是伴随展示，缺它不淘汰候选。"""
     decision = validate_pick_consistency(
         daily_lean="胜",
         probs=_probs(),
         goal_lean="大(2.5)",
         both_score_lean="双进:是",
         odds=_odds(line="-1.5", home=2.00, away=1.88),
+        market="ou",
+        market_lean="大(2.5)",
     )
-    assert decision.is_consistent is False
-    assert "主让1球" in decision.conflict_detail
+    assert decision.is_consistent is True
+    assert decision.handicap_lean is None
+    assert decision.score_hint == "比分:2-1"
 
 
 def test_market_water_no_longer_blocks_the_pick_direction() -> None:

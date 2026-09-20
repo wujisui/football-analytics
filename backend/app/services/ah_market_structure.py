@@ -28,6 +28,9 @@ FALLBACK_GIVING_ODD_MEDIAN = 1.94
 DEADZONE_MIN = 0.04
 DEADZONE_MAX = 0.08
 MIN_THRESHOLD_SAMPLES = 30
+# |盘口| ≥ 1 视为深盘：受让侧赢在「输一球以内」，卡片的胜负方向装不下这层意思。
+DEEP_AH_LINE = 1.0
+_LINE_EPSILON = 1e-9
 
 _cached: dict[str, Any] | None = None
 
@@ -55,6 +58,10 @@ class AhBoardStance:
         if self.ah_pick == "让胜/负":
             return "cover/no_cover"
         return "cover" if self.ah_pick == "让胜" else "no_cover"
+
+    @property
+    def is_deep(self) -> bool:
+        return abs(self.line) + _LINE_EPSILON >= DEEP_AH_LINE
 
 
 def _percentile(values: list[float], p: float) -> float | None:
@@ -233,14 +240,41 @@ def classify_ah_board(
     )
 
 
+def bettable_side(stance: AhBoardStance) -> str:
+    """The AH side a card can actually put into words.
+
+    浅盘跟水位：两侧都能被对应胜负方向讲清楚，买过半的那一边。深盘一律取让球方：
+    受让侧赢在「输一球以内」，而卡片胜负方向只有主胜 / 客胜两格，装不下这层意思，
+    曼城 -1.5 买 客+1.5 会被讲成「客胜、比分 1-3」。两侧同价的无向盘保持双选。
+    """
+    if not stance.directional or not stance.is_deep:
+        return stance.result_choice
+    return stance.giving_side
+
+
+def bettable_token(stance: AhBoardStance) -> str:
+    """``bettable_side`` as the cover / no_cover token used by the predictor."""
+    side = bettable_side(stance)
+    if side == "home":
+        return "cover"
+    if side == "away":
+        return "no_cover"
+    return stance.lean_token
+
+
 def recommendation_from_ah_board(
     odds: dict[str, Any] | None,
     *,
     thresholds: dict[str, Any] | None = None,
 ) -> str | None:
-    """Map the main AH board to 主胜 / 客胜. None when there is no line or no water gap."""
+    """Map the main AH board to 主胜 / 客胜.
+
+    None when there is no line, no water gap, **or the board is deep**: 让 1 球以上
+    时哪一侧水位低只说明「热门大概率吃不下这个盘」，不说明谁赢球，把它当胜负方向
+    会把曼城让 1.5 球读成「客胜」。深盘交回去水 1X2 盘面判断。
+    """
     stance = classify_ah_board(odds, thresholds=thresholds)
-    if stance is None or not stance.directional:
+    if stance is None or not stance.directional or stance.is_deep:
         return None
     return "主胜" if stance.result_choice == "home" else "客胜"
 

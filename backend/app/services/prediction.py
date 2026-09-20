@@ -742,7 +742,6 @@ def _handicap_bundle(
     *,
     league_id: int | None = None,
     features: dict[str, float] | None = None,
-    score_hint: str | None = None,
 ) -> tuple[str, str]:
     from app.services.ah_predictor import handicap_bundle_from_markets
 
@@ -751,7 +750,6 @@ def _handicap_bundle(
         recommendation,
         league_id=league_id,
         features=features,
-        score_hint=score_hint,
     )
 
 
@@ -762,7 +760,6 @@ def resolve_handicap_bundle(
     league_id: int | None = None,
     features: dict[str, float] | None = None,
     stored: str | None = None,
-    score_hint: str | None = None,
     prefer_stored: bool = False,
 ) -> tuple[str, str]:
     """Resolve handicap lean; frozen exam snapshots must not be recomputed."""
@@ -780,7 +777,6 @@ def resolve_handicap_bundle(
             recommendation,
             league_id=league_id,
             features=features,
-            score_hint=score_hint,
         )
     if text:
         line_f, _, _ = extract_main_ah_line(odds if isinstance(odds, dict) else None)
@@ -882,6 +878,76 @@ def _nudge_score_for_ou(
     if home_win:
         return min(max(h, 1), cap), 0
     return 0, min(max(a, 1), cap)
+
+
+def _align_score_with_handicap(
+    lines: list[tuple[int, int]],
+    *,
+    handicap_lean: str,
+    ou_line: float,
+    ou_side: str,
+) -> list[tuple[int, int]]:
+    """Keep the reference score from contradicting the main AH read.
+
+    让球是市场读数，比分只是由胜平负 + 大小 + 双进推出来的参考值，所以打架时让
+    比分让步：曼城主让 1.5 却配「比分 2-0」还写着买客受让，用户一眼就看出不对。
+    只在**同一胜负结果、同一大小球结论、同一双进形态**里换一组能让该让球侧不输
+    的比分；换不到（如主让 2 球配小 2 球，赢 3 球与总进球 2 以下无解）就保留原比分，
+    大小球优先级高于让球行。双进形态逐条沿用原比分，仍由
+    ``_reconcile_btts_with_scores`` 收口。
+    """
+    from app.services.ah_features import (
+        ASIAN_HALF_WIN,
+        ASIAN_PUSH,
+        ASIAN_WIN,
+        handicap_line_from_lean,
+        handicap_picks_from_lean,
+        settle_handicap_pick,
+    )
+
+    non_losing = {ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH}
+    line_f = handicap_line_from_lean(handicap_lean)
+    picks = handicap_picks_from_lean(handicap_lean)
+    if line_f is None or not picks:
+        return lines
+
+    def _holds(home: int, away: int) -> bool:
+        return all(
+            settle_handicap_pick(home, away, line_f, pick) in non_losing
+            for pick in picks
+        )
+
+    out: list[tuple[int, int]] = []
+    for home, away in lines:
+        if _holds(home, away):
+            out.append((home, away))
+            continue
+        sign = (home > away) - (home < away)
+        both_scored = home > 0 and away > 0
+        total = home + away
+        candidates = [
+            (h, a)
+            for h in range(8)
+            for a in range(8)
+            if ((h > a) - (h < a)) == sign
+            and (h > 0 and a > 0) == both_scored
+            and _score_settles_ou(h, a, ou_line, ou_side)
+            and _holds(h, a)
+        ]
+        if not candidates:
+            out.append((home, away))
+            continue
+        out.append(
+            min(
+                candidates,
+                key=lambda pair: (
+                    abs(pair[0] + pair[1] - total),
+                    abs(pair[0] - pair[1]) - abs(home - away),
+                    pair[0] + pair[1],
+                ),
+            )
+        )
+    return out
 
 
 def _align_score_with_ou(
@@ -1104,6 +1170,13 @@ def derive_prediction_leans(
     )
 
     recommendation = get_recommendation(normalized, odds=odds)
+    # 让球是市场读数，比分是推导值：先定让球，比分才能避开与它打架的那组分数。
+    handicap_lean, handicap_market_note = _handicap_bundle(
+        odds if isinstance(odds, dict) else None,
+        recommendation=recommendation,
+        league_id=league_id,
+        features=features,
+    )
     btts_yes = _btts_yes(
         normalized,
         ou_side=side,
@@ -1148,6 +1221,12 @@ def derive_prediction_leans(
         ou_side=side,
         btts_yes=btts_yes,
     )
+    score_lines = _align_score_with_handicap(
+        score_lines,
+        handicap_lean=handicap_lean,
+        ou_line=line,
+        ou_side=side,
+    )
     btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
     score_hint = (
         f"比分:{'/'.join(f'{h}-{a}' for h, a in score_lines)}"
@@ -1155,13 +1234,6 @@ def derive_prediction_leans(
         else "比分:待分析"
     )
     both_score_lean = "双进:是" if btts_yes else "双进:否"
-    handicap_lean, handicap_market_note = _handicap_bundle(
-        odds if isinstance(odds, dict) else None,
-        recommendation=recommendation,
-        league_id=league_id,
-        features=features,
-        score_hint=score_hint,
-    )
     return {
         "recommendation": recommendation,
         "goal_lean": goal_lean,

@@ -659,3 +659,30 @@ day_limit = limit_per_day if day_total >= MIN_MATCHES_FOR_FULL_QUOTA else len(da
 ### 部分闭合 09-01「待查」
 
 近似 50/50 的主盘（含深盘两侧同价）现在会进水位差死区：日推不选，展示仍跟低水一侧。非均衡深盘仍跟水位，深盘置信度贴近 50%、排序几乎只看抽水差的问题还在，未做单独深盘禁入。
+
+### 深盘让球侧改跟本场方向：曼城 -1.5 不再被讲成「客胜 1-3」
+
+线上出现一张自相矛盾的卡：曼城主让 1.5 打桑德兰，日推给的却是「客胜、客+1.5、比分 1-3、大 3、双进是」。链路复现（主盘 `-1.5` 2.00 / 1.80）：
+
+1. `classify_ah_board` 比较两侧水位，受让侧去水 52.6% 高于让球侧 47.4%，按「只买过半那一侧」选中 `客+1.5`。这一步没错——这注赢在「输一球以内」。
+2. `_to_ah_picks` 用 `OUTCOME_TO_LEAN[side]` 把让球侧直接翻成胜负方向，`客+1.5` 变成「客胜」。
+3. 一致性闸拿「客胜」配 `大(3)` + `双进是` 生成比分，只能得到 `1-3`，整张卡倒向客队。
+
+结果是用 9% 概率的剧本包装一注 52.6% 的投注。同一块盘上 `主-1.5 / 主胜 / 3-1` 本来就自洽（实测同样过闸），只是概率略低被水位规则挡掉了。
+
+- **深盘 `|让球线| ≥ 1` 的让球侧改取与本场最可能结果同侧的一边**，真源新增 `pipeline._ah_pick_side`；浅盘不变，仍买条件命中率更高的一侧。深盘跟向后讲不圆的（如比分穿不过盘）由一致性闸淘汰，再按 AH → 大小球 → 双进降级。
+- **让球行降级为伴随展示**：深于 1 球时主胜担保不了主让、客胜也担保不了客受，`_handicap_side` 返回 `None` 时改为隐藏让球行，不再连大小球 / 双进候选一起淘汰。前端 `PredictionRecommendationRow` 的 `showHandicap` 已按空串隐藏，无需改动。
+- 回归 `test_deep_board_buys_the_side_the_card_can_tell`、`test_deep_board_fallback_hides_the_handicap_row_instead_of_dropping`、`test_board_deeper_than_one_goal_only_hides_the_handicap_row`；原 `test_home_pick_rejected_on_a_board_deeper_than_one_goal` 锁的是被改掉的淘汰行为，已改写。
+- 已冻结的卡片不回改，线上那张要等下一次批量盘口更新才会重算。
+
+### 同一处误译还活在分析器：深盘不是胜负方向
+
+用户接着指出本机那张卡「比分 2-0 配 让负(-1.5)，2 比 1.5 大」。那张是**改动前冻结的快照**；同样的盘口用当时的代码重算反而更离谱：`主胜` 会变成 `客胜`、比分 `0-4`。因为本日早些时候「分析器 1X2 跟着亚盘主盘走」上线后，`recommendation_from_ah_board` 把受让侧水位低直接读成了「客胜」。
+
+- **深盘不产出胜负方向**：`|让球线| ≥ 1` 时 `recommendation_from_ah_board` 返回 `None`，交回去水 1X2 盘面。受让侧水位低只说明热门大概率吃不下这个盘口，与谁赢球无关。
+- **分析器让球侧与日推共用一条真源**：新增 `ah_market_structure.bettable_side` / `bettable_token` / `AhBoardStance.is_deep`，浅盘跟水位、深盘取让球方、同价无向盘保持双选。`_structural_pick` 与 `_model_prediction` 都走它，深盘时盘口解释改写成「受让方水位更低，但『输一球以内』用胜负方向讲不出来，所以仍取让球方」。日推侧删掉上一节临时加的 `pipeline._ah_pick_side` 与重复的 `DEEP_AH_LINE`，改调同一函数。
+- **比分反过来迁就让球**：让球是市场读数，比分只是由胜平负 + 大小 + 双进推出来的参考值。新增 `prediction._align_score_with_handicap`，在同一胜负结果、同一大小球结论、同一双进形态里换一组不会让该让球侧输的比分；换不到就保留原比分（大小球优先级更高）。为此把 `_handicap_bundle` 调用提到比分生成之前。
+- 顺手删掉一路 `del` 掉的死参数 `score_hint`（`resolve_handicap_bundle` → `_handicap_bundle` → `handicap_bundle_from_markets` 及 4 个调用点、5 处测试）。让球从来不读比分，现在是比分读让球。
+- 干运行核对：17 档盘口 × 3 组水位 × 5 条大小球线 × 双进 × 3 组概率共 3060 组，单选推荐下「比分与让球打架且存在可行比分」的组合从 404 降到 **0**；剩余仅两类——两块盘本身互斥（主让 2 球配小 2 球，赢 3 球与总进球 2 以下无解）与双选的平局腿，真实市场不会这样配对。
+- 用户那张卡的组合（`-1.5` 2.00/1.80、小(3)、双进否）现在得到 `主胜 · 主-1.5 · 比分2-0`。
+- 回归 `test_deep_board_is_not_a_1x2_direction`、`test_deep_board_handicap_takes_the_giving_side`、`test_reference_score_never_contradicts_the_handicap_row`。

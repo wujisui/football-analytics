@@ -498,7 +498,6 @@ class AnalyzerService:
             rec,
             league_id=fixture.league_id,
             stored=getattr(stored, "handicap_lean", None),
-            score_hint=score_hint,
             # Same freeze rule as results list: do not rewrite exam snapshot.
             prefer_stored=has_frozen,
         )

@@ -267,6 +267,88 @@ def test_weak_deep_ah_falls_back_to_goals_not_moneyline(monkeypatch) -> None:
     assert all(item["market"] != "1x2" for item in result["selected"])
 
 
+def test_deep_board_buys_the_side_the_card_can_tell(monkeypatch) -> None:
+    """复现曼城让 1.5 桑德兰：受让侧水位更低，但卡片只能把它讲成「客胜 1-3」。
+
+    客+1.5 去水 52.6% 确实高于主-1.5 的 47.4%，可胜负方向只有主胜 / 客胜两格，
+    装不下「输一球以内也算赢」。深盘改跟本场最可能结果，卡片给出主胜 3-1 与
+    主-1.5 三件套；浅盘不受影响，仍买概率更高的一侧。
+    """
+    match = _match(1, ah_line="-1.5", goal_lean="大(3)", both_score_lean="双进:是")
+    assert match.odds is not None
+    match.odds["match_winner"] = {"home": 1.22, "draw": 6.80, "away": 13.0}
+    match.odds["asian_handicap"] = {"line": "-1.5", "home": 2.00, "away": 1.80}
+    processed = replace(
+        _processed(1, choice="home", confidence=0.78),
+        calibration={
+            "match_id": 1,
+            "calibrated_home_prob": 0.78,
+            "calibrated_draw_prob": 0.13,
+            "calibrated_away_prob": 0.09,
+            "reliability": 0.7,
+            "sample_size": 100,
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        lambda _match, *, artifact=None: processed,
+    )
+
+    result = run_pipeline([match], artifact={}, market_artifact={}, limit_per_day=4)
+
+    assert result["selected_count"] == 1
+    selected = result["selected"][0]
+    assert selected["market"] == "ah"
+    assert selected["lean"] == "主-1.5"
+    assert selected["result_lean"] == "主胜"
+    assert selected["handicap_lean"] == "主-1.5"
+    assert selected["score_hint"] == "比分:3-1"
+    assert selected["decimal_odd"] == 2.00
+
+
+def test_deep_board_fallback_hides_the_handicap_row_instead_of_dropping(
+    monkeypatch,
+) -> None:
+    """深盘上主胜担保不了任何一侧让球，大小球候选只隐藏让球行，不整条淘汰。"""
+    match = _match(
+        1,
+        ah_line="-1.5",
+        ah_cover_prob=0.30,
+        goal_lean="大(3.25)",
+    )
+    assert match.odds is not None
+    match.odds["match_winner"] = {"home": 1.51, "draw": 4.60, "away": 6.00}
+    match.odds["asian_handicap"] = {"line": "-1.5", "home": 1.83, "away": 2.09}
+    match.odds["goals_ou"] = {"line": "3.25", "home": 1.90, "away": 1.96}
+    processed = replace(
+        _processed(1, choice="home", confidence=0.638),
+        ah_cover_prob=0.30,
+        ah_model_line=-1.5,
+        calibration={
+            "match_id": 1,
+            "calibrated_home_prob": 0.638,
+            "calibrated_draw_prob": 0.198,
+            "calibrated_away_prob": 0.164,
+            "reliability": 0.7,
+            "sample_size": 100,
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        lambda _match, *, artifact=None: processed,
+    )
+
+    result = run_pipeline([match], artifact={}, market_artifact={}, limit_per_day=4)
+
+    assert result["selected_count"] == 1
+    selected = result["selected"][0]
+    assert selected["market"] == "ou"
+    assert selected["lean"] == "大(3.25)"
+    assert selected["result_lean"] == "主胜"
+    assert selected["handicap_lean"] is None
+    assert result["consistency_rejected_count"] == 0
+
+
 def test_shallow_board_never_buys_the_lower_probability_side(monkeypatch) -> None:
     """复现布拉加：主胜 51.9% 时不得推对面 48.1% 的高水让负。
 

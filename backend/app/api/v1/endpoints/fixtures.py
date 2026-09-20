@@ -272,7 +272,6 @@ def _list_analysis_from_fixture(
             recommendation,
             league_id=fixture.league_id,
             stored=getattr(stored, "handicap_lean", None),
-            score_hint=score_hint,
             prefer_stored=True,
         )
     else:

@@ -149,9 +149,10 @@ def _structural_pick(
     Prematch always shows a side: near-even water stays inside the deadzone for
     betting (日推) but still leans to the cheaper quote here. Home/away is
     already inside the line; it is not a tie-break. The handicap board must not
-    copy a 1X2 lean or score hint.
+    copy a 1X2 lean or score hint. 深盘例外见 ``bettable_side``：那不是搬 1X2 方向，
+    而是受让侧的「输一球以内」根本无法用卡片的胜负方向表达。
     """
-    from app.services.ah_market_structure import classify_ah_board
+    from app.services.ah_market_structure import bettable_token, classify_ah_board
 
     stance = classify_ah_board(odds)
     line_f, home_odd, away_odd = extract_main_ah_line(odds)
@@ -162,15 +163,39 @@ def _structural_pick(
     if total <= 0:
         return None
     cover_prob = home_inv / total
-    pick = stance.lean_token
-    note = (
-        f"按主盘水位差 {stance.water_diff:+.3f}（让球方 {stance.giving_odd:.2f}、"
-        f"受让 {stance.receiving_odd:.2f}），所以选"
-        f"{format_handicap_lean_text(pick_to_lean(pick), line_f)}"
-    )
+    pick = bettable_token(stance)
+    lean_text = format_handicap_lean_text(pick_to_lean(pick), line_f)
+    if pick != stance.lean_token:
+        note = (
+            f"主盘让 {abs(line_f):g} 球，受让方水位更低（让球方 "
+            f"{stance.giving_odd:.2f}、受让 {stance.receiving_odd:.2f}），但受让方"
+            f"赢在「输一球以内」，这层意思用胜负方向讲不出来，所以仍取让球方"
+            f"{lean_text}"
+        )
+    else:
+        note = (
+            f"按主盘水位差 {stance.water_diff:+.3f}（让球方 {stance.giving_odd:.2f}、"
+            f"受让 {stance.receiving_odd:.2f}），所以选{lean_text}"
+        )
     if stance.even and stance.directional:
         note += f"；水位差在死区 {stance.water_deadzone:.3f} 内，只作展示不进日推"
     return HandicapPrediction(cover_prob, pick, "market_implied", line_f, note)
+
+
+def _pick_from_probability(cover_prob: float, line_f: float) -> str:
+    """Side token from a cover probability, honouring the deep-board rule.
+
+    两侧完全同价的深盘保持「让胜/负」双选；其余深盘一律取让球方，理由见
+    ``ah_market_structure.bettable_side``。浅盘买过半的一侧，同价时按线取让球方。
+    """
+    from app.services.ah_market_structure import DEEP_AH_LINE
+
+    even = abs(cover_prob - 0.5) <= 1e-9
+    if abs(line_f) + 1e-9 >= DEEP_AH_LINE:
+        return "cover/no_cover" if even else ("cover" if line_f < 0 else "no_cover")
+    if even:
+        return "cover" if line_f <= 0 else "no_cover"
+    return "cover" if cover_prob > 0.5 else "no_cover"
 
 
 def _model_prediction(
@@ -183,28 +208,17 @@ def _model_prediction(
     )
     model, meta = load_trained_model()
     if not _artifact_is_deployable(model, meta):
-        pick = (
-            "cover/no_cover"
-            if abs(market_prob - 0.5) <= 1e-9 and abs(line_f) + 1e-9 >= 1.0
-            else (
-                "cover"
-                if market_prob > 0.5 or (abs(market_prob - 0.5) <= 1e-9 and line_f <= 0)
-                else "no_cover"
-            )
+        return HandicapPrediction(
+            market_prob,
+            _pick_from_probability(market_prob, line_f),
+            "market_implied",
+            line_f,
         )
-        return HandicapPrediction(market_prob, pick, "market_implied", line_f)
 
     X = np.asarray([ah_feature_vector(ah_features)], dtype=np.float64)
     model_prob = max(0.0, min(1.0, float(model.predict_proba(X)[0])))
     cover_prob = market_prob + MODEL_MARKET_BLEND * (model_prob - market_prob)
-    if abs(cover_prob - 0.5) <= 1e-9:
-        pick = (
-            "cover/no_cover"
-            if abs(line_f) + 1e-9 >= 1.0
-            else ("cover" if line_f <= 0 else "no_cover")
-        )
-    else:
-        pick = "cover" if cover_prob > 0.5 else "no_cover"
+    pick = _pick_from_probability(cover_prob, line_f)
     note = (
         f"按主盘赔率折算（已扣掉抽成），买主队 {market_prob:.1%}、"
         f"买客队 {1.0 - market_prob:.1%}；我们的模型给主队 {model_prob:.1%}，"
@@ -261,10 +275,13 @@ def handicap_bundle_from_markets(
     package: dict[str, Any] | None = None,
     league_id: int | None = None,
     features: dict[str, float] | None = None,
-    score_hint: str | None = None,
 ) -> tuple[str, str]:
-    """Return (handicap_lean, handicap_market_note) for product + detail."""
-    del recommendation, score_hint
+    """Return (handicap_lean, handicap_market_note) for product + detail.
+
+    ``recommendation`` 只用于表明调用点，让球方向不抄 1X2，也不抄比分：比分是
+    推导值，反过来由 ``prediction._align_score_with_handicap`` 迁就让球。
+    """
+    del recommendation
     if not isinstance(odds, dict) or not odds.get("available", True):
         ah = (odds or {}).get("asian_handicap") if isinstance(odds, dict) else None
         if not isinstance(ah, dict):
