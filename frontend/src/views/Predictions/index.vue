@@ -8,7 +8,6 @@ import BetDetailsPanel from '@/views/Predictions/components/BetDetailsPanel.vue'
 import CalcFixtureCard from '@/views/Predictions/components/CalcFixtureCard.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import PullToRefresh from '@/components/PullToRefresh.vue'
-import { MAX_CALC_MATCHES } from '@/utils/betCalculator'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import { useFixturesShell } from '@/layouts/composables/useFixturesShell'
 import { useHomeFixtures, isPrematchListCacheFresh } from '@/composables/useHomeFixtures'
@@ -23,10 +22,11 @@ const route = useRoute()
 const isPhone = useIsPhone()
 const listShellRef = ref<HTMLElement | null>(null)
 const phoneCalcShellRef = ref<HTMLElement | null>(null)
+/** 投注详情 Drawer 的挂载容器，使它只在列表区滑出。 */
+const calcBodyRef = ref<HTMLElement | null>(null)
 
 useScrollRestore('predictions-list', listShellRef)
 useScrollRestore('predictions-phone-list', phoneCalcShellRef)
-const betDetailsRef = ref<InstanceType<typeof BetDetailsPanel> | null>(null)
 
 const {
   contentLoading,
@@ -74,41 +74,42 @@ watch(clientDataEpoch, () => {
     </n-alert>
 
     <n-spin v-else :show="contentLoading" class="page-spin">
-      <!-- 手机：玩法列表 + 选中后底部摘要 -->
-      <div v-if="isPhone" class="phone-calc">
-        <div ref="phoneCalcShellRef" class="scroll-shell">
-          <PullToRefresh
-            :shell="phoneCalcShellRef"
-            :refreshing="contentLoading"
-            @refresh="reloadPrematchDay(true)"
-          />
-          <FixtureList
-            :fixtures="prematchDisplayedFixtures"
-            :empty-description="predictionsEmptyText"
-            markable
+      <div class="calc-page">
+        <!-- 投注详情 Drawer 挂在这层：只盖住列表区，不占浏览器视口。 -->
+        <div ref="calcBodyRef" class="calc-body">
+          <!-- 手机：仅玩法列表 -->
+          <div
+            v-if="isPhone"
+            ref="phoneCalcShellRef"
+            class="scroll-shell calc-list-shell"
           >
-            <template #card="{ fixture }">
-              <div class="fixture-slot">
-                <CalcFixtureCard :fixture="fixture" />
-              </div>
-            </template>
-          </FixtureList>
-          <ListBackTop
-            :shell="phoneCalcShellRef"
-            :content-key="prematchDisplayedFixtures.length"
-            :bottom="matchCount ? 100 : 12"
-            :right="12"
-          />
-        </div>
-        <div v-if="matchCount" class="phone-calc-footer">
-          <BetDetailsPanel footer-only />
-        </div>
-      </div>
+            <PullToRefresh
+              :shell="phoneCalcShellRef"
+              :refreshing="contentLoading"
+              @refresh="reloadPrematchDay(true)"
+            />
+            <FixtureList
+              :fixtures="prematchDisplayedFixtures"
+              :empty-description="predictionsEmptyText"
+              markable
+            >
+              <template #card="{ fixture }">
+                <div class="fixture-slot">
+                  <CalcFixtureCard :fixture="fixture" />
+                </div>
+              </template>
+            </FixtureList>
+            <ListBackTop
+              :shell="phoneCalcShellRef"
+              :content-key="prematchDisplayedFixtures.length"
+              :bottom="matchCount ? 100 : 12"
+              :right="12"
+            />
+          </div>
 
-      <!-- 桌面：比赛（预测|计算器）+ 投注详情；单列默认滚动 -->
-      <n-grid v-else :cols="24" :x-gap="12" class="pred-grid">
-        <n-gi :span="17" class="pred-grid-item">
+          <!-- 桌面：预测与玩法占满内容区，不再为投注详情常驻留列。 -->
           <n-card
+            v-else
             size="small"
             :bordered="false"
             class="pred-col"
@@ -148,39 +149,13 @@ watch(clientDataEpoch, () => {
               />
             </div>
           </n-card>
-        </n-gi>
+        </div>
 
-        <n-gi :span="7" class="pred-grid-item">
-          <n-card
-            size="small"
-            :bordered="false"
-            class="pred-col"
-            :content-style="colContentStyle"
-          >
-            <template #header>
-              <n-flex :wrap="false" align="baseline" :size="8">
-                <n-text strong>投注详情</n-text>
-                <n-text depth="3" class="select-count">
-                  已选 {{ matchCount }} / {{ MAX_CALC_MATCHES }}
-                </n-text>
-              </n-flex>
-            </template>
-            <template #header-extra>
-              <n-button
-                size="tiny"
-                type="primary"
-                :disabled="!matchCount"
-                @click="betDetailsRef?.openFormula()"
-              >
-                奖金算式
-              </n-button>
-            </template>
-            <div class="scroll-shell">
-              <BetDetailsPanel ref="betDetailsRef" />
-            </div>
-          </n-card>
-        </n-gi>
-      </n-grid>
+        <!-- 桌面 / 手机共用：有选择才出现，展开后用底部 Drawer 承载详情。 -->
+        <div v-if="matchCount" class="calc-footer">
+          <BetDetailsPanel :drawer-target="calcBodyRef" />
+        </div>
+      </div>
     </n-spin>
   </div>
 </template>
@@ -218,7 +193,9 @@ watch(clientDataEpoch, () => {
   min-height: 0;
 }
 
-.phone-calc {
+.calc-page {
+  /* 摘要条与投注详情 Drawer 共用这个宽度，两者左边缘和右边缘才对得齐。 */
+  --calc-panel-width: 400px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -226,33 +203,41 @@ watch(clientDataEpoch, () => {
   overflow: hidden;
 }
 
-/* 手机列表不能用 absolute inset:0，否则摘要会脱离底栏布局 */
-.phone-calc > .scroll-shell {
+/* Drawer 以这层为定位父级：position 必须是 relative，否则会退回视口。 */
+.calc-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 列表不能用 absolute inset:0，否则摘要会脱离底部布局。 */
+.calc-body > .calc-list-shell {
   position: relative;
   inset: auto;
   flex: 1;
   min-height: 0;
 }
 
-.phone-calc-footer {
+/* 工具条背景铺满内容区，内部控件由 BetDetailsPanel 限宽并靠左。 */
+.calc-footer {
+  align-self: stretch;
+  width: 100%;
   flex-shrink: 0;
   z-index: 2;
   background-color: var(--fa-bg-elevated);
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.22);
 }
 
-.pred-grid {
-  height: 100%;
-  min-height: 0;
-  align-items: stretch;
+/* 手机通栏：摘要与 Drawer 都铺满内容区。 */
+.predictions-page.phone .calc-page {
+  --calc-panel-width: 100%;
 }
 
-.pred-grid-item {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
+.predictions-page.phone .calc-footer {
+  align-self: stretch;
 }
 
 .pred-col {
@@ -267,10 +252,6 @@ watch(clientDataEpoch, () => {
 .pred-col :deep(.n-card-header) {
   padding: 10px 12px 0;
   flex-shrink: 0;
-}
-
-.select-count {
-  font-size: 12px;
 }
 
 .scroll-shell {
