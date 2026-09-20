@@ -46,11 +46,11 @@ _FACTOR_DELTAS: dict[str, dict[str, float]] = {
     "under_goals": {"home": -0.025, "draw": 0.05, "away": -0.025},
 }
 
-_LABEL = {"home": "胜", "draw": "平", "away": "负"}
+_LABEL = {"home": "主胜", "draw": "和局", "away": "客胜"}
 _DOUBLE = {
-    frozenset({"home", "draw"}): "胜/平",
-    frozenset({"away", "draw"}): "负/平",
-    frozenset({"home", "away"}): "胜/负",
+    frozenset({"home", "draw"}): "主胜/和局",
+    frozenset({"away", "draw"}): "客胜/和局",
+    frozenset({"home", "away"}): "主胜/客胜",
 }
 
 
@@ -283,10 +283,18 @@ def get_recommendation(
     if contested:
         fav = d_top[0]
         if fav == "home":
-            return "胜/平" if d_draw >= _DRAW_INCLUDE_MIN - 0.02 else "胜/负"
+            return (
+                _DOUBLE[frozenset({"home", "draw"})]
+                if d_draw >= _DRAW_INCLUDE_MIN - 0.02
+                else _DOUBLE[frozenset({"home", "away"})]
+            )
         if fav == "away":
-            return "负/平" if d_draw >= _DRAW_INCLUDE_MIN - 0.02 else "胜/负"
-        return "胜/平"
+            return (
+                _DOUBLE[frozenset({"away", "draw"})]
+                if d_draw >= _DRAW_INCLUDE_MIN - 0.02
+                else _DOUBLE[frozenset({"home", "away"})]
+            )
+        return _DOUBLE[frozenset({"home", "draw"})]
 
     # Clear market favorite — allow single pick when model agrees or extends edge.
     if m_gap >= _SINGLE_PICK_GAP:
@@ -317,15 +325,15 @@ def recommendation_outcomes(recommendation: str) -> set[str] | None:
     rec = (recommendation or "").strip()
     if not rec or "待分析" in rec:
         return None
-    if rec == "胜/平" or "主队不败" in rec or rec.startswith("主胜/平"):
+    if rec in {"胜/平", "主胜/和局"} or "主队不败" in rec or rec.startswith("主胜/平"):
         return {"home", "draw"}
-    if rec == "负/平" or "客队不败" in rec or rec.startswith("客胜/平"):
+    if rec in {"负/平", "客胜/和局"} or "客队不败" in rec or rec.startswith("客胜/平"):
         return {"away", "draw"}
-    if rec == "胜/负" or "防平" in rec or rec.startswith("主胜/客胜"):
+    if rec in {"胜/负", "主胜/客胜"} or "防平" in rec or rec.startswith("主胜/客胜"):
         return {"home", "away"}
     if rec in {"胜", "主胜"}:
         return {"home"}
-    if rec in {"平", "平局"}:
+    if rec in {"平", "平局", "和局"}:
         return {"draw"}
     if rec in {"负", "客胜"}:
         return {"away"}

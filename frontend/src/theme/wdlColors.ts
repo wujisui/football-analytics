@@ -9,18 +9,30 @@ export type WdlTone = keyof typeof WDL_COLORS
 
 /**
  * Map recommendation / handicap lean text to WDL tone.
- * Dual picks (胜/平、负/平) take the non-draw side.
+ * Dual picks (主胜/和局、客胜/和局) take the non-draw side.
  */
 export function leanWdlTone(text: string | null | undefined): WdlTone | null {
   const t = (text ?? '').trim()
   if (!t || t.includes('待分析') || t.includes('缺少盘口')) return null
-  const hasWin = t.includes('胜')
-  const hasDraw = t.includes('平')
-  const hasLoss = t.includes('负')
-  if (hasWin && !hasLoss) return 'win'
-  if (hasLoss && !hasWin) return 'loss'
-  if (hasWin && hasLoss) return 'win'
-  if (hasDraw) return 'draw'
+  if (
+    t.includes('客胜') ||
+    t.startsWith('客') ||
+    t.includes('让负') ||
+    t === '负' ||
+    t.startsWith('负/')
+  ) {
+    return 'loss'
+  }
+  if (
+    t.includes('主胜') ||
+    t.startsWith('主') ||
+    t.includes('让胜') ||
+    t === '胜' ||
+    t.startsWith('胜/')
+  ) {
+    return 'win'
+  }
+  if (t.includes('和局') || t.includes('平')) return 'draw'
   return null
 }
 

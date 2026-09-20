@@ -506,12 +506,18 @@ def settle_handicap_result(
     return pick_to_lean(label)
 
 
+_TEAM_LEAN_RE = re.compile(r"([主客])([+-]?(?:\d+(?:\.\d+)?))")
+
+
 def handicap_picks_from_lean(lean: str | None) -> set[str]:
     """Parse one or two frozen AH picks from display text.
 
-    Tolerates both the current 「让胜」 labels and legacy 「让球胜」 snapshots.
+    Accepts compact ``主-0.5`` / ``客+0.5`` and legacy ``让胜(-0.5)``.
     """
     text = (lean or "").strip()
+    tokens = _TEAM_LEAN_RE.findall(text)
+    if tokens:
+        return {"让胜" if side == "主" else "让负" for side, _num in tokens}
     pick_text = re.split(r"[（(]", text, maxsplit=1)[0]
     picks: set[str] = set()
     if "胜" in pick_text:
@@ -532,6 +538,18 @@ def handicap_pick_from_lean(lean: str | None) -> str | None:
 def handicap_line_from_lean(lean: str | None) -> float | None:
     """Fallback line parser for frozen rows whose odds package is unavailable."""
     text = (lean or "").strip()
+    home_view = re.search(r"主([+-]?(?:\d+(?:\.\d+)?))", text)
+    if home_view:
+        try:
+            return float(home_view.group(1))
+        except ValueError:
+            return None
+    away_view = re.search(r"客([+-]?(?:\d+(?:\.\d+)?))", text)
+    if away_view:
+        try:
+            return -float(away_view.group(1))
+        except ValueError:
+            return None
     home_give = re.search(r"[（(]\s*主让\s*(\d+(?:\.\d+)?)\s*[）)]", text)
     if home_give:
         try:
@@ -572,15 +590,68 @@ def format_ah_line(line_f: float) -> str:
     return f"-{text}" if value < 0 else f"+{text}"
 
 
-def format_handicap_lean_text(pick: str, line_f: float | None) -> str:
-    """Canonical lean for storage/UI: 让负(-1) / 让胜(+0.5) / 让平(0).
+def _team_view(pick: str, line_f: float) -> str:
+    if pick == "让胜":
+        return f"主{format_ah_line(line_f)}"
+    return f"客{format_ah_line(-float(line_f))}"
 
-    Half-width parentheses keep recommendation tags narrower on phone.
-    """
+
+def _legacy_handicap_lean_text(pick: str, line_f: float | None) -> str:
+    """Keep frozen 让胜(-0.5) rows looking the way they were stored."""
     base = pick_to_lean(pick)
     if line_f is None:
         return base
     return f"{base}({format_ah_line(line_f)})"
+
+
+def format_handicap_lean_text(pick: str, line_f: float | None) -> str:
+    """Canonical lean for new writes: 主-0.5 / 客+0.5 / 主0.
+
+    The signed number is the line as seen by the recommended side.
+    Dual copy is 主-1/客+1. Half-width digits keep tags narrow on phone.
+    """
+    base = pick_to_lean(pick)
+    if (
+        base == "让胜/负"
+        and line_f is not None
+        and abs(float(line_f)) + 1e-9 < 1.0
+    ):
+        base = "让胜" if float(line_f) <= 0 else "让负"
+    if line_f is None:
+        if base == "让胜":
+            return "主"
+        if base == "让负":
+            return "客"
+        if base == "让胜/负":
+            return "主/客"
+        return base
+    if base == "让胜/负":
+        return f"{_team_view('让胜', line_f)}/{_team_view('让负', line_f)}"
+    if base in {"让胜", "让负"}:
+        return _team_view(base, line_f)
+    return _legacy_handicap_lean_text(base, line_f)
+
+
+def display_handicap_lean(lean: str | None, line_f: float | None = None) -> str | None:
+    """Normalize frozen lean for display; attach signed line when known.
+
+    New compact tags stay compact. Legacy 让胜(-0.5) rows keep that wording.
+    """
+    text = (lean or "").strip()
+    if not text:
+        return None
+    picks = handicap_picks_from_lean(text)
+    if not picks:
+        return text
+    resolved = handicap_line_from_lean(text)
+    if resolved is None:
+        resolved = line_f
+    formatter = (
+        format_handicap_lean_text
+        if _TEAM_LEAN_RE.search(text)
+        else _legacy_handicap_lean_text
+    )
+    return formatter(_lean_base(picks), resolved)
 
 
 def _lean_base(picks: set[str]) -> str:
@@ -594,20 +665,6 @@ def _lean_base(picks: set[str]) -> str:
     else:
         base = next(iter(picks)).removeprefix("让")
     return f"让{base}"
-
-
-def display_handicap_lean(lean: str | None, line_f: float | None = None) -> str | None:
-    """Normalize frozen lean for display; attach signed line when known."""
-    text = (lean or "").strip()
-    if not text:
-        return None
-    picks = handicap_picks_from_lean(text)
-    if not picks:
-        return text
-    resolved = handicap_line_from_lean(text)
-    if resolved is None:
-        resolved = line_f
-    return format_handicap_lean_text(_lean_base(picks), resolved)
 
 
 def display_bettable_handicap_lean(
@@ -634,7 +691,12 @@ def display_bettable_handicap_lean(
         if resolved is None:
             return "走水"
         return f"走水({format_ah_line(resolved)})"
-    return format_handicap_lean_text(_lean_base(remaining), resolved)
+    formatter = (
+        format_handicap_lean_text
+        if _TEAM_LEAN_RE.search(shown)
+        else _legacy_handicap_lean_text
+    )
+    return formatter(_lean_base(remaining), resolved)
 
 
 def build_ah_features(

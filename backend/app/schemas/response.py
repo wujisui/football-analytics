@@ -240,7 +240,7 @@ class AnalysisResponse(BaseModel):
     confidence: str = Field(..., description="置信度：高/中/低")
     recommendation: str = Field(
         ...,
-        description="推荐：胜/平/负，或双选胜/平、负/平；待分析表示尚无模型输出",
+        description="推荐：主胜/客胜/和局，或双选主胜/和局、客胜/和局；待分析表示尚无模型输出",
     )
     goal_lean: str = Field(default="", description="大小球倾向（相对主盘）")
     both_score_lean: str = Field(default="", description="双方进球倾向")

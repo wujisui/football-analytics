@@ -52,7 +52,7 @@ class AhBoardStance:
 
     @property
     def lean_token(self) -> str:
-        if not self.directional:
+        if self.ah_pick == "让胜/负":
             return "cover/no_cover"
         return "cover" if self.ah_pick == "让胜" else "no_cover"
 
@@ -198,8 +198,13 @@ def classify_ah_board(
     directional = water_diff != 0
     follow_up = directional and water_diff < 0
     if not directional:
-        ah_pick = "让胜/负"
-        result_choice = ""
+        # 浅盘同水不再双选；|盘口| ≥ 1 才允许 让胜/负。
+        if abs(line) + 1e-9 < 1.0:
+            ah_pick = "让胜" if line <= 0 else "让负"
+            result_choice = "home" if line <= 0 else "away"
+        else:
+            ah_pick = "让胜/负"
+            result_choice = ""
         allow_moneyline = False
     elif follow_up:
         ah_pick = "让胜" if giving_side == "home" else "让负"
@@ -233,11 +238,11 @@ def recommendation_from_ah_board(
     *,
     thresholds: dict[str, Any] | None = None,
 ) -> str | None:
-    """Map the main AH board to 胜 / 负. None when there is no line or no water gap."""
+    """Map the main AH board to 主胜 / 客胜. None when there is no line or no water gap."""
     stance = classify_ah_board(odds, thresholds=thresholds)
     if stance is None or not stance.directional:
         return None
-    return "胜" if stance.result_choice == "home" else "负"
+    return "主胜" if stance.result_choice == "home" else "客胜"
 
 
 async def refresh_ah_market_thresholds(session: Any) -> dict[str, Any]:

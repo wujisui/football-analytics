@@ -99,8 +99,8 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
 
     assert result["selected_count"] == 1
     assert result["selected"][0]["market"] == "ah"
-    assert result["selected"][0]["lean"] == "让胜(-0.75)"
-    assert result["selected"][0]["result_lean"] == "胜"
+    assert result["selected"][0]["lean"] == "主-0.75"
+    assert result["selected"][0]["result_lean"] == "主胜"
     assert result["selected"][0]["decimal_odd"] == 1.9
 
 
@@ -115,7 +115,7 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
             "away",
             {"home": 0.22, "draw": 0.23, "away": 0.55},
             "ah",
-            "让负(+0.5)",
+            "客-0.5",
         ),
         (
             "-0.5",
@@ -125,7 +125,7 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
             "home",
             {"home": 0.56, "draw": 0.24, "away": 0.20},
             "ah",
-            "让胜(-0.5)",
+            "主-0.5",
         ),
         (
             "+0.5",
@@ -135,7 +135,7 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
             "away",
             {"home": 0.22, "draw": 0.23, "away": 0.55},
             "1x2",
-            "负",
+            "客胜",
         ),
     ],
 )
@@ -243,8 +243,8 @@ def test_shallow_board_never_buys_the_lower_probability_side(monkeypatch) -> Non
     assert result["selected_count"] == 1
     selected = result["selected"][0]
     assert selected["market"] == "ah"
-    assert selected["lean"] == "让胜(-0.5)"
-    assert selected["handicap_lean"] == "让胜(-0.5)"
+    assert selected["lean"] == "主-0.5"
+    assert selected["handicap_lean"] == "主-0.5"
 
 
 def test_quarter_ball_refund_survives_adverse_market_feedback() -> None:
@@ -282,7 +282,7 @@ def test_quarter_ball_refund_survives_adverse_market_feedback() -> None:
 
     assert result["selected_count"] == 1
     assert result["selected"][0]["market"] == "ah"
-    assert result["selected"][0]["lean"].endswith("(-0.25)")
+    assert result["selected"][0]["lean"] == "主-0.25"
 
 
 def test_run_pipeline_keeps_top_four_by_confidence_per_day(monkeypatch) -> None:
@@ -307,7 +307,7 @@ def test_run_pipeline_keeps_top_four_by_confidence_per_day(monkeypatch) -> None:
     result = run_pipeline([_match(i) for i in range(1, 7)], artifact={}, limit_per_day=4)
     assert result["selected_count"] == 4
     assert [item["fixture_id"] for item in result["selected"]] == [1, 2, 3, 4]
-    assert all(item["lean"] == "胜" for item in result["selected"])
+    assert all(item["lean"] == "主胜" for item in result["selected"])
     assert result["selected"][0]["quality_rating"] == 5.0
 
 
@@ -500,7 +500,7 @@ def test_consistency_gate_runs_before_top_four_and_backfills(monkeypatch) -> Non
     assert result["rejected"][0]["is_consistent"] is False
     assert result["rejected"][0]["conflict_reason"] == "无法自洽，跳过"
     assert all(item["is_consistent"] is True for item in result["selected"])
-    assert all(item["handicap_lean"] == "让胜(-0.5)" for item in result["selected"])
+    assert all(item["handicap_lean"] == "主-0.5" for item in result["selected"])
     for item in result["selected"]:
         home_goals, away_goals = item["score_hint"].split(":")[1].split("-")
         assert int(home_goals) > int(away_goals)

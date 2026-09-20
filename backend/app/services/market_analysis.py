@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import re
 
 from app.services.ah_features import (
     format_ah_line,
@@ -55,6 +56,8 @@ def _plain_lean(lean: str, line: float | None) -> str:
     """给「让胜(-0.25)」这类术语补一句白话，术语本身仍按全站口径保留。"""
     pick = handicap_pick_from_lean(lean)
     if line is None or pick not in {"让胜", "让负"}:
+        return ""
+    if re.search(r"[主客][+-]?(?:\d+(?:\.\d+)?)", lean or ""):
         return ""
     home_side = pick == "让胜"
     team = "主队" if home_side else "客队"

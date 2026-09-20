@@ -32,23 +32,23 @@ def test_near_even_board_still_shows_the_cheaper_side() -> None:
     stance = classify_ah_board(odds)
     assert stance is not None and stance.even
     rec = get_recommendation({"home": 0.29, "draw": 0.28, "away": 0.43}, odds=odds)
-    assert rec == "胜"
+    assert rec == "主胜"
     lean, _note = handicap_bundle_from_markets(odds, rec)
-    assert lean == "让胜(+0.25)"
+    assert lean == "主+0.25"
     leans = derive_prediction_leans(
         {"home": 0.29, "draw": 0.28, "away": 0.43},
         odds,
     )
-    assert leans["recommendation"] == "胜"
-    assert leans["handicap_lean"] == "让胜(+0.25)"
+    assert leans["recommendation"] == "主胜"
+    assert leans["handicap_lean"] == "主+0.25"
     assert "待分析" not in leans["score_hint"]
 
 
 def test_level_board_follows_cheaper_side() -> None:
     odds = _odds("0", 1.81, 2.07)
-    assert recommendation_from_ah_board(odds) == "胜"
-    lean, _ = handicap_bundle_from_markets(odds, "胜")
-    assert lean == "让胜(0)"
+    assert recommendation_from_ah_board(odds) == "主胜"
+    lean, _ = handicap_bundle_from_markets(odds, "主胜")
+    assert lean == "主0"
 
 
 def test_giving_side_high_water_goes_underdog() -> None:
@@ -59,7 +59,7 @@ def test_giving_side_high_water_goes_underdog() -> None:
     assert stance.ah_pick == "让负"
     assert stance.result_choice == "away"
     assert stance.allow_moneyline is False
-    assert get_recommendation({"home": 0.5, "draw": 0.25, "away": 0.25}, odds=odds) == "负"
+    assert get_recommendation({"home": 0.5, "draw": 0.25, "away": 0.25}, odds=odds) == "客胜"
 
 
 def test_cheap_giving_side_can_allow_moneyline() -> None:
@@ -70,7 +70,7 @@ def test_cheap_giving_side_can_allow_moneyline() -> None:
     assert stance.allow_moneyline is True
     assert stance.giving_odd < FALLBACK_GIVING_ODD_MEDIAN
     assert stance.water_deadzone == FALLBACK_WATER_DEADZONE
-    assert recommendation_from_ah_board(odds) == "胜"
+    assert recommendation_from_ah_board(odds) == "主胜"
 
 
 def test_home_label_does_not_break_deadzone() -> None:
@@ -79,7 +79,7 @@ def test_home_label_does_not_break_deadzone() -> None:
     assert stance is not None
     assert stance.even
     assert stance.allow_moneyline is False
-    assert recommendation_from_ah_board(odds) == "负"
+    assert recommendation_from_ah_board(odds) == "客胜"
 
 
 def test_equal_water_has_no_direction_and_falls_back_to_1x2() -> None:
@@ -101,6 +101,6 @@ def test_missing_1x2_board_falls_back_down_the_market_ladder() -> None:
     }
     leans = derive_prediction_leans({"home": 0.4, "draw": 0.3, "away": 0.3}, odds)
     assert leans["recommendation"] == "待分析"
-    assert leans["handicap_lean"] == "让负(-0.5)"
+    assert leans["handicap_lean"] == "客+0.5"
     assert leans["goal_lean"] == "大(2.5)"
     assert leans["both_score_lean"] == "双进:是"

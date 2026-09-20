@@ -38,7 +38,7 @@ def test_home_pick_keeps_the_home_side_and_a_home_win_score() -> None:
         odds=_odds(line="-0.5", home=1.90, away=1.98),
     )
     assert decision.is_consistent is True
-    assert decision.handicap_lean == "让胜(-0.5)"
+    assert decision.handicap_lean == "主-0.5"
     home_goals, away_goals = (decision.score_hint or "").split(":")[1].split("-")
     assert int(home_goals) > int(away_goals)
 
@@ -53,7 +53,7 @@ def test_level_ball_keeps_a_bettable_side_with_a_push_downside() -> None:
         odds=_odds(line="0", home=1.95, away=1.95),
     )
     assert decision.is_consistent is True
-    assert decision.handicap_lean == "让胜(0)"
+    assert decision.handicap_lean == "主0"
 
 
 def test_home_pick_rejected_on_a_board_deeper_than_one_goal() -> None:
@@ -78,7 +78,7 @@ def test_market_water_no_longer_blocks_the_pick_direction() -> None:
         odds=_odds(line="-0.25", home=1.70, away=2.25),
     )
     assert decision.is_consistent is True
-    assert decision.handicap_lean == "让负(-0.25)"
+    assert decision.handicap_lean == "客+0.25"
 
 
 def test_away_pick_on_home_plus_quarter_pairs_with_away_handicap_side() -> None:
@@ -91,7 +91,7 @@ def test_away_pick_on_home_plus_quarter_pairs_with_away_handicap_side() -> None:
         odds=_odds(line="+0.25", home=1.92, away=1.99),
     )
     assert decision.is_consistent is True
-    assert decision.handicap_lean == "让负(+0.25)"
+    assert decision.handicap_lean == "客-0.25"
     assert "让胜" not in (decision.handicap_lean or "")
 
 

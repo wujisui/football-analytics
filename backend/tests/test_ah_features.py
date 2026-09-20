@@ -51,15 +51,17 @@ class AhFeaturesTests(unittest.TestCase):
 
     def test_format_handicap_lean_includes_side(self) -> None:
         pred = HandicapPrediction(0.62, "cover", "market_implied", -0.25)
-        self.assertEqual(format_handicap_lean(pred), "让胜(-0.25)")
+        self.assertEqual(format_handicap_lean(pred), "主-0.25")
         pred_lose = HandicapPrediction(0.4, "no_cover", "market_implied", -0.25)
-        self.assertEqual(format_handicap_lean(pred_lose), "让负(-0.25)")
+        self.assertEqual(format_handicap_lean(pred_lose), "客+0.25")
         pred_recv = HandicapPrediction(0.55, "cover", "market_implied", 1.0)
-        self.assertEqual(format_handicap_lean(pred_recv), "让胜(+1)")
+        self.assertEqual(format_handicap_lean(pred_recv), "主+1")
         pred_level = HandicapPrediction(0.5, "push", "market_implied", 0.0)
         self.assertEqual(format_handicap_lean(pred_level), "让平(0)")
         pred_dual = HandicapPrediction(0.5, "cover/no_cover", "structural", -0.5)
-        self.assertEqual(format_handicap_lean(pred_dual), "让胜/负(-0.5)")
+        self.assertEqual(format_handicap_lean(pred_dual), "主-0.5")
+        pred_deep_dual = HandicapPrediction(0.5, "cover/no_cover", "structural", -1.0)
+        self.assertEqual(format_handicap_lean(pred_deep_dual), "主-1/客+1")
         pred_integer_dual = HandicapPrediction(0.5, "no_cover/push", "structural", -1.0)
         self.assertEqual(format_handicap_lean(pred_integer_dual), "让负/平(-1)")
 
@@ -72,7 +74,7 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertIsNotNone(pred)
         self.assertEqual(pred.pick, "no_cover")
         self.assertAlmostEqual(pred.cover_prob, 0.4718, places=3)
-        self.assertEqual(format_handicap_lean(pred), "让负(-0.5)")
+        self.assertEqual(format_handicap_lean(pred), "客+0.5")
         self.assertIn("水位差", pred.market_note)
 
     def test_west_ham_regression_market_prices_choose_handicap_loss(self) -> None:
@@ -84,8 +86,8 @@ class AhFeaturesTests(unittest.TestCase):
         lean, note = handicap_bundle_from_markets(
             west_ham, "胜/平", score_hint="比分:2-0/0-0"
         )
-        self.assertEqual(lean, "让负(-0.5)")
-        self.assertIn("所以选让负", note)
+        self.assertEqual(lean, "客+0.5")
+        self.assertIn("所以选客+0.5", note)
 
     def test_only_deployable_model_can_correct_market_direction(self) -> None:
         class FixedModel:
@@ -110,7 +112,7 @@ class AhFeaturesTests(unittest.TestCase):
         ):
             lean, note = handicap_bundle_from_markets(odds)
 
-        self.assertEqual(lean, "让胜(-0.5)")
+        self.assertEqual(lean, "主-0.5")
         self.assertIn("我们的模型给主队 70.0%", note)
         self.assertIn("只往模型方向修一半到 58.6%", note)
 
@@ -137,7 +139,7 @@ class AhFeaturesTests(unittest.TestCase):
         ):
             lean, note = handicap_bundle_from_markets(odds)
 
-        self.assertEqual(lean, "让负(-0.5)")
+        self.assertEqual(lean, "客+0.5")
         self.assertNotIn("合格模型", note)
 
     def test_ah_quality_gate_requires_both_metrics_to_beat_market(self) -> None:
@@ -172,7 +174,7 @@ class AhFeaturesTests(unittest.TestCase):
         second, _ = handicap_bundle_from_markets(
             home_give, "负", score_hint="比分:0-3",
         )
-        self.assertEqual(first, "让胜(-0.25)")
+        self.assertEqual(first, "主-0.25")
         self.assertEqual(second, first)
 
     def test_level_ball_uses_its_own_main_prices(self) -> None:
@@ -192,7 +194,7 @@ class AhFeaturesTests(unittest.TestCase):
         lean, note = handicap_bundle_from_markets(
             home_leaning, "胜/平", score_hint="比分:1-1"
         )
-        self.assertEqual(lean, "让胜(0)")
+        self.assertEqual(lean, "主0")
         self.assertIn("水位差", note)
 
         away_leaning = {
@@ -210,7 +212,7 @@ class AhFeaturesTests(unittest.TestCase):
         lean, _ = handicap_bundle_from_markets(
             away_leaning, "负/平", score_hint="比分:1-1"
         )
-        self.assertEqual(lean, "让负(0)")
+        self.assertEqual(lean, "客0")
 
     def test_equal_main_prices_return_no_directional_edge(self) -> None:
         level = {
@@ -220,7 +222,7 @@ class AhFeaturesTests(unittest.TestCase):
         lean, note = handicap_bundle_from_markets(
             level, "胜/平", score_hint="比分:1-1"
         )
-        self.assertEqual(lean, "让胜/负(0)")
+        self.assertEqual(lean, "主0")
         self.assertIn("水位差 +0.000", note)
 
     def test_outcome_settlement_units_only_cover_result_settled_lines(self) -> None:
@@ -309,6 +311,16 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(handicap_line_from_lean("让球平（平手）"), 0.0)
         self.assertEqual(handicap_line_from_lean("让球平（0）"), 0.0)
         self.assertIsNone(handicap_line_from_lean("让球平"))
+        self.assertEqual(handicap_pick_from_lean("主-0.5"), "让胜")
+        self.assertEqual(handicap_pick_from_lean("客+0.5"), "让负")
+        self.assertEqual(handicap_pick_from_lean("主0"), "让胜")
+        self.assertEqual(handicap_line_from_lean("主-0.5"), -0.5)
+        self.assertEqual(handicap_line_from_lean("客+0.5"), -0.5)
+        self.assertEqual(handicap_line_from_lean("客-0.5"), 0.5)
+        self.assertEqual(
+            handicap_picks_from_lean("主-1/客+1"),
+            {"让胜", "让负"},
+        )
 
     def test_mx_probs_follow_market(self) -> None:
         package = {

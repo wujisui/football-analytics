@@ -42,10 +42,10 @@ class EvenMarketPredictionTests(unittest.TestCase):
 
     def test_even_1x2_follows_level_handicap_water(self) -> None:
         rec = get_recommendation(EVEN_PROBS, odds=EVEN_ODDS)
-        self.assertEqual(rec, "负")
+        self.assertEqual(rec, "客胜")
         leans = derive_prediction_leans(EVEN_PROBS, EVEN_ODDS)
-        self.assertEqual(leans["recommendation"], "负")
-        self.assertEqual(leans["handicap_lean"], "让负(0)")
+        self.assertEqual(leans["recommendation"], "客胜")
+        self.assertEqual(leans["handicap_lean"], "客0")
 
     def test_missing_1x2_board_falls_back_to_the_handicap(self) -> None:
         """缺 1X2 盘口时胜平负仍留白，但有让球报价就往下兜到让球。"""
@@ -53,7 +53,7 @@ class EvenMarketPredictionTests(unittest.TestCase):
         self.assertEqual(get_recommendation(FLAT_PROBS, odds=AH_ONLY_ODDS), "待分析")
         leans = derive_prediction_leans(FLAT_PROBS, AH_ONLY_ODDS)
         self.assertEqual(leans["recommendation"], "待分析")
-        self.assertEqual(leans["handicap_lean"], "让负(0)")
+        self.assertEqual(leans["handicap_lean"], "客0")
         # 让球之后没有大小/双进报价，继续留白，不拿近况模型顶替。
         self.assertEqual(leans["goal_lean"], "大小：待分析")
         self.assertEqual(leans["both_score_lean"], "双进:待分析")
@@ -82,13 +82,13 @@ class EvenMarketPredictionTests(unittest.TestCase):
         }
         self.assertEqual(
             get_recommendation({"home": 0.7, "draw": 0.2, "away": 0.1}, odds=home_board),
-            "胜",
+            "主胜",
         )
         self.assertEqual(
             get_recommendation(
                 {"home": 0.45, "draw": 0.42, "away": 0.13}, odds=home_board
             ),
-            "胜/平",
+            "主胜/和局",
         )
         favorite_board = {
             "available": True,
@@ -111,7 +111,7 @@ class EvenMarketPredictionTests(unittest.TestCase):
         }
         # 去水后约 主 46.9% / 平 27.1% / 客 26.0%：热门不足五成，但领先次选 19.8 个点。
         probs = {"home": 0.469, "draw": 0.271, "away": 0.260}
-        self.assertEqual(get_recommendation(probs, odds=board), "胜")
+        self.assertEqual(get_recommendation(probs, odds=board), "主胜")
 
     def test_weak_favorite_still_doubles_when_market_has_no_favorite(self) -> None:
         """收紧只针对「市场已选出热门」的盘，真正没拉开的仍旧双选。"""
@@ -121,7 +121,7 @@ class EvenMarketPredictionTests(unittest.TestCase):
         }
         # 去水后约 主 40.1% / 平 25.0% / 客 35.0%：领先次选仅 5.1 个点。
         probs = {"home": 0.401, "draw": 0.250, "away": 0.350}
-        self.assertEqual(get_recommendation(probs, odds=board), "胜/平")
+        self.assertEqual(get_recommendation(probs, odds=board), "主胜/和局")
 
 
 if __name__ == "__main__":

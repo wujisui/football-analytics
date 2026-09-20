@@ -21,18 +21,20 @@ class PredictionCopyTests(unittest.TestCase):
     def test_new_recommendations_are_compact(self) -> None:
         self.assertEqual(
             get_recommendation({"home": 0.7, "draw": 0.2, "away": 0.1}, odds=HOME_BOARD),
-            "胜",
+            "主胜",
         )
         self.assertEqual(
             get_recommendation(
                 {"home": 0.45, "draw": 0.42, "away": 0.13}, odds=HOME_BOARD
             ),
-            "胜/平",
+            "主胜/和局",
         )
 
     def test_historical_copy_is_canonicalized(self) -> None:
-        self.assertEqual(canonical_recommendation("客胜"), "负")
-        self.assertEqual(canonical_recommendation("主胜/平（主队不败）"), "胜/平")
+        self.assertEqual(canonical_recommendation("客胜"), "客胜")
+        self.assertEqual(canonical_recommendation("主胜/平（主队不败）"), "主胜/和局")
+        self.assertEqual(canonical_recommendation("胜"), "主胜")
+        self.assertEqual(canonical_recommendation("负/平"), "客胜/和局")
         self.assertEqual(canonical_goal_lean("倾向小球（2.5）"), "小(2.5)")
         self.assertEqual(canonical_btts_lean("双方进球：是"), "双进:是")
         self.assertEqual(canonical_score_hint("2-1"), "比分:2-1")

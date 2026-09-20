@@ -165,7 +165,8 @@ def _structural_pick(
     pick = stance.lean_token
     note = (
         f"按主盘水位差 {stance.water_diff:+.3f}（让球方 {stance.giving_odd:.2f}、"
-        f"受让 {stance.receiving_odd:.2f}），所以选{pick_to_lean(pick)}"
+        f"受让 {stance.receiving_odd:.2f}），所以选"
+        f"{format_handicap_lean_text(pick_to_lean(pick), line_f)}"
     )
     if stance.even and stance.directional:
         note += f"；水位差在死区 {stance.water_deadzone:.3f} 内，只作展示不进日推"
@@ -184,8 +185,12 @@ def _model_prediction(
     if not _artifact_is_deployable(model, meta):
         pick = (
             "cover/no_cover"
-            if abs(market_prob - 0.5) <= 1e-9
-            else ("cover" if market_prob > 0.5 else "no_cover")
+            if abs(market_prob - 0.5) <= 1e-9 and abs(line_f) + 1e-9 >= 1.0
+            else (
+                "cover"
+                if market_prob > 0.5 or (abs(market_prob - 0.5) <= 1e-9 and line_f <= 0)
+                else "no_cover"
+            )
         )
         return HandicapPrediction(market_prob, pick, "market_implied", line_f)
 
@@ -193,13 +198,18 @@ def _model_prediction(
     model_prob = max(0.0, min(1.0, float(model.predict_proba(X)[0])))
     cover_prob = market_prob + MODEL_MARKET_BLEND * (model_prob - market_prob)
     if abs(cover_prob - 0.5) <= 1e-9:
-        pick = "cover/no_cover"
+        pick = (
+            "cover/no_cover"
+            if abs(line_f) + 1e-9 >= 1.0
+            else ("cover" if line_f <= 0 else "no_cover")
+        )
     else:
         pick = "cover" if cover_prob > 0.5 else "no_cover"
     note = (
         f"按主盘赔率折算（已扣掉抽成），买主队 {market_prob:.1%}、"
         f"买客队 {1.0 - market_prob:.1%}；我们的模型给主队 {model_prob:.1%}，"
-        f"只往模型方向修一半到 {cover_prob:.1%}，所以选{pick_to_lean(pick)}"
+        f"只往模型方向修一半到 {cover_prob:.1%}，所以选"
+        f"{format_handicap_lean_text(pick_to_lean(pick), line_f)}"
     )
     return HandicapPrediction(cover_prob, pick, "ml", line_f, note)
 
@@ -240,7 +250,7 @@ def predict_handicap(
 
 
 def format_handicap_lean(pred: HandicapPrediction) -> str:
-    """Product lean with signed line: 让负(-1) / 让胜(+0.5) / 让平(0)."""
+    """Product lean with signed line: 客+0.5 / 主-0.5 / 主0."""
     return format_handicap_lean_text(pick_to_lean(pred.pick), pred.line_f)
 
 

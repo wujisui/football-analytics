@@ -69,7 +69,7 @@ MARKET_1X2 = "1x2"
 MARKET_AH = "ah"
 MARKET_OU = "ou"
 MARKET_BTTS = "btts"
-OUTCOME_TO_LEAN = {"home": "胜", "away": "负"}
+OUTCOME_TO_LEAN = {"home": "主胜", "away": "客胜"}
 MARKET_FALLBACK_TIER = {
     MARKET_1X2: 0,
     MARKET_AH: 0,
