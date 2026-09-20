@@ -332,62 +332,63 @@ function onOddsClick() {
     <div
       v-if="standalone"
       class="handicap-line"
-      :class="{ 'has-rate': qualityRating != null }"
       @click.stop
     >
-      <span class="handicap-label">让球：</span>
-      <div v-if="primaryAh" class="handicap-values">
-        <span class="handicap-odd">{{ primaryHomeOdd }}</span>
-        <n-popover
-          trigger="hover"
-          placement="bottom"
-          :show-arrow="false"
-          :delay="120"
-          raw
-        >
-          <template #trigger>
-            <button
-              type="button"
-              class="handicap-mid"
-              :aria-label="`让球主盘 ${primaryLine}，悬停查看${ahBoardsLabel}，点击查看详情`"
-              @click="goPredictionDetail"
-            >
-              {{ primaryLine }}
-            </button>
-          </template>
-          <div class="ah-board-popover">
-            <section
-              v-for="board in ahBoards"
-              :key="board.key"
-              class="ah-popover-panel"
-            >
-              <h4 class="ah-board-title">
-                {{ board.label }}
-                <span v-if="board.capturedAt" class="ah-board-time">
-                  {{ board.capturedAt }}
-                </span>
-              </h4>
-              <div class="ah-popover-row ah-popover-head">
-                <span class="ah-popover-col">主队</span>
-                <span class="ah-popover-col mid">盘口</span>
-                <span class="ah-popover-col">客队</span>
-              </div>
-              <div
-                v-for="(line, idx) in board.lines"
-                :key="`${board.key}-${line.line}-${idx}`"
-                class="ah-popover-row"
+      <div class="handicap-main">
+        <span class="handicap-label">让球：</span>
+        <div v-if="primaryAh" class="handicap-values">
+          <span class="handicap-odd">{{ primaryHomeOdd }}</span>
+          <n-popover
+            trigger="hover"
+            placement="bottom"
+            :show-arrow="false"
+            :delay="120"
+            raw
+          >
+            <template #trigger>
+              <button
+                type="button"
+                class="handicap-mid"
+                :aria-label="`让球主盘 ${primaryLine}，悬停查看${ahBoardsLabel}，点击查看详情`"
+                @click="goPredictionDetail"
               >
-                <span class="ah-popover-col">{{ formatOdd(line.home) }}</span>
-                <span class="ah-popover-col mid line">{{ line.line || '—' }}</span>
-                <span class="ah-popover-col">{{ formatOdd(line.away) }}</span>
-              </div>
-            </section>
-          </div>
-        </n-popover>
-        <span class="handicap-odd">{{ primaryAwayOdd }}</span>
+                {{ primaryLine }}
+              </button>
+            </template>
+            <div class="ah-board-popover">
+              <section
+                v-for="board in ahBoards"
+                :key="board.key"
+                class="ah-popover-panel"
+              >
+                <h4 class="ah-board-title">
+                  {{ board.label }}
+                  <span v-if="board.capturedAt" class="ah-board-time">
+                    {{ board.capturedAt }}
+                  </span>
+                </h4>
+                <div class="ah-popover-row ah-popover-head">
+                  <span class="ah-popover-col">主队</span>
+                  <span class="ah-popover-col mid">盘口</span>
+                  <span class="ah-popover-col">客队</span>
+                </div>
+                <div
+                  v-for="(line, idx) in board.lines"
+                  :key="`${board.key}-${line.line}-${idx}`"
+                  class="ah-popover-row"
+                >
+                  <span class="ah-popover-col">{{ formatOdd(line.home) }}</span>
+                  <span class="ah-popover-col mid line">{{ line.line || '—' }}</span>
+                  <span class="ah-popover-col">{{ formatOdd(line.away) }}</span>
+                </div>
+              </section>
+            </div>
+          </n-popover>
+          <span class="handicap-odd">{{ primaryAwayOdd }}</span>
+        </div>
+        <span v-else class="handicap-empty">暂无盘口</span>
       </div>
-      <span v-else class="handicap-empty">暂无盘口</span>
-      <RecommendationQualityRate :value="qualityRating" />
+      <RecommendationQualityRate :value="qualityRating" reserve-space />
     </div>
 
     <DetailTabHint tab="briefing">
@@ -506,9 +507,10 @@ function onOddsClick() {
   background: var(--fa-bg-elevated);
 }
 
+/* 左让球 6、右星级 4；未上推荐的场次同样占住右列，两侧不跟着内容跳宽度 */
 .handicap-line {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -519,25 +521,23 @@ function onOddsClick() {
   font-variant-numeric: tabular-nums;
 }
 
-/* 有星级时让球数字收紧靠左，把右侧让给星级 */
-.handicap-line.has-rate {
-  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr);
+.handicap-line :deep(.quality-rate) {
+  justify-self: end;
+}
+
+.handicap-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .handicap-values {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 50px;
   min-width: 0;
-}
-
-.handicap-line.has-rate .handicap-values {
-  justify-content: flex-start;
-  gap: 6px;
-}
-
-.handicap-line :deep(.quality-rate) {
-  justify-self: end;
 }
 
 .handicap-label {
