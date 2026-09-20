@@ -5,9 +5,7 @@ import {
   availableFoldModes,
   calculateParlay,
   foldModeLabel,
-  allowsDualSelect,
   MAX_CALC_MATCHES,
-  MAX_WDL_PICKS,
   pruneExpiredCalcSelections,
   selectedFixtureIds,
   type CalcCell,
@@ -67,9 +65,15 @@ function readStored(): StoredBetState | null {
     if (!raw) return null
     const data = JSON.parse(raw) as Partial<StoredBetState>
     if (!Array.isArray(data.selections)) return null
-    const selections = pruneExpiredCalcSelections(
+    const validSelections = pruneExpiredCalcSelections(
       data.selections.filter(isCalcSelection),
     )
+    // 新口径每场只留一格；旧草稿按最后一次保存的选择收敛。
+    const lastByFixture = new Map<number, CalcSelection>()
+    for (const selection of validSelections) {
+      lastByFixture.set(selection.fixtureId, selection)
+    }
+    const selections = [...lastByFixture.values()]
     const multiplier =
       typeof data.multiplier === 'number' &&
       Number.isFinite(data.multiplier) &&
@@ -206,26 +210,8 @@ export function useBetCalculator() {
       return `最多选择 ${MAX_CALC_MATCHES} 场`
     }
 
-    // 冲突项直接让位：换玩法清掉本场其它玩法；同玩法按规则替换
-    let next = selections.value.filter((s) => {
-      if (s.fixtureId !== fixtureId) return true
-      if (s.market !== cell.market) return false
-      // 大小 / 双进：同玩法只留新点的一项；胜平负 / 让球可双选
-      if (!allowsDualSelect(cell.market)) return false
-      return true
-    })
-
-    if (allowsDualSelect(cell.market)) {
-      const wdlPicks = next.filter(
-        (s) => s.fixtureId === fixtureId && s.market === cell.market,
-      )
-      // 已满双选时再点第三项：清掉本场该玩法，只保留当前点击
-      if (wdlPicks.length >= MAX_WDL_PICKS) {
-        next = next.filter(
-          (s) => !(s.fixtureId === fixtureId && s.market === cell.market),
-        )
-      }
-    }
+    // 每场严格单选：点另一格时直接替换本场原选择。
+    const next = selections.value.filter((s) => s.fixtureId !== fixtureId)
 
     next.push({
       fixtureId,

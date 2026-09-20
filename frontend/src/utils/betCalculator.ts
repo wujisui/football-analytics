@@ -57,6 +57,7 @@ export function pruneExpiredCalcSelections(
 export interface CalcCell {
   market: CalcMarket
   outcome: CalcOutcome
+  displayLabel: string
   playLabel: string
   pickLabel: string
   odd: number | null
@@ -67,19 +68,13 @@ export interface CalcCell {
 
 export interface CalcMarketRow {
   market: CalcMarket
+  title: string
   playLabel: string
   line?: string
   cells: CalcCell[]
 }
 
 const STAKE_PER_BET = 2
-/** 胜平负 / 让球胜平负最多双选（含胜平、负平、胜负） */
-export const MAX_WDL_PICKS = 2
-
-/** Markets that allow up to {@link MAX_WDL_PICKS} outcomes on one fixture. */
-export function allowsDualSelect(market: CalcMarket): boolean {
-  return market === 'spf' || market === 'ah'
-}
 
 function parseOddNumber(value: string | number | null | undefined): number | null {
   if (value == null || value === '') return null
@@ -110,7 +105,6 @@ export function outcomeTitle(
 /** Build selectable rows for one fixture from available odds. */
 export function buildMarketRows(
   fixture: FixtureResponse,
-  options?: { combineOuBtts?: boolean },
 ): CalcMarketRow[] {
   const odds = oddsSnippetFromFixture(fixture)
   const rows: CalcMarketRow[] = []
@@ -118,11 +112,12 @@ export function buildMarketRows(
   const mw = odds?.match_winner
   rows.push({
     market: 'spf',
+    title: '全场独赢',
     playLabel: '胜平负',
     cells: [
-      cell('spf', 'home', '胜平负', parseOddNumber(mw?.home)),
-      cell('spf', 'draw', '胜平负', parseOddNumber(mw?.draw)),
-      cell('spf', 'away', '胜平负', parseOddNumber(mw?.away)),
+      cell('spf', 'home', '主胜', '胜平负', parseOddNumber(mw?.home)),
+      cell('spf', 'draw', '和局', '胜平负', parseOddNumber(mw?.draw)),
+      cell('spf', 'away', '客胜', '胜平负', parseOddNumber(mw?.away)),
     ],
   })
 
@@ -132,11 +127,26 @@ export function buildMarketRows(
   const ahPlay = shownAhLine ? `让球 ${shownAhLine}` : '让球'
   rows.push({
     market: 'ah',
+    title: '全场让球',
     playLabel: ahPlay,
     line: ahLine,
     cells: [
-      cell('ah', 'home', ahPlay, parseOddNumber(ah?.home), ahLine),
-      cell('ah', 'away', ahPlay, parseOddNumber(ah?.away), ahLine),
+      cell(
+        'ah',
+        'home',
+        shownAhLine ?? '主队',
+        ahPlay,
+        parseOddNumber(ah?.home),
+        ahLine,
+      ),
+      cell(
+        'ah',
+        'away',
+        oppositeHandicapLine(ahLine) ?? '客队',
+        ahPlay,
+        parseOddNumber(ah?.away),
+        ahLine,
+      ),
     ],
   })
 
@@ -145,34 +155,26 @@ export function buildMarketRows(
   const ouPlay = ouLine ? `大小 ${ouLine}` : '大小球'
   const btts = odds?.both_teams_score
   const ouCells = [
-    cell('ou', 'over', ouPlay, parseOddNumber(ou?.home), ouLine),
-    cell('ou', 'under', ouPlay, parseOddNumber(ou?.away), ouLine),
+    cell('ou', 'over', `大${ouLine ?? ''}`, ouPlay, parseOddNumber(ou?.home), ouLine),
+    cell('ou', 'under', `小${ouLine ?? ''}`, ouPlay, parseOddNumber(ou?.away), ouLine),
   ]
   const bttsCells = [
-    cell('btts', 'yes', '双进', parseOddNumber(btts?.home)),
-    cell('btts', 'no', '双进', parseOddNumber(btts?.away)),
+    cell('btts', 'yes', '是', '双进', parseOddNumber(btts?.home)),
+    cell('btts', 'no', '否', '双进', parseOddNumber(btts?.away)),
   ]
-  // Phone calculator keeps ou/btts on one row to save vertical space.
-  if (options?.combineOuBtts) {
-    rows.push({
-      market: 'ou',
-      playLabel: '大小/双进',
-      line: ouLine,
-      cells: [...ouCells, ...bttsCells],
-    })
-  } else {
-    rows.push({
-      market: 'ou',
-      playLabel: ouLine ? `大小 ${ouLine}` : '大小',
-      line: ouLine,
-      cells: ouCells,
-    })
-    rows.push({
-      market: 'btts',
-      playLabel: '双进',
-      cells: bttsCells,
-    })
-  }
+  rows.push({
+    market: 'ou',
+    title: '全场大小',
+    playLabel: ouLine ? `大小 ${ouLine}` : '大小',
+    line: ouLine,
+    cells: ouCells,
+  })
+  rows.push({
+    market: 'btts',
+    title: '全场双进',
+    playLabel: '双进',
+    cells: bttsCells,
+  })
 
   return rows
 }
@@ -180,6 +182,7 @@ export function buildMarketRows(
 function cell(
   market: CalcMarket,
   outcome: CalcOutcome,
+  displayLabel: string,
   playLabel: string,
   odd: number | null,
   line?: string,
@@ -189,6 +192,7 @@ function cell(
   return {
     market,
     outcome,
+    displayLabel,
     playLabel,
     pickLabel: `${outcomeTitle(market, outcome)}${odd != null ? ` (${odd})` : ''}`,
     odd,
@@ -196,6 +200,13 @@ function cell(
     disabled,
     disabledReason: disabled ? disabledReason || '暂无赔率' : undefined,
   }
+}
+
+function oppositeHandicapLine(line: string | null | undefined): string | undefined {
+  if (line == null || line === '') return undefined
+  const n = Number(String(line).replace(',', '.').trim())
+  if (!Number.isFinite(n)) return String(line)
+  return formatSignedHandicapLine(-n)
 }
 
 /** Signed line text for the book line that actually settles the pick. */
@@ -243,14 +254,14 @@ export interface ParlayResult {
   betCount: number
   multiplier: number
   stakeYuan: number
-  /** Sum of combo prizes (dual-select expands bet count). */
+  /** Sum of combo prizes. */
   estimatedPrize: number
   combos: ParlayCombo[]
 }
 
 /**
  * 串关：对已选场次按 M串1 枚举 C(N,M)，
- * 同场多选项（胜平负 / 让球双选）再做笛卡尔积拆注。
+ * 历史方案可能含同场多选项，结算时继续按笛卡尔积拆注。
  */
 export function calculateParlay(
   selections: CalcSelection[],

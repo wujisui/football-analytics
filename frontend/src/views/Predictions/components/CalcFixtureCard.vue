@@ -26,11 +26,8 @@ const isPhone = useIsPhone()
 const showOddsModal = ref(false)
 const openingDetail = ref(false)
 const { isSelected, toggleCell } = useBetCalculator()
-const rows = computed(() =>
-  buildMarketRows(props.fixture, { combineOuBtts: isPhone.value }),
-)
+const rows = computed(() => buildMarketRows(props.fixture))
 const prediction = computed(() => snapshotFromAnalysis(props.fixture.analysis))
-const marketGap = computed(() => (isPhone.value ? 8 : 6))
 
 const leagueName = computed(() => leagueLabel(props.fixture.league_name))
 const leagueColor = computed(() => leagueTagColor(props.fixture.league_id))
@@ -97,46 +94,31 @@ function goDetail() {
     </div>
 
     <div class="market-list">
-      <div class="market-rows">
-        <n-grid
+      <div class="market-board">
+        <div
           v-for="row in rows"
           :key="row.market"
-          :cols="5"
-          :x-gap="marketGap"
-          class="market-row"
+          class="market-column"
         >
-          <n-gi>
-            <n-text depth="2" class="play-label">{{ row.playLabel }}</n-text>
-          </n-gi>
-          <n-gi :span="4" class="pick-cells">
-            <n-grid
-              :cols="row.cells.length"
-              :x-gap="marketGap"
-              class="pick-grid"
+          <n-text class="market-title">{{ row.title }}</n-text>
+          <div class="pick-cells">
+            <n-button
+              v-for="cell in row.cells"
+              :key="`${cell.market}-${cell.outcome}`"
+              block
+              size="small"
+              :type="selected(cell) ? 'warning' : 'default'"
+              :secondary="!selected(cell)"
+              :disabled="cell.disabled || cell.odd == null"
+              class="odd-button"
+              :class="{ inline: row.market === 'spf' }"
+              @click="onPick(cell)"
             >
-              <n-gi
-                v-for="cell in row.cells"
-                :key="`${cell.market}-${cell.outcome}`"
-              >
-                <n-button
-                  block
-                  size="small"
-                  :type="selected(cell) ? 'warning' : 'default'"
-                  :secondary="!selected(cell)"
-                  :disabled="cell.disabled || cell.odd == null"
-                  class="odd-button"
-                  @click="onPick(cell)"
-                >
-                  <n-flex :wrap="false" align="center" justify="center" :size="4">
-                    <n-text>{{ cell.pickLabel.split(' ')[0] }}</n-text>
-                    <n-text depth="3">/</n-text>
-                    <n-text strong>{{ cell.odd ?? '—' }}</n-text>
-                  </n-flex>
-                </n-button>
-              </n-gi>
-            </n-grid>
-          </n-gi>
-        </n-grid>
+              <span class="pick-label">{{ cell.displayLabel }}</span>
+              <span class="pick-odd">{{ cell.odd ?? '—' }}</span>
+            </n-button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -236,74 +218,82 @@ function goDetail() {
 }
 
 .market-list {
+  display: flex;
   min-height: 100%;
   overflow: hidden;
 }
 
-.market-rows {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  height: 100%;
-  min-height: 0;
-}
-
-.calc-fixture.phone .market-rows {
-  gap: 4px;
-}
-
-.market-row {
-  align-items: center;
-}
-
-/* Fill leftover card height so pick targets grow without raising item-size. */
-.calc-fixture.phone .market-row {
-  flex: 1 1 0;
-  min-height: 0;
-}
-
-.calc-fixture.phone .market-row :deep(.n-grid),
-.calc-fixture.phone .pick-grid {
-  height: 100%;
-  align-items: stretch;
-}
-
-.calc-fixture.phone .pick-cells,
-.calc-fixture.phone .pick-cells :deep(.n-grid-item) {
-  height: 100%;
-  min-height: 0;
-  display: flex;
-}
-
-.calc-fixture.phone .pick-cells :deep(.n-grid-item) > * {
-  flex: 1 1 auto;
-  min-height: 0;
+.market-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
   width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
 }
 
-.play-label {
-  display: flex;
-  align-items: center;
+.market-column {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 5px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.market-title {
+  overflow: hidden;
   font-size: 12px;
-  line-height: 1.2;
-  height: 100%;
-  padding-left: 2px;
-  word-break: keep-all;
+  line-height: 18px;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   user-select: none;
 }
 
+.pick-cells {
+  display: grid;
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 5px;
+  min-height: 0;
+}
+
 .odd-button {
+  height: 100%;
+  min-height: 0;
+  padding: 2px 3px;
   font-variant-numeric: tabular-nums;
 }
 
-.odd-button :deep(.n-text) {
-  color: inherit;
-  font-size: 12px;
+.odd-button :deep(.n-button__content) {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.15;
 }
 
-.calc-fixture.phone .odd-button {
-  height: 100%;
-  min-height: 0;
+/* 独赢一列有三行，横排文案与赔率才不会把单元格撑高。 */
+.odd-button.inline :deep(.n-button__content) {
+  flex-direction: row;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pick-label,
+.pick-odd {
+  overflow: hidden;
+  max-width: 100%;
+  color: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pick-odd {
+  font-weight: 600;
+}
+
+.calc-fixture.phone .market-board {
+  gap: 6px;
 }
 </style>
