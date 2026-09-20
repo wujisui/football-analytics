@@ -89,7 +89,7 @@ def test_build_match_features_in_process_match() -> None:
     assert "recommended_choice" in result.strategy
 
 
-def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
+def test_valid_ah_board_never_generates_a_moneyline_candidate() -> None:
     result = run_pipeline(
         [_match(1, ah_line="-0.75", ah_cover_prob=0.58)],
         artifact={},
@@ -105,7 +105,7 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
 
 
 @pytest.mark.parametrize(
-    ("line", "ah_home", "ah_away", "moneyline", "choice", "probs", "expected_market", "expected_lean"),
+    ("line", "ah_home", "ah_away", "moneyline", "choice", "probs", "expected_lean"),
     [
         (
             "+0.5",
@@ -114,7 +114,6 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
             {"home": 4.0, "draw": 3.4, "away": 1.80},
             "away",
             {"home": 0.22, "draw": 0.23, "away": 0.55},
-            "ah",
             "客-0.5",
         ),
         (
@@ -124,7 +123,6 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
             {"home": 1.80, "draw": 3.4, "away": 4.0},
             "home",
             {"home": 0.56, "draw": 0.24, "away": 0.20},
-            "ah",
             "主-0.5",
         ),
         (
@@ -134,12 +132,11 @@ def test_ah_candidate_can_beat_the_lower_payout_1x2_candidate() -> None:
             {"home": 4.0, "draw": 3.4, "away": 2.12},
             "away",
             {"home": 0.22, "draw": 0.23, "away": 0.55},
-            "1x2",
-            "客胜",
+            "客-0.5",
         ),
     ],
 )
-def test_equivalent_half_ball_keeps_the_higher_quote_despite_market_feedback(
+def test_valid_half_ball_board_always_uses_ah_despite_market_feedback(
     monkeypatch,
     line: str,
     ah_home: float,
@@ -147,10 +144,9 @@ def test_equivalent_half_ball_keeps_the_higher_quote_despite_market_feedback(
     moneyline: dict[str, float],
     choice: str,
     probs: dict[str, float],
-    expected_market: str,
     expected_lean: str,
 ) -> None:
-    """Same-direction shallow AH vs 1X2: follow the letting-side water, then the better quote."""
+    """A valid AH board cannot fall back to moneyline, even when 1X2 pays more."""
     match = _match(1, ah_line=line)
     assert match.odds is not None
     match.odds["match_winner"] = moneyline
@@ -186,13 +182,51 @@ def test_equivalent_half_ball_keeps_the_higher_quote_despite_market_feedback(
     )
 
     assert result["selected_count"] == 1
-    assert result["selected"][0]["market"] == expected_market
+    assert result["selected"][0]["market"] == "ah"
     assert result["selected"][0]["lean"] == expected_lean
     assert result["selected"][0]["decimal_odd"] == (
-        (ah_away if choice == "away" else ah_home)
-        if expected_market == "ah"
-        else moneyline[choice]
+        ah_away if choice == "away" else ah_home
     )
+
+
+def test_one_goal_board_without_ah_probability_falls_back_to_goals_not_moneyline(
+    monkeypatch,
+) -> None:
+    """复现维拉利尔：主让 1 球缺 AH 概率时，不得退化成 1.51 主胜。"""
+    match = _match(1, ah_line="-1", ah_cover_prob=None, goal_lean="大(3.25)")
+    assert match.odds is not None
+    match.odds["match_winner"] = {"home": 1.51, "draw": 4.60, "away": 6.00}
+    match.odds["asian_handicap"] = {"line": "-1", "home": 1.83, "away": 2.09}
+    match.odds["goals_ou"] = {"line": "3.25", "home": 1.90, "away": 1.96}
+    match.odds["both_teams_score"] = {"home": 1.88, "away": 1.98}
+    processed = replace(
+        _processed(1, choice="home", confidence=0.638),
+        calibration={
+            "match_id": 1,
+            "calibrated_home_prob": 0.638,
+            "calibrated_draw_prob": 0.198,
+            "calibrated_away_prob": 0.164,
+            "reliability": 0.7,
+            "sample_size": 100,
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        lambda _match, *, artifact=None: processed,
+    )
+
+    result = run_pipeline(
+        [match],
+        artifact={},
+        market_artifact={},
+        limit_per_day=4,
+    )
+
+    assert result["selected_count"] == 1
+    assert result["selected"][0]["market"] == "ou"
+    assert result["selected"][0]["lean"] == "大(3.25)"
+    assert result["selected"][0]["decimal_odd"] == 1.90
+    assert all(item["market"] != "1x2" for item in result["selected"])
 
 
 def test_shallow_board_never_buys_the_lower_probability_side(monkeypatch) -> None:
@@ -396,8 +430,8 @@ def test_run_pipeline_does_not_pad_when_fewer_candidates_than_quota(
     assert result["selected_count"] == 1
 
 
-def test_ou_then_btts_fill_slots_only_after_core_candidates(monkeypatch) -> None:
-    """独赢/让球不足时按大小 → 双进降级，不能让高分次级玩法越级。"""
+def test_ou_then_btts_precede_board_free_moneyline(monkeypatch) -> None:
+    """AH 不足时按大小 → 双进补位，无 AH 盘独赢只作最后兜底。"""
     matches = [_match(i) for i in range(1, 5)]
     assert matches[2].odds is not None and matches[3].odds is not None
     matches[2].odds["goals_ou"] = {"line": 2.5, "home": 1.70, "away": 2.18}
@@ -428,26 +462,26 @@ def test_ou_then_btts_fill_slots_only_after_core_candidates(monkeypatch) -> None
     )
 
     assert [(item["fixture_id"], item["market"]) for item in result["selected"]] == [
-        (1, "1x2"),
-        (2, "1x2"),
         (3, "ou"),
         (4, "btts"),
+        (1, "1x2"),
+        (2, "1x2"),
     ]
-    assert result["selected"][2]["lean"] == "大(2.5)"
-    assert result["selected"][3]["lean"] == "双进:是"
+    assert result["selected"][0]["lean"] == "大(2.5)"
+    assert result["selected"][1]["lean"] == "双进:是"
+    assert result["selected"][0]["quality_rating"] > result["selected"][1]["quality_rating"]
     assert result["selected"][1]["quality_rating"] > result["selected"][2]["quality_rating"]
-    assert result["selected"][2]["quality_rating"] > result["selected"][3]["quality_rating"]
     ou_home, ou_away = map(
-        int, result["selected"][2]["score_hint"].split(":")[1].split("-")
+        int, result["selected"][0]["score_hint"].split(":")[1].split("-")
     )
     btts_home, btts_away = map(
-        int, result["selected"][3]["score_hint"].split(":")[1].split("-")
+        int, result["selected"][1]["score_hint"].split(":")[1].split("-")
     )
     assert ou_home + ou_away > 2.5
     assert btts_home > 0 and btts_away > 0
 
 
-def test_fallback_markets_never_displace_four_eligible_core_picks(monkeypatch) -> None:
+def test_ou_displaces_board_free_moneyline(monkeypatch) -> None:
     matches = [_match(i) for i in range(1, 6)]
     assert matches[4].odds is not None
     matches[4].odds["goals_ou"] = {"line": 2.5, "home": 1.20, "away": 5.50}
@@ -471,11 +505,18 @@ def test_fallback_markets_never_displace_four_eligible_core_picks(monkeypatch) -
         limit_per_day=4,
     )
 
-    assert [item["fixture_id"] for item in result["selected"]] == [1, 2, 3, 4]
-    assert all(item["market"] == "1x2" for item in result["selected"])
+    assert [item["fixture_id"] for item in result["selected"]] == [5, 1, 2, 3]
+    assert [item["market"] for item in result["selected"]] == [
+        "ou",
+        "1x2",
+        "1x2",
+        "1x2",
+    ]
 
 
-def test_consistency_gate_runs_before_top_four_and_backfills(monkeypatch) -> None:
+def test_deep_board_without_ah_probability_is_skipped_and_backfilled(
+    monkeypatch,
+) -> None:
     processed = [_processed(i, ev=0.50 - i / 100) for i in range(1, 7)]
 
     def fake_process(match, *, artifact=None):
@@ -486,7 +527,7 @@ def test_consistency_gate_runs_before_top_four_and_backfills(monkeypatch) -> Non
         "app.services.recommendation.pipeline.process_match",
         fake_process,
     )
-    # 主胜穿不过主让1.5球，最高分的这场无法表达成让球方向，只能淘汰补位。
+    # 有 AH 盘却缺深盘概率时，不得回退到低赔独赢；该场无其它市场就直接跳过。
     matches = [
         _match(1, ah_line="-1.5"),
         *[_match(i, ah_line="-0.5") for i in range(2, 7)],
@@ -495,10 +536,8 @@ def test_consistency_gate_runs_before_top_four_and_backfills(monkeypatch) -> Non
 
     assert [item["fixture_id"] for item in result["selected"]] == [2, 3, 4, 5]
     assert result["selected_count"] == 4
-    assert result["consistency_rejected_count"] == 1
-    assert result["rejected"][0]["fixture_id"] == 1
-    assert result["rejected"][0]["is_consistent"] is False
-    assert result["rejected"][0]["conflict_reason"] == "无法自洽，跳过"
+    assert result["consistency_rejected_count"] == 0
+    assert all(item["fixture_id"] != 1 for item in result["selected"])
     assert all(item["is_consistent"] is True for item in result["selected"])
     assert all(item["handicap_lean"] == "主-0.5" for item in result["selected"])
     for item in result["selected"]:

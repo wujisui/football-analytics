@@ -71,10 +71,10 @@ MARKET_OU = "ou"
 MARKET_BTTS = "btts"
 OUTCOME_TO_LEAN = {"home": "主胜", "away": "客胜"}
 MARKET_FALLBACK_TIER = {
-    MARKET_1X2: 0,
     MARKET_AH: 0,
     MARKET_OU: 1,
     MARKET_BTTS: 2,
+    MARKET_1X2: 3,
 }
 MIN_MATCHES_FOR_FULL_QUOTA = 6
 
@@ -465,13 +465,9 @@ def _to_daily_picks(
                 side=stance.result_choice,
             )
         )
-        if stance.allow_moneyline:
-            one_x_two = _to_1x2_pick(
-                result, odds=odds, choice=stance.result_choice
-            )
-            if one_x_two is not None:
-                picks.append(one_x_two)
     elif stance is None:
+        # 独赢仅用于没有有效亚洲让球盘的场次。有 AH 盘时若让球候选缺概率、
+        # 落在水位死区或未过一致性闸，依次交给大小球、双进，不能退化成低赔独赢。
         one_x_two = _to_1x2_pick(
             result,
             odds=odds,
@@ -481,8 +477,8 @@ def _to_daily_picks(
             picks.append(one_x_two)
 
     # O/U and BTTS are genuine fallback tiers. Generate them in the same pool
-    # so they receive calibration, feedback and the consistency gate, but the
-    # selector below can only use them after all eligible core picks.
+    # so they receive calibration, feedback and the consistency gate. They fill
+    # after AH, but before 1X2 candidates from matches that have no AH board.
     for market, lean in (
         (MARKET_OU, goal_lean),
         (MARKET_BTTS, both_score_lean),
@@ -502,7 +498,7 @@ def _to_daily_picks(
 def _daily_pick_rank_key(
     pick: DailyRecommendationPick,
 ) -> tuple[int, float, datetime, int]:
-    """Core → O/U → BTTS; risk-adjusted ranking only compares within a tier."""
+    """AH → O/U → BTTS → board-free 1X2; compare scores only within a tier."""
     rank = pick_rank_key(pick)
     return (
         MARKET_FALLBACK_TIER.get(pick.market, len(MARKET_FALLBACK_TIER)),
@@ -552,65 +548,6 @@ def _ah_side_probability(
     return max(0.0, min(1.0, probability)), 1.0
 
 
-def _choose_best_shallow_market_per_direction(
-    picks: list[DailyRecommendationPick],
-    *,
-    odds_by_fixture: dict[int, dict[str, Any] | None],
-) -> list[DailyRecommendationPick]:
-    """Choose 1X2 or shallow AH before market history can alter that choice.
-
-    ``|line| <= 0.5`` uses the same calibrated 1X2 probabilities as moneyline
-    and already prices draw refunds / half-losses into its confidence and odds.
-    Pick the higher unweighted risk score for each fixture + result direction,
-    then let EMA and league×market history rank the surviving product across
-    fixtures. Otherwise a historical AH penalty can discard a useful draw
-    cushion even when the current board says it is the better trade-off.
-    """
-    shallow_lines: dict[int, float] = {}
-    for fixture_id, odds in odds_by_fixture.items():
-        line, _home_odd, _away_odd = extract_main_ah_line(odds)
-        if line is not None and abs(line) <= 0.5 + 1e-9:
-            shallow_lines[fixture_id] = float(line)
-
-    grouped: dict[tuple[int, str], list[DailyRecommendationPick]] = {}
-    untouched: list[DailyRecommendationPick] = []
-    for pick in picks:
-        if (
-            pick.fixture_id not in shallow_lines
-            or pick.market not in {MARKET_1X2, MARKET_AH}
-        ):
-            untouched.append(pick)
-            continue
-        grouped.setdefault((pick.fixture_id, pick.recommended_choice), []).append(pick)
-
-    for same_direction in grouped.values():
-        markets = {pick.market for pick in same_direction}
-        if markets != {MARKET_1X2, MARKET_AH}:
-            untouched.extend(same_direction)
-            continue
-        line = shallow_lines[same_direction[0].fixture_id]
-        choice = same_direction[0].recommended_choice
-        settles_identically = (
-            abs(line + 0.5) < 1e-9 and choice == "home"
-        ) or (
-            abs(line - 0.5) < 1e-9 and choice == "away"
-        )
-        untouched.append(
-            max(
-                same_direction,
-                key=lambda pick: (
-                    (
-                        float(pick.decimal_odd)
-                        if settles_identically
-                        else float(pick.score)
-                    ),
-                    pick.market == MARKET_AH,
-                ),
-            )
-        )
-    return untouched
-
-
 def select_daily_picks_by_match_day(
     picks: list[DailyRecommendationPick],
     *,
@@ -657,7 +594,7 @@ def run_pipeline(
     limit_per_day: int = AUTO_PICK_LIMIT,
     skip_fixture_ids: set[int] | None = None,
 ) -> dict[str, Any]:
-    """Rank core picks first, then use O/U and BTTS to fill each day's Top-N."""
+    """Rank AH first, then O/U, BTTS and board-free 1X2 for each day's Top-N."""
     artifact = artifact if artifact is not None else load_calibration_artifact()
     market_artifact = (
         market_artifact
@@ -688,10 +625,6 @@ def run_pipeline(
             )
         )
 
-    picks = _choose_best_shallow_market_per_direction(
-        picks,
-        odds_by_fixture=odds_by_fixture,
-    )
     picks = apply_feedback_to_picks(picks, state=incentive_state)
     picks.sort(key=_daily_pick_rank_key)
     candidate_count = len(picks)
@@ -861,7 +794,7 @@ async def sync_daily_recommendations(
     limit: int = AUTO_PICK_LIMIT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Replace shared auto tips with core picks plus O/U and BTTS fallbacks."""
+    """Replace tips with AH, O/U, BTTS and board-free 1X2 in that order."""
     del user_id  # product-wide tips; kept for call-site compat
     owner = ANON_OWNER_ID
     settings = get_settings()
