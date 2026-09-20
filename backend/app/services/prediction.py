@@ -204,9 +204,10 @@ def get_recommendation(
 ) -> str:
     """Market-structured 1X2 lean; model only breaks ties / upgrades clear edges.
 
-    Uses de-vigged 1X2 odds only when the main AH board is missing. With an
-    Asian line (including 0), the lean follows letting-side vs receiving-side
-    water; near-even water is 观望.
+    Uses de-vigged 1X2 odds only when the main AH board is missing or both AH
+    sides are priced identically. With an Asian line (including 0), the lean
+    follows letting-side vs receiving-side water — near-even water still leans
+    to the cheaper side, the deadzone only keeps that board out of 日推.
 
     无可用 1X2 盘口 → 一律「待分析」：没有盘口就没有推断依据，只靠近况模型给出的
     胜平负属于无效预测（既不展示也不该进历史统计）。
@@ -314,7 +315,7 @@ def get_recommendation(
 def recommendation_outcomes(recommendation: str) -> set[str] | None:
     """Map recommendation text → {home,draw,away} outcomes that count as hit."""
     rec = (recommendation or "").strip()
-    if not rec or "待分析" in rec or rec == "观望":
+    if not rec or "待分析" in rec:
         return None
     if rec == "胜/平" or "主队不败" in rec or rec.startswith("主胜/平"):
         return {"home", "draw"}
@@ -983,6 +984,52 @@ def _score_hints_for_recommendation(
     return text, unique
 
 
+def _leans_without_1x2_market(
+    odds: dict[str, Any] | None,
+    *,
+    league_id: int | None,
+    features: dict[str, float] | None,
+) -> dict[str, str]:
+    """No 1X2 board → walk down the market ladder: 让球 → 大小 → 双进 → 比分.
+
+    赛前分析拿不准也要落到最可能的一项，但依据仍然只能是盘口：哪一项有报价就按
+    那一项的水位给倾向，全都没有才留「待分析」。绝不用近况模型顶替缺失的盘口。
+    """
+    market = odds if isinstance(odds, dict) else {}
+
+    handicap_lean, handicap_note = "缺少盘口数据分析", ""
+    if isinstance(market.get("asian_handicap"), dict):
+        handicap_lean, handicap_note = _handicap_bundle(
+            market, None, league_id=league_id, features=features
+        )
+
+    ou = market.get("goals_ou")
+    ou = ou if isinstance(ou, dict) else {}
+    ou_side = _market_ou_side(_odd_float(ou.get("home")), _odd_float(ou.get("away")))
+    if ou_side:
+        line_label = _format_line(_parse_ou_line(ou.get("line")) or 2.5)
+        goal_lean = f"大({line_label})" if ou_side == "over" else f"小({line_label})"
+    else:
+        goal_lean = "大小：待分析"
+
+    btts = market.get("both_teams_score")
+    btts = btts if isinstance(btts, dict) else {}
+    yes_odd, no_odd = _odd_float(btts.get("home")), _odd_float(btts.get("away"))
+    if yes_odd and no_odd and yes_odd != no_odd:
+        both_score_lean = "双进:是" if yes_odd < no_odd else "双进:否"
+    else:
+        both_score_lean = "双进:待分析"
+
+    return {
+        "recommendation": "待分析",
+        "goal_lean": goal_lean,
+        "both_score_lean": both_score_lean,
+        "score_hint": "比分:待分析",
+        "handicap_lean": handicap_lean,
+        "handicap_market_note": handicap_note,
+    }
+
+
 def derive_prediction_leans(
     probs: dict[str, float],
     odds: dict[str, Any] | None = None,
@@ -996,8 +1043,9 @@ def derive_prediction_leans(
     reconciled with O/U then BTTS so「1-1」never pairs with「大（2.5）」or「双进:否」.
 
     Flat prior with local odds → use odds-implied 1X2 (no API).
-    **无可用 1X2 盘口 → 整包待分析**：盘口是全部玩法的推断依据，缺盘口时哪怕近况
-    模型给出了非均势概率也不落任何倾向，避免无依据预测进入展示与历史统计。
+    **无可用 1X2 盘口 → 按 `_leans_without_1x2_market` 逐级兜底**：盘口仍是唯一依据，
+    但有让球/大小/双进报价时就给出那一项的倾向，只有全部缺报价才留「待分析」；
+    任何情况下都不拿近况模型顶替缺失的 1X2 盘口。
     均势盘口（三路贴近 1/3）仍是真实读数，照常出双选。
 
     ML goal model only **overrides** a lean when that target gate is open.
@@ -1007,15 +1055,11 @@ def derive_prediction_leans(
     """
     normalized = working_match_probabilities(probs, odds)
     if not has_1x2_market(odds):
-        has_ah = isinstance((odds or {}).get("asian_handicap"), dict) if odds else False
-        return {
-            "recommendation": "待分析",
-            "goal_lean": "大小：待分析",
-            "both_score_lean": "双进:待分析",
-            "score_hint": "比分:待分析",
-            "handicap_lean": "让球：待分析" if has_ah else "缺少盘口数据分析",
-            "handicap_market_note": "",
-        }
+        return _leans_without_1x2_market(
+            odds if isinstance(odds, dict) else None,
+            league_id=league_id,
+            features=features,
+        )
 
     ou = (odds or {}).get("goals_ou") if isinstance(odds, dict) else None
     ou = ou if isinstance(ou, dict) else {}
@@ -1065,23 +1109,6 @@ def derive_prediction_leans(
         and distribution is not None
     ):
         btts_yes = distribution["btts_prob"] >= 0.5
-    if recommendation == "观望":
-        handicap_lean, handicap_market_note = _handicap_bundle(
-            odds if isinstance(odds, dict) else None,
-            recommendation=recommendation,
-            league_id=league_id,
-            features=features,
-            score_hint="比分:待分析",
-        )
-        return {
-            "recommendation": recommendation,
-            "goal_lean": goal_lean,
-            "both_score_lean": "双进:是" if btts_yes else "双进:否",
-            "score_hint": "比分:待分析",
-            "handicap_lean": handicap_lean,
-            "handicap_market_note": handicap_market_note,
-        }
-
     score_lines: list[tuple[int, int]] = []
     if (
         goal_prediction is not None

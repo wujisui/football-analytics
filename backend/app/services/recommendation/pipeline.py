@@ -361,6 +361,8 @@ def _to_daily_picks(
     from app.services.ah_market_structure import classify_ah_board
 
     stance = classify_ah_board(odds)
+    # 死区是**下注**闸：展示侧照样给最可能的一边（`classify_ah_board` 恒有方向），
+    # 这里只是不拿水位差不够的盘口去占当日四个坑。
     if stance is not None and stance.even:
         return []
     if stance is not None:

@@ -220,8 +220,8 @@ class AhFeaturesTests(unittest.TestCase):
         lean, note = handicap_bundle_from_markets(
             level, "胜/平", score_hint="比分:1-1"
         )
-        self.assertEqual(lean, "观望(0)")
-        self.assertIn("差距不够", note)
+        self.assertEqual(lean, "让胜/负(0)")
+        self.assertIn("水位差 +0.000", note)
 
     def test_outcome_settlement_units_only_cover_result_settled_lines(self) -> None:
         from app.services.ah_features import outcome_settlement_units

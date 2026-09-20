@@ -26,22 +26,22 @@ def test_percentile_deadzone_uses_p25_not_median() -> None:
     assert payload["water_deadzone"] < payload["abs_water_mean"]
 
 
-def test_near_even_quarter_board_is_watch() -> None:
+def test_near_even_board_still_shows_the_cheaper_side() -> None:
+    """死区只挡下注：赛前卡片照样给出最可能的一边，且三件套同向。"""
     odds = _odds("+0.25", 1.94, 1.96)
-    rec = get_recommendation(
-        {"home": 0.29, "draw": 0.28, "away": 0.43},
-        odds=odds,
-    )
-    assert rec == "观望"
+    stance = classify_ah_board(odds)
+    assert stance is not None and stance.even
+    rec = get_recommendation({"home": 0.29, "draw": 0.28, "away": 0.43}, odds=odds)
+    assert rec == "胜"
     lean, _note = handicap_bundle_from_markets(odds, rec)
-    assert lean.startswith("观望")
+    assert lean == "让胜(+0.25)"
     leans = derive_prediction_leans(
         {"home": 0.29, "draw": 0.28, "away": 0.43},
         odds,
     )
-    assert leans["recommendation"] == "观望"
-    assert leans["score_hint"] == "比分:待分析"
-    assert leans["handicap_lean"].startswith("观望")
+    assert leans["recommendation"] == "胜"
+    assert leans["handicap_lean"] == "让胜(+0.25)"
+    assert "待分析" not in leans["score_hint"]
 
 
 def test_level_board_follows_cheaper_side() -> None:
@@ -78,4 +78,29 @@ def test_home_label_does_not_break_deadzone() -> None:
     stance = classify_ah_board(odds)
     assert stance is not None
     assert stance.even
-    assert recommendation_from_ah_board(odds) == "观望"
+    assert stance.allow_moneyline is False
+    assert recommendation_from_ah_board(odds) == "负"
+
+
+def test_equal_water_has_no_direction_and_falls_back_to_1x2() -> None:
+    odds = _odds("0", 1.93, 1.93)
+    stance = classify_ah_board(odds)
+    assert stance is not None
+    assert stance.directional is False
+    assert recommendation_from_ah_board(odds) is None
+    # 无水位差 → 回到去水 1X2 盘面，仍然给出方向，不出现「观望」。
+    assert get_recommendation({"home": 0.33, "draw": 0.33, "away": 0.34}, odds=odds)
+
+
+def test_missing_1x2_board_falls_back_down_the_market_ladder() -> None:
+    odds = {
+        "available": True,
+        "asian_handicap": {"line": "-0.5", "home": 2.06, "away": 1.85},
+        "goals_ou": {"line": 2.5, "home": 1.75, "away": 2.10},
+        "both_teams_score": {"home": 1.70, "away": 2.05},
+    }
+    leans = derive_prediction_leans({"home": 0.4, "draw": 0.3, "away": 0.3}, odds)
+    assert leans["recommendation"] == "待分析"
+    assert leans["handicap_lean"] == "让负(-0.5)"
+    assert leans["goal_lean"] == "大(2.5)"
+    assert leans["both_score_lean"] == "双进:是"

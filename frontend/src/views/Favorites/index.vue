@@ -205,23 +205,15 @@ onActivated(() => {
         </div>
 
         <div class="favorites-body">
-          <!-- 手机：统计/日期做成卡片头，与列表合成整块；PC 这两项在顶栏第二行 -->
-          <n-card
-            class="favorites-card"
-            :class="{ 'favorites-card--mobile': isPhone }"
-            :bordered="false"
-            content-style="padding: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;"
-          >
-            <template v-if="isPhone" #header>
-              <span class="favorites-card-title">{{ dayCountLabel }}</span>
-            </template>
-            <template v-if="isPhone" #header-extra>
+          <section class="fa-section favorites-list-section">
+            <div v-if="isPhone" class="favorites-list-head">
+              <h2 class="fa-section-title">{{ dayCountLabel }}</h2>
               <FavoriteDatesPicker
                 v-model="filterDate"
                 :marked-days="favoriteDays"
                 legend="当天有关注（比赛日）"
               />
-            </template>
+            </div>
             <div ref="favoritesShellRef" class="favorites-list-shell">
               <n-scrollbar class="favorites-scroll" trigger="hover">
                 <div class="favorites-scroll-pad">
@@ -250,7 +242,7 @@ onActivated(() => {
                 :bottom="12"
               />
             </div>
-          </n-card>
+          </section>
         </div>
       </section>
     </n-layout>
@@ -290,46 +282,26 @@ onActivated(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* 手机卡片的左右留白走父级 padding：n-card 自带 width:100%，
-     用 margin 会让盒宽仍等于父宽而向右溢出被裁掉 */
-  padding: 0 12px;
+  padding: 0 var(--fa-content-inline);
   box-sizing: border-box;
 }
 
-/* PC：卡片透明无边框，等同裸列表（统计/日期在顶栏第二行，保持原样） */
-.favorites-card {
+.favorites-list-section {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: transparent;
+  padding-top: var(--fa-content-block-start);
+  padding-bottom: var(--fa-content-block-end);
 }
 
-/* 手机：统计/日期 + 列表合成一个抬升卡片，与顶部标题分层 */
-.favorites-card--mobile {
-  margin: 12px 0;
-  background: var(--fa-bg-elevated);
-  border-radius: var(--fa-radius-card);
-  overflow: hidden;
-}
-
-.favorites-card--mobile :deep(.n-card-header) {
+.favorites-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
   flex-shrink: 0;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--fa-border);
-}
-
-.favorites-card-title {
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-  white-space: nowrap;
-}
-
-/* PC 保持原样：裸列表，左右留白由 scroll-pad 给 */
-@media (min-width: 768px) {
-  .favorites-body {
-    padding: 0;
-  }
 }
 
 .favorites-list-shell {
@@ -345,16 +317,9 @@ onActivated(() => {
   min-height: 0;
 }
 
-/* 与我的方案面板同一档左右留白 */
 .favorites-scroll-pad {
-  padding: 8px 12px 16px;
+  padding: 0 0 16px;
   box-sizing: border-box;
-}
-
-/* 手机：屏幕留白已由外层卡片承担，赛事卡铺满卡片内宽，
-   否则再缩一档会挤到推荐 tag 换行 */
-.favorites-card--mobile .favorites-scroll-pad {
-  padding-inline: 0;
 }
 
 .favorites-empty {

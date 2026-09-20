@@ -146,8 +146,10 @@ def _structural_pick(
 ) -> HandicapPrediction | None:
     """Choose the main AH side from letting-side vs receiving-side water.
 
-    Near-even water is 观望. Home/away is already inside the line; it is not a
-    tie-break. The handicap board must not copy a 1X2 lean or score hint.
+    Prematch always shows a side: near-even water stays inside the deadzone for
+    betting (日推) but still leans to the cheaper quote here. Home/away is
+    already inside the line; it is not a tie-break. The handicap board must not
+    copy a 1X2 lean or score hint.
     """
     from app.services.ah_market_structure import classify_ah_board
 
@@ -160,20 +162,13 @@ def _structural_pick(
     if total <= 0:
         return None
     cover_prob = home_inv / total
-    away_prob = away_inv / total
-    if stance.even:
-        pick = "watch"
-        note = (
-            f"按主盘水位差 {stance.water_diff:+.3f}（死区 {stance.water_deadzone:.3f}），"
-            f"让球方 {stance.giving_odd:.2f}、受让 {stance.receiving_odd:.2f}，"
-            "差距不够，不偏任何一边"
-        )
-    else:
-        pick = stance.lean_token
-        note = (
-            f"按主盘水位差 {stance.water_diff:+.3f}（让球方 {stance.giving_odd:.2f}、"
-            f"受让 {stance.receiving_odd:.2f}），所以选{pick_to_lean(pick)}"
-        )
+    pick = stance.lean_token
+    note = (
+        f"按主盘水位差 {stance.water_diff:+.3f}（让球方 {stance.giving_odd:.2f}、"
+        f"受让 {stance.receiving_odd:.2f}），所以选{pick_to_lean(pick)}"
+    )
+    if stance.even and stance.directional:
+        note += f"；水位差在死区 {stance.water_deadzone:.3f} 内，只作展示不进日推"
     return HandicapPrediction(cover_prob, pick, "market_implied", line_f, note)
 
 
@@ -238,8 +233,6 @@ def predict_handicap(
         return None
 
     structural = _structural_pick(odds)
-    if structural is not None and structural.pick == "watch":
-        return structural
     model_pick = _model_prediction(ah_features, line_f)
     if model_pick.source == "ml":
         return model_pick

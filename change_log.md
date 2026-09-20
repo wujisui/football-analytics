@@ -621,7 +621,7 @@ day_limit = limit_per_day if day_total >= MIN_MATCHES_FOR_FULL_QUOTA else len(da
 真源 `backend/app/services/ah_market_structure.py`。日推批次开始时从本地完场盘口刷新阈值，写入 `data/models/ah_market_thresholds.json`，`model-status` 打印 `deadzone` / `giving_median`。
 
 - **主开关是让球方水位 − 受让方水位**（平手以低水一侧充当让球方）。死区用历史 `|主-客水位|` 的 **P25**，夹在 0.04～0.08，样本不足时退回 0.06。不用全样本均值/中位数（约 0.15）当死区，否则约一半场次都会被判观望。
-- 死区内分析器输出 **观望**（让球文案 `观望(+0.25)` 这类），比分待分析；日推直接跳过，不进 Top 4。例如佛罗伦萨 vs 那不勒斯主盘 `+0.25`、1.94 / 1.96。
+- **死区只是「下注闸」，不是「展示闸」**：死区内的盘仍按较低水位一侧给出倾向并照常出三件套，只是不进 Top 4。例如佛罗伦萨 vs 那不勒斯主盘 `+0.25`、1.94 / 1.96 照样显示「胜 / 让胜(+0.25)」，让球文案后缀说明「水位差在死区内，只作展示不进日推」。
 - 死区外：上盘低水跟上盘，上盘高水留下盘。主客场标签不打破死区（优势已在让球线上）。
 - **独赢辅闸**：让球方水位 ≥ 当前完场样本的 **动态中位数**（不足时 1.94）则不上独赢，最多留亚盘。浅盘只限制能不能上独赢，不规定必须下盘，也不把深盘低水自动当成诱盘翻边。
 
@@ -629,10 +629,21 @@ day_limit = limit_per_day if day_total >= MIN_MATCHES_FOR_FULL_QUOTA else len(da
 
 回归 `tests/test_ah_market_structure.py`、`test_even_market_prediction.py`（平手 1.95/1.80 跟客队低水出「负 / 让负(0)」）、`test_recommendation_pipeline.py`。单测用 fallback 阈值，不读本机 artifact。
 
+### 取消「观望」展示，改为逐级兜底
+
+赛前分析必须给出最可能的一项，不允许空着。
+
+- 删掉 `观望` 这个输出：`classify_ah_board` 新增 `directional`，只有两边**完全同价**才没有方向；其余一律跟较低水位。`recommendation_from_ah_board` 同价时返回 `None`，交回去水 1X2 盘面判断，因此展示侧不会再出现无方向的场次。
+- 缺 1X2 盘口时不再整包待分析，改走 `prediction._leans_without_1x2_market` 的阶梯：**让球 → 大小 → 双进 → 比分**，哪一项有报价就按那一项的水位给倾向，全缺才留待分析。依据仍只认盘口，绝不用近况模型顶替缺失的 1X2。
+- `pick_to_lean` 的 `watch` 分支、`predict_handicap` 里「观望短路模型」的分支一并删除。
+- 回归 `test_near_even_board_still_shows_the_cheaper_side`、`test_equal_water_has_no_direction_and_falls_back_to_1x2`、`test_missing_1x2_board_falls_back_down_the_market_ladder`、`test_missing_1x2_board_falls_back_to_the_handicap`。
+
+已冻结的 `pre_match_data` 快照不回改，旧卡片（如 09-20 赫塔费 `-0.5` 2.06/1.85 那张「胜 + 让负」）要等下一次批量盘口更新才会按新规则重算成「负 + 让负(-0.5) + 1-2」。
+
 ### 日推名单：未开赛最多 4 场，开赛后可补位
 
 展示层每次盘口更新后，在**仍未开赛**的目录场次里重排最多 4 场；开赛那场离开屏幕，允许补新场。结算层按开赛瞬间冻结的 `auto_pick_snapshots` 计命中，一天可以超过 4 注。已开赛快照不再删除，这是滚动推荐的代价，不是「当日固定 4 场」。
 
 ### 部分闭合 09-01「待查」
 
-近似 50/50 的主盘（含深盘两侧同价）现在会进水位差死区：分析器观望、日推不选。非均衡深盘仍跟水位，深盘置信度贴近 50%、排序几乎只看抽水差的问题还在，未做单独深盘禁入。
+近似 50/50 的主盘（含深盘两侧同价）现在会进水位差死区：日推不选，展示仍跟低水一侧。非均衡深盘仍跟水位，深盘置信度贴近 50%、排序几乎只看抽水差的问题还在，未做单独深盘禁入。

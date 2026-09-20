@@ -42,6 +42,7 @@ class AhBoardStance:
     receiving_odd: float
     water_diff: float
     even: bool
+    directional: bool
     follow_up: bool
     ah_pick: str
     result_choice: str
@@ -51,8 +52,8 @@ class AhBoardStance:
 
     @property
     def lean_token(self) -> str:
-        if self.even:
-            return "watch"
+        if not self.directional:
+            return "cover/no_cover"
         return "cover" if self.ah_pick == "让胜" else "no_cover"
 
 
@@ -191,16 +192,19 @@ def classify_ah_board(
         line, home_odd, away_odd
     )
     water_diff = giving_odd - receiving_odd
+    # 死区只挡下注（日推），不挡展示：赛前分析拿不准也要给出最可能的一侧，
+    # 所以方向恒按较低水位（庄家更不愿意收的那边）走，只有两边完全同水才无向。
     even = abs(water_diff) < deadzone
-    follow_up = (not even) and water_diff < 0
-    if even:
-        ah_pick = "观望"
-        result_choice = "home" if giving_side == "home" else "away"
+    directional = water_diff != 0
+    follow_up = directional and water_diff < 0
+    if not directional:
+        ah_pick = "让胜/负"
+        result_choice = ""
         allow_moneyline = False
     elif follow_up:
         ah_pick = "让胜" if giving_side == "home" else "让负"
         result_choice = giving_side
-        allow_moneyline = giving_odd < giving_median
+        allow_moneyline = (not even) and giving_odd < giving_median
     else:
         ah_pick = "让负" if giving_side == "home" else "让胜"
         result_choice = "away" if giving_side == "home" else "home"
@@ -214,6 +218,7 @@ def classify_ah_board(
         receiving_odd=receiving_odd,
         water_diff=water_diff,
         even=even,
+        directional=directional,
         follow_up=follow_up,
         ah_pick=ah_pick,
         result_choice=result_choice,
@@ -228,12 +233,10 @@ def recommendation_from_ah_board(
     *,
     thresholds: dict[str, Any] | None = None,
 ) -> str | None:
-    """Map the main AH board to 胜 / 负 / 观望. None when there is no AH line."""
+    """Map the main AH board to 胜 / 负. None when there is no line or no water gap."""
     stance = classify_ah_board(odds, thresholds=thresholds)
-    if stance is None:
+    if stance is None or not stance.directional:
         return None
-    if stance.even:
-        return "观望"
     return "胜" if stance.result_choice == "home" else "负"
 
 

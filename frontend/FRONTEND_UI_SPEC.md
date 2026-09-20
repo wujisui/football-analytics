@@ -254,7 +254,7 @@ frontend/src/
 - **少写 CSS**：优先依赖 Naive 默认样式与 props；自定义 class 只留给复杂布局（见 `frontend-ui.mdc`「少写 CSS」）
 - **就近组织**：路由与应用级抽屉统一用 `views/<Feature>/index.vue`；专属子组件和 composable 分别放同目录 `components/`、`composables/`，跨功能复用代码才进入全局目录
 - 全屏壳 + 内容区滚动；勿用整站 `max-width` 居中窄栏代替布局
-- **二级页不套卡片**：「我的」各子页与比赛详情页的内容直接铺在页面底色上，靠内容区内边距离边（`--fa-content-inline` / `MineSectionBody`）。分组统一写成 `section.fa-section` + `h2/h3.fa-section-title`（真源 `styles/base.css`）；纵向堆叠的分组由父级 `.fa-sections` 画一条分隔线，并排网格里的分组不画线。带标题的卡片仍留给列表卡片等一级页元素，一律 `:segmented="{ content: true }"`
+- **二级页不套卡片**：「我的」各子页、【关注】与比赛详情页的内容直接铺在页面底色上，靠内容区内边距离边（`--fa-content-inline` / `MineSectionBody` / 关注页 `.favorites-body`）。分组统一写成 `section.fa-section` + `h2/h3.fa-section-title`（真源 `styles/base.css`）；纵向堆叠的分组由父级 `.fa-sections` 画一条分隔线，并排网格里的分组不画线。带标题的卡片仍留给列表里的场次卡等一级页元素，一律 `:segmented="{ content: true }"`。关注页手机把场次数与日期选择做成列表标题行，不再用外层 `n-card` 包住整页。
 - **「我的方案」列表**：PC / 手机同一套 `section.fa-section`，标题「方案列表」与 `FavoriteDatesPicker` 同行；内容区 `n-scrollbar` 滚动、标题固定。PC 顶栏不再放日期选择（第二行只显示当日方案数量）
 - 风格：简洁、白/灰为主，信息密度适中
 - Composition API（`<script setup>`）+ TypeScript

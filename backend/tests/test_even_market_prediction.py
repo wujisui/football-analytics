@@ -3,7 +3,8 @@
 真实案例一：阿甲 1493067（2.94 / 2.84 / 2.65，亚盘平手 1.95/1.80）——
 1X2 胶着时仍以让球主盘水位为准：客队 1.80 低于主队 1.95，输出客胜方向而不是待分析。
 真实案例二：南美杯雷科莱塔曾在完全没有盘口的情况下输出「平 / 比分:0-0 / 小(2.5) / 双进否」——
-纯近况模型概率不是依据，缺 1X2 盘口就整包待分析。
+纯近况模型概率不是依据，缺 1X2 盘口时胜平负留白，只能按让球 → 大小 → 双进的顺序
+兜到还有报价的那一项。
 真实案例三：热门去水后不足五成一度被当成胶着，连领先次选近 20 个点的盘也强制双选——
 「胶着」要由市场差距判定，不是由热门的绝对水平判定。
 """
@@ -46,14 +47,17 @@ class EvenMarketPredictionTests(unittest.TestCase):
         self.assertEqual(leans["recommendation"], "负")
         self.assertEqual(leans["handicap_lean"], "让负(0)")
 
-    def test_missing_1x2_board_still_pending(self) -> None:
+    def test_missing_1x2_board_falls_back_to_the_handicap(self) -> None:
+        """缺 1X2 盘口时胜平负仍留白，但有让球报价就往下兜到让球。"""
         self.assertFalse(has_1x2_market(AH_ONLY_ODDS))
         self.assertEqual(get_recommendation(FLAT_PROBS, odds=AH_ONLY_ODDS), "待分析")
         leans = derive_prediction_leans(FLAT_PROBS, AH_ONLY_ODDS)
+        self.assertEqual(leans["recommendation"], "待分析")
+        self.assertEqual(leans["handicap_lean"], "让负(0)")
+        # 让球之后没有大小/双进报价，继续留白，不拿近况模型顶替。
         self.assertEqual(leans["goal_lean"], "大小：待分析")
         self.assertEqual(leans["both_score_lean"], "双进:待分析")
         self.assertEqual(leans["score_hint"], "比分:待分析")
-        self.assertEqual(leans["handicap_lean"], "让球：待分析")
 
     def test_no_odds_at_all_still_pending(self) -> None:
         self.assertEqual(get_recommendation(FLAT_PROBS), "待分析")

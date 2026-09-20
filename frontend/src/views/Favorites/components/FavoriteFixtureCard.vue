@@ -75,10 +75,8 @@ function onDesktopMarkClick(e: MouseEvent) {
     @toggle-select="emit('toggleSelect', $event)"
   />
 
-  <n-card
+  <div
     v-else-if="isFinished"
-    size="small"
-    :bordered="false"
     class="favorite-fixture-card"
     :class="desktopMarkClass"
     @click="onDesktopMarkClick"
@@ -96,7 +94,7 @@ function onDesktopMarkClick(e: MouseEvent) {
         @open-detail="openDetail"
       />
     </div>
-  </n-card>
+  </div>
 
   <ResultFixtureCard
     v-else-if="isPhone"
@@ -111,10 +109,8 @@ function onDesktopMarkClick(e: MouseEvent) {
     @toggle-select="emit('toggleSelect', $event)"
   />
 
-  <n-card
+  <div
     v-else
-    size="small"
-    :bordered="false"
     class="favorite-fixture-card"
     :class="desktopMarkClass"
     @click="onDesktopMarkClick"
@@ -133,7 +129,7 @@ function onDesktopMarkClick(e: MouseEvent) {
         from="favorites"
       />
     </div>
-  </n-card>
+  </div>
 
   <PreMatchOddsModal
     v-if="isPhone"
@@ -146,7 +142,6 @@ function onDesktopMarkClick(e: MouseEvent) {
 
 <style scoped>
 .favorite-fixture-card {
-  background: var(--fa-bg-elevated);
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
