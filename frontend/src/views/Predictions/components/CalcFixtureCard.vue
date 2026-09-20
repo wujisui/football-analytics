@@ -107,11 +107,11 @@ function goDetail() {
               :key="`${cell.market}-${cell.outcome}`"
               block
               size="small"
-              :type="selected(cell) ? 'warning' : 'default'"
-              :secondary="!selected(cell)"
+              :type="selected(cell) ? 'primary' : 'default'"
+              secondary
               :disabled="cell.disabled || cell.odd == null"
               class="odd-button"
-              :class="{ inline: row.market === 'spf' }"
+              :class="{ inline: row.market === 'spf', 'is-selected': selected(cell) }"
               @click="onPick(cell)"
             >
               <span class="pick-label">{{ cell.displayLabel }}</span>
@@ -272,24 +272,35 @@ function goDetail() {
   line-height: 1.15;
 }
 
-/* 独赢一列有三行，横排文案与赔率才不会把单元格撑高。 */
+/* 独赢一列有三行，横排「文案/赔率」居中，中间斜杠当分隔。 */
 .odd-button.inline :deep(.n-button__content) {
   flex-direction: row;
   justify-content: center;
-  gap: 6px;
+  align-items: center;
+  gap: 0;
+}
+
+.odd-button.inline .pick-label::after {
+  content: '/';
 }
 
 .pick-label,
 .pick-odd {
   overflow: hidden;
   max-width: 100%;
-  color: inherit;
   font-size: 12px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
+/* 未选中：玩法名退一档，和赔率拉开层级。选中态按钮本身已是高亮块，
+   再压一次文字颜色反差过大，沿用按钮自带文字色。 */
+.odd-button:not(.is-selected) .pick-label {
+  color: var(--fa-text-secondary);
+}
+
 .pick-odd {
+  color: inherit;
   font-weight: 600;
 }
 
