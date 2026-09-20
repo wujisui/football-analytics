@@ -161,14 +161,14 @@ def _structural_pick(
     if abs(cover_prob - away_prob) <= 1e-9:
         pick = "cover/no_cover"
         note = (
-            f"主盘去水概率让胜 {cover_prob:.1%}、让负 {away_prob:.1%}，"
-            "两侧持平"
+            f"按主盘赔率折算（已扣掉抽成），买主队 {cover_prob:.1%}、"
+            f"买客队 {away_prob:.1%}，两边一样，不偏任何一边"
         )
     else:
         pick = "cover" if cover_prob > away_prob else "no_cover"
         note = (
-            f"主盘去水概率让胜 {cover_prob:.1%}、让负 {away_prob:.1%}，"
-            f"取{pick_to_lean(pick)}"
+            f"按主盘赔率折算（已扣掉抽成），买主队 {cover_prob:.1%}、"
+            f"买客队 {away_prob:.1%}，所以选{pick_to_lean(pick)}"
         )
     return HandicapPrediction(cover_prob, pick, "market_implied", line_f, note)
 
@@ -198,9 +198,9 @@ def _model_prediction(
     else:
         pick = "cover" if cover_prob > 0.5 else "no_cover"
     note = (
-        f"主盘去水概率让胜 {market_prob:.1%}、让负 {1.0 - market_prob:.1%}；"
-        f"合格模型估计让胜 {model_prob:.1%}，保守修正为 {cover_prob:.1%}，"
-        f"取{pick_to_lean(pick)}"
+        f"按主盘赔率折算（已扣掉抽成），买主队 {market_prob:.1%}、"
+        f"买客队 {1.0 - market_prob:.1%}；我们的模型给主队 {model_prob:.1%}，"
+        f"只往模型方向修一半到 {cover_prob:.1%}，所以选{pick_to_lean(pick)}"
     )
     return HandicapPrediction(cover_prob, pick, "ml", line_f, note)
 

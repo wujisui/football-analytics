@@ -125,11 +125,108 @@ def test_four_stage_analysis_uses_real_line_and_probability_movement() -> None:
     assert result["stage_count"] == 4
     assert "初盘 → 中盘 → 临场 → 即时盘" in text
     assert "初盘 0 → 中盘 -0.25" in text
-    assert "向主队方向升盘" in text
-    assert "形成主队方向共振" in text
-    assert "大小球主盘轨迹：初盘 3 → 临场 3.25" in text
-    assert "市场对总进球数的定价上调" in text
-    assert "均为负期望" in text
+    assert "主队要让的球变多了" in text
+    assert "方向一致偏向主队" in text
+    assert "大小球怎么走的：初盘 3 → 临场 3.25" in text
+    assert "大小球盘口比开盘时抬高了" in text
+    assert "两边长期算下来都是亏的" in text
+    # 白话口径：不要再把术语推给用户。
+    assert "去水" not in text
+    assert "期望" not in text
+    assert "共振" not in text
+    assert "庄家" not in text
+    # 本来就好懂的词不要再夹注。
+    assert "最早开出的报价" not in text
+    assert "带减号" not in text
+    assert "进球偏" not in text
+
+
+def test_handicap_value_is_phrased_as_money_per_hundred() -> None:
+    current = _board(
+        "2026-08-27T17:00:00+00:00",
+        role="current",
+        ah_line="-0.25",
+        ah_home="1.94",
+        ah_away="1.89",
+        ou_line="3.25",
+        ou_home="1.86",
+        ou_away="1.95",
+        home="2.18",
+        draw="3.91",
+        away="2.81",
+    )
+    result = build_market_analysis(
+        {"odds": current},
+        probabilities={"home": 0.43, "draw": 0.24, "away": 0.33},
+        recommendation="胜/平",
+        handicap_lean="让胜(-0.25)",
+    )
+
+    text = "\n".join([*result["paragraphs"], *result["bullets"]])
+    assert "买主队（让 0.25 球）" in text
+    assert "买客队（受让 0.25 球）" in text
+    assert "平均每投 100 元" in text
+    # 全站沿用「让胜/让负」标签，但解释里必须跟一句白话。
+    assert "让胜(-0.25)，也就是买主队（让 0.25 球）" in text
+    # 0.25 会半输半赢，说清楚；但不要再用「赢一半、输一半和打平退钱」这种缩写。
+    assert "这种盘口可能只赢一半或只亏一半，上面的账已经算上了。" in text
+
+
+def test_settlement_note_only_appears_when_the_line_can_split_or_refund() -> None:
+    def value_bullet(ah_line: str, ah_home: str, ah_away: str) -> str:
+        board = _board(
+            "2026-08-27T17:00:00+00:00",
+            role="current",
+            ah_line=ah_line,
+            ah_home=ah_home,
+            ah_away=ah_away,
+            ou_line="3.25",
+            ou_home="1.86",
+            ou_away="1.95",
+            home="2.18",
+            draw="3.91",
+            away="2.81",
+        )
+        result = build_market_analysis(
+            {"odds": board},
+            probabilities={"home": 0.43, "draw": 0.24, "away": 0.33},
+        )
+        return next(b for b in result["bullets"] if "长期估算" in b)
+
+    assert "只赢一半或只亏一半" in value_bullet("-0.25", "1.94", "1.89")
+    assert "踢平会把钱退给你" in value_bullet("0", "1.90", "1.95")
+    # 半球盘只有赢或输，不该硬塞一句结算说明。
+    half_ball = value_bullet("-0.5", "2.06", "1.84")
+    assert "只赢一半" not in half_ball
+    assert "退给你" not in half_ball
+
+
+def test_leans_keep_their_tag_but_gain_a_plain_reading() -> None:
+    current = _board(
+        "2026-08-27T17:00:00+00:00",
+        role="current",
+        ah_line="-0.25",
+        ah_home="1.94",
+        ah_away="1.89",
+        ou_line="3.25",
+        ou_home="1.86",
+        ou_away="1.95",
+        home="2.18",
+        draw="3.91",
+        away="2.81",
+    )
+    result = build_market_analysis(
+        {"odds": current},
+        probabilities={"home": 0.43, "draw": 0.24, "away": 0.33},
+        recommendation="胜/平",
+        handicap_lean="让负(-0.25)",
+        goal_lean="小(3.25)",
+    )
+
+    text = "\n".join(result["bullets"])
+    assert "让负(-0.25)，也就是买客队（受让 0.25 球）" in text
+    assert "算法在大小球上的选择：小(3.25)。" in text
+    assert "进球偏" not in text
 
 
 def test_same_capture_is_not_described_as_fake_movement() -> None:
@@ -154,8 +251,8 @@ def test_same_capture_is_not_described_as_fake_movement() -> None:
     )
     text = "\n".join([*result["paragraphs"], *result["bullets"]])
     assert result["stage_count"] == 1
-    assert "共 1 个" in text
-    assert "相对初盘" not in text
+    assert "用到 1 个时间点的盘口" in text
+    assert "比开盘时" not in text
 
 
 def test_bookmaker_swap_is_reported_but_not_called_a_market_move() -> None:
@@ -193,8 +290,8 @@ def test_bookmaker_swap_is_reported_but_not_called_a_market_move() -> None:
         handicap_lean="让胜(-0.25)",
     )
     text = "\n".join(result["paragraphs"])
-    assert "向主队方向升盘" not in text
-    assert any("庄家不同" in warning for warning in result["warnings"])
+    assert "主队要让的球变多了" not in text
+    assert any("两家不同的博彩公司" in warning for warning in result["warnings"])
 
 
 def test_detail_analysis_response_includes_backend_explanation() -> None:

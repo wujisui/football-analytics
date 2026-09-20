@@ -27,7 +27,7 @@ const explanation = computed(
     props.fixture.analysis.market_analysis ?? {
       available: false,
       title: '盘口解释',
-      paragraphs: ['暂无后端盘口解释，请刷新详情后重试。'],
+      paragraphs: ['这场还没有盘口解释，刷新一下详情再看。'],
       bullets: [],
       warnings: [],
       stage_count: 0,
@@ -94,7 +94,7 @@ const matchupText = computed(
             </div>
             <p v-if="handicapMarketNote" class="handicap-note">{{ handicapMarketNote }}</p>
             <p v-if="original.probabilitiesAvailable" class="prob-source">
-              胜平负概率为主盘赔率去水后的市场定价
+              下面的百分比来自主盘赔率折算（已扣掉博彩公司抽成），代表市场的看法
             </p>
             <ul v-if="original.probabilitiesAvailable" class="rows">
               <li class="tone-win">主胜 {{ toPercent(original.home_win_prob) }}</li>

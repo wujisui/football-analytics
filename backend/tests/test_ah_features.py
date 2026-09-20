@@ -73,7 +73,7 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(pred.pick, "no_cover")
         self.assertAlmostEqual(pred.cover_prob, 0.4718, places=3)
         self.assertEqual(format_handicap_lean(pred), "让负(-0.5)")
-        self.assertIn("主盘去水概率", pred.market_note)
+        self.assertIn("按主盘赔率折算", pred.market_note)
 
     def test_west_ham_regression_market_prices_choose_handicap_loss(self) -> None:
         """胜/平和参考比分不得把 2.06/1.84 的主盘热门侧翻回让胜。"""
@@ -85,7 +85,7 @@ class AhFeaturesTests(unittest.TestCase):
             west_ham, "胜/平", score_hint="比分:2-0/0-0"
         )
         self.assertEqual(lean, "让负(-0.5)")
-        self.assertIn("取让负", note)
+        self.assertIn("所以选让负", note)
 
     def test_only_deployable_model_can_correct_market_direction(self) -> None:
         class FixedModel:
@@ -111,8 +111,8 @@ class AhFeaturesTests(unittest.TestCase):
             lean, note = handicap_bundle_from_markets(odds)
 
         self.assertEqual(lean, "让胜(-0.5)")
-        self.assertIn("合格模型估计让胜 70.0%", note)
-        self.assertIn("保守修正为 58.6%", note)
+        self.assertIn("我们的模型给主队 70.0%", note)
+        self.assertIn("只往模型方向修一半到 58.6%", note)
 
     def test_non_deployable_model_falls_back_to_market(self) -> None:
         class FixedModel:
@@ -193,7 +193,7 @@ class AhFeaturesTests(unittest.TestCase):
             home_leaning, "胜/平", score_hint="比分:1-1"
         )
         self.assertEqual(lean, "让胜(0)")
-        self.assertIn("主盘去水概率", note)
+        self.assertIn("按主盘赔率折算", note)
 
         away_leaning = {
             "available": True,
@@ -221,7 +221,7 @@ class AhFeaturesTests(unittest.TestCase):
             level, "胜/平", score_hint="比分:1-1"
         )
         self.assertEqual(lean, "让胜/负(0)")
-        self.assertIn("两侧持平", note)
+        self.assertIn("两边一样，不偏任何一边", note)
 
     def test_outcome_settlement_units_only_cover_result_settled_lines(self) -> None:
         from app.services.ah_features import outcome_settlement_units
