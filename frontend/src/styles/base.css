@@ -273,6 +273,49 @@ button {
   cursor: default;
 }
 
+/*
+ * 二级页分组：内容不再套卡片，靠页面内边距离边，分组之间只用标题和一条分隔线。
+ * 列表 / 段落在分组里去掉自带底色与首尾外边距，免得又出现「卡中卡」。
+ */
+.fa-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 只有纵向排布的容器才画分隔线：并排网格（阵容、统计对比）相邻不该出现横线。 */
+.fa-sections > .fa-section + .fa-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--fa-border);
+}
+
+.fa-section-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fa-text-strong);
+}
+
+.fa-section .n-list {
+  background-color: transparent;
+}
+
+.fa-section .n-list .n-list-item {
+  padding: 10px 0;
+}
+
+.fa-section .n-p:first-child,
+.fa-section .n-ul:first-child {
+  margin-top: 0;
+}
+
+.fa-section .n-p:last-child,
+.fa-section .n-ul:last-child {
+  margin-bottom: 0;
+}
+
 /* ---- Native scrollbars (single source; prefer n-scrollbar for major panes) ---- */
 :root {
   --fa-scrollbar-size: 6px;

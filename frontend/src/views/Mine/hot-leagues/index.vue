@@ -646,22 +646,14 @@ onMounted(() => {
 
 <template>
   <div class="hot-leagues-panel">
-    <n-card
-      size="small"
-      :bordered="false"
-      class="hot-leagues-card"
-      content-style="padding: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;"
-      :segmented="{ content: true }"
-    >
-      <template #header>
+    <section class="fa-section hot-leagues-body">
+      <div class="hot-league-head">
         <n-flex :size="8" align="baseline">
-          <span>拉盘联赛</span>
+          <h2 class="fa-section-title">拉盘联赛</h2>
           <n-text depth="3" class="hot-league-total">
             {{ selectedCount }}/{{ leagues.length }}
           </n-text>
         </n-flex>
-      </template>
-      <template #header-extra>
         <n-flex :size="8" :wrap="true">
           <n-button
             v-if="!isPhone"
@@ -738,7 +730,7 @@ onMounted(() => {
             保存
           </n-button>
         </n-flex>
-      </template>
+      </div>
       <n-spin :show="loading" class="hot-league-spin">
         <n-scrollbar class="hot-league-scroll" trigger="hover">
           <div class="hot-league-scroll-inner">
@@ -815,7 +807,7 @@ onMounted(() => {
           </div>
         </n-scrollbar>
       </n-spin>
-    </n-card>
+    </section>
 
     <n-modal
       v-model:show="addCategoryShow"
@@ -1108,15 +1100,16 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
-.hot-leagues-card {
-  display: flex;
-  flex-direction: column;
+.hot-leagues-body {
   flex: 1;
   min-height: 0;
 }
 
-.hot-leagues-card :deep(.n-card-header) {
+.hot-league-head {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -1135,7 +1128,7 @@ onMounted(() => {
 }
 
 .hot-league-scroll-inner {
-  padding: 4px 12px 12px;
+  padding-bottom: 12px;
 }
 
 .hot-league-total {

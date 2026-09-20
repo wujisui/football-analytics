@@ -20,7 +20,8 @@ function playerLabel(p: LineupPlayer): string {
 
 <template>
   <div class="lineup-tab">
-    <n-card size="small" title="伤病情况">
+    <section class="fa-section">
+      <h3 class="fa-section-title">伤病情况</h3>
       <div class="split">
         <div>
           <div class="label">{{ homeName }}</div>
@@ -45,10 +46,11 @@ function playerLabel(p: LineupPlayer): string {
           <p v-else class="muted">无伤病信息</p>
         </div>
       </div>
-    </n-card>
+    </section>
 
     <div class="split">
-      <n-card size="small" :title="`阵容 · ${homeName}`">
+      <section class="fa-section">
+        <h3 class="fa-section-title">阵容 · {{ homeName }}</h3>
         <template v-if="pkg?.lineups.available && pkg.lineups.home">
           <p class="formation">
             阵型 {{ pkg.lineups.home.formation || pkg.home_formation || '—' }}
@@ -69,9 +71,10 @@ function playerLabel(p: LineupPlayer): string {
           <p v-else class="muted">暂无替补名单</p>
         </template>
         <n-empty v-else description="阵容尚未公布或未拉取" size="small" />
-      </n-card>
+      </section>
 
-      <n-card size="small" :title="`阵容 · ${awayName}`">
+      <section class="fa-section">
+        <h3 class="fa-section-title">阵容 · {{ awayName }}</h3>
         <template v-if="pkg?.lineups.available && pkg.lineups.away">
           <p class="formation">
             阵型 {{ pkg.lineups.away.formation || pkg.away_formation || '—' }}
@@ -92,7 +95,7 @@ function playerLabel(p: LineupPlayer): string {
           <p v-else class="muted">暂无替补名单</p>
         </template>
         <n-empty v-else description="阵容尚未公布或未拉取" size="small" />
-      </n-card>
+      </section>
     </div>
   </div>
 </template>

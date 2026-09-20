@@ -285,13 +285,8 @@ watch(syncing, (value, previous) => {
 
 <template>
   <MineSectionBody>
-    <n-card
-      size="small"
-      :bordered="false"
-      class="ops-card"
-      :segmented="{ content: true }"
-    >
-      <template #header>
+    <section class="fa-section">
+      <div class="ops-status">
         <n-text
           depth="3"
           :type="lastSync?.status === 'failed' ? 'error' : undefined"
@@ -299,8 +294,6 @@ watch(syncing, (value, previous) => {
         >
           {{ lastSyncText }}
         </n-text>
-      </template>
-      <template #header-extra>
         <n-flex :size="6" align="center" :wrap="false">
           <n-tag v-if="apiRemaining != null" size="small" :bordered="false" type="info">
             官方剩余 {{ apiRemaining }}
@@ -309,7 +302,7 @@ watch(syncing, (value, previous) => {
             {{ lastSyncQuotaText }}
           </n-tag>
         </n-flex>
-      </template>
+      </div>
       <n-list>
         <n-list-item>
           <template #prefix>
@@ -438,28 +431,25 @@ watch(syncing, (value, previous) => {
           </template>
         </n-list-item>
       </n-list>
-    </n-card>
+    </section>
   </MineSectionBody>
 </template>
 
 <style scoped>
-.ops-card :deep(.n-card-header) {
+.ops-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-}
-
-.ops-card :deep(.n-card-header__main) {
   min-width: 0;
 }
 
 .ops-last-sync {
-  display: block;
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ops-card :deep(.n-card-header__extra) {
-  flex-shrink: 0;
 }
 </style>

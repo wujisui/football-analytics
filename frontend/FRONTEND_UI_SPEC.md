@@ -148,7 +148,7 @@ n-layout-content（全屏滚动）
 1. 计算器：`/leagues` + `/fixtures/today` 只读本地库；模块级缓存约 5 分钟，详情返回不重复请求；切换联赛仅前端过滤
 2. 进入详情页请求一次：`GET /api/v1/fixtures/{fixture_id}/analysis`（本地优先；缺包时后端按需打官方并落库）
 3. 响应中的 `analysis` + `analysis.package`（赔率 / 近况 / 交锋 / 阵容 / 伤病 / 官方简报等）供各 Tab 共用
-4. Tabs：**首次切换到某 Tab 再挂载内容**（懒渲染）；已访问过的 Tab 保留，不重复请求
+4. Tabs：**首次切换到某 Tab 再挂载内容**（懒渲染）；已访问过的 Tab 保留，不重复请求。手机端左右滑动切上/下一个 Tab，但手势起点落在横向可滚动区域（数据表、图表、战绩徽标行）时让该区域自己滚，不翻页（真源 `composables/useHorizontalSwipe.ts`）
 5. 「我的预测」左侧为算法结论，右侧只读展示后端根据初盘 / 中盘 / 临场 / 即时盘生成的结构化盘口解释（无主观因素融合）
 6. 「赛前简报」来自官方 `GET /predictions`，落库 `package.briefing`，与「我的预测」本地模型无关
 
@@ -160,7 +160,7 @@ n-layout-content（全屏滚动）
 | 赛季数据  | 在独立 stats 接口就绪前，可用近况估算胜率、场均进/失球；可附带 1X2 赔率参考；需标明数据来源局限                                                                |
 | 伤病与阵容 | 双方伤病列表；首发 / 替补 / 阵型（无数据时空态）                                                                                           |
 | 赛前简报 | 官方 advice / 胜平负占比 / 大小球 / 对比表；无 coverage 时空态                                                                 |
-| 我的预测  | 「赛前结果预测」与「盘口解释」卡片标题右侧 `#header-extra` 显示本场对局名；赛前卡未开赛时内联展示胜平负 + 推荐 + 饼图，已开赛改渲染 `AlgorithmPredictionCard`，两态共用同一张 `n-card` 与标题；胜平负三行上方固定标注「主盘赔率去水后的市场定价」（`published_match_probabilities` 恒返回去水盘口概率，模型只喂推荐，不进展示百分比）；盘口卡按采集时间去重，初盘早于即时盘才并排，同一次采集只显示「即时盘」；右侧展示后端盘口解释：四阶段主盘轨迹、同庄家同档去水概率、1X2 / 大小球交叉验证、让球返还后期望收益及不可比警告。前端不自行推断走势 |
+| 我的预测  | 「赛前结果预测」与「盘口解释」为并排 `section.fa-section`，标题右侧同行显示本场对局名；赛前段未开赛时内联展示胜平负 + 推荐 + 饼图，已开赛改渲染 `AlgorithmPredictionCard`，两态共用同一段与标题；胜平负三行上方固定标注「主盘赔率去水后的市场定价」（`published_match_probabilities` 恒返回去水盘口概率，模型只喂推荐，不进展示百分比）；盘口卡按采集时间去重，初盘早于即时盘才并排，同一次采集只显示「即时盘」；右侧展示后端盘口解释：四阶段主盘轨迹、同庄家同档去水概率、1X2 / 大小球交叉验证、让球返还后期望收益及不可比警告。前端不自行推断走势 |
 
 ### 4.4 状态处理
 
@@ -252,8 +252,8 @@ frontend/src/
 - **少写 CSS**：优先依赖 Naive 默认样式与 props；自定义 class 只留给复杂布局（见 `frontend-ui.mdc`「少写 CSS」）
 - **就近组织**：路由与应用级抽屉统一用 `views/<Feature>/index.vue`；专属子组件和 composable 分别放同目录 `components/`、`composables/`，跨功能复用代码才进入全局目录
 - 全屏壳 + 内容区滚动；勿用整站 `max-width` 居中窄栏代替布局
-- **带标题的卡片一律 `:segmented="{ content: true }"`**：标题与正文之间靠 Naive 分隔线分层，赛果统计卡、方案统计卡与「我的」二级页各卡口径一致；无标题卡片加不加都不出线，勿另写 `border-top`
-- **「我的方案」列表卡**：PC / 手机同一套 `n-card`，标题「方案列表」，`FavoriteDatesPicker` 走 `#header-extra`；内容区 `n-scrollbar` 滚动、标题固定。PC 顶栏不再放日期选择（第二行只显示当日方案数量）
+- **二级页不套卡片**：「我的」各子页与比赛详情页的内容直接铺在页面底色上，靠内容区内边距离边（`--fa-content-inline` / `MineSectionBody`）。分组统一写成 `section.fa-section` + `h2/h3.fa-section-title`（真源 `styles/base.css`）；纵向堆叠的分组由父级 `.fa-sections` 画一条分隔线，并排网格里的分组不画线。带标题的卡片仍留给列表卡片等一级页元素，一律 `:segmented="{ content: true }"`
+- **「我的方案」列表**：PC / 手机同一套 `section.fa-section`，标题「方案列表」与 `FavoriteDatesPicker` 同行；内容区 `n-scrollbar` 滚动、标题固定。PC 顶栏不再放日期选择（第二行只显示当日方案数量）
 - 风格：简洁、白/灰为主，信息密度适中
 - Composition API（`<script setup>`）+ TypeScript
 - Loading / 空态 / 错误重试用 `n-spin` / `n-empty` / `n-alert`

@@ -82,7 +82,8 @@ function pctLabel(n: number | null): string {
     <template v-if="hasAny">
       <n-grid :cols="statsCols" :x-gap="14" :y-gap="14">
         <n-gi>
-          <n-card size="small" :title="fixture.home_team_name || '—'">
+          <section class="fa-section">
+            <h3 class="fa-section-title">{{ fixture.home_team_name || '—' }}</h3>
             <n-space vertical :size="14">
               <div>
                 <n-statistic label="近况胜率" :value="pctLabel(homeWinRate)" />
@@ -98,10 +99,11 @@ function pctLabel(n: number | null): string {
               <n-statistic label="场均进球（近况）" :value="fmtAvg(homeGoals.scored)" />
               <n-statistic label="场均失球（近况）" :value="fmtAvg(homeGoals.conceded)" />
             </n-space>
-          </n-card>
+          </section>
         </n-gi>
         <n-gi>
-          <n-card size="small" :title="fixture.away_team_name || '—'">
+          <section class="fa-section">
+            <h3 class="fa-section-title">{{ fixture.away_team_name || '—' }}</h3>
             <n-space vertical :size="14">
               <div>
                 <n-statistic label="近况胜率" :value="pctLabel(awayWinRate)" />
@@ -116,17 +118,18 @@ function pctLabel(n: number | null): string {
               <n-statistic label="场均进球（近况）" :value="fmtAvg(awayGoals.scored)" />
               <n-statistic label="场均失球（近况）" :value="fmtAvg(awayGoals.conceded)" />
             </n-space>
-          </n-card>
+          </section>
         </n-gi>
       </n-grid>
 
-      <n-card v-if="pkg?.standings?.available" size="small" title="本赛事排名">
+      <section v-if="pkg?.standings?.available" class="fa-section">
+        <h3 class="fa-section-title">本赛事排名</h3>
         <n-text>
           主 {{ pkg.standings.home_rank ?? '—' }} /
           客 {{ pkg.standings.away_rank ?? '—' }}
           <template v-if="pkg.standings.group">（{{ pkg.standings.group }}）</template>
         </n-text>
-      </n-card>
+      </section>
     </template>
     <n-empty v-else description="暂无可用统计数据" />
   </n-space>

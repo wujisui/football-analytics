@@ -126,10 +126,9 @@ function goLeague() {
 </template>
 
 <style scoped>
+/* 二级页不套卡片：这一行直接坐在页面底色上，左右留白由页面内边距给。 */
 .basic-info {
-  background: var(--fa-bg-elevated);
-  border-radius: var(--fa-radius-card);
-  padding: 10px 12px;
+  padding: 2px 0;
 }
 
 .header-row {

@@ -161,14 +161,10 @@ const comparisonColumns = computed<DataTableColumns<ComparisonRow>>(() => [
         来源：API-Sports 官方 /predictions，与「我的预测」本地模型无关
       </n-alert>
 
-      <n-card
-        v-if="briefing?.advice"
-        size="small"
-        title="建议"
-        :bordered="false"
-      >
+      <section v-if="briefing?.advice" class="fa-section">
+        <h3 class="fa-section-title">建议</h3>
         <n-text>{{ briefing.advice }}</n-text>
-      </n-card>
+      </section>
 
       <n-descriptions
         class="briefing-fields"

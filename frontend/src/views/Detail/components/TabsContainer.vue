@@ -185,9 +185,6 @@ watch(
 
 <style scoped>
 .tabs-container {
-  background: var(--fa-bg-elevated);
-  border-radius: var(--fa-radius-card);
-  padding: 8px 16px 12px;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -256,10 +253,6 @@ watch(
 }
 
 @media (max-width: 767px) {
-  .tabs-container {
-    padding: 4px 8px 8px;
-  }
-
   .tabs-container :deep(.n-tabs .n-tabs-tab) {
     padding: 8px 10px;
     font-size: 13px;

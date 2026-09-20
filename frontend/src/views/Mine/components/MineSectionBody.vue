@@ -1,6 +1,6 @@
 <template>
   <n-scrollbar class="mine-content-scroll" trigger="hover">
-    <div class="mine-content">
+    <div class="mine-content fa-sections">
       <slot />
     </div>
   </n-scrollbar>

@@ -60,10 +60,11 @@ const matchupText = computed(
     </div>
 
     <div class="compare-grid">
-      <n-card size="small" title="赛前结果预测" class="panel">
-        <template #header-extra>
+      <section class="fa-section panel">
+        <div class="panel-head">
+          <h3 class="fa-section-title">赛前结果预测</h3>
           <n-text depth="3" class="matchup">{{ matchupText }}</n-text>
-        </template>
+        </div>
         <AlgorithmPredictionCard v-if="isFinished" :fixture="fixture" />
         <div
           v-else
@@ -117,12 +118,13 @@ const matchupText = computed(
             compact
           />
         </div>
-      </n-card>
+      </section>
 
-      <n-card size="small" class="panel" :title="explanation.title">
-        <template #header-extra>
+      <section class="fa-section panel">
+        <div class="panel-head">
+          <h3 class="fa-section-title">{{ explanation.title }}</h3>
           <n-text depth="3" class="matchup">{{ matchupText }}</n-text>
-        </template>
+        </div>
         <div class="explain">
           <p
             v-for="(p, idx) in explanation.paragraphs"
@@ -150,7 +152,7 @@ const matchupText = computed(
             </div>
           </n-alert>
         </div>
-      </n-card>
+      </section>
     </div>
   </section>
 </template>
@@ -196,8 +198,15 @@ const matchupText = computed(
 }
 
 .panel {
-  background: var(--fa-bg-elevated);
   min-height: 0;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }
 
 .matchup {

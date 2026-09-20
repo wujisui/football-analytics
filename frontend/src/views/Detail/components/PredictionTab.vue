@@ -46,15 +46,11 @@ const canRefreshOdds = computed(
 <template>
   <div class="prediction-tab">
     <template v-if="showAnyBoard">
-      <n-card
-        v-if="showCurrent"
-        size="small"
-        title="即时盘"
-        style="background: var(--fa-bg-elevated);"
-      >
-        <template #header-extra>
+      <section v-if="showCurrent" class="fa-section">
+        <div class="board-head">
+          <h3 class="fa-section-title">即时盘</h3>
           <n-flex align="center" :size="8">
-            <n-text v-if="currentCapturedAt" depth="3" style="font-size: 12px;">
+            <n-text v-if="currentCapturedAt" depth="3" class="board-time">
               采集 {{ formatDateTime(currentCapturedAt) }}
             </n-text>
             <n-button
@@ -69,19 +65,15 @@ const canRefreshOdds = computed(
               更新盘口
             </n-button>
           </n-flex>
-        </template>
+        </div>
         <PreMatchOddsTable :odds="oddsCurrent" />
-      </n-card>
+      </section>
 
-      <n-card
-        v-if="showOpening"
-        size="small"
-        title="初盘"
-        style="background: var(--fa-bg-elevated);"
-      >
-        <template #header-extra>
+      <section v-if="showOpening" class="fa-section">
+        <div class="board-head">
+          <h3 class="fa-section-title">初盘</h3>
           <n-flex align="center" :size="8">
-            <n-text v-if="openingCapturedAt" depth="3" style="font-size: 12px;">
+            <n-text v-if="openingCapturedAt" depth="3" class="board-time">
               采集 {{ formatDateTime(openingCapturedAt) }}
             </n-text>
             <n-button
@@ -96,18 +88,14 @@ const canRefreshOdds = computed(
               更新盘口
             </n-button>
           </n-flex>
-        </template>
+        </div>
         <PreMatchOddsTable :odds="oddsOpening" />
-      </n-card>
+      </section>
     </template>
 
-    <n-card
-      v-else-if="canRefreshOdds"
-      size="small"
-      title="盘口"
-      style="background: var(--fa-bg-elevated);"
-    >
-      <template #header-extra>
+    <section v-else-if="canRefreshOdds" class="fa-section">
+      <div class="board-head">
+        <h3 class="fa-section-title">盘口</h3>
         <n-button
           size="tiny"
           secondary
@@ -118,9 +106,9 @@ const canRefreshOdds = computed(
         >
           更新盘口
         </n-button>
-      </template>
+      </div>
       <n-empty description="暂无官方盘口，可手动更新本场" />
-    </n-card>
+    </section>
 
     <n-alert
       v-if="canRefreshOdds && officialSyncBusy"
@@ -145,5 +133,17 @@ const canRefreshOdds = computed(
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.board-time {
+  font-size: 12px;
 }
 </style>

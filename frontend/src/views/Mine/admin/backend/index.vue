@@ -165,12 +165,7 @@ onMounted(() => {
 
 <template>
   <MineSectionBody>
-    <n-card
-      size="small"
-      title="后台管理"
-      :bordered="false"
-      :segmented="{ content: true }"
-    >
+    <section class="fa-section">
       <n-list>
         <n-list-item>
           <template #prefix>
@@ -211,7 +206,7 @@ onMounted(() => {
           </template>
         </n-list-item>
       </n-list>
-    </n-card>
+    </section>
 
     <n-modal
       v-model:show="apiKeyModalShow"

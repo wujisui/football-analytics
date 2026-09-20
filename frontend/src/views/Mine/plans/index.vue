@@ -224,18 +224,11 @@ onMounted(() => {
         :y-gap="10"
     >
       <n-gi>
-        <n-card
-            size="small"
-            :bordered="false"
-            class="plans-stat-card"
-            :segmented="{ content: true }"
-        >
-          <template #header>
-            <span class="plans-stat-title">当日统计</span>
-          </template>
-          <template #header-extra>
-            <n-text depth="3" style="font-size: 12px;">{{ formatScheduleDay(filterDate) }}</n-text>
-          </template>
+        <section class="fa-section">
+          <div class="plans-stat-head">
+            <h2 class="fa-section-title">当日统计</h2>
+            <n-text depth="3" class="plans-stat-meta">{{ formatScheduleDay(filterDate) }}</n-text>
+          </div>
           <n-spin :show="scoresLoading">
             <n-grid :cols="3" :x-gap="8" class="plans-stat-grid">
               <n-gi v-for="item in PLAN_STAT_ITEMS" :key="item.key">
@@ -245,21 +238,14 @@ onMounted(() => {
               </n-gi>
             </n-grid>
           </n-spin>
-        </n-card>
+        </section>
       </n-gi>
       <n-gi>
-        <n-card
-            size="small"
-            :bordered="false"
-            class="plans-stat-card"
-            :segmented="{ content: true }"
-        >
-          <template #header>
-            <span class="plans-stat-title">历史统计</span>
-          </template>
-          <template #header-extra>
-            <n-text depth="3" style="font-size: 12px;">全部已存方案</n-text>
-          </template>
+        <section class="fa-section">
+          <div class="plans-stat-head">
+            <h2 class="fa-section-title">历史统计</h2>
+            <n-text depth="3" class="plans-stat-meta">全部已存方案</n-text>
+          </div>
           <n-spin :show="scoresLoading">
             <n-grid :cols="3" :x-gap="8" class="plans-stat-grid">
               <n-gi v-for="item in PLAN_STAT_ITEMS" :key="item.key">
@@ -269,28 +255,19 @@ onMounted(() => {
               </n-gi>
             </n-grid>
           </n-spin>
-        </n-card>
+        </section>
       </n-gi>
     </n-grid>
     <div class="plans-gap">
-      <n-card
-          size="small"
-          class="plans-card"
-          :class="{ 'plans-card--mobile': isPhone }"
-          :bordered="false"
-          content-style="padding:0; flex: 1; min-height: 0; display: flex; flex-direction: column;"
-          :segmented="{ content: true }"
-      >
-        <template #header>
-          <span class="plans-card-title">方案列表</span>
-        </template>
-        <template #header-extra>
+      <section class="fa-section plans-list">
+        <div class="plans-list-head">
+          <h2 class="fa-section-title">方案列表</h2>
           <FavoriteDatesPicker
               v-model="filterDate"
               :marked-days="planDays"
               legend="当天有方案（赛程日）"
           />
-        </template>
+        </div>
         <n-scrollbar class="plans-scroll" trigger="hover">
           <n-empty
               v-if="!dayPlans.length"
@@ -343,7 +320,7 @@ onMounted(() => {
             </n-list-item>
           </n-list>
         </n-scrollbar>
-      </n-card>
+      </section>
     </div>
   </div>
 </template>
@@ -362,24 +339,28 @@ onMounted(() => {
 
 .plans-stats {
   flex-shrink: 0;
-  padding: 0 12px;
+  padding: 0 var(--fa-content-inline);
 }
 
-.plans-stat-card {
-  background: var(--fa-bg-elevated);
-  height: 100%;
+.plans-stat-head,
+.plans-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }
 
-.plans-stat-title {
-  font-size: 14px;
-  font-weight: 600;
+.plans-stat-meta {
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .plans-stat-grid :deep(.n-grid-item) {
   min-width: 0;
 }
 
-.plans-stat-card :deep(.n-statistic-value__content) {
+.plans-stat-grid :deep(.n-statistic-value__content) {
   font-size: 20px;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
@@ -390,45 +371,20 @@ onMounted(() => {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 0 12px;
+  padding: 0 var(--fa-content-inline);
   overflow: hidden;
 }
 
-.plans-card {
-  display: flex;
-  flex-direction: column;
+.plans-list {
   flex: 1;
-  width: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--fa-bg-elevated);
-}
-
-.plans-card :deep(.n-card-header) {
-  flex-shrink: 0;
-}
-
-.plans-card--mobile {
-  margin: 0;
-}
-
-/* 手机端表头与列表项同为 14px 内缩；分隔线由 segmented 画，勿再加 border-bottom。 */
-.plans-card--mobile :deep(.n-card-header) {
-  padding-inline: 14px;
-}
-
-.plans-card-title {
-  font-size: 13px;
-  color: var(--fa-text-secondary);
-  white-space: nowrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--fa-border);
 }
 
 :deep(.n-list.n-list--hoverable .n-list-item) {
-  padding: 12px;
-}
-
-.plans-card--mobile :deep(.n-list.n-list--hoverable .n-list-item) {
-  padding-inline: 14px;
+  padding: 12px 0;
 }
 
 .plans-scroll {
