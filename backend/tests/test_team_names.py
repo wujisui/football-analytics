@@ -92,6 +92,48 @@ def test_prematch_window_ids_match_official_clubs() -> None:
         assert BY_ID[team_id] == zh, f"team {team_id} mistranslated"
 
 
+def test_hot_league_missing_names_match_official_clubs() -> None:
+    """Pin representative ids from the 2026-09-21 hot-league backfill."""
+    expected = {
+        14: "塞尔维亚",
+        185: "帕德博恩",
+        550: "顿涅茨克矿工",
+        946: "纽卡斯尔喷气机",
+        2523: "柔佛新山",
+        2733: "德黑兰独立",
+        2870: "迪拜阿赫利",
+        2872: "瓦斯尔",
+        4217: "涅夫奇",
+        8009: "巴格达空军",
+        16078: "汉堡HEBC",
+    }
+    for team_id, zh in expected.items():
+        assert BY_ID[team_id] == zh, f"team {team_id} mistranslated"
+
+
+def test_spanish_names_use_mainland_transliteration() -> None:
+    """西甲段统一大陆译名，不能混进港台译法。
+
+    533 一度写成「维拉利尔」（港台），而同段的巴列卡诺 / 加的斯 / 巴拉多利德
+    全是大陆标准译名。``audit-team-names`` 查不出这类问题：它比对的是 ``BY_ID``
+    与 ``BY_NAME`` 是否指向同一家俱乐部，两处风格一起写错时不会报冲突。
+    """
+    assert BY_ID[533] == "比利亚雷亚尔"
+    assert team_name_zh("Villarreal") == "比利亚雷亚尔"
+
+
+def test_arabic_club_names_are_transliterated_not_glossed() -> None:
+    """阿拉伯语队名按音译或沿用既有「城市+阿赫利」格式，不做字面意译。
+
+    Al-Wasl 曾被写成「迪拜祈祷」——与原词毫无关系；Shabab Al Ahli 曾按字面拆成
+    「迪拜青年国民」，而库里同源俱乐部用的是 开罗阿赫利 / 吉达阿赫利。
+    """
+    assert BY_ID[2872] == "瓦斯尔"
+    assert BY_ID[2870] == "迪拜阿赫利"
+    assert BY_ID[1577] == "开罗阿赫利"
+    assert BY_ID[2929] == "吉达阿赫利"
+
+
 def test_brazilian_ids_are_not_french_clubs() -> None:
     assert BY_ID[129] == "塞阿拉"
     assert BY_ID[130] == "格雷米奥"

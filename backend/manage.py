@@ -658,6 +658,10 @@ def main() -> None:
         help="Rewrite non-catalog leagues.name to Chinese from the built-in id/name map",
     )
     subparsers.add_parser(
+        "backfill-team-names",
+        help="Rewrite mapped teams.name values to Chinese from the single source",
+    )
+    subparsers.add_parser(
         "backfill-match-days",
         help="Rebuild fixture-local match days from cached official location data",
     )

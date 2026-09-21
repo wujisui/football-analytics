@@ -964,3 +964,28 @@ day_limit = limit_per_day if day_total >= MIN_MATCHES_FOR_FULL_QUOTA else len(da
   允许 0～3 场；不再把诚实空缺当异常。
 - 回归覆盖：负 EV 空池、48% 正 EV 可入池、6 档强共振逆向淘汰、弱冲突降权与
   理由、无价值 AH 降级到正 EV 大小球。后端全量测试 307 条通过。
+
+### 热门联赛未翻译球队补齐
+
+- 范围严格按数据库 `leagues.is_hot=true`，未扩到全部目录联赛。共识别 72 条
+  联赛×球队记录，对应 70 支唯一球队，补入 `team_names.BY_ID`；包括欧国联国家队、
+  亚冠精英俱乐部、欧冠参赛队及英德法杯赛/联赛补遗。
+- 执行 `audit-team-names`：新增映射与既有映射合计 `conflicts=0`；随后回填
+  `teams.name` 70 行。热门联赛当前 565 支唯一球队，数据库未翻译数为 0。
+- 修复 `manage.py` 已有 `run_backfill_team_names` 和 dispatch、但 argparse 未注册
+  `backfill-team-names` 的断线入口。
+- 新增代表性 ID 回归断言；后端全量测试 308 条通过。
+
+### 球队译名订正：4 支
+
+- `533` Villarreal 由港台译法「维拉利尔」改为大陆标准「比利亚雷亚尔」，与同段的
+  巴列卡诺 / 加的斯 / 巴拉多利德 保持一致。`BY_ID` 与 `BY_NAME` 两处同步。
+- 订正上一轮亚冠补录里的字面意译：`2872` Al-Wasl「迪拜祈祷」→「瓦斯尔」（原词
+  与「祈祷」无关）；`2870` Shabab Al Ahli Dubai「迪拜青年国民」→「迪拜阿赫利」，
+  对齐库内既有的 开罗阿赫利 / 吉达阿赫利；`4217` Neftchi「费尔干纳石油工人」→
+  音译「涅夫奇」。
+- 这类错误 `audit-team-names` 查不出：它只校验 `BY_ID` 与 `BY_NAME` 是否指向同一
+  俱乐部，两处风格一起写错时 `conflicts` 仍为 0。故补两条风格回归断言
+  （`test_spanish_names_use_mainland_transliteration`、
+  `test_arabic_club_names_are_transliterated_not_glossed`）。
+- 回填 `teams.name` 4 行；`audit-team-names` conflicts=0；后端全量测试 310 条通过。
