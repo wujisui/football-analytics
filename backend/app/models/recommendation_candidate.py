@@ -51,10 +51,19 @@ class RecommendationCandidateSnapshot(Base):
 
     model_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    raw_model_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Board de-vig probability; always stored, and the ranking source until a
+    # market's model wins its holdout.
+    implied_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Trained-model output, stored even when the model failed its gate so the
+    # calibrator can accumulate evidence instead of self-locking at zero samples.
+    model_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # "market" | "model": which of the two above fed ranking for this candidate.
+    probability_source: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="market", server_default="market"
+    )
+    raw_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
     calibrator_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     calibrated_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
-    implied_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
     decimal_odd: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # JSON object with win / half_win / push / half_loss / loss probabilities.

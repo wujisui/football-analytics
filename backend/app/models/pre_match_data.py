@@ -34,8 +34,10 @@ class PreMatchData(Base):
     # fixture and never carries a star rating.
     reference_market: Mapped[str | None] = mapped_column(String(16), nullable=True)
     reference_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 含庄家抽水，仅供审计展示，不参与排序。
     reference_ev: Mapped[float | None] = mapped_column(Float, nullable=True)
-    reference_adjusted_ev: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # "market" | "model"：这条参考的概率来自盘口去水还是已过门禁的模型。
+    reference_source: Mapped[str | None] = mapped_column(String(8), nullable=True)
     reference_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
     reference_alignment: Mapped[str | None] = mapped_column(String(24), nullable=True)
     reference_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)

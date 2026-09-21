@@ -286,7 +286,11 @@ def model_paths() -> tuple[Path, Path]:
     return GOAL_MODEL_DIR / GOAL_WEIGHTS_NAME, GOAL_MODEL_DIR / GOAL_META_NAME
 
 
-def load_model() -> tuple[_PoissonGoalModel | None, dict[str, Any]]:
+def load_model(
+    *,
+    ignore_deployable: bool = False,
+) -> tuple[_PoissonGoalModel | None, dict[str, Any]]:
+    """Load the goal artifact; ``ignore_deployable`` is for shadow scoring only."""
     weights_path, meta_path = model_paths()
     if not weights_path.exists() or not meta_path.exists():
         return None, {}
@@ -294,7 +298,7 @@ def load_model() -> tuple[_PoissonGoalModel | None, dict[str, Any]]:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         if meta.get("feature_version") != GOAL_FEATURE_VERSION:
             return None, meta
-        if not meta.get("deployable", False):
+        if not ignore_deployable and not meta.get("deployable", False):
             return None, meta
         return _PoissonGoalModel.load(weights_path), meta
     except Exception as exc:
@@ -305,10 +309,17 @@ def load_model() -> tuple[_PoissonGoalModel | None, dict[str, Any]]:
 def predict_goals(
     base_features: dict[str, float] | None,
     odds: dict[str, Any] | None,
+    *,
+    ignore_deployable: bool = False,
 ) -> GoalPrediction | None:
+    """Goal distribution; ``ignore_deployable`` yields the shadow prediction.
+
+    ``deploy_ou`` / ``deploy_btts`` stay as the artifact recorded them, so callers
+    can tell a validated target from one that is only being logged for training.
+    """
     if not base_features or float(base_features.get("has_odds", 0.0)) <= 0:
         return None
-    model, meta = load_model()
+    model, meta = load_model(ignore_deployable=ignore_deployable)
     if model is None:
         return None
     features = extract_goal_features(base_features, odds)

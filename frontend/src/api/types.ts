@@ -267,8 +267,10 @@ export interface FixtureResponse {
   /** 所有比赛都有的统一参考；星级仅属于日推。 */
   reference_market?: '1x2' | 'ah' | 'ou' | 'btts' | string | null
   reference_lean?: string | null
+  /** 含庄家抽水的结算口径 EV，仅供审计，不参与排序。 */
   reference_ev?: number | null
-  reference_adjusted_ev?: number | null
+  /** market=盘口去水，model=已通过时间留出验证的模型。 */
+  reference_source?: 'market' | 'model' | string | null
   reference_probability?: number | null
   reference_alignment?: string | null
   reference_reason?: string | null

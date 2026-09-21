@@ -132,7 +132,7 @@ function goDetail() {
       :score-hint="prediction.score_hint"
       :reference-lean="fixture.reference_lean"
       :reference-ev="fixture.reference_ev"
-      :reference-adjusted-ev="fixture.reference_adjusted_ev"
+      :reference-source="fixture.reference_source"
       :reference-probability="fixture.reference_probability"
       :reference-alignment="fixture.reference_alignment"
       :reference-reason="fixture.reference_reason"

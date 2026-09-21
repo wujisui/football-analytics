@@ -14,7 +14,7 @@ const props = withDefaults(
     scoreHint?: string
     referenceLean?: string | null
     referenceEv?: number | null
-    referenceAdjustedEv?: number | null
+    referenceSource?: string | null
     referenceProbability?: number | null
     referenceAlignment?: string | null
     referenceReason?: string | null
@@ -35,7 +35,7 @@ const props = withDefaults(
     scoreHint: '',
     referenceLean: null,
     referenceEv: null,
-    referenceAdjustedEv: null,
+    referenceSource: null,
     referenceProbability: null,
     referenceAlignment: null,
     referenceReason: null,
@@ -174,7 +174,7 @@ function open() {
       :value="qualityRating"
       :reference-lean="referenceLean"
       :reference-ev="referenceEv"
-      :reference-adjusted-ev="referenceAdjustedEv"
+      :reference-source="referenceSource"
       :reference-probability="referenceProbability"
       :reference-alignment="referenceAlignment"
       :reference-reason="referenceReason"

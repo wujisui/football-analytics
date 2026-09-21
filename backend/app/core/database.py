@@ -186,7 +186,7 @@ async def _ensure_sqlite_columns(conn) -> None:
             "reference_market": "TEXT",
             "reference_lean": "TEXT",
             "reference_ev": "REAL",
-            "reference_adjusted_ev": "REAL",
+            "reference_source": "TEXT",
             "reference_probability": "REAL",
             "reference_alignment": "TEXT",
             "reference_reason": "TEXT",
@@ -297,6 +297,16 @@ async def _ensure_sqlite_columns(conn) -> None:
             "model_version": "TEXT",
             "calibrator_version": "TEXT",
             "direction_alignment": "TEXT",
+            "probability_source": "TEXT",
+        },
+    )
+    await _ensure_table_columns(
+        conn,
+        "recommendation_candidate_snapshots",
+        {
+            "model_probability": "REAL",
+            "probability_source": "TEXT DEFAULT 'market'",
+            "raw_probability": "REAL",
         },
     )
     await _ensure_table_columns(
@@ -316,9 +326,15 @@ async def _ensure_sqlite_columns(conn) -> None:
     await conn.execute(
         text("UPDATE bet_plans SET user_id = '' WHERE user_id IS NULL")
     )
-    # quality_low 已被 1–5 星调整后 EV 强度的 quality_rating 取代。
+    # quality_low 已被 1–5 星校准命中概率强度的 quality_rating 取代。
     await _drop_table_columns(conn, "favorite_fixtures", ("quality_low",))
     await _drop_table_columns(conn, "auto_pick_snapshots", ("quality_low",))
+    # raw_model_probability 拆成了 implied_probability / model_probability 两列。
+    await _drop_table_columns(
+        conn, "recommendation_candidate_snapshots", ("raw_model_probability",)
+    )
+    # 参考排序改回校准命中概率，方向修正后的 EV 不再是展示口径。
+    await _drop_table_columns(conn, "pre_match_data", ("reference_adjusted_ev",))
     await _drop_table_columns(conn, "match_features", ("audit_snapshot_json",))
     await _migrate_favorite_fixtures_owner_pk(conn)
 

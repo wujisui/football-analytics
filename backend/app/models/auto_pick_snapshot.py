@@ -33,21 +33,24 @@ class AutoPickSnapshot(Base):
     # 与 lean 同源的自洽展示，冻结用于审计（分析器那套另存 pre_match_data）。
     handicap_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
     score_hint: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Probability before the validated per-market calibration layer.
+    # Probability before the per-key calibration layer.
     raw_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Probability after calibration, equivalent-event convergence and market-risk shrink.
+    # Probability after calibration; this is what ranking and stars read.
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     decimal_odd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # EV is audit-only: board probabilities make it structurally negative.
     expected_return: Mapped[float | None] = mapped_column(Float, nullable=True)
     adjusted_ev: Mapped[float | None] = mapped_column(Float, nullable=True)
     implied_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # "market" | "model": which estimator ranked this pick.
+    probability_source: Mapped[str | None] = mapped_column(String(8), nullable=True)
     model_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     calibrator_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     direction_alignment: Mapped[str | None] = mapped_column(String(24), nullable=True)
-    # Final ranking score is the adjusted EV.
+    # Calibrated hit probability minus the market-direction penalty.
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # 1–5 星 absolute strength band mapped from adjusted EV.
+    # 1–5 星 absolute band mapped from the ranking score.
     quality_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     picked_at: Mapped[datetime] = mapped_column(
         DateTime,

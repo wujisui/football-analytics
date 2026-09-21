@@ -226,6 +226,28 @@ def _has_market_odds(features: dict[str, float]) -> bool:
     return float(features.get("has_odds", 0.0)) > 0
 
 
+def shadow_probabilities(features: dict[str, float] | None) -> dict[str, float] | None:
+    """Trained-model output regardless of the deployability gate.
+
+    Recommendation never ranks on this value while ``deployable`` is false; it is
+    frozen next to the market probability so the calibrator has samples to learn
+    from.  Without it the feedback loop self-locks: no deployable model means no
+    stored probability, and no stored probability means the model can never be
+    validated.
+    """
+    if not features or not _has_market_odds(features):
+        return None
+    model, meta = load_trained_model()
+    if model is None or int(meta.get("n_samples", 0)) < min_train_samples():
+        return None
+    proba = model.predict_proba(
+        np.asarray([feature_vector(features)], dtype=np.float64)
+    )[0]
+    return normalize_probabilities(
+        {"home": float(proba[0]), "draw": float(proba[1]), "away": float(proba[2])}
+    )
+
+
 def predict_probabilities(package: dict[str, Any] | None) -> ProbabilityPrediction:
     """Primary inference: deployable ML → market baseline → multifactor."""
     features = extract_features(package)

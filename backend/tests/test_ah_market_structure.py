@@ -1,6 +1,8 @@
 from app.services.ah_market_structure import (
     FALLBACK_WATER_DEADZONE,
     classify_ah_board,
+    outright_win_settles,
+    side_speaks_for_result,
     thresholds_from_quotes,
 )
 from app.services.ah_predictor import handicap_bundle_from_markets
@@ -95,8 +97,9 @@ def test_deep_board_is_not_a_1x2_direction() -> None:
     odds = _odds("-1.5", 2.00, 1.80)
     odds["match_winner"] = {"home": 1.22, "draw": 6.80, "away": 13.0}
     stance = classify_ah_board(odds)
-    assert stance is not None and stance.directional and stance.is_deep
+    assert stance is not None and stance.directional
     assert stance.result_choice == "away"
+    assert side_speaks_for_result(stance.line, "away") is False
     assert get_recommendation({"home": 0.78, "draw": 0.13, "away": 0.09}, odds=odds) == (
         "主胜"
     )
@@ -111,6 +114,30 @@ def test_deep_board_handicap_takes_the_giving_side() -> None:
 
     shallow = _odds("-0.5", 2.08, 1.85)
     assert handicap_bundle_from_markets(shallow, "客胜")[0] == "客+0.5"
+
+
+def test_one_depth_rule_serves_both_the_bet_and_the_companion_row() -> None:
+    """两条问句、一个 ``DEEP_AH_LINE``，不许调用方各自手抄阈值。
+
+    ``side_speaks_for_result`` 回答「这一侧能不能当成胜负方向卖出去」，
+    ``outright_win_settles`` 回答「赢球能不能保证这一侧不输」。两者对让球方 / 受让方
+    恰好相反，早先被拍成同一个 ``abs(line) > 1`` 判断，于是 主+2 明明赢球必赢盘却被
+    当作讲不圆藏掉，客+2 反而被当成客胜卖了出去。
+    """
+    # 主队让 2 球：卖出去的只能是让球方，而能并排展示的只有受让方。
+    assert side_speaks_for_result(-2.0, "home") is True
+    assert side_speaks_for_result(-2.0, "away") is False
+    assert outright_win_settles(-2.0, "home") is False
+    assert outright_win_settles(-2.0, "away") is True
+
+    # 一球盘：赢一球走水，仍算不输；再深半球就不成立。
+    assert outright_win_settles(-1.0, "home") is True
+    assert outright_win_settles(-1.25, "home") is False
+
+    # 浅盘两侧都讲得圆，规则不变。
+    for line in (-0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75):
+        assert side_speaks_for_result(line, "home") is True
+        assert side_speaks_for_result(line, "away") is True
 
 
 def test_reference_score_never_contradicts_the_handicap_row() -> None:

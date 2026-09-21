@@ -321,7 +321,7 @@ def _reference_fields(stored: PreMatchData | None) -> dict[str, Any]:
         "reference_market": stored.reference_market,
         "reference_lean": stored.reference_lean,
         "reference_ev": stored.reference_ev,
-        "reference_adjusted_ev": stored.reference_adjusted_ev,
+        "reference_source": stored.reference_source,
         "reference_probability": stored.reference_probability,
         "reference_alignment": stored.reference_alignment,
         "reference_reason": stored.reference_reason,

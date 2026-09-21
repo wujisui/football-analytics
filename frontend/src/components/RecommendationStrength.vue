@@ -10,13 +10,13 @@ const props = defineProps<{
   /** 非日推场次在同一位置展示的每场参考。 */
   referenceLean?: string | null
   referenceEv?: number | null
-  referenceAdjustedEv?: number | null
+  referenceSource?: string | null
   referenceProbability?: number | null
   referenceAlignment?: string | null
   referenceReason?: string | null
 }>()
 
-/** 后端在四个玩法都拿不到方向时写入的占位，见 decision.select_reference_candidate。 */
+/** 后端在四个玩法都拿不到方向时写入的占位，见 decision.build_match_decision。 */
 const REFERENCE_UNAVAILABLE = '数据不足'
 
 const ALIGNMENT_LABELS: Record<string, string> = {
@@ -27,6 +27,11 @@ const ALIGNMENT_LABELS: Record<string, string> = {
   reverse_strong: '逆向推荐（强）',
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  market: '概率来源：盘口去水（市场基线，未跑赢市场的模型不参与）',
+  model: '概率来源：已通过时间留出验证的模型',
+}
+
 function percent(value: number): string {
   return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`
 }
@@ -34,14 +39,14 @@ function percent(value: number): string {
 const isPhone = useIsPhone()
 const rating = computed(() => normalizeQualityRating(props.value))
 
-/** 槽位很窄：只给方向与调整后 EV，其余明细留给 tooltip。 */
+/** 槽位很窄：只给方向与命中概率，其余明细留给 tooltip。 */
 const label = computed(() => {
   if (rating.value != null) return ''
   const lean = (props.referenceLean || '').trim()
   if (!lean) return ''
   if (lean === REFERENCE_UNAVAILABLE) return '参考数据不足'
-  if (props.referenceAdjustedEv == null) return `参考 ${lean} · EV 待定`
-  return `参考 ${lean} ${percent(props.referenceAdjustedEv)}`
+  if (props.referenceProbability == null) return `参考 ${lean}`
+  return `参考 ${lean} ${(props.referenceProbability * 100).toFixed(1)}%`
 })
 
 const detail = computed(() => {
@@ -49,13 +54,13 @@ const detail = computed(() => {
   const lean = (props.referenceLean || '').trim()
   if (lean && lean !== REFERENCE_UNAVAILABLE) parts.push(`参考方向：${lean}`)
   if (props.referenceProbability != null) {
-    parts.push(`校准概率：${(props.referenceProbability * 100).toFixed(1)}%`)
+    parts.push(`命中概率：${(props.referenceProbability * 100).toFixed(1)}%`)
   }
-  parts.push(
-    props.referenceEv == null ? 'EV：数据不足' : `EV：${percent(props.referenceEv)}`,
-  )
-  if (props.referenceAdjustedEv != null) {
-    parts.push(`方向修正后：${percent(props.referenceAdjustedEv)}`)
+  const source = SOURCE_LABELS[props.referenceSource || '']
+  if (source) parts.push(source)
+  if (props.referenceEv != null) {
+    // 概率来自所投的那块盘时，EV 恒为负，负的幅度就是庄家抽水。
+    parts.push(`EV：${percent(props.referenceEv)}（含抽水，仅供审计）`)
   }
   const alignment = ALIGNMENT_LABELS[props.referenceAlignment || '']
   if (alignment) parts.push(alignment)

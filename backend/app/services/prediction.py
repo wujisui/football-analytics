@@ -1280,6 +1280,81 @@ def score_hint_for_lean(
     return "比分:" + "/".join(f"{home}-{away}" for home, away in kept)
 
 
+def score_hint_for_consistent_bundle(
+    result_lean: str,
+    handicap_lean: str | None,
+    probs: dict[str, float],
+    *,
+    goal_lean: str | None,
+    both_score_lean: str | None,
+) -> str | None:
+    """Build a score that agrees with the displayed result and handicap side.
+
+    Daily recommendations replace the analyzer's direction, so reusing its old
+    score can produce bundles such as ``客胜 · 主+0.25 · 0-1``.  Generate the
+    score again for the selected result, then require every displayed score to
+    keep the selected Asian side out of a losing settlement.  If the O/U and
+    handicap constraints cannot coexist, return ``None`` so the recommendation
+    pipeline can fall back to the next market instead of publishing a
+    contradictory three-piece bundle.
+    """
+    score_hint = score_hint_for_lean(
+        result_lean,
+        probs,
+        goal_lean=goal_lean,
+        both_score_lean=both_score_lean,
+        allow_missing_goal=True,
+    )
+    if not score_hint:
+        return None
+    scores = _parse_score_hint(score_hint)
+    if not scores:
+        return None
+
+    handicap = (handicap_lean or "").strip()
+    if not handicap:
+        return score_hint
+
+    parsed_ou = _parse_goal_lean(goal_lean or "")
+    if parsed_ou is None:
+        btts_yes = "是" in (both_score_lean or "")
+        ou_side, ou_line = ("over", 2.5) if btts_yes else ("under", 2.5)
+    else:
+        ou_side, ou_line = parsed_ou
+    scores = _align_score_with_handicap(
+        scores,
+        handicap_lean=handicap,
+        ou_line=ou_line,
+        ou_side=ou_side,
+    )
+
+    from app.services.ah_features import (
+        ASIAN_HALF_WIN,
+        ASIAN_PUSH,
+        ASIAN_WIN,
+        handicap_line_from_lean,
+        handicap_picks_from_lean,
+        settle_handicap_pick,
+    )
+
+    line = handicap_line_from_lean(handicap)
+    picks = handicap_picks_from_lean(handicap)
+    outcomes = recommendation_outcomes(result_lean)
+    non_losing = {ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH}
+    if line is None or not picks or not outcomes:
+        return None
+    if any(
+        not _score_matches_outcomes(home, away, outcomes)
+        or any(
+            settle_handicap_pick(home, away, line, pick) not in non_losing
+            for pick in picks
+        )
+        for home, away in scores
+    ):
+        return None
+    return "比分:" + "/".join(f"{home}-{away}" for home, away in scores)
+
+
 def _clamp(n: float, lo: float, hi: float) -> float:
     return min(hi, max(lo, n))
 

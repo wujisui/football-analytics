@@ -1,4 +1,10 @@
-"""Unified recommendation pipeline: model → Platt → EV → reference → Top 4."""
+"""Unified recommendation pipeline: 概率 → Platt → 每场参考 → 分层 Top 4.
+
+Ranking is the calibrated hit probability of a single reference per match, taken
+layer by layer (AH → 大小球 → 双进 → 无盘独赢).  EV rides along for auditing only:
+while probabilities come from the board being bet, ``EV = 1/超额 − 1`` is negative
+by construction, so gating on it empties the pool instead of finding value.
+"""
 
 from __future__ import annotations
 
@@ -23,13 +29,20 @@ from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
 from app.models.recommendation_candidate import RecommendationCandidateSnapshot
 from app.services.auto_favorites import AUTO_PICK_LIMIT
+from app.services.ah_features import format_handicap_lean_text
+from app.services.ah_market_structure import outright_win_settles
 from app.services.match_day import fixture_match_day
 from app.services.prematch_package import package_from_record, rehydrate_odds_markets
+from app.services.prediction import score_hint_for_consistent_bundle
 from app.services.probability_calibration import (
     load_calibration_artifact,
     train_from_frozen_history,
 )
 from app.services.recommendation.decision import (
+    MARKET_1X2,
+    MARKET_AH,
+    MARKET_BTTS,
+    MARKET_OU,
     MatchDecision,
     RecommendationCandidate,
     build_match_decision,
@@ -39,6 +52,17 @@ from app.services.results_capture import prematch_list_clause
 from app.services.user_scope import ANON_OWNER_ID
 
 logger = logging.getLogger(__name__)
+
+# 亚洲让球 → 大小球 → 双进 → 无有效 AH 盘的独赢。A lower layer never outranks a
+# higher one on score; it only fills the seats the higher layer could not.
+MARKET_FALLBACK_TIER = {
+    MARKET_AH: 0,
+    MARKET_OU: 1,
+    MARKET_BTTS: 2,
+    MARKET_1X2: 3,
+}
+# 池子小于这个数时给不满 4 场属正常，不告警。
+MIN_MATCHES_FOR_FULL_QUOTA = 6
 
 
 @dataclass(frozen=True)
@@ -55,6 +79,7 @@ class MatchPipelineInput:
     goal_lean: str | None = None
     both_score_lean: str | None = None
     home_win_prob: float | None = None
+    draw_prob: float | None = None
     away_win_prob: float | None = None
 
 
@@ -67,12 +92,14 @@ class DailyRecommendationPick:
     market: str
     lean: str
     recommended_choice: str
-    ev: float
     confidence: float
     reason: str
     decimal_odd: float
     raw_confidence: float
+    # 校准命中概率减方向惩罚；赔率不参与。
     score: float
+    probability_source: str = "market"
+    ev: float | None = None
     market_lean: str | None = None
     handicap_lean: str | None = None
     score_hint: str | None = None
@@ -84,10 +111,14 @@ class DailyRecommendationPick:
     direction_strength: str = "none"
     direction_alignment: str = "unknown"
     direction_penalty: float = 0.01
-    adjusted_ev: float = 0.0
+    adjusted_ev: float | None = None
     is_consistent: bool = True
     conflict_reason: str = "统一决策链路"
     conflict_detail: str = ""
+
+    @property
+    def tier(self) -> int:
+        return MARKET_FALLBACK_TIER.get(self.market, len(MARKET_FALLBACK_TIER))
 
 
 def _companion_lean(match: MatchPipelineInput) -> str:
@@ -103,6 +134,78 @@ def _companion_lean(match: MatchPipelineInput) -> str:
     )
 
 
+def _result_lean_for_candidate(
+    match: MatchPipelineInput,
+    candidate: RecommendationCandidate,
+) -> str:
+    """胜负方向恒等于所投的那一侧；深盘受让侧在决策层就已不可入选。"""
+    if candidate.market in {MARKET_AH, MARKET_1X2}:
+        return "主胜" if candidate.direction == "home" else "客胜"
+    return _companion_lean(match)
+
+
+def _display_handicap_for_candidate(
+    decision: MatchDecision,
+    candidate: RecommendationCandidate,
+    result_lean: str,
+) -> str | None:
+    """Return the handicap row that the selected result can honestly support.
+
+    An AH pick displays its actual betting side.  For every other market the row
+    is only a companion to the win direction, so it is shown when that outright
+    win keeps the same side from losing the board (``outright_win_settles``) and
+    hidden otherwise, instead of fabricating a contradictory bundle.
+    """
+    if candidate.market == MARKET_AH:
+        return candidate.lean
+    ah_candidates = [
+        item
+        for item in decision.candidates
+        if item.market == MARKET_AH and item.line is not None
+    ]
+    if not ah_candidates:
+        return None
+    line = float(ah_candidates[0].line)
+    side = "home" if result_lean == "主胜" else "away"
+    if not outright_win_settles(line, side):
+        return None
+    pick = "让胜" if side == "home" else "让负"
+    return format_handicap_lean_text(pick, line)
+
+
+def _consistent_bundle(
+    match: MatchPipelineInput,
+    decision: MatchDecision,
+    candidate: RecommendationCandidate,
+) -> tuple[str, str | None, str] | None:
+    """Build result / handicap / score from the same selected direction."""
+    result_lean = _result_lean_for_candidate(match, candidate)
+    handicap_lean = _display_handicap_for_candidate(
+        decision, candidate, result_lean
+    )
+    goal_lean = candidate.lean if candidate.market == MARKET_OU else match.goal_lean
+    both_score_lean = (
+        candidate.lean if candidate.market == MARKET_BTTS else match.both_score_lean
+    )
+    home = float(match.home_win_prob or 0.0)
+    away = float(match.away_win_prob or 0.0)
+    draw = (
+        float(match.draw_prob)
+        if match.draw_prob is not None
+        else max(0.0, 1.0 - home - away)
+    )
+    score_hint = score_hint_for_consistent_bundle(
+        result_lean,
+        handicap_lean,
+        {"home": home, "draw": draw, "away": away},
+        goal_lean=goal_lean,
+        both_score_lean=both_score_lean,
+    )
+    if score_hint is None:
+        return None
+    return result_lean, handicap_lean, score_hint
+
+
 def _reason(candidate: RecommendationCandidate) -> str:
     relation = {
         "aligned_strong": "强一致",
@@ -111,29 +214,29 @@ def _reason(candidate: RecommendationCandidate) -> str:
         "reverse_weak": "逆向推荐（弱）",
         "reverse_strong": "逆向推荐（强）",
     }.get(candidate.direction_alignment, candidate.direction_alignment)
+    source = "盘口去水" if candidate.probability_source == "market" else "模型"
+    probability = (
+        f"{candidate.calibrated_probability:.1%}"
+        if candidate.calibrated_probability is not None
+        else "不可用"
+    )
     ev = (
         f"{candidate.expected_return:+.2%}"
         if candidate.expected_return is not None
         else "不可计算"
     )
-    adjusted = (
-        f"{candidate.adjusted_ev:+.2%}"
-        if candidate.adjusted_ev is not None
-        else "不可计算"
-    )
     return (
-        f"玩法：{candidate.market}；模型与盘口：{relation}；"
-        f"EV：{ev}；方向修正后：{adjusted}"
+        f"玩法：{candidate.market}；概率来源：{source}；命中概率：{probability}；"
+        f"与盘口方向：{relation}；EV：{ev}（含庄家抽水，仅供审计）"
     )
 
 
 def _skip_reason_text(candidate: RecommendationCandidate) -> str:
     reason = {
-        "model_not_deployable": "该玩法模型尚未通过时间留出验证，方向仅供参考，EV 暂不可算",
-        "calibrator_unavailable": "该玩法尚无通过验证的 Platt 校准器，EV 暂不可算",
-        "odds_missing": "缺少可结算赔率，EV 暂不可算",
-        "settlement_distribution_unavailable": "缺少真实盘口结算分布，EV 暂不可算",
-        "odds_and_model_unavailable": "模型与盘口数据均不足，暂不能给出可靠 EV",
+        "probability_unavailable": "这块盘没有可用报价，算不出命中概率",
+        "odds_missing": "缺少可结算赔率，只能给方向",
+        "deep_board_receiving_side": "深盘受让侧赢在「输一球以内」，卡片的胜负方向讲不圆，不推这一侧",
+        "odds_and_model_unavailable": "盘口与模型数据均不足，暂时给不出方向",
     }.get(candidate.skip_reason or "")
     return reason or _reason(candidate)
 
@@ -142,18 +245,52 @@ def _to_pick(
     match: MatchPipelineInput,
     decision: MatchDecision,
 ) -> DailyRecommendationPick | None:
-    candidate = decision.reference
-    if (
-        candidate.expected_return is None
-        or candidate.adjusted_ev is None
-        or candidate.calibrated_probability is None
-        or candidate.decimal_odd is None
-        or candidate.raw_model_probability is None
-    ):
-        return None
-    result_lean = (
-        candidate.lean if candidate.market == "1x2" else _companion_lean(match)
+    """Turn a match reference into a daily candidate, or drop it.
+
+    Drops are only for missing numbers, a sub-floor probability, or a direction
+    that fights a strongly-moved board — never for negative EV.
+    """
+    has_ah = any(
+        item.market == MARKET_AH
+        and item.line is not None
+        and item.decimal_odd is not None
+        for item in decision.candidates
     )
+    allowed_markets = (
+        {MARKET_AH, MARKET_OU, MARKET_BTTS}
+        if has_ah
+        else {MARKET_1X2, MARKET_OU, MARKET_BTTS}
+    )
+    local_order = (
+        {MARKET_AH: 0, MARKET_OU: 1, MARKET_BTTS: 2}
+        if has_ah
+        else {MARKET_1X2: 0, MARKET_OU: 1, MARKET_BTTS: 2}
+    )
+    candidates = sorted(
+        (
+            item
+            for item in decision.candidates
+            if item.market in allowed_markets and item.eligible_for_daily_pick()
+        ),
+        key=lambda item: (
+            local_order.get(item.market, 99),
+            -float(item.ranking_score or 0.0),
+        ),
+    )
+    selected: tuple[
+        RecommendationCandidate, tuple[str, str | None, str]
+    ] | None = None
+    for candidate in candidates:
+        bundle = _consistent_bundle(match, decision, candidate)
+        if bundle is not None:
+            selected = candidate, bundle
+            break
+    if selected is None:
+        return None
+    candidate, (result_lean, handicap_lean, score_hint) = selected
+    score = candidate.ranking_score
+    if score is None or candidate.raw_probability is None:
+        return None
     return DailyRecommendationPick(
         fixture_id=match.fixture_id,
         league_id=match.league_id,
@@ -166,13 +303,12 @@ def _to_pick(
         confidence=candidate.calibrated_probability,
         reason=_reason(candidate),
         decimal_odd=candidate.decimal_odd,
-        raw_confidence=candidate.raw_model_probability,
-        score=candidate.adjusted_ev,
+        raw_confidence=candidate.raw_probability,
+        score=score,
+        probability_source=candidate.probability_source,
         market_lean=candidate.lean,
-        handicap_lean=(
-            candidate.lean if candidate.market == "ah" else match.handicap_lean
-        ),
-        score_hint=match.score_hint,
+        handicap_lean=handicap_lean,
+        score_hint=score_hint,
         implied_probability=candidate.implied_probability,
         model_source=candidate.model_source,
         model_version=candidate.model_version,
@@ -195,7 +331,12 @@ def select_daily_picks_by_match_day(
     limit_per_day: int = AUTO_PICK_LIMIT,
     skip_fixture_ids: set[int] | None = None,
 ) -> list[DailyRecommendationPick]:
-    """Take each venue-local day's highest adjusted-EV fixtures."""
+    """Take each venue-local day's picks, layer by layer.
+
+    Sorting by tier first is what makes 大小球 a *fallback*: it only reaches the
+    board when 亚洲让球 ran out of qualifying matches, never because its number
+    happened to look bigger.
+    """
     skip = skip_fixture_ids or set()
     by_day: dict[str, list[DailyRecommendationPick]] = {}
     for pick in picks:
@@ -206,8 +347,8 @@ def select_daily_picks_by_match_day(
         ranked = sorted(
             by_day[match_day],
             key=lambda pick: (
-                -float(pick.adjusted_ev),
-                -float(pick.confidence),
+                pick.tier,
+                -float(pick.score),
                 pick.kickoff,
                 pick.fixture_id,
             ),
@@ -226,10 +367,12 @@ def _candidate_payload(candidate: RecommendationCandidate, reference: bool) -> d
         "line": candidate.line,
         "model_source": candidate.model_source,
         "model_version": candidate.model_version,
-        "raw_model_probability": candidate.raw_model_probability,
+        "implied_probability": candidate.implied_probability,
+        "model_probability": candidate.model_probability,
+        "probability_source": candidate.probability_source,
+        "raw_probability": candidate.raw_probability,
         "calibrator_version": candidate.calibrator_version,
         "calibrated_probability": candidate.calibrated_probability,
-        "implied_probability": candidate.implied_probability,
         "decimal_odd": candidate.decimal_odd,
         "expected_return": candidate.expected_return,
         "market_direction": candidate.market_direction,
@@ -249,7 +392,7 @@ def run_pipeline(
     limit_per_day: int = AUTO_PICK_LIMIT,
     skip_fixture_ids: set[int] | None = None,
 ) -> dict[str, Any]:
-    """Build every reference, then rank only EV-computable references."""
+    """Build every reference, then fill each day's four seats layer by layer."""
     calibration = (
         market_artifact
         if market_artifact is not None
@@ -280,15 +423,19 @@ def run_pipeline(
         skip_fixture_ids=skip_fixture_ids,
     )
     selected_ids = {pick.fixture_id for pick in selected}
-    ratings = {
-        pick.fixture_id: star_rating(pick.adjusted_ev)
-        for pick in selected
-    }
+    ratings = {pick.fixture_id: star_rating(pick.score) for pick in selected}
     matches_by_day: dict[str, int] = {}
     eligible_by_day: dict[str, int] = {}
     selected_by_day: dict[str, int] = {}
-    for match in matches:
-        matches_by_day[match.match_day] = matches_by_day.get(match.match_day, 0) + 1
+    # 只有已开出盘口的场次才算进池子：未来日期通常整天没有报价，按「选不满」
+    # 报警等于每轮刷一屏噪声。
+    for decision in decisions:
+        if any(
+            candidate.decimal_odd is not None for candidate in decision.candidates
+        ):
+            matches_by_day[decision.match_day] = (
+                matches_by_day.get(decision.match_day, 0) + 1
+            )
     for pick in eligible:
         eligible_by_day[pick.match_day] = eligible_by_day.get(pick.match_day, 0) + 1
     for pick in selected:
@@ -296,7 +443,8 @@ def run_pipeline(
     alerts: list[dict[str, Any]] = []
     for match_day, pool in matches_by_day.items():
         selected_count = selected_by_day.get(match_day, 0)
-        if selected_count < limit_per_day:
+        # A thin day short of the quota is normal, not a defect worth alerting.
+        if selected_count < limit_per_day and pool >= MIN_MATCHES_FOR_FULL_QUOTA:
             alerts.append(
                 {
                     "code": "daily_pick_shortfall",
@@ -304,12 +452,12 @@ def run_pipeline(
                     "selected": selected_count,
                     "expected": limit_per_day,
                     "matches": pool,
-                    "ev_computable": eligible_by_day.get(match_day, 0),
+                    "eligible": eligible_by_day.get(match_day, 0),
                 }
             )
             logger.warning(
                 "Daily Top-4 incomplete match_day=%s selected=%s expected=%s "
-                "matches=%s ev_computable=%s",
+                "matches=%s eligible=%s",
                 match_day,
                 selected_count,
                 limit_per_day,
@@ -337,10 +485,14 @@ def run_pipeline(
                 "result_lean": pick.lean,
                 "handicap_lean": pick.handicap_lean,
                 "recommended_choice": pick.recommended_choice,
-                "ev": round(pick.ev, 4),
-                "adjusted_ev": round(pick.adjusted_ev, 4),
+                "ev": round(pick.ev, 4) if pick.ev is not None else None,
+                "adjusted_ev": (
+                    round(pick.adjusted_ev, 4) if pick.adjusted_ev is not None else None
+                ),
                 "confidence": round(pick.confidence, 4),
-                "raw_model_probability": round(pick.raw_confidence, 4),
+                "score": round(pick.score, 4),
+                "probability_source": pick.probability_source,
+                "raw_probability": round(pick.raw_confidence, 4),
                 "implied_probability": (
                     round(pick.implied_probability, 4)
                     if pick.implied_probability is not None
@@ -405,6 +557,7 @@ def match_input_from_fixture_row(
         goal_lean=stored.goal_lean if stored is not None else None,
         both_score_lean=stored.both_score_lean if stored is not None else None,
         home_win_prob=stored.home_win_prob if stored is not None else None,
+        draw_prob=stored.draw_prob if stored is not None else None,
         away_win_prob=stored.away_win_prob if stored is not None else None,
     )
 
@@ -444,10 +597,14 @@ async def _persist_candidates_and_references(
     *,
     matches: list[MatchPipelineInput],
     decisions: list[MatchDecision],
-    selected_ids: set[int],
+    selected: list[DailyRecommendationPick],
     captured_at: datetime,
 ) -> None:
     prematch_ids = {match.fixture_id for match in matches}
+    selected_keys = {
+        (pick.fixture_id, pick.market, pick.recommended_choice)
+        for pick in selected
+    }
     if prematch_ids:
         await db.execute(
             delete(RecommendationCandidateSnapshot).where(
@@ -472,7 +629,7 @@ async def _persist_candidates_and_references(
         stored.reference_market = reference.market
         stored.reference_lean = reference.lean
         stored.reference_ev = reference.expected_return
-        stored.reference_adjusted_ev = reference.adjusted_ev
+        stored.reference_source = reference.probability_source
         stored.reference_probability = reference.calibrated_probability
         stored.reference_alignment = reference.direction_alignment
         stored.reference_reason = _skip_reason_text(reference)
@@ -491,10 +648,12 @@ async def _persist_candidates_and_references(
                     line=candidate.line,
                     model_source=candidate.model_source,
                     model_version=candidate.model_version,
-                    raw_model_probability=candidate.raw_model_probability,
+                    implied_probability=candidate.implied_probability,
+                    model_probability=candidate.model_probability,
+                    probability_source=candidate.probability_source,
+                    raw_probability=candidate.raw_probability,
                     calibrator_version=candidate.calibrator_version,
                     calibrated_probability=candidate.calibrated_probability,
-                    implied_probability=candidate.implied_probability,
                     decimal_odd=candidate.decimal_odd,
                     settlement_distribution_json=candidate.settlement_json(),
                     expected_return=candidate.expected_return,
@@ -505,7 +664,12 @@ async def _persist_candidates_and_references(
                     adjusted_ev=candidate.adjusted_ev,
                     chosen_as_reference=is_reference,
                     chosen_as_daily_pick=(
-                        is_reference and candidate.fixture_id in selected_ids
+                        (
+                            candidate.fixture_id,
+                            candidate.market,
+                            candidate.direction,
+                        )
+                        in selected_keys
                     ),
                     skip_reason=candidate.skip_reason,
                     captured_at=captured_at,
@@ -520,7 +684,7 @@ async def sync_daily_recommendations(
     limit: int = AUTO_PICK_LIMIT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Refresh all-match references and the adjusted-EV daily Top 4."""
+    """Refresh all-match references and the layered daily Top 4."""
     del user_id
     owner = ANON_OWNER_ID
     settings = get_settings()
@@ -554,7 +718,7 @@ async def sync_daily_recommendations(
         db,
         matches=matches,
         decisions=pipeline_result["decisions"],
-        selected_ids=selected_ids,
+        selected=selected,
         captured_at=saved_at,
     )
     await db.execute(
@@ -606,11 +770,12 @@ async def sync_daily_recommendations(
                 expected_return=pick.ev,
                 adjusted_ev=pick.adjusted_ev,
                 implied_probability=pick.implied_probability,
+                probability_source=pick.probability_source,
                 model_source=pick.model_source,
                 model_version=pick.model_version,
                 calibrator_version=pick.calibrator_version,
                 direction_alignment=pick.direction_alignment,
-                score=pick.adjusted_ev,
+                score=pick.score,
                 quality_rating=ratings[pick.fixture_id],
                 picked_at=saved_at,
             )
@@ -662,7 +827,7 @@ def log_sync_summary(
 ) -> None:
     del feedback_written, consistency_rejected
     logger.info(
-        "Recommendation sync summary day=%s total=%s ev_computable=%s selected=%s",
+        "Recommendation sync summary day=%s total=%s eligible=%s selected=%s",
         day or "unknown",
         total_matches,
         candidate_count,
@@ -670,7 +835,7 @@ def log_sync_summary(
     )
     for match_day, pool in sorted((matches_by_day or {}).items()):
         count = int((selected_by_day or {}).get(match_day, 0))
-        if count < AUTO_PICK_LIMIT:
+        if count < AUTO_PICK_LIMIT and pool >= MIN_MATCHES_FOR_FULL_QUOTA:
             logger.warning(
                 "Recommendation day incomplete match_day=%s pool=%s selected=%s expected=%s",
                 match_day,

@@ -1,13 +1,19 @@
 """Single recommendation decision engine.
 
-Four market models produce independent probabilities.  Only validated Platt
-outputs may enter settlement-aware EV; missing calibration keeps a direction
-for the all-match reference but makes the fixture ineligible for daily Top 4.
+Every direction carries two probabilities: the board's de-vig price and the
+trained model's shadow output.  Ranking uses the model only for markets whose
+model beat the board on its time holdout; everywhere else the board is the
+estimate, which is what keeps the product running while models are unproven.
+
+Expected return is computed for auditing from whichever probability ranks the
+candidate.  It is structurally negative under board probabilities (``p ≈ 1/赔率``
+means ``EV = 1/超额 − 1``), so it never gates a candidate — see the daily-pick
+rules in ``.cursor/rules/project-scope.mdc``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import json
 from typing import Any
 
@@ -17,12 +23,18 @@ from app.services.ah_features import (
     ASIAN_LOSS,
     ASIAN_PUSH,
     ASIAN_WIN,
+    build_ah_features,
     extract_main_ah_line,
     format_handicap_lean_text,
     settle_asian_total,
     settle_handicap_pick,
 )
-from app.services.ah_predictor import predict_handicap
+from app.services.ah_market_structure import side_speaks_for_result
+from app.services.ah_predictor import (
+    model_status as ah_model_status,
+    predict_handicap,
+    shadow_cover_probability,
+)
 from app.services.goal_predictor import (
     distribution_summary,
     model_status as goal_model_status,
@@ -33,14 +45,24 @@ from app.services.market_analysis import handicap_direction_signal
 from app.services.ml_predictor import (
     model_status as one_x_two_model_status,
     predict_probabilities,
+    shadow_probabilities,
 )
 from app.services.prediction import _odd_float
-from app.services.probability_calibration import calibrate_for_ev
+from app.services.probability_calibration import calibrate_probability
 
 MARKET_1X2 = "1x2"
 MARKET_AH = "ah"
 MARKET_OU = "ou"
 MARKET_BTTS = "btts"
+
+SOURCE_MARKET = "market"
+SOURCE_MODEL = "model"
+
+# Board de-vig probability is a two-way price; a side below this is the wrong
+# half of a coin flip, not a recommendation.  1X2 keeps the lower floor because
+# a three-way board rarely prices any single outcome above one half.
+MIN_DAILY_CONFIDENCE = 0.40
+MIN_AH_CONFIDENCE = 0.50
 
 _RESULT_KEYS = (ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH, ASIAN_HALF_LOSS, ASIAN_LOSS)
 _DIRECTION_PENALTIES = {
@@ -70,10 +92,14 @@ class RecommendationCandidate:
     line: float | None
     model_source: str | None
     model_version: str | None
-    raw_model_probability: float | None
+    # Board de-vig price for this direction.
+    implied_probability: float | None
+    # Trained-model output, frozen even when the model is not deployable.
+    model_probability: float | None
+    probability_source: str
+    raw_probability: float | None
     calibrator_version: str | None
     calibrated_probability: float | None
-    implied_probability: float | None
     decimal_odd: float | None
     settlement_distribution: dict[str, float] | None
     expected_return: float | None
@@ -83,6 +109,35 @@ class RecommendationCandidate:
     direction_penalty: float
     adjusted_ev: float | None
     skip_reason: str | None
+    # False when the card cannot put this side into words: the receiving half of
+    # a board deeper than one goal wins by "losing by less than the line", which
+    # 主胜 / 客胜 cannot express.  Still frozen for audit and calibration.
+    tellable: bool = True
+
+    @property
+    def minimum_confidence(self) -> float:
+        return MIN_AH_CONFIDENCE if self.market == MARKET_AH else MIN_DAILY_CONFIDENCE
+
+    @property
+    def ranking_score(self) -> float | None:
+        """Calibrated hit probability, less the market-direction penalty.
+
+        Odds deliberately stay out: probabilities here come from the very price
+        being bet, so any ``p × 净赔率`` term collapses to ``√(p(1-p))`` and peaks
+        at the coin flip.
+        """
+        if self.calibrated_probability is None:
+            return None
+        return float(self.calibrated_probability) - float(self.direction_penalty)
+
+    def eligible_for_daily_pick(self) -> bool:
+        return (
+            self.tellable
+            and self.calibrated_probability is not None
+            and self.decimal_odd is not None
+            and self.direction_alignment != "reverse_strong"
+            and float(self.calibrated_probability) >= self.minimum_confidence
+        )
 
     def settlement_json(self) -> str | None:
         if self.settlement_distribution is None:
@@ -98,23 +153,28 @@ class MatchDecision:
     candidates: tuple[RecommendationCandidate, ...]
 
 
-def star_rating(adjusted_ev: float) -> float:
-    """Absolute recommendation-strength bands; never force a daily five-star."""
-    if adjusted_ev >= 0.08:
+def star_rating(ranking_score: float) -> float:
+    """Absolute confidence bands over the calibrated hit probability.
+
+    Bands are fixed, so a thin day cannot manufacture five stars out of its own
+    best-of-a-bad-lot.  EV is not an input: under board probabilities it only
+    restates the bookmaker's margin.
+    """
+    if ranking_score >= 0.65:
         return 5.0
-    if adjusted_ev >= 0.05:
+    if ranking_score >= 0.60:
         return 4.5
-    if adjusted_ev >= 0.03:
+    if ranking_score >= 0.57:
         return 4.0
-    if adjusted_ev >= 0.01:
+    if ranking_score >= 0.54:
         return 3.5
-    if adjusted_ev >= 0.0:
+    if ranking_score >= 0.51:
         return 3.0
-    if adjusted_ev >= -0.02:
+    if ranking_score >= 0.48:
         return 2.5
-    if adjusted_ev >= -0.04:
+    if ranking_score >= 0.45:
         return 2.0
-    if adjusted_ev >= -0.06:
+    if ranking_score >= 0.42:
         return 1.5
     return 1.0
 
@@ -337,37 +397,49 @@ def _candidate(
     line: float | None,
     model_source: str | None,
     model_version: str | None,
-    raw_probability: float | None,
+    model_probability: float | None,
+    model_deployable: bool,
     decimal_odd: float | None,
     implied_probability: float | None,
     raw_distribution: dict[str, float] | None,
     calibration_artifact: dict[str, Any] | None,
     package: dict[str, Any] | None,
-    skip_reason: str | None = None,
+    tellable: bool = True,
 ) -> RecommendationCandidate:
+    use_model = model_deployable and model_probability is not None
+    source = SOURCE_MODEL if use_model else SOURCE_MARKET
+    raw = model_probability if use_model else implied_probability
+
     calibrated: float | None = None
     calibrator_version: str | None = None
-    # Keep the raw model settlement shape even before a calibrator is ready;
-    # EV remains null until a validated Platt output can rescale it.
-    distribution: dict[str, float] | None = raw_distribution
-    ev: float | None = None
-    reason = skip_reason
-    if raw_probability is not None:
-        calibrated, calibrator_version = calibrate_for_ev(
+    if raw is not None:
+        calibrated, calibrator_version = calibrate_probability(
             calibration_artifact,
             market,
+            source,
             direction,
-            raw_probability,
+            float(raw),
         )
-        if calibrated is None and reason is None:
-            reason = "calibrator_unavailable"
-    if calibrated is not None and decimal_odd is not None and raw_distribution is not None:
+
+    # Keep the model's settlement shape (push / half-ball mass) and move only the
+    # positive mass onto the ranking probability.
+    distribution: dict[str, float] | None = raw_distribution
+    ev: float | None = None
+    if calibrated is not None and raw_distribution is not None:
         distribution = _rescale_distribution(raw_distribution, calibrated)
+        if decimal_odd is not None:
+            ev = settlement_expected_return(distribution, decimal_odd)
+    elif calibrated is not None and decimal_odd is not None:
+        distribution = _binary_distribution(calibrated)
         ev = settlement_expected_return(distribution, decimal_odd)
-    elif decimal_odd is None and reason is None:
+
+    reason: str | None = None
+    if calibrated is None:
+        reason = "probability_unavailable"
+    elif decimal_odd is None:
         reason = "odds_missing"
-    elif raw_distribution is None and reason is None:
-        reason = "settlement_distribution_unavailable"
+    elif not tellable:
+        reason = "deep_board_receiving_side"
 
     signal = _market_direction(package, market)
     alignment, penalty = _alignment(direction, signal)
@@ -382,10 +454,12 @@ def _candidate(
         line=line,
         model_source=model_source,
         model_version=model_version,
-        raw_model_probability=raw_probability,
+        implied_probability=implied_probability,
+        model_probability=model_probability,
+        probability_source=source,
+        raw_probability=float(raw) if raw is not None else None,
         calibrator_version=calibrator_version,
         calibrated_probability=calibrated,
-        implied_probability=implied_probability,
         decimal_odd=decimal_odd,
         settlement_distribution=distribution,
         expected_return=ev,
@@ -394,7 +468,17 @@ def _candidate(
         direction_alignment=alignment,
         direction_penalty=penalty,
         adjusted_ev=adjusted,
-        skip_reason=reason if ev is None else None,
+        skip_reason=reason,
+        tellable=tellable,
+    )
+
+
+def market_order(*, has_ah: bool) -> tuple[str, ...]:
+    """有 AH：AH→大小球→双进；无 AH：1X2→大小球→双进."""
+    return (
+        (MARKET_AH, MARKET_OU, MARKET_BTTS)
+        if has_ah
+        else (MARKET_1X2, MARKET_OU, MARKET_BTTS)
     )
 
 
@@ -405,26 +489,23 @@ def select_reference_candidate(
 ) -> RecommendationCandidate | None:
     """Choose one reference with strict market priority.
 
-    Adjusted EV is compared only between directions inside the same market;
-    a later market can never outrank a calculable earlier market.
+    Ranking score is compared only between directions inside the same market;
+    a later market never outranks an earlier market that has a probability.
     """
-    order = (MARKET_AH, MARKET_OU, MARKET_BTTS) if has_ah else (
-        MARKET_1X2,
-        MARKET_OU,
-        MARKET_BTTS,
-    )
-    for market in order:
+    for market in market_order(has_ah=has_ah):
         available = [
             candidate
             for candidate in candidates
-            if candidate.market == market and candidate.adjusted_ev is not None
+            if candidate.market == market
+            and candidate.ranking_score is not None
+            and candidate.tellable
         ]
         if available:
             return max(
                 available,
                 key=lambda item: (
-                    float(item.adjusted_ev),
-                    float(item.calibrated_probability or 0.0),
+                    float(item.ranking_score),
+                    float(item.expected_return or 0.0),
                 ),
             )
     return None
@@ -446,10 +527,13 @@ def build_match_decision(
 
     one_x_two = predict_probabilities(package)
     one_status = one_x_two_model_status()
+    base_features = one_x_two.features
+    one_shadow = shadow_probabilities(base_features)
+    one_deployable = bool(one_status.get("deployable"))
     winner = odds.get("match_winner") if isinstance(odds.get("match_winner"), dict) else {}
     implied_1x2 = _fair_1x2(winner) if winner else None
     for direction, lean in (("home", "主胜"), ("away", "客胜")):
-        raw = one_x_two.probs.get(direction) if one_x_two.source == "ml" else None
+        shadow = (one_shadow or {}).get(direction)
         odd = _odd_float(winner.get(direction)) if winner else None
         candidates.append(
             _candidate(
@@ -462,32 +546,35 @@ def build_match_decision(
                 line=None,
                 model_source=one_x_two.source,
                 model_version=str(one_status.get("feature_version") or ""),
-                raw_probability=float(raw) if raw is not None else None,
+                model_probability=float(shadow) if shadow is not None else None,
+                model_deployable=one_deployable,
                 decimal_odd=odd,
                 implied_probability=(implied_1x2 or {}).get(direction),
-                raw_distribution=_binary_distribution(float(raw)) if raw is not None else None,
+                raw_distribution=None,
                 calibration_artifact=calibration_artifact,
                 package=package,
-                skip_reason=None if raw is not None else "model_not_deployable",
             )
         )
 
-    base_features = one_x_two.features
-    goal_prediction = predict_goals(base_features, odds)
+    # Shadow goals: the settlement shape (push / half-ball mass) is needed for
+    # every Asian line even while the O/U and BTTS target gates are closed.
+    goal_prediction = predict_goals(base_features, odds, ignore_deployable=True)
     goal_status = goal_model_status()
     goal_matrix = score_matrix(goal_prediction) if goal_prediction is not None else None
 
     line, ah_home_odd, ah_away_odd = extract_main_ah_line(odds)
+    ah_features, _, _, _ = build_ah_features(
+        {**package, "odds": odds},
+        league_id=league_id,
+    )
+    ah_status = ah_model_status()
+    ah_deployable = bool(ah_status.get("deployable"))
+    ah_model_prob = shadow_cover_probability(ah_features)
     ah_prediction = predict_handicap(
         odds,
         package=package,
         league_id=league_id,
         features=base_features,
-    )
-    ah_model_prob = (
-        ah_prediction.model_cover_prob
-        if ah_prediction is not None and ah_prediction.source == "ml"
-        else None
     )
     if line is not None:
         implied_ah = (
@@ -501,7 +588,7 @@ def build_match_decision(
                 ("away", ah_away_odd, "让负"),
             )
         ):
-            raw = (
+            shadow = (
                 float(ah_model_prob)
                 if direction == "home" and ah_model_prob is not None
                 else 1.0 - float(ah_model_prob)
@@ -518,8 +605,6 @@ def build_match_decision(
                 if goal_matrix is not None
                 else None
             )
-            if base_distribution is not None and raw is not None:
-                base_distribution = _rescale_distribution(base_distribution, raw)
             candidates.append(
                 _candidate(
                     fixture_id=fixture_id,
@@ -530,20 +615,19 @@ def build_match_decision(
                     lean=format_handicap_lean_text(pick, line),
                     line=line,
                     model_source=ah_prediction.source if ah_prediction else None,
-                    model_version=ah_prediction.model_version if ah_prediction else None,
-                    raw_probability=raw,
+                    model_version=(
+                        ah_prediction.model_version
+                        if ah_prediction
+                        else str(ah_status.get("ah_feature_version") or "")
+                    ),
+                    model_probability=shadow,
+                    model_deployable=ah_deployable,
                     decimal_odd=odd,
                     implied_probability=implied_ah[index],
                     raw_distribution=base_distribution,
                     calibration_artifact=calibration_artifact,
                     package=package,
-                    skip_reason=(
-                        "model_not_deployable"
-                        if raw is None
-                        else "settlement_distribution_unavailable"
-                        if base_distribution is None
-                        else None
-                    ),
+                    tellable=side_speaks_for_result(float(line), direction),
                 )
             )
 
@@ -559,10 +643,8 @@ def build_match_decision(
             if over_odd is not None and under_odd is not None
             else (None, None)
         )
-        summary = (
-            distribution_summary(goal_prediction, total_line=ou_line)
-            if goal_prediction is not None and goal_prediction.deploy_ou
-            else None
+        ou_deployable = bool(
+            goal_prediction is not None and goal_prediction.deploy_ou
         )
         for index, (direction, odd) in enumerate(
             (("over", over_odd), ("under", under_odd))
@@ -574,10 +656,10 @@ def build_match_decision(
                     direction=direction,
                     line=ou_line,
                 )
-                if summary is not None and goal_matrix is not None
+                if goal_matrix is not None
                 else None
             )
-            raw = (
+            shadow = (
                 _conditional_positive(base_distribution)
                 if base_distribution is not None
                 else None
@@ -591,15 +673,17 @@ def build_match_decision(
                     direction=direction,
                     lean=f"{'大' if direction == 'over' else '小'}({ou_line:g})",
                     line=ou_line,
-                    model_source=goal_prediction.source if summary is not None else None,
+                    model_source=(
+                        goal_prediction.source if goal_prediction is not None else None
+                    ),
                     model_version=str(goal_status.get("feature_version") or ""),
-                    raw_probability=raw,
+                    model_probability=shadow,
+                    model_deployable=ou_deployable,
                     decimal_odd=odd,
                     implied_probability=implied_ou[index],
                     raw_distribution=base_distribution,
                     calibration_artifact=calibration_artifact,
                     package=package,
-                    skip_reason=None if raw is not None else "model_not_deployable",
                 )
             )
 
@@ -617,8 +701,11 @@ def build_match_decision(
         )
         btts_summary = (
             distribution_summary(goal_prediction)
-            if goal_prediction is not None and goal_prediction.deploy_btts
+            if goal_prediction is not None
             else None
+        )
+        btts_deployable = bool(
+            goal_prediction is not None and goal_prediction.deploy_btts
         )
         yes_prob = float(btts_summary["btts_prob"]) if btts_summary is not None else None
         for index, (direction, odd, lean) in enumerate(
@@ -627,7 +714,7 @@ def build_match_decision(
                 ("no", no_odd, "双进:否"),
             )
         ):
-            raw = (
+            shadow = (
                 yes_prob
                 if direction == "yes" and yes_prob is not None
                 else 1.0 - yes_prob
@@ -643,61 +730,30 @@ def build_match_decision(
                     direction=direction,
                     lean=lean,
                     line=None,
-                    model_source=goal_prediction.source if yes_prob is not None else None,
+                    model_source=(
+                        goal_prediction.source if goal_prediction is not None else None
+                    ),
                     model_version=str(goal_status.get("feature_version") or ""),
-                    raw_probability=raw,
+                    model_probability=shadow,
+                    model_deployable=btts_deployable,
                     decimal_odd=odd,
                     implied_probability=implied_btts[index],
-                    raw_distribution=_binary_distribution(raw) if raw is not None else None,
+                    raw_distribution=(
+                        _binary_distribution(shadow) if shadow is not None else None
+                    ),
                     calibration_artifact=calibration_artifact,
                     package=package,
-                    skip_reason=None if raw is not None else "model_not_deployable",
                 )
             )
 
     has_ah = line is not None and ah_home_odd is not None and ah_away_odd is not None
-    order = (MARKET_AH, MARKET_OU, MARKET_BTTS) if has_ah else (
-        MARKET_1X2,
-        MARKET_OU,
-        MARKET_BTTS,
-    )
+    order = market_order(has_ah=has_ah)
     reference = select_reference_candidate(candidates, has_ah=has_ah)
 
-    # Every fixture still exposes a direction when EV is unavailable.  Strict
-    # market order remains intact; the skip reason explains daily ineligibility.
     if reference is None:
-        for market in order:
-            directional = [
-                candidate
-                for candidate in candidates
-                if candidate.market == market
-                and candidate.raw_model_probability is not None
-            ]
-            if directional:
-                reference = max(
-                    directional,
-                    key=lambda item: float(item.raw_model_probability or 0.0),
-                )
-                break
-    if reference is None:
-        # No independent model is deployable.  Preserve a deterministic market
-        # direction for the all-match reference, but never compute EV from it.
-        fallback_pool = [
-            candidate
-            for market in order
-            for candidate in candidates
-            if candidate.market == market and candidate.implied_probability is not None
-        ]
-        if fallback_pool:
-            first_market = next(
-                market for market in order if any(c.market == market for c in fallback_pool)
-            )
-            reference = max(
-                (candidate for candidate in fallback_pool if candidate.market == first_market),
-                key=lambda item: float(item.implied_probability or 0.0),
-            )
-            reference = replace(reference, skip_reason="model_not_deployable")
-    if reference is None:
+        # Neither estimator produced a probability (usually a board with no
+        # usable prices).  Keep a deterministic direction for the all-match
+        # reference and let the skip reason explain the missing numbers.
         reference = RecommendationCandidate(
             fixture_id=fixture_id,
             league_id=league_id,
@@ -708,10 +764,12 @@ def build_match_decision(
             line=None,
             model_source=None,
             model_version=None,
-            raw_model_probability=None,
+            implied_probability=None,
+            model_probability=None,
+            probability_source=SOURCE_MARKET,
+            raw_probability=None,
             calibrator_version=None,
             calibrated_probability=None,
-            implied_probability=None,
             decimal_odd=None,
             settlement_distribution=None,
             expected_return=None,

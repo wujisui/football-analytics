@@ -337,18 +337,20 @@ class FixtureResponse(BaseModel):
     analysis: AnalysisResponse = Field(..., description="赛前分析结果")
     reference_market: str | None = Field(default=None, description="每场参考玩法")
     reference_lean: str | None = Field(default=None, description="每场参考方向")
-    reference_ev: float | None = Field(default=None, description="每场参考结算口径 EV")
-    reference_adjusted_ev: float | None = Field(
-        default=None, description="扣除盘口方向惩罚后的 EV"
+    reference_ev: float | None = Field(
+        default=None, description="结算口径 EV，含庄家抽水，仅供审计"
+    )
+    reference_source: str | None = Field(
+        default=None, description="概率来源：market=盘口去水，model=已过门禁的模型"
     )
     reference_probability: float | None = Field(
-        default=None, description="同玩法 Platt 校准概率"
+        default=None, description="同玩法同来源 Platt 校准后的命中概率"
     )
     reference_alignment: str | None = Field(
-        default=None, description="模型方向与同玩法盘口方向关系"
+        default=None, description="推荐方向与同玩法盘口方向关系"
     )
     reference_reason: str | None = Field(
-        default=None, description="EV 不可计算时的原因或审计说明"
+        default=None, description="概率或赔率缺失时的原因，否则为审计说明"
     )
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")

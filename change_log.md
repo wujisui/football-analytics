@@ -1090,3 +1090,120 @@ Brier 只从 0.24878 改善到 0.24661。
 
 让球行不在 `DetailTabHint` 的悬停区内，参考文案的明细 tooltip 因此不会被“赛前简报”那层
 浮层抢走。
+
+### 日推双轨：市场基线跑产品，模型跑影子
+
+上一条统一链路把「独立模型概率 + 已验证 Platt」设成了日推的唯一入口，结果当天日推
+归零：四个模型在时间留出集上全部输给市场基线（1X2 52.0% 对 53.2%、AH 51.2% 对
+54.1%、O/U 49.2% 对 52.0%、双进 51.3% 对 57.0%），四道门同时关闭，候选恒空。
+
+更糟的是反馈闭环自锁：模型不可部署 → 候选不写原始概率 → Platt 训练样本为 0 →
+校准器永远不可部署。库里 344 条候选的 `raw_model_probability` 全是 NULL，等多久都不会
+自己解开。
+
+改法是把「概率来源」显式化，而不是放宽质量门：
+
+- 每个方向候选同时冻结**盘口去水价** `implied_probability` 与**模型影子输出**
+  `model_probability`。新增 `ml_predictor.shadow_probabilities`、
+  `ah_predictor.shadow_cover_probability`、`goal_predictor.predict_goals(ignore_deployable=True)`：
+  没过门禁也算、也存，但不参与线上排序。
+- `probability_source` 按玩法门禁择一：该玩法模型赢过市场才取 `model`，否则取
+  `market`。当前四个玩法全部走 `market`。
+- 校准器改按 `玩法:概率来源` 分键（`ah:market`、`ah:model`…），两个估计量不再共用一个
+  Platt；同一条完赛记录同时喂两个键，影子模型因此能持续积累证据。**校准降级为可选
+  增益**：没有通过验证的键原样透传原始概率，删除 `calibrate_for_ev` 那套「不可用就
+  返回 null」的准入语义。
+- 日推恢复三道闸：有概率与赔率、过最低置信度（1X2/大小球/双进 0.40，AH 0.50）、
+  方向不逆着强一致盘口。过闸后按 `层级 → 校准命中概率 − 方向惩罚` 取每个比赛日
+  Top 4，恢复 AH → 大小球 → 双进 → 无盘独赢的分层补位，下层不得凭分数越级。
+  星级改按命中概率绝对分档。EV 仍逐场落库，但不排序、不设门槛。
+- 告警恢复 `MIN_MATCHES_FOR_FULL_QUOTA = 6`：池子不足 6 场时给不满 4 场属正常。
+
+600 场回放（`backend/scripts/backtest_current_recommendation.py`，只读本地库）：
+
+| 轨道 | 选中 | 命中 | 走水 | 单位收益 | ROI | 平均 EV |
+| --- | --- | --- | --- | --- | --- | --- |
+| live（盘口去水） | 64 | 33/58 = 56.9% | 6 | +0.79 | +1.2% | −4.2% |
+| model_shadow（强制启用模型） | 64 | 32/60 = 53.3% | 4 | −3.16 | −4.9% | +6.2% |
+
+影子轨自称平均 EV +6.2% 却跑输市场轨 3.6 个百分点，门禁拦对了。平均 EV 为负是这套
+概率口径的**数学结果**（`p ≈ 1/赔率` ⇒ `EV = 1/超额 − 1`），不是「没找到价值」。
+
+字段随之收敛：`recommendation_candidate_snapshots.raw_model_probability` 拆成
+`implied_probability` / `model_probability` / `probability_source` / `raw_probability`；
+`pre_match_data.reference_adjusted_ev` 换成 `reference_source`，卡片参考文案从
+「参考 方向 +X.X% EV」改成「参考 方向 命中概率」，悬停里如实写明「概率来源：盘口
+去水（市场基线）」并标注 EV 含抽水仅供审计。`auto_pick_snapshots` 补 `probability_source`，
+`score` 回到排序分（命中概率 − 方向惩罚）。
+
+后端 264 条测试、前端 `vue-tsc` 均通过。新增回归：
+`test_negative_ev_still_produces_a_pick`、`test_ranking_uses_probability_not_payout`、
+`test_lower_layers_only_fill_seats_the_handicap_left_empty`、
+`test_sub_floor_confidence_and_reverse_direction_are_dropped`、
+`test_uncalibrated_key_passes_the_raw_probability_through`、
+`test_market_and_model_estimators_never_share_one_calibrator`。
+
+### 日推三件套一致性闸恢复
+
+双轨日推恢复后暴露出统一链路重构时删掉的一致性回归：日推选中的是 AH 方向，但
+`auto_lean` 与 `auto_score_hint` 仍直接复用分析器原来的胜负方向和比分，因此出现
+`客胜 · [荐] 主+0.25 · 比分 0-1`。这不是盘口小数的展示问题：主队受让 0.25 与客胜 /
+0-1 明确站在相反两侧；让球线是结算门槛，不存在“进 0.25 个球”的解释。
+
+现在 Top-N 截取前统一重建三件套：
+
+- AH 候选以实际投注侧为真源：选主侧就生成 `主胜 + 主侧真实盘口 + 主胜比分`，选客侧
+  同理。比分逐个用亚洲盘的全赢 / 半赢 / 走水 / 半输 / 全输结算器验证，至少不能让
+  所推荐的 AH 侧输；浅盘与深盘使用同一条规则。
+- 胜负方向改变后不再复用旧比分；调用
+  `prediction.score_hint_for_consistent_bundle`，在同一胜负结果、大小球与双进形态中
+  重新生成比分，再过真实让球线结算。
+- 如果 AH、大小球与胜负方向不存在共同可行比分，该 AH 候选淘汰并按
+  `AH → 大小球 → 双进` 降级补位，不发布矛盾卡片。
+- 大小球 / 双进 / 无盘独赢作为实际投注项时，浅盘让球行改成与胜负方向同侧；深于
+  1 球的让球条件无法由单独“主胜/客胜”承诺，因此隐藏让球行，不连带淘汰实际投注项。
+- 候选快照的 `chosen_as_daily_pick` 改按 `(fixture_id, market, direction)` 写入，降级到
+  同场另一玩法时也能准确冻结，不再错误要求日推必须等于每场参考。
+
+### 深盘受让侧不再当胜负方向卖
+
+上一条的「以投注侧重建三件套」在深盘上把错误放大了：Dominica vs Anguilla 主队让 2 球，
+链路选了 `客+2`，于是三件套被重建成 `客胜 · 客+2 · 比分 0-3` —— 而该场客胜去水概率只有
+8.6%。受让 2 球赢在「输一球以内」，跟谁赢没有关系，卡片只有主胜 / 客胜两格，装不下这层
+意思；把它翻译成客胜，等于系统性买进三路里概率最低的那一个。
+
+修正落在决策层而不是展示层：`decision` 生成 AH 候选时按 `|让球线| ≥ 1` 判深盘，**只有让球
+方可入选**，受让侧照旧冻结概率、赔率与结算分布供审计与校准，但 `tellable=False`、
+`skip_reason=deep_board_receiving_side`，既不进日推也不当每场参考。让球方是否值得推由它自己的
+概率决定：本场主 -2 去水仅 47.5%，过不了 AH 50% 下界，于是按 `AH → 大小球 → 双进` 降级，
+现在输出 `主胜 · 小(3.25) · 比分 3-0`，让球行隐藏。浅盘两侧仍都可推，规则不变。
+
+回归 `test_deep_board_receiving_side_is_never_sold_as_an_outright_win`。
+
+### 盘口深度判定收敛成两条具名规则
+
+上一条的第一版是补丁：`ah_market_structure` 里本来就有 `DEEP_AH_LINE` 与 `is_deep`，却在
+`decision.py` 手抄了 `abs(line) >= 1.0 - 1e-9`、在 `pipeline.py` 留着第三份
+`abs(line) > 1.0 + 1e-9`，同一条知识三处字面量。拆开后发现三处其实在回答**两个不同的问句**，
+被当成了同一个：
+
+- `side_speaks_for_result(line, side)`：这一侧**能不能当成胜负方向卖出去**。让球方恒成立
+  （赢盘必然发生在该队赢球时，方向至多保守）；受让方只有浅盘成立。
+- `outright_win_settles(line, side)`：赢球**能不能保证这一侧不输盘**。受让方恒成立；让球方
+  只到一球盘（赢一球在 -1 走水、-0.75 半赢，更深即半输）。
+
+两者对让球 / 受让恰好相反，压成同一个 `abs(line) > 1` 的后果是双向出错：`主+2` 明明赢球必赢
+盘却被当作讲不圆藏掉，`客+2` 反而被当成客胜卖了出去。现在阈值只有 `DEEP_AH_LINE` 一处，
+`bettable_side` 改为调用 `side_speaks_for_result`，`decision` 用它定 `tellable`，
+`pipeline._display_handicap_for_candidate` 用 `outright_win_settles` 决定伴随让球行。
+
+顺带删除：`AhBoardStance.is_deep`（收敛后无应用调用方）、遗留调试文件 `backend/_probe.py`。
+回归 `test_one_depth_rule_serves_both_the_bet_and_the_companion_row`。
+
+本地重算后，截图中的场次已变为 `主胜 · [荐] 主+0.25 · 比分 1-0`；当日其余 AH 推荐
+也全部重建为同侧三件套。新增回归
+`test_quarter_ball_pick_rebuilds_result_and_score_from_selected_side`、
+`test_away_quarter_ball_pick_uses_away_result_and_winning_score`、
+`test_impossible_deep_handicap_falls_back_and_hides_handicap_row`。后端全量
+268 条测试（另 3 个 subtests）通过；一致性闸没有改变 600 场回放的选中结果，市场轨
+仍为 33/58（56.9%）、ROI +1.2%。

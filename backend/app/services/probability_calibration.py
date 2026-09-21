@@ -1,8 +1,10 @@
 """Time-safe probability calibration for daily auto-pick ranking.
 
-Raw candidate confidence comes from different sources (1X2/AH models and
-two-way market probabilities).  A per-market Platt layer maps those values to
-observed hit probability before expected return is calculated.
+Calibrators are keyed by ``玩法:概率来源`` (``ah:market``, ``ah:model``, …) because
+a board-implied probability and a model output are different estimators and must
+never share one Platt fit.  Calibration is an optional improvement: when a key has
+no validated calibrator the raw probability is used unchanged, so a cold start can
+still produce recommendations.
 """
 
 from __future__ import annotations
@@ -20,7 +22,8 @@ from app.core.config import BACKEND_ROOT
 
 logger = logging.getLogger(__name__)
 
-CALIBRATION_VERSION = "recommendation-model-platt-v2"
+CALIBRATION_VERSION = "recommendation-source-platt-v3"
+PROBABILITY_SOURCES = ("market", "model")
 CALIBRATION_PATH = BACKEND_ROOT / "data" / "models" / "recommendation_model_calibration.json"
 MIN_MARKET_SAMPLES = 80
 MIN_HOLDOUT_SAMPLES = 20
@@ -89,13 +92,15 @@ def build_calibration_artifact(
     *,
     trained_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Build per-market calibrators with the latest 20% held out chronologically."""
+    """Build per-key calibrators with the latest 20% held out chronologically."""
     by_market: dict[str, list[tuple[datetime, float, bool]]] = {}
-    for occurred_at, market, probability, outcome in samples:
-        base_market = market.split(":", 1)[0]
-        if base_market not in {"1x2", "ah", "ou", "btts"}:
+    for occurred_at, key, probability, outcome in samples:
+        parts = key.split(":")
+        if len(parts) < 2 or parts[0] not in {"1x2", "ah", "ou", "btts"}:
             continue
-        by_market.setdefault(market, []).append(
+        if parts[1] not in PROBABILITY_SOURCES:
+            continue
+        by_market.setdefault(key, []).append(
             (occurred_at, _clip_probability(probability), bool(outcome))
         )
 
@@ -146,22 +151,23 @@ def build_calibration_artifact(
     }
 
 
-def calibrate_for_ev(
+def calibrate_probability(
     artifact: dict[str, Any] | None,
     market: str,
+    source: str,
     direction: str,
     probability: float,
-) -> tuple[float | None, str | None]:
-    """Strict model calibration for recommendation EV.
+) -> tuple[float, str | None]:
+    """Map a raw probability onto observed hit rate for its own estimator.
 
-    This function never falls back to the raw probability. A direction-specific
-    calibrator is preferred; a validated
-    global calibrator for the same market is the only allowed fallback.
+    Direction-specific calibrators win over the market-wide one.  When neither is
+    validated the raw probability passes through untouched and the version is
+    ``None`` — calibration improves ranking, it is not a licence to bet.
     """
     if not isinstance(artifact, dict) or artifact.get("version") != CALIBRATION_VERSION:
-        return None, None
+        return probability, None
     markets = artifact.get("markets") or {}
-    for key in (f"{market}:{direction}", market):
+    for key in (f"{market}:{source}:{direction}", f"{market}:{source}"):
         config = markets.get(key)
         if not isinstance(config, dict) or not config.get("deployable"):
             continue
@@ -174,7 +180,7 @@ def calibrate_for_ev(
         except (KeyError, TypeError, ValueError):
             continue
         return calibrated, f"{CALIBRATION_VERSION}:{key}"
-    return None, None
+    return probability, None
 
 
 def load_calibration_artifact(path: Path | None = None) -> dict[str, Any]:
@@ -207,12 +213,14 @@ async def train_from_frozen_history(
     now: datetime | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Train once daily from all frozen independent-model candidates.
+    """Train once daily from every frozen candidate, per estimator.
 
     Selected and unselected directions are both included so Top-4 selection
-    cannot bias the calibrator.  Pushes are excluded from the binary Platt
-    target; half wins count as hits and half losses as misses, while their
-    monetary value remains in ``actual_return`` for EV/star auditing.
+    cannot bias the calibrator.  Each candidate contributes to both its market
+    key and its model key, which is what lets a shadow model accumulate evidence
+    while the board is still driving the recommendations.  Pushes are excluded
+    from the binary Platt target; half wins count as hits and half losses as
+    misses, while their monetary value remains in ``actual_return``.
     """
     current = now or datetime.now(timezone.utc)
     existing = load_calibration_artifact()
@@ -244,7 +252,6 @@ async def train_from_frozen_history(
                 Fixture.home_goals.is_not(None),
                 Fixture.away_goals.is_not(None),
                 Fixture.status.in_(["finished", "ft", "aet", "pen"]),
-                RecommendationCandidateSnapshot.raw_model_probability.is_not(None),
             )
             .order_by(Fixture.date, Fixture.id, RecommendationCandidateSnapshot.id)
         )
@@ -302,16 +309,22 @@ async def train_from_frozen_history(
             )
         if hit is None:
             continue
-        probability = float(candidate.raw_model_probability)
-        samples.append((fixture.date, candidate.market, probability, hit))
-        samples.append(
-            (
-                fixture.date,
-                f"{candidate.market}:{candidate.direction}",
-                probability,
-                hit,
+        for source, probability in (
+            ("market", candidate.implied_probability),
+            ("model", candidate.model_probability),
+        ):
+            if probability is None:
+                continue
+            value = float(probability)
+            samples.append((fixture.date, f"{candidate.market}:{source}", value, hit))
+            samples.append(
+                (
+                    fixture.date,
+                    f"{candidate.market}:{source}:{candidate.direction}",
+                    value,
+                    hit,
+                )
             )
-        )
 
     artifact = build_calibration_artifact(samples, trained_at=current)
     save_calibration_artifact(artifact)

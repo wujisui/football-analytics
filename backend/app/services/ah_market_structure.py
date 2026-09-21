@@ -55,10 +55,6 @@ class AhBoardStance:
             return "cover/no_cover"
         return "cover" if self.ah_pick == "让胜" else "no_cover"
 
-    @property
-    def is_deep(self) -> bool:
-        return abs(self.line) + _LINE_EPSILON >= DEEP_AH_LINE
-
 
 def _percentile(values: list[float], p: float) -> float | None:
     if not values:
@@ -213,14 +209,47 @@ def classify_ah_board(
     )
 
 
+def _own_line(line: float, side: str) -> float:
+    """The handicap from ``side``'s own perspective; negative means it gives."""
+    return line if side == "home" else -line
+
+
+def side_speaks_for_result(line: float, side: str) -> bool:
+    """Can a plain 主胜 / 客胜 stand in for *betting* this side of the board?
+
+    让球方成立：赢盘必然发生在这支球队赢球时，胜负方向至多是保守说法（主 -2 说成
+    主胜，比分再补上净胜球）。受让方只有浅盘成立；深盘受让赢在「输一球以内」，与
+    谁赢球基本无关，讲成独赢就是拿 8.6% 的客胜去卖一注 52.5% 的 客+2。
+    """
+    own = _own_line(line, side)
+    if own <= _LINE_EPSILON:
+        return True
+    return own + _LINE_EPSILON < DEEP_AH_LINE
+
+
+def outright_win_settles(line: float, side: str) -> bool:
+    """Would an outright win by ``side`` keep that side of the board from losing?
+
+    纯结算问题，供非 AH 注挑选可以并排展示的让球行：受让方赢球必然全赢；让球方只到
+    一球盘为止（赢一球在 -1 走水、-0.75 半赢，更深则半输或全输）。
+    """
+    own = _own_line(line, side)
+    if own >= -_LINE_EPSILON:
+        return True
+    return abs(own) <= DEEP_AH_LINE + _LINE_EPSILON
+
+
 def bettable_side(stance: AhBoardStance) -> str:
     """The AH side a card can actually put into words.
 
-    浅盘跟水位：两侧都能被对应胜负方向讲清楚，买过半的那一边。深盘一律取让球方：
-    受让侧赢在「输一球以内」，而卡片胜负方向只有主胜 / 客胜两格，装不下这层意思，
-    曼城 -1.5 买 客+1.5 会被讲成「客胜、比分 1-3」。两侧同价的无向盘保持双选。
+    浅盘跟水位：两侧都能被对应胜负方向讲清楚，买过半的那一边。深盘退回让球方，理由
+    见 ``side_speaks_for_result``。两侧同价的无向盘保持双选。
     """
-    if not stance.directional or not stance.is_deep:
+    if not stance.directional:
+        return stance.result_choice
+    if stance.result_choice and side_speaks_for_result(
+        stance.line, stance.result_choice
+    ):
         return stance.result_choice
     return stance.giving_side
 
