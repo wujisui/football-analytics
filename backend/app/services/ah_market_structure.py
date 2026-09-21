@@ -262,23 +262,6 @@ def bettable_token(stance: AhBoardStance) -> str:
     return stance.lean_token
 
 
-def recommendation_from_ah_board(
-    odds: dict[str, Any] | None,
-    *,
-    thresholds: dict[str, Any] | None = None,
-) -> str | None:
-    """Map the main AH board to 主胜 / 客胜.
-
-    None when there is no line, no water gap, **or the board is deep**: 让 1 球以上
-    时哪一侧水位低只说明「热门大概率吃不下这个盘」，不说明谁赢球，把它当胜负方向
-    会把曼城让 1.5 球读成「客胜」。深盘交回去水 1X2 盘面判断。
-    """
-    stance = classify_ah_board(odds, thresholds=thresholds)
-    if stance is None or not stance.directional or stance.is_deep:
-        return None
-    return "主胜" if stance.result_choice == "home" else "客胜"
-
-
 async def refresh_ah_market_thresholds(session: Any) -> dict[str, Any]:
     """Recompute thresholds from finished local quotes. No official API."""
     from sqlalchemy import select

@@ -120,6 +120,31 @@ class PredictionCopyTests(unittest.TestCase):
         self.assertTrue(leans["goal_lean"].startswith("大") or leans["goal_lean"].startswith("小"))
         self.assertTrue(leans["score_hint"].startswith("比分:"))
 
+    def test_ou_side_follows_a_thin_market_gap(self) -> None:
+        """亚洲总进球盘常态只差 2%，旧口径的 6% 闸永不触发，兜底默认恒判大。
+
+        复现 2026-09-20：当日押了 51 大 : 6 小（87.3%），而市场只有 54.0% 的场次
+        大盘更低，命中 24/57 与「恒买大」完全相同。这里用 1.92 / 1.96（差 2.1%）
+        锁住「小盘更低就必须判小」。
+        """
+        from app.services.prediction import derive_prediction_leans
+
+        odds = {
+            "available": True,
+            "match_winner": {"home": 2.1, "draw": 3.3, "away": 3.4},
+            "goals_ou": {"line": 2.5, "home": 1.96, "away": 1.92},
+            "asian_handicap": {"line": -0.25, "home": 1.80, "away": 2.05},
+        }
+        probs = {"home": 0.46, "draw": 0.28, "away": 0.26}
+        self.assertTrue(
+            derive_prediction_leans(probs, odds)["goal_lean"].startswith("小")
+        )
+
+        odds["goals_ou"] = {"line": 2.5, "home": 1.92, "away": 1.96}
+        self.assertTrue(
+            derive_prediction_leans(probs, odds)["goal_lean"].startswith("大")
+        )
+
     def test_draw_scoreline_for_ou_over_25(self) -> None:
         from app.services.prediction import (
             _align_score_with_ou,

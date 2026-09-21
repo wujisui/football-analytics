@@ -204,10 +204,12 @@ def get_recommendation(
 ) -> str:
     """Market-structured 1X2 lean; model only breaks ties / upgrades clear edges.
 
-    Uses de-vigged 1X2 odds only when the main AH board is missing or both AH
-    sides are priced identically. With an Asian line (including 0), the lean
-    follows letting-side vs receiving-side water — near-even water still leans
-    to the cheaper side, the deadzone only keeps that board out of 日推.
+    **依据只能是去水后的 1X2 盘面**，让球水位仅在市场自己没选出热门时充当
+    `_ah_market_favorite` 平手裁决。穿盘方向不是胜平负方向：受让方穿过 ±0.5
+    含「打平」，穿过 ±1.5 更与谁赢无关，把它直接当独赢结论会系统性买进三路里
+    概率最低的那一个。2026-09-20 曾据此让 19/63 场逆着 1X2 热门下注（含一场
+    让 1.5 球盘去推市场只给 10.6% 的客胜），当日胜平负 41.3%、比分 0/63；同期
+    跟随热门 55.0% 对逆热门 33.3%。回归 `test_ah_board_never_overrides_the_1x2_board`。
 
     无可用 1X2 盘口 → 一律「待分析」：没有盘口就没有推断依据，只靠近况模型给出的
     胜平负属于无效预测（既不展示也不该进历史统计）。
@@ -216,11 +218,6 @@ def get_recommendation(
     board = implied_probs_from_odds(odds)
     if board is None:
         return "待分析"
-    from app.services.ah_market_structure import recommendation_from_ah_board
-
-    ah_rec = recommendation_from_ah_board(odds)
-    if ah_rec is not None:
-        return ah_rec
     market = board
 
     def _ranked(p: dict[str, float]) -> list[tuple[str, float]]:
@@ -446,32 +443,24 @@ def _resolve_ou_side(
     *,
     over: float | None,
     under: float | None,
-    model_driven: bool,
     features: dict[str, float] | None,
 ) -> str:
-    """Blend model / market / form for O/U. Prefer stable signals over one source."""
-    model_side = _side_from_probs(probs)
-    market_side = _market_ou_side(over, under)
-    feat_side = _ou_side_from_features(features)
+    """有价差就跟盘口低水侧；完全同价才退回近况与模型。
 
-    if not model_driven:
-        return market_side or feat_side or model_side
+    旧口径要两侧相差 **≥6%** 才采信盘口，可亚洲均衡总进球盘的常态是 1.92 / 1.96
+    （约 2%），这道闸几乎永不触发，判断全落到兜底启发式 `_side_from_probs` 上，
+    而它的默认分支返回 ``over``。2026-09-20 因此押了 51 大 : 6 小（87.3%），当天
+    市场只有 54.0% 的场次大盘更低，命中 24/57 与「恒买大」完全相同——这一层没有
+    提供任何信息，还把目标总进球顶到 4，叠上「双进:是」后比分全是 3-1 / 4-0。
 
-    # Clear market price on O/U → follow market over multifactor noise.
-    if market_side and over is not None and under is not None:
-        gap = abs(over - under) / max(min(over, under), 1e-6)
-        if gap >= 0.06:
-            return market_side
-
-    # Form agrees with market → that side.
-    if feat_side and market_side and feat_side == market_side:
-        return feat_side
-
-    # Drawish board + form under → under even if model says over lightly.
-    if feat_side == "under" and probs["draw"] >= 0.30:
-        return "under"
-
-    return model_side
+    回测 1203 场（真源 `backend/scripts/backtest_ou_side.py`）：跟盘口 54.8%、旧
+    启发式 54.5%，命中率在噪声内；但判大占比从 60.9% 回到 51.0%，与市场一致。
+    """
+    return (
+        _market_ou_side(over, under)
+        or _ou_side_from_features(features)
+        or _side_from_probs(probs)
+    )
 
 
 def _btts_yes(
@@ -1149,12 +1138,10 @@ def derive_prediction_leans(
 
     over = _odd_float(ou.get("home"))
     under = _odd_float(ou.get("away"))
-    model_driven = not is_flat_prior(normalize_probabilities(probs or {}))
     side = _resolve_ou_side(
         normalized,
         over=over,
         under=under,
-        model_driven=model_driven,
         features=features,
     )
     if (
