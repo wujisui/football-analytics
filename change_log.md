@@ -999,3 +999,15 @@ day_limit = limit_per_day if day_total >= MIN_MATCHES_FOR_FULL_QUOTA else len(da
 - `1566` 中国（男足）与 `1723` 中国女足、`10932` 中国U23 分开钉住，避免互相覆盖。
 - `1141` 官方快照同时出现 Alianza Petrolera / Alianza Valledupar，按现用名写成
   「巴耶杜帕尔联盟」。`Leon` / `Toluca` / `Monterrey` / `Jaguares` 未进纯英文名表。
+
+### 补漏：友谊赛青年国家队与俱乐部
+
+- 上一条把国际友谊赛（`id=10`）里的 U17/U18/U19/U21 当「青年队」整段跳过了，判断
+  有误：`team-name-translation-scope` 排除的是**非热门联赛**的青年队，而 `10` 与
+  `667` 都是 `is_hot=true`，本就在默认范围内。
+- 补 19 支青年国家队（法国U21、英格兰U19/U17、奥地利U18 等）与俱乐部友谊赛 10 支
+  （泽尼特、西悉尼流浪者、珀斯光荣、奥克兰FC、波希米亚人1905 及摩洛哥/突尼斯 5 支）。
+- 成年队与各年龄段分开钉住：`2` 法国 / `8194` 法国U21，`10` 英格兰 / `10332`
+  英格兰U19 / `17949` 英格兰U17。
+- 回填 `teams.name` 29 行。热门联赛 683 支球队，未翻译数为 0；`audit-team-names`
+  conflicts=0；后端全量测试 312 条通过。

@@ -134,6 +134,21 @@ def test_new_hot_leagues_use_verified_ids() -> None:
     assert team_name_zh("China W", team_id=1723) == "中国女足"
 
 
+def test_hot_friendly_leagues_include_youth_national_sides() -> None:
+    """国际友谊赛是热门联赛，里面的 U17/U18/U19/U21 也在译名范围内。
+
+    规则排除的是*非热门*联赛的青年队；`leagues.is_hot=true` 的友谊赛曾被整段跳过。
+    """
+    assert BY_ID[8194] == "法国U21"
+    assert BY_ID[10332] == "英格兰U19"
+    assert BY_ID[17949] == "英格兰U17"
+    assert BY_ID[21460] == "奥地利U18"
+    assert team_name_zh("Republic of Ireland U19", team_id=10377) == "爱尔兰U19"
+    # 成年队与各年龄段互不覆盖。
+    assert BY_ID[10] == "英格兰"
+    assert BY_ID[2] == "法国"
+
+
 def test_arabic_club_names_are_transliterated_not_glossed() -> None:
     """阿拉伯语队名按音译或沿用既有「城市+阿赫利」格式，不做字面意译。
 
