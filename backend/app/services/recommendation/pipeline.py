@@ -58,8 +58,9 @@ from app.services.user_scope import ANON_OWNER_ID
 
 from app.services.recommendation.strategy import (
     DAILY_PICK_OUTCOMES,
+    MIN_AH_CONFIDENCE,
     MIN_DAILY_CONFIDENCE,
-    REASON_POSITIVE_VALUE,
+    REASON_TOP_PROBABILITY,
     decide_match,
     pick_ranking_score,
 )
@@ -289,16 +290,15 @@ def _to_ah_picks(
         return []
     raw_confidence, stake_share = probability
     hit_rate = calibrate_probability(market_artifact, MARKET_AH, raw_confidence)
-    if hit_rate < MIN_DAILY_CONFIDENCE:
+    if hit_rate < MIN_AH_CONFIDENCE:
         return []
     decimal_odd = home_odd if side == "home" else away_odd
     market_lean = format_handicap_lean_text(
         "让胜" if side == "home" else "让负",
         line,
     )
+    # EV 落库供审计与同分决胜，不作门槛：概率由这块盘自己去水而来，EV 恒为负抽水。
     ev = stake_share * (hit_rate * decimal_odd - 1.0)
-    if ev <= 0.0:
-        return []
     return [
         DailyRecommendationPick(
             **_base_pick_fields(result),
@@ -308,7 +308,7 @@ def _to_ah_picks(
             recommended_choice=side,
             ev=ev,
             confidence=hit_rate,
-            reason=REASON_POSITIVE_VALUE,
+            reason=REASON_TOP_PROBABILITY,
             decimal_odd=decimal_odd,
             raw_confidence=raw_confidence,
             score=pick_ranking_score(hit_rate),
@@ -332,8 +332,6 @@ def _to_1x2_pick(
     if confidence < MIN_DAILY_CONFIDENCE:
         return None
     ev = float(result.strategy.get("ev") or 0.0)
-    if ev <= 0.0:
-        return None
     implied = implied_probs_from_odds(odds) or {}
     lean = OUTCOME_TO_LEAN[choice]
     return DailyRecommendationPick(
@@ -423,8 +421,6 @@ def _two_way_market_pick(
     if confidence < MIN_DAILY_CONFIDENCE:
         return None
     ev = confidence * selected_odd - 1.0
-    if ev <= 0.0:
-        return None
 
     choice = _companion_result_choice(result)
     return DailyRecommendationPick(
@@ -661,8 +657,8 @@ def _ah_side_probability(
     """Return (conditional win probability, stake share at risk).
 
     浅盘用 1X2 计入退半/走水。深盘优先读已收缩的 AH 推断概率；没有冻结值时
-    用主盘两侧去水概率。线深本身不是降级条件；候选统一过 40% 最低置信度与
-    ``EV > 0`` 价值闸，失败后交给 O/U、BTTS 补位。
+    用主盘两侧去水概率。线深本身不是降级条件；候选过 ``MIN_AH_CONFIDENCE``
+    两路机制下界，失败后交给 O/U、BTTS 补位。
     """
     pick = "让胜" if side == "home" else "让负"
     units = outcome_settlement_units(line, pick)
@@ -716,13 +712,13 @@ def select_daily_picks_by_match_day(
     selected_fixture_ids: set[int] = set()
     for day in sorted(by_day):
         day_picks = sorted(by_day[day], key=_daily_pick_rank_key)
-        # 每次重挑每个比赛日最多 4 场；正 EV 闸后允许少于 4 场甚至 0 场。
+        # 每次重挑每个比赛日最多 4 场；候选不足时允许少于 4 场。
         # 这是**展示**上限，不是当日结算注数上限：管线只收未开赛场次，已开赛的
         # `AutoPickSnapshot` 不删，密刷每小时重挑一次，所以一个比赛日累计冻结
         # 8~20 注属正常（真源见 `sync_daily_auto_favorites` 的删除范围）。
         day_limit = min(limit_per_day, len(day_picks))
         count = 0
-        # Ranking by risk-adjusted return is the only cross-fixture criterion:
+        # Ranking by calibrated hit probability is the only cross-fixture criterion:
         # a per-market quota would let a lower-scoring candidate displace a
         # higher-scoring one. Only the one-market-per-fixture rule stays, so a
         # single match cannot occupy two slots with correlated bets.

@@ -2,8 +2,8 @@
 
 from app.services.recommendation.strategy import (
     REASON_NO_MARKET,
-    REASON_NO_VALUE,
-    REASON_POSITIVE_VALUE,
+    REASON_LOW_CONFIDENCE,
+    REASON_TOP_PROBABILITY,
     decide_match,
     expected_value,
     pick_ranking_score,
@@ -75,46 +75,50 @@ def test_picks_the_most_likely_side() -> None:
         odds=_odds(),
     )
     assert payload["recommended_choice"] == "home"
-    assert payload["reason"] == REASON_POSITIVE_VALUE
+    assert payload["reason"] == REASON_TOP_PROBABILITY
     assert abs(payload["confidence"] - 0.55) < 1e-9
     # EV rides along for audit even though it did not drive the choice.
     assert abs(payload["ev"] - 0.10) < 1e-9
 
 
-def test_negative_ev_never_produces_a_pick() -> None:
-    """45% @2.00 与 41% @2.30 都是负 EV，不能选亏得较少的一侧凑数。"""
+def test_negative_ev_still_produces_a_pick() -> None:
+    """负 EV 不是拒绝理由：概率由所投盘口去水而来，EV 恒为负抽水。
+
+    ``EV > 0`` 曾短暂作为硬闸，但 ``p = (1/赔率)/超额`` 使 ``EV = 1/超额 − 1``
+    恒为负，只有 Platt 截距能把它抬过零；实测只有 ``ou`` 校准器截距够大，日推
+    因此塌成全是大小球。EV 只落库审计。
+    """
     payload = decide_match(
         match_id=1002,
         calibration=_calibration(home=0.45, draw=0.14, away=0.41),
         odds=_odds(home=2.0, draw=6.0, away=2.3),
     )
-    assert payload["recommended_choice"] is None
+    assert payload["recommended_choice"] == "home"
     assert payload["ev"] < 0.0
-    assert payload["confidence"] == 0.0
-    assert payload["reason"] == REASON_NO_VALUE
+    assert payload["reason"] == REASON_TOP_PROBABILITY
 
 
-def test_positive_ev_below_half_is_allowed() -> None:
-    """正 EV 才是价值依据；48% @2.20 不得因“覆盖未过半”被拒绝。"""
+def test_confidence_below_floor_is_rejected() -> None:
+    """主客两侧都低于 40% 时不推荐，这是唯一的置信度门槛。"""
     payload = decide_match(
         match_id=1006,
-        calibration=_calibration(home=0.48, draw=0.32, away=0.20),
+        calibration=_calibration(home=0.34, draw=0.32, away=0.34),
         odds=_odds(home=2.20, draw=3.40, away=4.50),
     )
-    assert payload["recommended_choice"] == "home"
-    assert abs(payload["ev"] - 0.056) < 1e-9
-    assert payload["reason"] == REASON_POSITIVE_VALUE
+    assert payload["recommended_choice"] is None
+    assert payload["confidence"] == 0.0
+    assert payload["reason"] == REASON_LOW_CONFIDENCE
 
 
-def test_draw_is_never_picked_and_nonpositive_sides_are_skipped() -> None:
-    """平局不进日推；主客 EV 均非正时也不能硬挑一个。"""
+def test_draw_is_never_picked() -> None:
+    """平局概率最高时也不进日推，只在主客两侧里选。"""
     payload = decide_match(
         match_id=1004,
         calibration=_calibration(home=0.30, draw=0.45, away=0.25),
         odds=_odds(),
     )
     assert payload["recommended_choice"] is None
-    assert payload["reason"] == REASON_NO_VALUE
+    assert payload["reason"] == REASON_LOW_CONFIDENCE
 
 
 def test_confidence_shrinks_on_low_reliability_leagues() -> None:

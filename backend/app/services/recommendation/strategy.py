@@ -1,7 +1,19 @@
-"""Positive-value recommendation strategy for the daily-pick pipeline.
+"""Recommendation strategy for the daily-pick pipeline.
 
-候选必须先过 ``EV > 0`` 硬门槛；层内再按校准命中概率排序。没有独立市场边际时
-宁可不推荐，禁止用“覆盖概率过半”或“负 EV 中亏损较小”补满名额。
+候选按**校准命中概率**分层排序；``EV`` 逐场算出落库供审计与同分决胜，**不作门槛**。
+
+曾经短暂设过 ``EV > 0`` 硬闸，但它在本项目的概率口径下无法满足：四种玩法的概率都由
+它自己那块盘去水得来（``p = (1/赔率) / 超额``），于是
+
+    EV = p × 赔率 − 1 = 1/超额 − 1
+
+恒为负，负的幅度正好是庄家抽水。唯一能把它抬过零的只剩 Platt 校准截距，而四个校准器
+是否 ``deployable`` 各不相同：``ah`` / ``1x2`` 未通过留出检验被停用（校准即恒等），
+EV 永远为负、整层候选恒空；``ou`` 截距 +0.136 把每块盘抬 3.4 个点，EV 恒为正。结果
+不是“挑出有价值的注”，而是“只剩大小球”——2026-09-22 当日 4 个坑全是大小球。
+
+要让 EV 闸有意义，概率必须来自**独立于所投价格**的估计（跑赢市场的模型，或另一家
+庄家的公允价）。在 ``inference_mode=market_baseline`` 下不存在这种边际，因此不设闸。
 """
 
 from __future__ import annotations
@@ -15,9 +27,12 @@ OUTCOMES = ("home", "draw", "away")
 # 因此日推只在主客两侧里选，平局仍参与 EV 计算供审计与解释使用。
 DAILY_PICK_OUTCOMES = ("home", "away")
 MIN_DAILY_CONFIDENCE = 0.40
-REASON_POSITIVE_VALUE = "正期望价值候选"
+# 两路盘的机制下界：不买二选一里低于五成的那一侧。这不是回测调出来的增益门槛，
+# 禁止再往上加缓冲（曾设 0.53，留出段反而从 54.0% 掉到 53.5% 并扔掉 74% 候选）。
+MIN_AH_CONFIDENCE = 0.50
+REASON_TOP_PROBABILITY = "同层校准命中概率最高"
 REASON_NO_MARKET = "缺少可用赔率，不推荐"
-REASON_NO_VALUE = "所有可选方向EV均不大于0，不推荐"
+REASON_LOW_CONFIDENCE = "主客两侧均未达最低置信度，不推荐"
 
 
 def _match_winner_odds(odds: dict[str, Any] | None) -> dict[str, float] | None:
@@ -92,7 +107,7 @@ def decide_match(
     odds: dict[str, Any] | None,
     features: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Pick the likeliest positive-EV home/away outcome, otherwise abstain."""
+    """Pick the likeliest home/away outcome above the confidence floor, else abstain."""
     resolved_match_id = int(calibration.get("match_id", match_id))
     evs = compute_outcome_evs(calibration, odds)
     probs = _calibrated_probs(calibration)
@@ -109,7 +124,7 @@ def decide_match(
     eligible = [
         outcome
         for outcome in DAILY_PICK_OUTCOMES
-        if probs[outcome] >= MIN_DAILY_CONFIDENCE and evs[outcome] > 0.0
+        if probs[outcome] >= MIN_DAILY_CONFIDENCE
     ]
     if not eligible:
         best_ev = max(evs[outcome] for outcome in DAILY_PICK_OUTCOMES)
@@ -118,9 +133,9 @@ def decide_match(
             "recommended_choice": None,
             "ev": float(best_ev),
             "confidence": 0.0,
-            "reason": REASON_NO_VALUE,
+            "reason": REASON_LOW_CONFIDENCE,
         }
-    # 正 EV 闸之后概率优先，EV 仅作同分决胜。
+    # 概率优先，EV 仅作同分决胜。
     best_outcome = max(
         eligible,
         key=lambda outcome: (pick_ranking_score(probs[outcome]), evs[outcome]),
@@ -135,5 +150,5 @@ def decide_match(
         "recommended_choice": best_outcome,
         "ev": float(evs[best_outcome]),
         "confidence": confidence,
-        "reason": REASON_POSITIVE_VALUE,
+        "reason": REASON_TOP_PROBABILITY,
     }

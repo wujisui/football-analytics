@@ -230,7 +230,10 @@ def test_valid_half_ball_board_always_uses_ah_despite_market_feedback(
 def test_one_goal_board_uses_market_probability_instead_of_moneyline(
     monkeypatch,
 ) -> None:
-    """没有独立 AH 概率时，主盘去水概率只会得到负 EV，不能拿来凑数。"""
+    """没有独立 AH 概率时用主盘去水概率，不得从 1X2 搬方向。
+
+    -1 盘 1.83/2.09 去水后主队 53.3%，过两路机制下界，应当直接出让球候选。
+    """
     match = _match(1, ah_line="-1", ah_cover_prob=None, goal_lean="大(3.25)")
     assert match.odds is not None
     match.odds["match_winner"] = {"home": 1.51, "draw": 4.60, "away": 6.00}
@@ -260,13 +263,16 @@ def test_one_goal_board_uses_market_probability_instead_of_moneyline(
         limit_per_day=4,
     )
 
-    assert result["selected_count"] == 0
-    assert result["candidate_count"] == 0
+    assert result["selected_count"] == 1
+    selected = result["selected"][0]
+    assert selected["market"] == "ah"
+    # 53.3% 来自 -1 盘自身去水，而不是 1X2 的 63.8%。
+    assert selected["confidence"] == pytest.approx(0.5332, abs=1e-3)
     assert all(item["market"] != "1x2" for item in result["selected"])
 
 
 def test_weak_deep_ah_falls_back_to_goals_not_moneyline(monkeypatch) -> None:
-    """让球无正 EV 时，正 EV 大小球可以降级补位，不能退成独赢。"""
+    """让球信心不足时，大小球可以降级补位，不能退成独赢。"""
     match = _match(1, ah_line="-1", ah_cover_prob=0.35, goal_lean="大(3.25)")
     assert match.odds is not None
     match.odds["match_winner"] = {"home": 1.51, "draw": 4.60, "away": 6.00}
@@ -390,10 +396,15 @@ def test_deep_board_fallback_hides_the_handicap_row_instead_of_dropping(
     assert result["consistency_rejected_count"] == 0
 
 
-def test_shallow_board_probability_over_half_does_not_mask_negative_ev(
+def test_negative_ev_shallow_board_is_still_a_candidate(
     monkeypatch,
 ) -> None:
-    """51.9% @1.869 仍是负 EV，禁止用“覆盖过半”包装成推荐。"""
+    """51.9% @1.869 是负 EV，但仍应入池——EV 只落库审计，不作门槛。
+
+    概率由所投盘口自己去水而来（``p = (1/赔率)/超额``），于是
+    ``EV = 1/超额 − 1`` 恒为负，负的幅度正好是抽水。若拿 ``EV > 0`` 当闸，
+    只有 Platt 截距够大的 ``ou`` 能过，日推会塌成全是大小球。
+    """
     match = MatchPipelineInput(
         fixture_id=1,
         league_id=94,
@@ -433,12 +444,20 @@ def test_shallow_board_probability_over_half_does_not_mask_negative_ev(
         limit_per_day=4,
     )
 
-    assert result["selected_count"] == 0
-    assert result["candidate_count"] == 0
+    assert result["selected_count"] == 1
+    selected = result["selected"][0]
+    assert selected["market"] == "ah"
+    assert selected["confidence"] == pytest.approx(0.519, abs=1e-3)
+    assert selected["ev"] < 0.0
 
 
-def test_shallow_board_positive_ev_below_half_is_allowed(monkeypatch) -> None:
-    """48% @2.20 是正 EV，不得用“AH 必须过半”机械拒绝。"""
+def test_shallow_board_below_half_is_rejected_by_the_two_way_floor(
+    monkeypatch,
+) -> None:
+    """两路盘不买低于五成的一侧：48% 的让球侧淘汰，哪怕它赔率高到正 EV。
+
+    这是机制下界而非回测门槛，与 EV 无关；``MIN_AH_CONFIDENCE`` 禁止再往上加缓冲。
+    """
     match = _match(1, ah_line="-0.5")
     assert match.odds is not None
     match.odds["asian_handicap"] = {"line": "-0.5", "home": 2.20, "away": 2.40}
@@ -460,14 +479,7 @@ def test_shallow_board_positive_ev_below_half_is_allowed(monkeypatch) -> None:
 
     result = run_pipeline([match], artifact={}, market_artifact={}, limit_per_day=4)
 
-    assert result["selected_count"] == 1
-    selected = result["selected"][0]
-    assert selected["market"] == "ah"
-    assert selected["ev"] == pytest.approx(0.056)
-    assert "市场方向：不明确" in selected["reason"]
-    assert "算法方向：主队" in selected["reason"]
-    assert "两者：无法校验" in selected["reason"]
-    assert "EV：+5.60%" in selected["reason"]
+    assert all(item["market"] != "ah" for item in result["selected"])
 
 
 def test_strong_six_line_market_conflict_rejects_the_pick(monkeypatch) -> None:
@@ -573,7 +585,7 @@ def test_quarter_ball_refund_survives_adverse_market_feedback() -> None:
 
 
 def test_run_pipeline_keeps_top_four_by_confidence_per_day(monkeypatch) -> None:
-    """候选都已为正 EV 时，层内按置信度排序而不是按 EV 大小排序。"""
+    """层内按校准命中概率排序，EV 大小不参与——这里 EV 与置信度刻意反向。"""
     processed = [
         _processed(1, confidence=0.62, ev=0.05),
         _processed(2, confidence=0.60, ev=0.10),
@@ -598,8 +610,8 @@ def test_run_pipeline_keeps_top_four_by_confidence_per_day(monkeypatch) -> None:
     assert result["selected"][0]["quality_rating"] == 5.0
 
 
-def test_negative_ev_candidates_leave_the_daily_pool_empty(monkeypatch) -> None:
-    """没有正 EV 时宁可 0 场，也不能挑亏得较少的一侧补满四场。"""
+def test_negative_ev_candidates_still_fill_the_daily_pool(monkeypatch) -> None:
+    """全负 EV 是常态（抽水），不得因此清空当日推荐；排序仍按校准概率。"""
     processed = [
         _processed(i, confidence=0.60 - i / 100, ev=-0.03 - i / 1000)
         for i in range(1, 7)
@@ -614,9 +626,8 @@ def test_negative_ev_candidates_leave_the_daily_pool_empty(monkeypatch) -> None:
         fake_process,
     )
     result = run_pipeline([_match(i) for i in range(1, 7)], artifact={}, limit_per_day=4)
-    assert result["candidate_count"] == 0
-    assert result["selected_count"] == 0
-    assert result["selected"] == []
+    assert result["selected_count"] == 4
+    assert all(item["ev"] < 0.0 for item in result["selected"])
 
 
 def test_run_pipeline_feedback_reorders_without_changing_the_pick_side(
@@ -789,8 +800,8 @@ def test_deep_board_without_ah_probability_is_skipped_and_backfilled(
         "app.services.recommendation.pipeline.process_match",
         fake_process,
     )
-    # 主让 1.5 没有独立 AH 概率，只能回退主盘去水概率，因此 EV 为负并在价值闸
-    # 直接跳过；后续正 EV 浅盘补位，不再走到一致性闸。
+    # 主让 1.5 没有独立 AH 概率，回退主盘去水概率后仍过两路下界，于是照常产出
+    # 候选；但「主胜」这张卡讲不圆 -1.5，交给一致性闸淘汰，浅盘顺位补位。
     matches = [
         _match(1, ah_line="-1.5"),
         *[_match(i, ah_line="-0.5") for i in range(2, 7)],
@@ -799,8 +810,7 @@ def test_deep_board_without_ah_probability_is_skipped_and_backfilled(
 
     assert [item["fixture_id"] for item in result["selected"]] == [2, 3, 4, 5]
     assert result["selected_count"] == 4
-    assert result["consistency_rejected_count"] == 0
-    assert result["rejected"] == []
+    assert result["consistency_rejected_count"] == 1
     assert all(item["fixture_id"] != 1 for item in result["selected"])
     assert all(item["is_consistent"] is True for item in result["selected"])
     assert all(item["handicap_lean"] == "主-0.5" for item in result["selected"])
