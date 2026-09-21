@@ -122,6 +122,18 @@ def test_spanish_names_use_mainland_transliteration() -> None:
     assert team_name_zh("Villarreal") == "比利亚雷亚尔"
 
 
+def test_new_hot_leagues_use_verified_ids() -> None:
+    """亚运 / 墨西哥联 / 哥伦甲 按官方 id 写，男足国家队与女足 / U23 不能串。"""
+    assert BY_ID[1566] == "中国"
+    assert BY_ID[1723] == "中国女足"
+    assert BY_ID[10932] == "中国U23"
+    assert BY_ID[2287] == "美洲队"
+    assert BY_ID[2295] == "蓝十字"
+    assert BY_ID[1131] == "布卡拉曼加"
+    assert team_name_zh("China PR U23", team_id=10932) == "中国U23"
+    assert team_name_zh("China W", team_id=1723) == "中国女足"
+
+
 def test_arabic_club_names_are_transliterated_not_glossed() -> None:
     """阿拉伯语队名按音译或沿用既有「城市+阿赫利」格式，不做字面意译。
 

@@ -989,3 +989,13 @@ day_limit = limit_per_day if day_total >= MIN_MATCHES_FOR_FULL_QUOTA else len(da
   （`test_spanish_names_use_mainland_transliteration`、
   `test_arabic_club_names_are_transliterated_not_glossed`）。
 - 回填 `teams.name` 4 行；`audit-team-names` conflicts=0；后端全量测试 310 条通过。
+
+### 新热门联赛球队译名：亚运 / 墨西哥联 / 哥伦甲
+
+- 管理员把亚运男足、亚运女足、墨西哥联、哥伦甲、英甲、英锦联勾进热门并拉了赛程后，
+  按 `leagues.is_hot=true` 补译名。英甲 / 英锦联当时还没有入库场次，跳过。
+- 写入 `BY_ID`：亚运女足 12、亚运男足 U23 8、墨西哥联 10、哥伦甲缺译 4，以及同批
+  友谊赛里仍缺中文的成年国家队。友谊赛 U17/U19 与俱乐部友谊赛冷门队未扩。
+- `1566` 中国（男足）与 `1723` 中国女足、`10932` 中国U23 分开钉住，避免互相覆盖。
+- `1141` 官方快照同时出现 Alianza Petrolera / Alianza Valledupar，按现用名写成
+  「巴耶杜帕尔联盟」。`Leon` / `Toluca` / `Monterrey` / `Jaguares` 未进纯英文名表。
