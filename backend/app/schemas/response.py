@@ -335,6 +335,21 @@ class FixtureResponse(BaseModel):
     away_goals: int | None = Field(default=None, description="客队进球（常规时间 90'）")
     league_country: str | None = Field(default=None, description="联赛所属国家/地区")
     analysis: AnalysisResponse = Field(..., description="赛前分析结果")
+    reference_market: str | None = Field(default=None, description="每场参考玩法")
+    reference_lean: str | None = Field(default=None, description="每场参考方向")
+    reference_ev: float | None = Field(default=None, description="每场参考结算口径 EV")
+    reference_adjusted_ev: float | None = Field(
+        default=None, description="扣除盘口方向惩罚后的 EV"
+    )
+    reference_probability: float | None = Field(
+        default=None, description="同玩法 Platt 校准概率"
+    )
+    reference_alignment: str | None = Field(
+        default=None, description="模型方向与同玩法盘口方向关系"
+    )
+    reference_reason: str | None = Field(
+        default=None, description="EV 不可计算时的原因或审计说明"
+    )
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
     odds_snippet: FixtureOddsSnippetResponse | None = Field(
@@ -403,7 +418,7 @@ class ResultFixtureResponse(BaseModel):
     )
     quality_rating: float | None = Field(
         default=None,
-        description="0.5–5 星推荐质量（同一比赛日的入选场次内部排名，开赛后冻结）",
+        description="1–5 星推荐强度（调整后 EV 绝对分档，开赛后冻结）",
     )
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
@@ -454,11 +469,12 @@ class FavoriteFixtureResponse(BaseModel):
     # auto = algorithm pick after scheduled sync; manual = user star.
     source: str = "manual"
     auto_market: str | None = None
+    auto_market_lean: str | None = None
     auto_lean: str | None = None
     # 与 auto_lean 同源的自洽展示；分析器那套在 recommendation/handicap_lean。
     auto_handicap_lean: str | None = None
     auto_score_hint: str | None = None
-    # 0.5–5 星推荐质量（同一比赛日的入选场次内部排名）。
+    # 1–5 星推荐强度（按调整后 EV 的绝对区间）。
     quality_rating: float | None = None
 
     @field_serializer("fixture_date", "saved_at")

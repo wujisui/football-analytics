@@ -130,6 +130,12 @@ function goDetail() {
       :goal-lean="prediction.goal_lean"
       :both-score="prediction.both_score_lean"
       :score-hint="prediction.score_hint"
+      :reference-lean="fixture.reference_lean"
+      :reference-ev="fixture.reference_ev"
+      :reference-adjusted-ev="fixture.reference_adjusted_ev"
+      :reference-probability="fixture.reference_probability"
+      :reference-alignment="fixture.reference_alignment"
+      :reference-reason="fixture.reference_reason"
       :fixture-id="fixture.fixture_id"
       clickable
       @open="showOddsModal = true"

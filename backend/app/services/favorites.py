@@ -88,7 +88,10 @@ def _to_favorite_response(
     # Prefer frozen snapshot; fall back to live auto-favorite columns.
     pick = auto_pick
     if pick is None and fav.auto_market and fav.auto_lean:
-        pick = SimpleNamespace(market=fav.auto_market, lean=fav.auto_lean)
+        pick = SimpleNamespace(
+            market=fav.auto_market,
+            lean=fav.auto_market_lean or fav.auto_lean,
+        )
     evaluated = evaluate_fixture_prediction(fixture, stored, auto_pick=pick)
     if evaluated["evaluable"] and evaluated["has_prediction"]:
         has_prediction = True
@@ -148,6 +151,7 @@ def _to_favorite_response(
         away_rank=away_rank,
         source=fav.source,
         auto_market=fav.auto_market,
+        auto_market_lean=fav.auto_market_lean,
         auto_lean=fav.auto_lean,
         auto_handicap_lean=fav.auto_handicap_lean,
         auto_score_hint=fav.auto_score_hint,
@@ -330,6 +334,7 @@ async def add_favorite(
             user_id=owner,
             source=FAVORITE_SOURCE_MANUAL,
             auto_market=None,
+            auto_market_lean=None,
             auto_lean=None,
             saved_at=now,
         )
@@ -339,6 +344,7 @@ async def add_favorite(
         # Manual click upgrades auto picks into user-owned favorites.
         fav.source = FAVORITE_SOURCE_MANUAL
         fav.auto_market = None
+        fav.auto_market_lean = None
         fav.auto_lean = None
         fav.quality_rating = None
     await db.commit()

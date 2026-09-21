@@ -1,5 +1,5 @@
-/** Normalize frozen auto-pick star rating for display (0.5–5). */
+/** Normalize frozen absolute recommendation-strength rating (1–5). */
 export function normalizeQualityRating(value: unknown): number | null {
   const rating = Number(value ?? 0)
-  return Number.isFinite(rating) && rating > 0 ? rating : null
+  return Number.isFinite(rating) && rating >= 1 && rating <= 5 ? rating : null
 }

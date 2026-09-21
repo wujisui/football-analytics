@@ -314,6 +314,20 @@ def _list_analysis_from_fixture(
     )
 
 
+def _reference_fields(stored: PreMatchData | None) -> dict[str, Any]:
+    if stored is None:
+        return {}
+    return {
+        "reference_market": stored.reference_market,
+        "reference_lean": stored.reference_lean,
+        "reference_ev": stored.reference_ev,
+        "reference_adjusted_ev": stored.reference_adjusted_ev,
+        "reference_probability": stored.reference_probability,
+        "reference_alignment": stored.reference_alignment,
+        "reference_reason": stored.reference_reason,
+    }
+
+
 def _odds_snippet_from_package(
     odds: dict[str, Any] | None,
 ) -> FixtureOddsSnippetResponse | None:
@@ -530,6 +544,7 @@ async def get_today_fixtures(
                 home_goals=fixture.home_goals,
                 away_goals=fixture.away_goals,
                 analysis=_list_analysis_from_fixture(fixture, stored),
+                **_reference_fields(stored),
                 home_rank=home_rank,
                 away_rank=away_rank,
                 odds_snippet=odds_snippet,
@@ -887,6 +902,9 @@ async def get_fixture_analysis(
     standings = package.get("standings") or {}
     odds_snippet = _odds_snippet_from_package(package.get("odds"))
     odds_opening_snippet = _odds_snippet_from_package(package.get("odds_opening"))
+    stored = await db.scalar(
+        select(PreMatchData).where(PreMatchData.fixture_id == fixture.id)
+    )
     return FixtureResponse(
         fixture_id=fixture.id,
         league_id=fixture.league_id,
@@ -920,6 +938,7 @@ async def get_fixture_analysis(
         home_goals=fixture.home_goals,
         away_goals=fixture.away_goals,
         analysis=analysis_to_response(analysis),
+        **_reference_fields(stored),
         home_rank=standings.get("home_rank"),
         away_rank=standings.get("away_rank"),
         odds_snippet=odds_snippet,

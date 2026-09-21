@@ -582,7 +582,7 @@ _RESET_MATCH_HISTORY_KEPT = (
     "users",
     "user_sessions",
     "bet_plans",
-    "app_settings (except auto_pick_incentive_state)",
+    "app_settings",
     "leagues",
     "teams",
 )
@@ -604,7 +604,7 @@ async def reset_match_history(
     from app.models.app_setting import AppSetting
     from app.models.auto_pick_snapshot import AutoPickSnapshot
     from app.models.league_standing import LeagueStanding
-    from app.services.auto_pick_incentive import KEY_INCENTIVE_STATE
+    from app.models.recommendation_candidate import RecommendationCandidateSnapshot
 
     async def _count(model: type) -> int:
         from sqlalchemy import func
@@ -620,7 +620,7 @@ async def reset_match_history(
     snapshots = await _count(ApiSnapshot)
     incentive_row = (
         await session.execute(
-            select(AppSetting).where(AppSetting.key == KEY_INCENTIVE_STATE)
+            select(AppSetting).where(AppSetting.key == "auto_pick_incentive_state")
         )
     ).scalar_one_or_none()
     incentive_count = 1 if incentive_row is not None else 0
@@ -649,6 +649,7 @@ async def reset_match_history(
     # Children first for explicit counts; fixtures CASCADE would also work.
     await session.execute(delete(FavoriteFixture))
     await session.execute(delete(AutoPickSnapshot))
+    await session.execute(delete(RecommendationCandidateSnapshot))
     await session.execute(delete(MatchFeature))
     await session.execute(delete(PreMatchData))
     await session.execute(delete(Fixture))

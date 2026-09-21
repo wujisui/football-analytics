@@ -20,8 +20,8 @@ from app.core.config import BACKEND_ROOT
 
 logger = logging.getLogger(__name__)
 
-CALIBRATION_VERSION = "daily-pick-platt-v1"
-CALIBRATION_PATH = BACKEND_ROOT / "data" / "models" / "daily_pick_calibration.json"
+CALIBRATION_VERSION = "recommendation-model-platt-v2"
+CALIBRATION_PATH = BACKEND_ROOT / "data" / "models" / "recommendation_model_calibration.json"
 MIN_MARKET_SAMPLES = 80
 MIN_HOLDOUT_SAMPLES = 20
 HOLDOUT_RATIO = 0.20
@@ -92,7 +92,8 @@ def build_calibration_artifact(
     """Build per-market calibrators with the latest 20% held out chronologically."""
     by_market: dict[str, list[tuple[datetime, float, bool]]] = {}
     for occurred_at, market, probability, outcome in samples:
-        if market not in {"1x2", "ah", "ou", "btts"}:
+        base_market = market.split(":", 1)[0]
+        if base_market not in {"1x2", "ah", "ou", "btts"}:
             continue
         by_market.setdefault(market, []).append(
             (occurred_at, _clip_probability(probability), bool(outcome))
@@ -145,22 +146,35 @@ def build_calibration_artifact(
     }
 
 
-def calibrate_probability(
+def calibrate_for_ev(
     artifact: dict[str, Any] | None,
     market: str,
+    direction: str,
     probability: float,
-) -> float:
-    """Apply a validated market calibrator; otherwise return the raw probability."""
-    raw = _clip_probability(probability)
+) -> tuple[float | None, str | None]:
+    """Strict model calibration for recommendation EV.
+
+    This function never falls back to the raw probability. A direction-specific
+    calibrator is preferred; a validated
+    global calibrator for the same market is the only allowed fallback.
+    """
     if not isinstance(artifact, dict) or artifact.get("version") != CALIBRATION_VERSION:
-        return raw
-    config = (artifact.get("markets") or {}).get(market)
-    if not isinstance(config, dict) or not config.get("deployable"):
-        return raw
-    try:
-        return apply_platt(raw, float(config["a"]), float(config["b"]))
-    except (KeyError, TypeError, ValueError):
-        return raw
+        return None, None
+    markets = artifact.get("markets") or {}
+    for key in (f"{market}:{direction}", market):
+        config = markets.get(key)
+        if not isinstance(config, dict) or not config.get("deployable"):
+            continue
+        try:
+            calibrated = apply_platt(
+                probability,
+                float(config["a"]),
+                float(config["b"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        return calibrated, f"{CALIBRATION_VERSION}:{key}"
+    return None, None
 
 
 def load_calibration_artifact(path: Path | None = None) -> dict[str, Any]:
@@ -193,73 +207,111 @@ async def train_from_frozen_history(
     now: datetime | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Train once per UTC day from frozen predictions and settled local scores."""
+    """Train once daily from all frozen independent-model candidates.
+
+    Selected and unselected directions are both included so Top-4 selection
+    cannot bias the calibrator.  Pushes are excluded from the binary Platt
+    target; half wins count as hits and half losses as misses, while their
+    monetary value remains in ``actual_return`` for EV/star auditing.
+    """
     current = now or datetime.now(timezone.utc)
     existing = load_calibration_artifact()
     if not force and existing.get("trained_day") == current.date().isoformat():
         return existing
 
-    # Local imports avoid a module cycle: auto_favorites consumes this artifact.
     from sqlalchemy import select
 
+    from app.models.recommendation_candidate import RecommendationCandidateSnapshot
     from app.models.fixture import Fixture
-    from app.models.match_feature import MatchFeature
-    from app.models.pre_match_data import PreMatchData
-    from app.services.auto_favorites import _market_candidates
-    from app.services.prematch_package import package_from_record, rehydrate_odds_markets
-    from app.services.results_accuracy import settle_auto_pick_hit
+    from app.services.ah_features import (
+        ASIAN_HALF_LOSS,
+        ASIAN_HALF_WIN,
+        ASIAN_LOSS,
+        ASIAN_PUSH,
+        ASIAN_WIN,
+        settle_asian_total,
+        settle_handicap_pick,
+    )
 
     rows = (
         await db.execute(
-            select(Fixture, PreMatchData, MatchFeature)
-            .join(PreMatchData, PreMatchData.fixture_id == Fixture.id)
-            .outerjoin(MatchFeature, MatchFeature.fixture_id == Fixture.id)
+            select(Fixture, RecommendationCandidateSnapshot)
+            .join(
+                RecommendationCandidateSnapshot,
+                RecommendationCandidateSnapshot.fixture_id == Fixture.id,
+            )
             .where(
                 Fixture.home_goals.is_not(None),
                 Fixture.away_goals.is_not(None),
                 Fixture.status.in_(["finished", "ft", "aet", "pen"]),
+                RecommendationCandidateSnapshot.raw_model_probability.is_not(None),
             )
-            .order_by(Fixture.date, Fixture.id)
+            .order_by(Fixture.date, Fixture.id, RecommendationCandidateSnapshot.id)
         )
     ).all()
 
-    # A fixture can have duplicate feature joins in legacy DBs; keep one.
-    by_fixture: dict[int, tuple[Any, Any, Any]] = {}
-    for fixture, stored, feature in rows:
-        previous = by_fixture.get(int(fixture.id))
-        if previous is None or (feature is not None and previous[2] is None):
-            by_fixture[int(fixture.id)] = (fixture, stored, feature)
-
     samples: list[tuple[datetime, str, float, bool]] = []
-    for fixture, stored, feature in by_fixture.values():
-        package = package_from_record(stored, match_start_time=fixture.date)
-        odds_raw = package.get("odds") if isinstance(package, dict) else None
-        odds = (
-            rehydrate_odds_markets(odds_raw)
-            if isinstance(odds_raw, dict)
-            else None
-        )
-        for candidate in _market_candidates(
-            stored,
-            odds=odds if isinstance(odds, dict) else None,
-            feature=feature,
-            calibration=None,
-        ):
-            hit = settle_auto_pick_hit(
-                market=candidate.market,
-                lean=candidate.lean,
-                home_goals=fixture.home_goals,
-                away_goals=fixture.away_goals,
+    return_units = {
+        ASIAN_WIN: 1.0,
+        ASIAN_HALF_WIN: 0.5,
+        ASIAN_PUSH: 0.0,
+        ASIAN_HALF_LOSS: -0.5,
+        ASIAN_LOSS: -1.0,
+    }
+    for fixture, candidate in rows:
+        home = int(fixture.home_goals)
+        away = int(fixture.away_goals)
+        result: str | None = None
+        hit: bool | None = None
+        if candidate.market == "1x2":
+            actual = "home" if home > away else "away" if away > home else "draw"
+            result = ASIAN_WIN if candidate.direction == actual else ASIAN_LOSS
+            hit = candidate.direction == actual
+        elif candidate.market == "btts":
+            actual = "yes" if home > 0 and away > 0 else "no"
+            result = ASIAN_WIN if candidate.direction == actual else ASIAN_LOSS
+            hit = candidate.direction == actual
+        elif candidate.market == "ah" and candidate.line is not None:
+            result = settle_handicap_pick(
+                home,
+                away,
+                candidate.line,
+                "让胜" if candidate.direction == "home" else "让负",
             )
-            if hit is not None:
-                samples.append(
-                    (
-                        fixture.date,
-                        candidate.market,
-                        candidate.raw_confidence,
-                        hit,
-                    )
-                )
+        elif candidate.market == "ou" and candidate.line is not None:
+            result = settle_asian_total(
+                home + away,
+                candidate.line,
+                over=candidate.direction == "over",
+            )
+
+        if result in {ASIAN_WIN, ASIAN_HALF_WIN}:
+            hit = True
+        elif result in {ASIAN_LOSS, ASIAN_HALF_LOSS}:
+            hit = False
+        elif result == ASIAN_PUSH:
+            hit = None
+
+        candidate.settlement_result = result
+        unit = return_units.get(result or "")
+        if unit is not None and candidate.decimal_odd is not None:
+            candidate.actual_return = (
+                unit * (float(candidate.decimal_odd) - 1.0)
+                if unit > 0
+                else unit
+            )
+        if hit is None:
+            continue
+        probability = float(candidate.raw_model_probability)
+        samples.append((fixture.date, candidate.market, probability, hit))
+        samples.append(
+            (
+                fixture.date,
+                f"{candidate.market}:{candidate.direction}",
+                probability,
+                hit,
+            )
+        )
 
     artifact = build_calibration_artifact(samples, trained_at=current)
     save_calibration_artifact(artifact)

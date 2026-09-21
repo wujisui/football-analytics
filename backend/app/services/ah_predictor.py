@@ -43,6 +43,10 @@ class HandicapPrediction:
     source: str  # market_implied | ml
     line_f: float | None = None
     market_note: str = ""
+    # Independent model output before the legacy market blend. Recommendation
+    # EV must use this value, never ``cover_prob`` when it came from the board.
+    model_cover_prob: float | None = None
+    model_version: str | None = None
 
 
 class _BinaryLogReg:
@@ -225,7 +229,15 @@ def _model_prediction(
         f"只往模型方向修一半到 {cover_prob:.1%}，所以选"
         f"{format_handicap_lean_text(pick_to_lean(pick), line_f)}"
     )
-    return HandicapPrediction(cover_prob, pick, "ml", line_f, note)
+    return HandicapPrediction(
+        cover_prob,
+        pick,
+        "ml",
+        line_f,
+        note,
+        model_cover_prob=model_prob,
+        model_version=str(meta.get("ah_feature_version") or AH_FEATURE_VERSION),
+    )
 
 
 def predict_handicap(

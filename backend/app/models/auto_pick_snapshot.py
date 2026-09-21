@@ -39,9 +39,15 @@ class AutoPickSnapshot(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     decimal_odd: Mapped[float | None] = mapped_column(Float, nullable=True)
     expected_return: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Final ranking score after incentives (the within-day rating ranks this).
+    adjusted_ev: Mapped[float | None] = mapped_column(Float, nullable=True)
+    implied_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    model_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    calibrator_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    direction_alignment: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # Final ranking score is the adjusted EV.
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # 0.5–5 星质量分级，按同一比赛日的入选场次内部排名冻结。
+    # 1–5 星 absolute strength band mapped from adjusted EV.
     quality_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     picked_at: Mapped[datetime] = mapped_column(
         DateTime,

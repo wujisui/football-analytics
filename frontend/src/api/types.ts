@@ -264,6 +264,14 @@ export interface FixtureResponse {
   away_goals?: number | null
   league_country?: string | null
   analysis: AnalysisResponse
+  /** 所有比赛都有的统一参考；星级仅属于日推。 */
+  reference_market?: '1x2' | 'ah' | 'ou' | 'btts' | string | null
+  reference_lean?: string | null
+  reference_ev?: number | null
+  reference_adjusted_ev?: number | null
+  reference_probability?: number | null
+  reference_alignment?: string | null
+  reference_reason?: string | null
   home_rank?: number | null
   away_rank?: number | null
   /** 即时盘列表摘要。 */

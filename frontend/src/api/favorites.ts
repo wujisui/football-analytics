@@ -43,11 +43,13 @@ export interface FavoriteFixtureRecord {
   /** auto = scheduled algorithm pick; manual = user star. */
   source?: 'manual' | 'auto' | string
   auto_market?: AutoFavoriteMarket | string | null
+  /** auto_market 对应的实际投注方向。 */
+  auto_market_lean?: string | null
   auto_lean?: string | null
   /** 与 auto_lean 同源的自洽展示；分析器那套在 recommendation / handicap_lean。 */
   auto_handicap_lean?: string | null
   auto_score_hint?: string | null
-  /** 0.5–5 星推荐质量（同一比赛日的入选场次内部排名）。 */
+  /** 1–5 星推荐强度（调整后 EV 的绝对分档）。 */
   quality_rating?: number | null
 }
 

@@ -53,6 +53,7 @@ function optimisticFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord 
     saved_at: new Date().toISOString(),
     source: 'manual',
     auto_market: null,
+    auto_market_lean: null,
     auto_lean: null,
     quality_rating: null,
     odds_snippet: oddsSnippetFromFixture(fixture),
@@ -85,6 +86,7 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     saved_at: new Date().toISOString(),
     source: 'manual',
     auto_market: null,
+    auto_market_lean: null,
     auto_lean: null,
     quality_rating: null,
     has_prediction: hasPrediction,
@@ -308,6 +310,7 @@ export function findFavoriteListFixture(
 /** 日推自洽三件套：单选方向、让球表达与同向比分；非算法推荐时为 null。 */
 export interface AutoPickBundle {
   market: string
+  marketLean: string
   lean: string
   handicapLean: string
   scoreHint: string
@@ -322,13 +325,14 @@ export function autoFavoritePick(
   if (!item || !market) return null
   return {
     market,
+    marketLean: (item.auto_market_lean || item.auto_lean || '').trim(),
     lean: (item.auto_lean || '').trim(),
     handicapLean: (item.auto_handicap_lean || '').trim(),
     scoreHint: (item.auto_score_hint || '').trim(),
   }
 }
 
-/** 0.5–5 星推荐质量；非算法推荐或历史不足时为 null。 */
+/** 1–5 星推荐强度；非算法推荐时为 null。 */
 export function favoriteQualityRating(
   fixtureId: number | null | undefined,
 ): number | null {

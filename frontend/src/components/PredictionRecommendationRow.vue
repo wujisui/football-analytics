@@ -11,6 +11,12 @@ const props = withDefaults(
     goalLean?: string
     bothScore?: string
     scoreHint?: string
+    referenceLean?: string | null
+    referenceEv?: number | null
+    referenceAdjustedEv?: number | null
+    referenceProbability?: number | null
+    referenceAlignment?: string | null
+    referenceReason?: string | null
     clickable?: boolean
     /** Resolves the auto-favorite market/lean for this fixture. */
     fixtureId?: number | null
@@ -21,6 +27,12 @@ const props = withDefaults(
     goalLean: '',
     bothScore: '',
     scoreHint: '',
+    referenceLean: null,
+    referenceEv: null,
+    referenceAdjustedEv: null,
+    referenceProbability: null,
+    referenceAlignment: null,
+    referenceReason: null,
     clickable: false,
     fixtureId: null,
   },
@@ -42,13 +54,21 @@ function isPick(market: AutoFavoriteMarket): boolean {
 
 /** 有 [荐] 时整行只展示日推自洽三件套，禁止与分析器 handicap/score 混排。 */
 const recommendationText = computed(() => {
+  if (isPick('1x2')) return pick.value?.marketLean || pick.value?.lean
   if (pick.value) return pick.value.lean
   return props.recommendation
 })
 const handicapText = computed(() => {
+  if (isPick('ah')) return pick.value?.marketLean
   if (pick.value) return pick.value.handicapLean
   return props.handicapLean
 })
+const goalText = computed(() =>
+  isPick('ou') ? pick.value?.marketLean || props.goalLean : props.goalLean,
+)
+const bothScoreText = computed(() =>
+  isPick('btts') ? pick.value?.marketLean || props.bothScore : props.bothScore,
+)
 const scoreText = computed(() => {
   if (pick.value) return pick.value.scoreHint
   return props.scoreHint
@@ -61,9 +81,32 @@ const recommendationLabel = computed(() =>
 )
 const handicapLabel = computed(() => adaptHandicapLean(handicapText.value))
 const showHandicap = computed(() => !isPredictionPending(handicapText.value))
-const showGoal = computed(() => !isPredictionPending(props.goalLean))
-const showBothScore = computed(() => !isPredictionPending(props.bothScore))
+const showGoal = computed(() => !isPredictionPending(goalText.value))
+const showBothScore = computed(() => !isPredictionPending(bothScoreText.value))
 const showScore = computed(() => !isPredictionPending(scoreText.value))
+const referenceText = computed(() => {
+  if (!props.referenceLean) return ''
+  const probability = props.referenceProbability == null
+    ? ''
+    : ` · 校准概率 ${(props.referenceProbability * 100).toFixed(1)}%`
+  const ev = props.referenceEv == null
+    ? ' · EV 数据不足'
+    : ` · EV ${props.referenceEv >= 0 ? '+' : ''}${(props.referenceEv * 100).toFixed(1)}%`
+  const adjusted = props.referenceAdjustedEv == null
+    ? ''
+    : ` · 调整后 ${props.referenceAdjustedEv >= 0 ? '+' : ''}${(props.referenceAdjustedEv * 100).toFixed(1)}%`
+  const alignmentLabel = {
+    aligned_strong: '盘口强一致',
+    aligned_weak: '盘口一致',
+    unknown: '盘口方向不明确',
+    reverse_weak: '逆向推荐（弱）',
+    reverse_strong: '逆向推荐（强）',
+  }[props.referenceAlignment || '']
+  const alignment = alignmentLabel
+    ? ` · ${alignmentLabel}`
+    : ''
+  return `参考 ${props.referenceLean}${probability}${ev}${adjusted}${alignment}`
+})
 
 /**
  * 普通场次统一 info；每日推荐场次只突出实际主推，其他预测退为 default。
@@ -119,7 +162,7 @@ function open() {
       :bordered="false"
     >
       <span v-if="isPick('ou')" class="rec-pick-mark">[荐]</span>
-      {{ goalLean }}
+      {{ goalText }}
     </n-tag>
     <n-tag
       v-if="showBothScore"
@@ -130,7 +173,7 @@ function open() {
       :bordered="false"
     >
       <span v-if="isPick('btts')" class="rec-pick-mark">[荐]</span>
-      {{ bothScore }}
+      {{ bothScoreText }}
     </n-tag>
     <n-tag
       v-if="showScore"
@@ -141,6 +184,11 @@ function open() {
     >
       <n-ellipsis style="max-width: 100%">{{ scoreText }}</n-ellipsis>
     </n-tag>
+    <span
+      v-if="referenceText"
+      class="reference-summary"
+      :title="referenceReason || referenceText"
+    >{{ referenceText }}</span>
   </div>
 </template>
 
@@ -177,6 +225,12 @@ function open() {
   margin-right: 3px;
   font-size: 11px;
   opacity: 0.95;
+}
+
+.reference-summary {
+  flex-basis: 100%;
+  color: var(--n-text-color-3);
+  font-size: 12px;
 }
 
 .clickable {

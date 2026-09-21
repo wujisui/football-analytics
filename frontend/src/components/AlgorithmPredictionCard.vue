@@ -174,7 +174,7 @@ const primaryAwayOdd = computed(() =>
 )
 const primaryLine = computed(() => primaryAh.value?.line || '—')
 
-/** 每日推荐质量：0.5–5 星，只有算法推荐场次才有。 */
+/** 每日推荐强度：调整后 EV 的 1–5 星绝对分档。 */
 const qualityRating = computed(() => favoriteQualityRating(resolvedFixtureId.value))
 
 const probs = computed(() => {
@@ -398,6 +398,12 @@ function onOddsClick() {
         :goal-lean="prediction.goal_lean"
         :both-score="prediction.both_score_lean"
         :score-hint="prediction.score_hint"
+        :reference-lean="fixture?.reference_lean"
+        :reference-ev="fixture?.reference_ev"
+        :reference-adjusted-ev="fixture?.reference_adjusted_ev"
+        :reference-probability="fixture?.reference_probability"
+        :reference-alignment="fixture?.reference_alignment"
+        :reference-reason="fixture?.reference_reason"
         :fixture-id="resolvedFixtureId"
         clickable
         @open="goBriefing"

@@ -38,10 +38,12 @@ from app.services.prediction import (  # noqa: E402
     normalize_probabilities,
 )
 from app.services.prematch_package import rehydrate_odds_markets  # noqa: E402
-from app.services.recommendation.strategy import (  # noqa: E402
-    MIN_DAILY_CONFIDENCE,
-    pick_ranking_score,
-)
+MIN_DAILY_CONFIDENCE = 0.40
+
+
+def pick_ranking_score(probability: float) -> float:
+    """Historical replay helper; production now ranks by adjusted EV."""
+    return float(probability)
 
 DB = ROOT / "data" / "football.db"
 

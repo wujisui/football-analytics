@@ -6,7 +6,7 @@ from app.services.probability_calibration import (
     CALIBRATION_VERSION,
     apply_platt,
     build_calibration_artifact,
-    calibrate_probability,
+    calibrate_for_ev,
     fit_platt,
 )
 
@@ -35,13 +35,15 @@ def test_artifact_uses_latest_twenty_percent_only_for_validation() -> None:
     assert config["calibrated_holdout"]["brier"] < config["raw_holdout"]["brier"]
 
 
-def test_non_deployable_market_keeps_raw_probability() -> None:
+def test_ev_calibration_never_falls_back_to_raw_probability() -> None:
     artifact = {
         "version": CALIBRATION_VERSION,
         "markets": {
-            "ou": {"deployable": False, "a": 0.0, "b": 0.0},
-            "1x2": {"deployable": True, "a": 0.0, "b": 0.0},
+            "ah": {"deployable": False, "a": 1.0, "b": 0.0},
+            "ah:home": {"deployable": True, "a": 0.0, "b": 0.0},
         },
     }
-    assert calibrate_probability(artifact, "ou", 0.7) == 0.7
-    assert calibrate_probability(artifact, "1x2", 0.7) == 0.5
+    assert calibrate_for_ev(artifact, "ah", "away", 0.7) == (None, None)
+    probability, version = calibrate_for_ev(artifact, "ah", "home", 0.7)
+    assert probability == 0.5
+    assert version == f"{CALIBRATION_VERSION}:ah:home"

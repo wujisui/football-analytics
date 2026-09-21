@@ -8,6 +8,7 @@ from app.models.league import League, LeagueCategory, LeagueCatalogTombstone
 from app.models.league_standing import LeagueStanding
 from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
+from app.models.recommendation_candidate import RecommendationCandidateSnapshot
 from app.models.team import Team
 from app.models.user import User
 from app.models.user_session import UserSession
@@ -25,6 +26,7 @@ __all__ = [
     "Team",
     "Fixture",
     "PreMatchData",
+    "RecommendationCandidateSnapshot",
     "MatchFeature",
     "User",
     "UserSession",

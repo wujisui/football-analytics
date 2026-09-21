@@ -183,6 +183,13 @@ async def _ensure_sqlite_columns(conn) -> None:
             "goal_lean": "TEXT",
             "both_score_lean": "TEXT",
             "handicap_lean": "TEXT",
+            "reference_market": "TEXT",
+            "reference_lean": "TEXT",
+            "reference_ev": "REAL",
+            "reference_adjusted_ev": "REAL",
+            "reference_probability": "REAL",
+            "reference_alignment": "TEXT",
+            "reference_reason": "TEXT",
         },
     )
     await _ensure_table_columns(
@@ -268,6 +275,7 @@ async def _ensure_sqlite_columns(conn) -> None:
             "user_id": "TEXT",
             "source": "TEXT DEFAULT 'manual'",
             "auto_market": "TEXT",
+            "auto_market_lean": "TEXT",
             "auto_lean": "TEXT",
             "auto_handicap_lean": "TEXT",
             "auto_score_hint": "TEXT",
@@ -283,6 +291,12 @@ async def _ensure_sqlite_columns(conn) -> None:
             "quality_rating": "REAL",
             "handicap_lean": "TEXT",
             "score_hint": "TEXT",
+            "adjusted_ev": "REAL",
+            "implied_probability": "REAL",
+            "model_source": "TEXT",
+            "model_version": "TEXT",
+            "calibrator_version": "TEXT",
+            "direction_alignment": "TEXT",
         },
     )
     await _ensure_table_columns(
@@ -302,7 +316,7 @@ async def _ensure_sqlite_columns(conn) -> None:
     await conn.execute(
         text("UPDATE bet_plans SET user_id = '' WHERE user_id IS NULL")
     )
-    # quality_low 已被 0.5–5 星的 quality_rating 取代。
+    # quality_low 已被 1–5 星调整后 EV 强度的 quality_rating 取代。
     await _drop_table_columns(conn, "favorite_fixtures", ("quality_low",))
     await _drop_table_columns(conn, "auto_pick_snapshots", ("quality_low",))
     await _drop_table_columns(conn, "match_features", ("audit_snapshot_json",))

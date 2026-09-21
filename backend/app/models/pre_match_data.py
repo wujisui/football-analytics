@@ -30,6 +30,15 @@ class PreMatchData(Base):
     goal_lean: Mapped[str | None] = mapped_column(String, nullable=True)
     both_score_lean: Mapped[str | None] = mapped_column(String, nullable=True)
     handicap_lean: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Unified all-match reference.  Unlike daily picks this exists for every
+    # fixture and never carries a star rating.
+    reference_market: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    reference_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reference_ev: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reference_adjusted_ev: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reference_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reference_alignment: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    reference_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Structured pre-match package (JSON text)
     odds_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # First available pre-kickoff board (initial); immutable anchor.
