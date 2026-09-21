@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.services.prediction import score_hint_for_consistent_bundle
 from app.services.recommendation import pipeline
 from app.services.recommendation.decision import (
     MatchDecision,
@@ -229,6 +230,49 @@ def test_away_quarter_ball_pick_uses_away_result_and_winning_score(
     assert pick.handicap_lean == "客-0.25"
     home, away = (int(value) for value in pick.score_hint.removeprefix("比分:").split("-"))
     assert away > home
+
+
+def test_reference_score_keeps_the_btts_call() -> None:
+    # 回归：日推的比分生成器漏了双进对齐，「双进:是」配出 3-0。
+    probs = {"home": 0.708, "draw": 0.185, "away": 0.107}
+    hint = score_hint_for_consistent_bundle(
+        "主胜", None, probs, goal_lean="大(2.75)", both_score_lean="双进:是"
+    )
+    assert hint is not None
+    for pair in hint.removeprefix("比分:").split("/"):
+        home, away = (int(value) for value in pair.split("-"))
+        assert home > 0 and away > 0
+        assert home + away > 2.75
+
+
+def test_score_never_covers_the_board_the_pick_passed_on() -> None:
+    """哥伦甲那场：主 -1.5 去水 48.7% 被降级，比分却给了 3-0。
+
+    降级的理由就是穿盘概率不足五成，参考比分不能反过来演示轻松穿盘。
+    """
+    probs = {"home": 0.708, "draw": 0.185, "away": 0.107}
+    hint = score_hint_for_consistent_bundle(
+        "主胜",
+        None,
+        probs,
+        goal_lean="大(2.75)",
+        both_score_lean="双进:是",
+        declined_handicap_lean="主-1.5",
+    )
+    assert hint == "比分:2-1"
+
+    # 约束无解时返回 None，交给调用方降级，而不是发布自相矛盾的三件套。
+    assert (
+        score_hint_for_consistent_bundle(
+            "主胜",
+            None,
+            probs,
+            goal_lean="大(2.75)",
+            both_score_lean="双进:否",
+            declined_handicap_lean="主-1.5",
+        )
+        is None
+    )
 
 
 def test_deep_board_receiving_side_is_never_sold_as_an_outright_win() -> None:

@@ -1200,10 +1200,7 @@ Brier 只从 0.24878 改善到 0.24661。
 顺带删除：`AhBoardStance.is_deep`（收敛后无应用调用方）、遗留调试文件 `backend/_probe.py`。
 回归 `test_one_depth_rule_serves_both_the_bet_and_the_companion_row`。
 
-本地重算后，截图中的场次已变为 `主胜 · [荐] 主+0.25 · 比分 1-0`；当日其余 AH 推荐
-也全部重建为同侧三件套。新增回归
-`test_quarter_ball_pick_rebuilds_result_and_score_from_selected_side`、
-`test_away_quarter_ball_pick_uses_away_result_and_winning_score`、
-`test_impossible_deep_handicap_falls_back_and_hides_handicap_row`。后端全量
-268 条测试（另 3 个 subtests）通过；一致性闸没有改变 600 场回放的选中结果，市场轨
-仍为 33/58（56.9%）、ROI +1.2%。
+### 日推参考比分对齐双进，且不得演示已放弃的穿盘
+
+`score_hint_for_lean` 补上双进对齐；让球降级后比分不得写成穿盘（走水/输盘可）。
+抽出 `_swap_score_within_shape`。1549790 `3-0` → `2-1`。

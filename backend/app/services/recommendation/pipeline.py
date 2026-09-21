@@ -173,6 +173,25 @@ def _display_handicap_for_candidate(
     return format_handicap_lean_text(pick, line)
 
 
+def _declined_board_lean(
+    decision: MatchDecision,
+    candidate: RecommendationCandidate,
+    handicap_lean: str | None,
+) -> str | None:
+    """让球层放弃掉的那一侧，仅当它的让球行被隐藏时才需要约束比分。
+
+    降到大小球 / 双进的理由就是让球方穿盘概率不足，所以参考比分不能反过来写成
+    轻松穿盘：哥伦甲那场主 -1.5 去水 48.7%，卡片却配了 3-0。浅盘的伴随让球行照常
+    展示并只要求「不输」，不适用本约束。
+    """
+    if candidate.market == MARKET_AH or handicap_lean is not None:
+        return None
+    for item in decision.candidates:
+        if item.market == MARKET_AH and item.line is not None and item.tellable:
+            return item.lean
+    return None
+
+
 def _consistent_bundle(
     match: MatchPipelineInput,
     decision: MatchDecision,
@@ -200,6 +219,9 @@ def _consistent_bundle(
         {"home": home, "draw": draw, "away": away},
         goal_lean=goal_lean,
         both_score_lean=both_score_lean,
+        declined_handicap_lean=_declined_board_lean(
+            decision, candidate, handicap_lean
+        ),
     )
     if score_hint is None:
         return None

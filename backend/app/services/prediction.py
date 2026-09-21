@@ -3,9 +3,20 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Callable
 
-from app.services.ah_features import asian_result_counts_as_hit, settle_asian_total
+from app.services.ah_features import (
+    ASIAN_HALF_LOSS,
+    ASIAN_HALF_WIN,
+    ASIAN_LOSS,
+    ASIAN_PUSH,
+    ASIAN_WIN,
+    asian_result_counts_as_hit,
+    handicap_line_from_lean,
+    handicap_picks_from_lean,
+    settle_asian_total,
+    settle_handicap_pick,
+)
 
 DEFAULT_PROB = 1 / 3
 # Only treat as "no real model output" when all three sit on the flat prior.
@@ -885,30 +896,64 @@ def _align_score_with_handicap(
     大小球优先级高于让球行。双进形态逐条沿用原比分，仍由
     ``_reconcile_btts_with_scores`` 收口。
     """
-    from app.services.ah_features import (
-        ASIAN_HALF_WIN,
-        ASIAN_PUSH,
-        ASIAN_WIN,
-        handicap_line_from_lean,
-        handicap_picks_from_lean,
-        settle_handicap_pick,
+    non_losing = {ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH}
+    return _swap_score_within_shape(
+        lines,
+        ou_line=ou_line,
+        ou_side=ou_side,
+        holds=_handicap_holds(handicap_lean, allowed=non_losing),
     )
 
-    non_losing = {ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH}
+
+def _align_score_short_of_handicap(
+    lines: list[tuple[int, int]],
+    *,
+    handicap_lean: str,
+    ou_line: float,
+    ou_side: str,
+) -> list[tuple[int, int]]:
+    """降级掉的那一侧让球，不得在参考比分里被穿盘。
+
+    让球层因为「穿盘概率不足五成」才降到大小球 / 双进，此时再配一个能轻松穿盘的
+    比分，就是自己打自己：哥伦甲那场主 -1.5 去水只有 48.7%，卡片却给出 3-0。
+    与 ``_align_score_with_handicap`` 是同一台机器的两个问句——前者要求所投那侧
+    不输，这里要求放弃那侧不赢，换不到就交给调用方降级。
+    """
+    return _swap_score_within_shape(
+        lines,
+        ou_line=ou_line,
+        ou_side=ou_side,
+        holds=_handicap_holds(
+            handicap_lean, allowed={ASIAN_LOSS, ASIAN_HALF_LOSS, ASIAN_PUSH}
+        ),
+    )
+
+
+def _handicap_holds(
+    handicap_lean: str, *, allowed: set[str]
+) -> Callable[[int, int], bool]:
+    """比分在该让球侧的结算是否全部落在 ``allowed`` 里。"""
     line_f = handicap_line_from_lean(handicap_lean)
     picks = handicap_picks_from_lean(handicap_lean)
     if line_f is None or not picks:
-        return lines
+        return lambda home, away: True
+    return lambda home, away: all(
+        settle_handicap_pick(home, away, line_f, pick) in allowed
+        for pick in picks
+    )
 
-    def _holds(home: int, away: int) -> bool:
-        return all(
-            settle_handicap_pick(home, away, line_f, pick) in non_losing
-            for pick in picks
-        )
 
+def _swap_score_within_shape(
+    lines: list[tuple[int, int]],
+    *,
+    ou_line: float,
+    ou_side: str,
+    holds: Callable[[int, int], bool],
+) -> list[tuple[int, int]]:
+    """Swap for the nearest score with the same 胜负 / 双进 / 大小球 shape."""
     out: list[tuple[int, int]] = []
     for home, away in lines:
-        if _holds(home, away):
+        if holds(home, away):
             out.append((home, away))
             continue
         sign = (home > away) - (home < away)
@@ -921,7 +966,7 @@ def _align_score_with_handicap(
             if ((h > a) - (h < a)) == sign
             and (h > 0 and a > 0) == both_scored
             and _score_settles_ou(h, a, ou_line, ou_side)
-            and _holds(h, a)
+            and holds(h, a)
         ]
         if not candidates:
             out.append((home, away))
@@ -1271,6 +1316,16 @@ def score_hint_for_lean(
         )
         for pair in lines
     ]
+    # 与分析器同序：先双进、再大小球。漏掉双进这一步会让「双进:是」配出 3-0。
+    lines = _align_score_with_btts(
+        lines,
+        btts_yes=btts_yes,
+        probs=probs,
+        total=_target_total(line, side),
+        recommendation=lean,
+        ou_line=line,
+        ou_side=side,
+    )
     lines = _align_score_with_ou(
         lines, line=line, ou_side=side, btts_yes=btts_yes
     )
@@ -1287,16 +1342,18 @@ def score_hint_for_consistent_bundle(
     *,
     goal_lean: str | None,
     both_score_lean: str | None,
+    declined_handicap_lean: str | None = None,
 ) -> str | None:
-    """Build a score that agrees with the displayed result and handicap side.
+    """Build a score that agrees with the displayed result, handicap and board.
 
     Daily recommendations replace the analyzer's direction, so reusing its old
     score can produce bundles such as ``客胜 · 主+0.25 · 0-1``.  Generate the
-    score again for the selected result, then require every displayed score to
-    keep the selected Asian side out of a losing settlement.  If the O/U and
-    handicap constraints cannot coexist, return ``None`` so the recommendation
-    pipeline can fall back to the next market instead of publishing a
-    contradictory three-piece bundle.
+    score again for the selected result, then hold two constraints at once:
+    the displayed handicap side must not lose, and the side the AH layer
+    **passed on** (``declined_handicap_lean``) must not be shown as covered —
+    降级的理由就是它穿盘概率不足五成，再配一个 3-0 等于自己打自己。
+    If the constraints cannot coexist, return ``None`` so the pipeline falls
+    back to the next market instead of publishing a contradictory bundle.
     """
     score_hint = score_hint_for_lean(
         result_lean,
@@ -1308,12 +1365,9 @@ def score_hint_for_consistent_bundle(
     if not score_hint:
         return None
     scores = _parse_score_hint(score_hint)
-    if not scores:
+    outcomes = recommendation_outcomes(result_lean)
+    if not scores or not outcomes:
         return None
-
-    handicap = (handicap_lean or "").strip()
-    if not handicap:
-        return score_hint
 
     parsed_ou = _parse_goal_lean(goal_lean or "")
     if parsed_ou is None:
@@ -1321,38 +1375,48 @@ def score_hint_for_consistent_bundle(
         ou_side, ou_line = ("over", 2.5) if btts_yes else ("under", 2.5)
     else:
         ou_side, ou_line = parsed_ou
-    scores = _align_score_with_handicap(
-        scores,
-        handicap_lean=handicap,
-        ou_line=ou_line,
-        ou_side=ou_side,
-    )
 
-    from app.services.ah_features import (
-        ASIAN_HALF_WIN,
-        ASIAN_PUSH,
-        ASIAN_WIN,
-        handicap_line_from_lean,
-        handicap_picks_from_lean,
-        settle_handicap_pick,
-    )
-
-    line = handicap_line_from_lean(handicap)
-    picks = handicap_picks_from_lean(handicap)
-    outcomes = recommendation_outcomes(result_lean)
-    non_losing = {ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH}
-    if line is None or not picks or not outcomes:
-        return None
-    if any(
-        not _score_matches_outcomes(home, away, outcomes)
-        or any(
-            settle_handicap_pick(home, away, line, pick) not in non_losing
-            for pick in picks
+    declined = (declined_handicap_lean or "").strip()
+    if declined:
+        scores = _align_score_short_of_handicap(
+            scores,
+            handicap_lean=declined,
+            ou_line=ou_line,
+            ou_side=ou_side,
         )
-        for home, away in scores
-    ):
+        if not _scores_settle_as(
+            scores, declined, allowed={ASIAN_LOSS, ASIAN_HALF_LOSS, ASIAN_PUSH}
+        ):
+            return None
+
+    handicap = (handicap_lean or "").strip()
+    if handicap:
+        scores = _align_score_with_handicap(
+            scores,
+            handicap_lean=handicap,
+            ou_line=ou_line,
+            ou_side=ou_side,
+        )
+        if not _scores_settle_as(
+            scores, handicap, allowed={ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH}
+        ):
+            return None
+
+    if any(not _score_matches_outcomes(home, away, outcomes) for home, away in scores):
         return None
     return "比分:" + "/".join(f"{home}-{away}" for home, away in scores)
+
+
+def _scores_settle_as(
+    scores: list[tuple[int, int]], handicap_lean: str, *, allowed: set[str]
+) -> bool:
+    """每条比分在该让球侧的结算是否都落在 ``allowed`` 里（盘口解析失败即否）。"""
+    if handicap_line_from_lean(handicap_lean) is None:
+        return False
+    if not handicap_picks_from_lean(handicap_lean):
+        return False
+    holds = _handicap_holds(handicap_lean, allowed=allowed)
+    return all(holds(home, away) for home, away in scores)
 
 
 def _clamp(n: float, lo: float, hi: float) -> float:
