@@ -2,7 +2,8 @@
 import { computed } from 'vue'
 
 import type { AutoFavoriteMarket } from '@/api/favorites'
-import { autoFavoritePick } from '@/composables/useFavoriteFixtures'
+import RecommendationStrength from '@/components/RecommendationStrength.vue'
+import { autoFavoritePick, favoriteQualityRating } from '@/composables/useFavoriteFixtures'
 import { isPredictionPending, adaptHandicapLean } from '@/utils/handicapDisplay'
 const props = withDefaults(
   defineProps<{
@@ -17,6 +18,11 @@ const props = withDefaults(
     referenceProbability?: number | null
     referenceAlignment?: string | null
     referenceReason?: string | null
+    /**
+     * 行尾自带星级/参考槽位。宿主卡片已有让球行那个预留位时置 false，
+     * 避免同一场比赛出现两份推荐强度。
+     */
+    inlineStrength?: boolean
     clickable?: boolean
     /** Resolves the auto-favorite market/lean for this fixture. */
     fixtureId?: number | null
@@ -33,6 +39,7 @@ const props = withDefaults(
     referenceProbability: null,
     referenceAlignment: null,
     referenceReason: null,
+    inlineStrength: true,
     clickable: false,
     fixtureId: null,
   },
@@ -47,6 +54,8 @@ const emit = defineEmits<{
  * 被日推选中的场次整行改用日推那套自洽三件套，禁止两套混排。
  */
 const pick = computed(() => autoFavoritePick(props.fixtureId))
+/** 同一槽位：日推场次给星级，其余场次给每场参考。 */
+const qualityRating = computed(() => favoriteQualityRating(props.fixtureId))
 
 function isPick(market: AutoFavoriteMarket): boolean {
   return pick.value?.market === market
@@ -84,30 +93,6 @@ const showHandicap = computed(() => !isPredictionPending(handicapText.value))
 const showGoal = computed(() => !isPredictionPending(goalText.value))
 const showBothScore = computed(() => !isPredictionPending(bothScoreText.value))
 const showScore = computed(() => !isPredictionPending(scoreText.value))
-const referenceText = computed(() => {
-  if (!props.referenceLean) return ''
-  const probability = props.referenceProbability == null
-    ? ''
-    : ` · 校准概率 ${(props.referenceProbability * 100).toFixed(1)}%`
-  const ev = props.referenceEv == null
-    ? ' · EV 数据不足'
-    : ` · EV ${props.referenceEv >= 0 ? '+' : ''}${(props.referenceEv * 100).toFixed(1)}%`
-  const adjusted = props.referenceAdjustedEv == null
-    ? ''
-    : ` · 调整后 ${props.referenceAdjustedEv >= 0 ? '+' : ''}${(props.referenceAdjustedEv * 100).toFixed(1)}%`
-  const alignmentLabel = {
-    aligned_strong: '盘口强一致',
-    aligned_weak: '盘口一致',
-    unknown: '盘口方向不明确',
-    reverse_weak: '逆向推荐（弱）',
-    reverse_strong: '逆向推荐（强）',
-  }[props.referenceAlignment || '']
-  const alignment = alignmentLabel
-    ? ` · ${alignmentLabel}`
-    : ''
-  return `参考 ${props.referenceLean}${probability}${ev}${adjusted}${alignment}`
-})
-
 /**
  * 普通场次统一 info；每日推荐场次只突出实际主推，其他预测退为 default。
  * 赛前没有命中态，主推借用赛果命中 tag 的 error 红色建立一致视觉。
@@ -184,25 +169,44 @@ function open() {
     >
       <n-ellipsis style="max-width: 100%">{{ scoreText }}</n-ellipsis>
     </n-tag>
-    <span
-      v-if="referenceText"
-      class="reference-summary"
-      :title="referenceReason || referenceText"
-    >{{ referenceText }}</span>
+    <RecommendationStrength
+      v-if="inlineStrength"
+      :value="qualityRating"
+      :reference-lean="referenceLean"
+      :reference-ev="referenceEv"
+      :reference-adjusted-ev="referenceAdjustedEv"
+      :reference-probability="referenceProbability"
+      :reference-alignment="referenceAlignment"
+      :reference-reason="referenceReason"
+      @click.stop
+    />
   </div>
 </template>
 
 <style scoped>
+/*
+ * 整行既是「赛前简报」的悬停触发区，又是点进详情的按钮，所以必须贴着标签收窄：
+ * 撑满宿主宽度时，标签右侧的空白也会弹浮层并吃掉点击。
+ */
 .recommendation-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-self: start;
+  align-self: start;
   gap: 6px;
+  width: fit-content;
   min-width: 0;
+  max-width: 100%;
 }
 
 .recommendation-row :deep(.n-tag) {
   flex-shrink: 0;
+}
+
+/* n-tag 自带 cursor: default，会在可点整行里露出箭头光标 */
+.clickable :deep(.n-tag) {
+  cursor: inherit;
 }
 
 .handicap-tag,
@@ -225,12 +229,6 @@ function open() {
   margin-right: 3px;
   font-size: 11px;
   opacity: 0.95;
-}
-
-.reference-summary {
-  flex-basis: 100%;
-  color: var(--n-text-color-3);
-  font-size: 12px;
 }
 
 .clickable {

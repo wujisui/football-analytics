@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import RecommendationQualityRate from '@/components/RecommendationQualityRate.vue'
+import RecommendationStrength from '@/components/RecommendationStrength.vue'
 import { adaptHandicapLean, handicapLeanLabel } from '@/utils/handicapDisplay'
 import { hitTagMissed, hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
@@ -112,7 +112,7 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
     >
       {{ handicapTagLabel }}
     </n-tag>
-    <RecommendationQualityRate
+    <RecommendationStrength
       class="hit-rate"
       :value="fixture.quality_rating"
       @click.stop

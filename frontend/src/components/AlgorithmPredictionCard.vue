@@ -8,7 +8,7 @@ import DetailTabHint from '@/components/DetailTabHint.vue'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
-import RecommendationQualityRate from '@/components/RecommendationQualityRate.vue'
+import RecommendationStrength from '@/components/RecommendationStrength.vue'
 import WdlProbabilityBars from '@/components/WdlProbabilityBars.vue'
 import { favoriteQualityRating } from '@/composables/useFavoriteFixtures'
 import {
@@ -174,7 +174,7 @@ const primaryAwayOdd = computed(() =>
 )
 const primaryLine = computed(() => primaryAh.value?.line || '—')
 
-/** 每日推荐强度：调整后 EV 的 1–5 星绝对分档。 */
+/** 让球行右列：日推场次给 1–5 星推荐强度，其余场次给每场参考。 */
 const qualityRating = computed(() => favoriteQualityRating(resolvedFixtureId.value))
 
 const probs = computed(() => {
@@ -388,7 +388,15 @@ function onOddsClick() {
         </div>
         <span v-else class="handicap-empty">暂无盘口</span>
       </div>
-      <RecommendationQualityRate :value="qualityRating" reserve-space />
+      <RecommendationStrength
+        :value="qualityRating"
+        :reference-lean="fixture?.reference_lean"
+        :reference-ev="fixture?.reference_ev"
+        :reference-adjusted-ev="fixture?.reference_adjusted_ev"
+        :reference-probability="fixture?.reference_probability"
+        :reference-alignment="fixture?.reference_alignment"
+        :reference-reason="fixture?.reference_reason"
+      />
     </div>
 
     <DetailTabHint tab="briefing">
@@ -404,6 +412,7 @@ function onOddsClick() {
         :reference-probability="fixture?.reference_probability"
         :reference-alignment="fixture?.reference_alignment"
         :reference-reason="fixture?.reference_reason"
+        :inline-strength="!standalone"
         :fixture-id="resolvedFixtureId"
         clickable
         @open="goBriefing"
@@ -513,7 +522,7 @@ function onOddsClick() {
   background: var(--fa-bg-elevated);
 }
 
-/* 左让球 6、右星级 4；未上推荐的场次同样占住右列，两侧不跟着内容跳宽度 */
+/* 左让球 6、右星级 4；未上推荐的场次在右列显示每场参考，两侧不跟着内容跳宽度 */
 .handicap-line {
   display: grid;
   grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
@@ -527,8 +536,9 @@ function onOddsClick() {
   font-variant-numeric: tabular-nums;
 }
 
-.handicap-line :deep(.quality-rate) {
+.handicap-line :deep(.strength-slot) {
   justify-self: end;
+  text-align: right;
 }
 
 .handicap-main {
