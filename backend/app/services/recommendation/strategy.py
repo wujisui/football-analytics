@@ -1,9 +1,7 @@
-"""Risk-adjusted recommendation strategy for the daily-pick pipeline.
+"""Positive-value recommendation strategy for the daily-pick pipeline.
 
-候选同时覆盖独赢与亚洲让球盘。排序不再只追命中率，也不直接追逐高赔率，而使用
-``命中概率 × 净赔率 ** PAYOUT_EXPONENT``：凹效用保留收益奖励，同时抑制长赔方差。
-EV 仍逐场落库供审计并用于同分决胜；当前模型没有稳定市场边际，因此不把正 EV
-作为门槛。
+候选必须先过 ``EV > 0`` 硬门槛；层内再按校准命中概率排序。没有独立市场边际时
+宁可不推荐，禁止用“覆盖概率过半”或“负 EV 中亏损较小”补满名额。
 """
 
 from __future__ import annotations
@@ -13,21 +11,13 @@ from typing import Any
 from app.services.prediction import _odd_float
 
 OUTCOMES = ("home", "draw", "away")
-# 概率来自去水后的市场隐含赔率（``market_baseline``），即 ``p ≈ 1 / 赔率``，
-# 于是基础分正比于 ``(赔率 - 1) ** e / 赔率``，极大值落在 ``赔率 = 1 / (1 - e)``。
-# 保持 e = 0.5 让 2.00 附近仍可入选：降幂次会整体抬高净赔率 < 1 的低赔候选
-# （0.52 的立方根比平方根高约 11%，0.93 只高约 1.2%），把各候选原始分压平，
-# 历史 EMA 与联赛软权重因此更容易反超，反而挤掉高概率的 1.9 档候选。
-# 幂次不是命中率旋钮，压它只会同时改甜点与压平分差。命中率偏好一律在打分之前
-# 表达：让球两侧走 ``pipeline._to_ah_picks`` 的同盘命中率闸，独赢走
-# ``MIN_DAILY_CONFIDENCE`` 下限。
-PAYOUT_EXPONENT = 0.5
 # 平局本身概率低、方差大，即便偶尔算出正 EV 也会拖垮日推整体中奖率，
 # 因此日推只在主客两侧里选，平局仍参与 EV 计算供审计与解释使用。
 DAILY_PICK_OUTCOMES = ("home", "away")
 MIN_DAILY_CONFIDENCE = 0.40
-REASON_RISK_ADJUSTED_RETURN = "风险调整回报最高"
+REASON_POSITIVE_VALUE = "正期望价值候选"
 REASON_NO_MARKET = "缺少可用赔率，不推荐"
+REASON_NO_VALUE = "所有可选方向EV均不大于0，不推荐"
 
 
 def _match_winner_odds(odds: dict[str, Any] | None) -> dict[str, float] | None:
@@ -57,32 +47,27 @@ def expected_value(decimal_odd: float, calibrated_prob: float) -> float:
     return float(decimal_odd) * float(calibrated_prob) - 1.0
 
 
-def risk_adjusted_return_score(
-    calibrated_prob: float,
-    decimal_odd: float,
-) -> float:
-    """Balance hit probability and payout without blindly chasing long odds.
+def pick_ranking_score(calibrated_prob: float) -> float:
+    """层内排序分：就是校准命中概率本身，赔率不参与。
 
-    ``net payout ** PAYOUT_EXPONENT`` is a concave utility: moving from 1.60 to
-    1.95 is rewarded more than moving from 2.60 to 2.95. The exponent also fixes
-    where the ranking peaks against market-implied probabilities — see the
-    module-level note on ``PAYOUT_EXPONENT``.
+    这里曾经是 ``概率 × 净赔率 ** 0.5``。因为概率全部来自去水市场（``p ≈ 1/赔率``），
+    那个式子会约掉成 ``√(p(1-p))``——**极大值落在 p = 0.5**，也就是说它在每一层里
+    系统性地挑最接近抛硬币的盘。实测 542 条浅盘让球样本，按所投一侧赔率分桶：
 
-    Quarter/level boards need no extra term here: a partial refund already
-    raises ``calibrated_prob`` (it is conditional on the stake resolving) and
-    already lowers ``decimal_odd``. Scaling by the at-risk share on top of that
-    would penalise refund protection a second time and bias the ranking toward
-    higher-variance full-stake bets.
+        ≤1.80（水位差大）  69.8% (37/53)   平均分 0.4780
+        1.80~1.90          55.9% (246/440) 平均分 0.4846
+        1.90~1.95（近平水） 49.0% (24/49)   平均分 0.4879
 
-    This score cannot express a hit-rate preference between the two sides of one
-    two-way board. With ``p ≈ 1 / decimal_odd`` it reduces to ``√(p(1-p))``,
-    which is symmetric about 0.5, so 让胜 0.519 and 让负 0.481 score identically
-    on the probability term and only the bookmaker margin separates them. Gate
-    the side upstream (``pipeline._to_ah_picks``); never expect this function to.
+    命中率单调降，打分单调升，完全反相关；取前 25% 时旧式 55.6%、纯概率 60.0%。
+
+    旧注释担心「压低幂次会压平原始分差、让历史 EMA 更容易反超」，那只在跨赔率档
+    比较时成立。``_daily_pick_rank_key`` 先按层排序，层内赔率挤在 1.8~1.95，
+    ``(赔率-1) ** 0.5`` 近乎常数：同一批样本里 e=0.5 的基础分极差只有 7.3%，
+    e=0 反而有 15.0%。压平分差的恰恰是旧幂次。
+
+    赔率仍逐场算进 ``ev`` 落库供审计与同分决胜，只是不再决定谁进当日四个坑。
     """
-    probability = max(0.0, min(1.0, float(calibrated_prob)))
-    net_payout = max(0.0, float(decimal_odd) - 1.0)
-    return probability * net_payout**PAYOUT_EXPONENT
+    return max(0.0, min(1.0, float(calibrated_prob)))
 
 
 def compute_outcome_evs(
@@ -107,7 +92,7 @@ def decide_match(
     odds: dict[str, Any] | None,
     features: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Pick the best risk-adjusted home/away outcome; EV rides along for audit."""
+    """Pick the likeliest positive-EV home/away outcome, otherwise abstain."""
     resolved_match_id = int(calibration.get("match_id", match_id))
     evs = compute_outcome_evs(calibration, odds)
     probs = _calibrated_probs(calibration)
@@ -121,21 +106,24 @@ def decide_match(
             "reason": REASON_NO_MARKET,
         }
 
-    prices = _match_winner_odds(odds) or {}
     eligible = [
         outcome
         for outcome in DAILY_PICK_OUTCOMES
-        if probs[outcome] >= MIN_DAILY_CONFIDENCE
+        if probs[outcome] >= MIN_DAILY_CONFIDENCE and evs[outcome] > 0.0
     ]
     if not eligible:
-        eligible = list(DAILY_PICK_OUTCOMES)
+        best_ev = max(evs[outcome] for outcome in DAILY_PICK_OUTCOMES)
+        return {
+            "match_id": resolved_match_id,
+            "recommended_choice": None,
+            "ev": float(best_ev),
+            "confidence": 0.0,
+            "reason": REASON_NO_VALUE,
+        }
+    # 正 EV 闸之后概率优先，EV 仅作同分决胜。
     best_outcome = max(
         eligible,
-        key=lambda outcome: (
-            risk_adjusted_return_score(probs[outcome], prices[outcome]),
-            evs[outcome],
-            probs[outcome],
-        ),
+        key=lambda outcome: (pick_ranking_score(probs[outcome]), evs[outcome]),
     )
     confidence = float(probs[best_outcome])
     if isinstance(features, dict):
@@ -147,5 +135,5 @@ def decide_match(
         "recommended_choice": best_outcome,
         "ev": float(evs[best_outcome]),
         "confidence": confidence,
-        "reason": REASON_RISK_ADJUSTED_RETURN,
+        "reason": REASON_POSITIVE_VALUE,
     }

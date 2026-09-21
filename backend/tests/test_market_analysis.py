@@ -2,7 +2,10 @@ from datetime import datetime, timezone
 
 from app.schemas.response import analysis_to_response
 from app.services.analyzer import AnalysisResult
-from app.services.market_analysis import build_market_analysis
+from app.services.market_analysis import (
+    build_market_analysis,
+    handicap_direction_signal,
+)
 
 
 def _board(
@@ -128,6 +131,8 @@ def test_four_stage_analysis_uses_real_line_and_probability_movement() -> None:
     assert "主队要让的球变多了" in text
     assert "方向一致偏向主队" in text
     assert "大小球怎么走的：初盘 3 → 临场 3.25" in text
+
+
     assert "大小球盘口比开盘时抬高了" in text
     assert "两边长期算下来都是亏的" in text
     # 白话口径：不要再把术语推给用户。
@@ -139,6 +144,53 @@ def test_four_stage_analysis_uses_real_line_and_probability_movement() -> None:
     assert "最早开出的报价" not in text
     assert "带减号" not in text
     assert "进球偏" not in text
+
+
+def test_handicap_direction_signal_marks_unanimous_multi_line_move_strong() -> None:
+    opening = _board(
+        "2026-08-26T08:00:00+00:00",
+        role="initial",
+        ah_line="-0.75",
+        ah_home="1.90",
+        ah_away="1.90",
+        ou_line="2.5",
+        ou_home="1.90",
+        ou_away="1.90",
+        home="2.0",
+        draw="3.4",
+        away="4.0",
+    )
+    current = _board(
+        "2026-08-27T17:00:00+00:00",
+        role="current",
+        ah_line="-0.5",
+        ah_home="2.10",
+        ah_away="1.75",
+        ou_line="2.5",
+        ou_home="1.90",
+        ou_away="1.90",
+        home="2.0",
+        draw="3.4",
+        away="4.0",
+    )
+    opening["asian_handicap"]["lines"] = [
+        {"line": str(line), "home": "1.90", "away": "1.90"}
+        for line in (-1, -0.75, -0.5, -0.25, 0, 0.25)
+    ]
+    current["asian_handicap"]["lines"] = [
+        {"line": str(line), "home": "2.10", "away": "1.75"}
+        for line in (-1, -0.75, -0.5, -0.25, 0, 0.25)
+    ]
+
+    signal = handicap_direction_signal(
+        {"odds_opening": opening, "odds": current}
+    )
+
+    assert signal.direction == "away"
+    assert signal.strength == "strong"
+    assert signal.line_direction == "away"
+    assert signal.common_lines == 6
+    assert signal.away_up == 6
 
 
 def test_handicap_value_is_phrased_as_money_per_hundred() -> None:

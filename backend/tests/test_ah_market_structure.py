@@ -1,5 +1,4 @@
 from app.services.ah_market_structure import (
-    FALLBACK_GIVING_ODD_MEDIAN,
     FALLBACK_WATER_DEADZONE,
     classify_ah_board,
     thresholds_from_quotes,
@@ -51,16 +50,13 @@ def test_giving_side_high_water_goes_underdog() -> None:
     assert stance.follow_up is False
     assert stance.ah_pick == "让负"
     assert stance.result_choice == "away"
-    assert stance.allow_moneyline is False
 
 
-def test_cheap_giving_side_can_allow_moneyline() -> None:
+def test_cheap_giving_side_follows_the_board() -> None:
     odds = _odds("-0.25", 1.80, 2.10)
     stance = classify_ah_board(odds)
     assert stance is not None
     assert stance.follow_up is True
-    assert stance.allow_moneyline is True
-    assert stance.giving_odd < FALLBACK_GIVING_ODD_MEDIAN
     assert stance.water_deadzone == FALLBACK_WATER_DEADZONE
 
 
@@ -69,7 +65,6 @@ def test_home_label_does_not_break_deadzone() -> None:
     stance = classify_ah_board(odds)
     assert stance is not None
     assert stance.even
-    assert stance.allow_moneyline is False
 
 
 def test_ah_board_never_overrides_the_1x2_board() -> None:

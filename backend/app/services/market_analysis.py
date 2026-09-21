@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
 import re
+from typing import Any
 
 from app.services.ah_features import (
     format_ah_line,
@@ -21,6 +22,21 @@ _STAGES = (
 )
 _OUTCOMES = ("home", "draw", "away")
 _OUTCOME_LABELS = {"home": "主队赢", "draw": "打平", "away": "客队赢"}
+
+
+@dataclass(frozen=True)
+class HandicapDirectionSignal:
+    """Auditable market direction from persisted AH stages."""
+
+    direction: str | None
+    strength: str
+    line_direction: str | None
+    line_home_moves: int
+    line_away_moves: int
+    common_lines: int
+    home_up: int
+    away_up: int
+    detail: str
 
 
 def _odd(value: Any) -> float | None:
@@ -244,6 +260,119 @@ def _common_line_consensus(
         elif delta <= -0.015:
             away_up += 1
     return len(common), home_up, away_up
+
+
+def handicap_direction_signal(
+    package: dict[str, Any] | None,
+) -> HandicapDirectionSignal:
+    """Summarise AH movement without mixing bookmakers or handicap lines.
+
+    The line path uses every distinct persisted stage (opening → mid → late →
+    current). Same-line resonance compares de-vigged probabilities only where
+    the opening and current board expose the exact same handicap line.
+    """
+    stages = _stage_boards(package)
+    if len(stages) < 2:
+        return HandicapDirectionSignal(
+            None, "none", None, 0, 0, 0, 0, 0, "盘口阶段不足，市场方向不明确"
+        )
+
+    current = _market(stages[-1][1], "asian_handicap")
+    if current is None:
+        return HandicapDirectionSignal(
+            None, "none", None, 0, 0, 0, 0, 0, "缺少即时让球盘"
+        )
+
+    comparable: list[tuple[str, dict[str, Any]]] = []
+    for label, board in stages:
+        market = _market(board, "asian_handicap")
+        if market is None:
+            continue
+        if market is current or _same_book(market, current):
+            comparable.append((label, market))
+
+    line_home_moves = line_away_moves = 0
+    previous_line: float | None = None
+    for _label, market in comparable:
+        line = _line(market.get("line"))
+        if line is None:
+            continue
+        if previous_line is not None:
+            delta = line - previous_line
+            if delta < -1e-9:
+                line_home_moves += 1
+            elif delta > 1e-9:
+                line_away_moves += 1
+        previous_line = line
+
+    line_direction: str | None = None
+    if line_home_moves > line_away_moves:
+        line_direction = "home"
+    elif line_away_moves > line_home_moves:
+        line_direction = "away"
+
+    common = home_up = away_up = 0
+    if len(comparable) >= 2:
+        consensus = _common_line_consensus(comparable[0][1], current)
+        if consensus is not None:
+            common, home_up, away_up = consensus
+
+    consensus_direction: str | None = None
+    if home_up > away_up:
+        consensus_direction = "home"
+    elif away_up > home_up:
+        consensus_direction = "away"
+
+    direction = consensus_direction or line_direction
+    if (
+        consensus_direction is not None
+        and line_direction is not None
+        and consensus_direction != line_direction
+    ):
+        direction = consensus_direction
+
+    directional_votes = {
+        "home": line_home_moves + home_up,
+        "away": line_away_moves + away_up,
+    }
+    opposite_votes = (
+        directional_votes["away"]
+        if direction == "home"
+        else directional_votes["home"]
+        if direction == "away"
+        else 0
+    )
+    unanimous_resonance = (
+        common >= 3
+        and (
+            (home_up == common and away_up == 0)
+            or (away_up == common and home_up == 0)
+        )
+    )
+    strength = (
+        "strong"
+        if direction is not None and unanimous_resonance and opposite_votes == 0
+        else "weak"
+        if direction is not None
+        else "none"
+    )
+
+    side_label = {"home": "主队", "away": "客队"}.get(direction, "不明确")
+    detail = (
+        f"市场方向{side_label}；让球线变化主/客={line_home_moves}/{line_away_moves}，"
+        f"同档共振主/客={home_up}/{away_up}（可比{common}档），强度={strength}"
+    )
+    return HandicapDirectionSignal(
+        direction=direction,
+        strength=strength,
+        line_direction=line_direction,
+        line_home_moves=line_home_moves,
+        line_away_moves=line_away_moves,
+        common_lines=common,
+        home_up=home_up,
+        away_up=away_up,
+        detail=detail,
+    )
 
 
 def _ah_expected_return(

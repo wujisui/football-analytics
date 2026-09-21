@@ -1,12 +1,12 @@
-"""Risk-adjusted recommendation strategy (no official API calls)."""
+"""Hit-rate-first recommendation strategy (no official API calls)."""
 
-from app.services.recommendation import strategy
 from app.services.recommendation.strategy import (
     REASON_NO_MARKET,
-    REASON_RISK_ADJUSTED_RETURN,
+    REASON_NO_VALUE,
+    REASON_POSITIVE_VALUE,
     decide_match,
     expected_value,
-    risk_adjusted_return_score,
+    pick_ranking_score,
 )
 
 
@@ -40,99 +40,81 @@ def test_expected_value_formula() -> None:
     assert abs(expected_value(2.0, 0.55) - 0.10) < 1e-9
 
 
-def test_risk_score_keeps_even_money_reachable() -> None:
-    """2.00 附近必须留在可入选范围，不能被幂次人为封顶。
+def test_ranking_never_peaks_at_the_coin_flip() -> None:
+    """排序分必须随概率单调上升，不能在 p = 0.5 见顶。
 
-    概率来自去水市场（``p ≈ 1 / 赔率``）时下列候选 EV 全为 0，唯一差别是水位。
-    ``e = 0.5`` 的极大值落在 2.00；一旦压低幂次，净赔率 < 1 的低赔候选会被整体
-    抬分并压平原始分差，历史权重就能挤掉高概率的 1.9 档候选。命中率偏好不靠压这个
-    幂次：让球两侧走 ``pipeline._to_ah_picks`` 的同盘命中率闸，独赢走
-    ``MIN_DAILY_CONFIDENCE`` 下限。
+    旧式 ``概率 × 净赔率 ** 0.5`` 在概率来自去水市场（``p ≈ 1/赔率``）时约成
+    ``√(p(1-p))``，极大值恰在 p = 0.5，于是每一层都系统性地挑最像抛硬币的盘。
+    实测 542 条浅盘让球按所投一侧赔率分桶：≤1.80 命中 69.8%、平均分 0.4780，
+    1.90~1.95 命中 49.0%、平均分 0.4879——命中率单调降、打分单调升。
     """
-    fair = {
-        1.15: risk_adjusted_return_score(1 / 1.15, 1.15),
-        1.50: risk_adjusted_return_score(1 / 1.50, 1.50),
-        2.00: risk_adjusted_return_score(1 / 2.00, 2.00),
-        4.00: risk_adjusted_return_score(1 / 4.00, 4.00),
-    }
-    assert fair[2.00] == max(fair.values())
-    assert fair[2.00] > fair[1.50] > fair[1.15]
-    assert fair[2.00] > fair[4.00]
+    fair = {odd: pick_ranking_score(1 / odd) for odd in (1.15, 1.50, 2.00, 4.00)}
+    assert fair[1.15] == max(fair.values())
+    assert fair[1.15] > fair[1.50] > fair[2.00] > fair[4.00]
 
 
-def test_low_exponent_would_flatten_the_score_gap_across_odds() -> None:
-    """记录压幂次的副作用：原始分差被压平，历史权重更容易反超。
-
-    62% @1.93 与 63% @1.52 两个真实候选，``e = 0.5`` 下原始分相差约 1.31 倍，
-    ``e = 1/3`` 下只剩约 1.19 倍。实际历史乘数（约 0.9）足以在后者翻盘，
-    这正是 1.93 高概率候选掉出四强的机制。
-    """
-    high_odds, low_odds = (0.620, 1.93), (0.632, 1.52)
-    wide = risk_adjusted_return_score(*high_odds) / risk_adjusted_return_score(*low_odds)
-
-    original = strategy.PAYOUT_EXPONENT
-    try:
-        strategy.PAYOUT_EXPONENT = 1.0 / 3.0
-        narrow = risk_adjusted_return_score(*high_odds) / risk_adjusted_return_score(
-            *low_odds
-        )
-    finally:
-        strategy.PAYOUT_EXPONENT = original
-
-    assert wide > narrow > 1.0
-    assert wide > 1.30
-    assert narrow < 1.20
-
-
-def test_risk_score_still_rewards_payout_at_equal_probability() -> None:
-    assert risk_adjusted_return_score(0.50, 2.2) > risk_adjusted_return_score(0.50, 2.0)
-    assert risk_adjusted_return_score(0.50, 2.0) > risk_adjusted_return_score(0.25, 4.0)
+def test_payout_no_longer_breaks_a_probability_tie() -> None:
+    """赔率只进 EV 审计，不得把低概率候选抬到高概率候选之上。"""
+    assert pick_ranking_score(0.50) == pick_ranking_score(0.50)
+    assert pick_ranking_score(0.50) > pick_ranking_score(0.25)
 
 
 def test_quarter_ball_refund_is_not_penalised_twice() -> None:
     """同一方向下，退半的 -0.25 应压过全输的独赢。
 
-    主胜 46.1% / 平 27.0% 时，让胜(-0.25) 的条件命中率为 53.3%、赔率 1.83；
-    独赢胜命中率 46.1%、赔率 2.10。前者每单位本金期望更优，综合分必须同向。
+    主胜 46.1% / 平 27.0% 时，让胜(-0.25) 的条件命中率为 53.3%；独赢胜 46.1%。
+    退半的好处已经计入条件命中率，排序分不得再乘 at_risk 罚第二次。
     """
-    assert risk_adjusted_return_score(0.5326, 1.83) > risk_adjusted_return_score(
-        0.4608, 2.10
-    )
+    assert pick_ranking_score(0.5326) > pick_ranking_score(0.4608)
 
 
-def test_picks_the_best_risk_adjusted_side() -> None:
+def test_picks_the_most_likely_side() -> None:
     payload = decide_match(
         match_id=1001,
         calibration=_calibration(),
         odds=_odds(),
     )
     assert payload["recommended_choice"] == "home"
-    assert payload["reason"] == REASON_RISK_ADJUSTED_RETURN
+    assert payload["reason"] == REASON_POSITIVE_VALUE
     assert abs(payload["confidence"] - 0.55) < 1e-9
     # EV rides along for audit even though it did not drive the choice.
     assert abs(payload["ev"] - 0.10) < 1e-9
 
 
-def test_negative_ev_still_produces_a_payout_aware_pick() -> None:
-    """EV 为负仍可入池；较高赔率在风险调整后可以胜过单纯高置信度。"""
+def test_negative_ev_never_produces_a_pick() -> None:
+    """45% @2.00 与 41% @2.30 都是负 EV，不能选亏得较少的一侧凑数。"""
     payload = decide_match(
         match_id=1002,
         calibration=_calibration(home=0.45, draw=0.14, away=0.41),
         odds=_odds(home=2.0, draw=6.0, away=2.3),
     )
-    assert payload["recommended_choice"] == "away"
+    assert payload["recommended_choice"] is None
     assert payload["ev"] < 0.0
-    assert abs(payload["confidence"] - 0.41) < 1e-9
+    assert payload["confidence"] == 0.0
+    assert payload["reason"] == REASON_NO_VALUE
 
 
-def test_draw_is_never_picked_even_when_most_likely() -> None:
+def test_positive_ev_below_half_is_allowed() -> None:
+    """正 EV 才是价值依据；48% @2.20 不得因“覆盖未过半”被拒绝。"""
+    payload = decide_match(
+        match_id=1006,
+        calibration=_calibration(home=0.48, draw=0.32, away=0.20),
+        odds=_odds(home=2.20, draw=3.40, away=4.50),
+    )
+    assert payload["recommended_choice"] == "home"
+    assert abs(payload["ev"] - 0.056) < 1e-9
+    assert payload["reason"] == REASON_POSITIVE_VALUE
+
+
+def test_draw_is_never_picked_and_nonpositive_sides_are_skipped() -> None:
+    """平局不进日推；主客 EV 均非正时也不能硬挑一个。"""
     payload = decide_match(
         match_id=1004,
         calibration=_calibration(home=0.30, draw=0.45, away=0.25),
         odds=_odds(),
     )
-    assert payload["recommended_choice"] == "away"
-    assert abs(payload["confidence"] - 0.25) < 1e-9
+    assert payload["recommended_choice"] is None
+    assert payload["reason"] == REASON_NO_VALUE
 
 
 def test_confidence_shrinks_on_low_reliability_leagues() -> None:

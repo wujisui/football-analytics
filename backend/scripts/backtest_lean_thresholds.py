@@ -40,7 +40,7 @@ from app.services.prediction import (  # noqa: E402
 from app.services.prematch_package import rehydrate_odds_markets  # noqa: E402
 from app.services.recommendation.strategy import (  # noqa: E402
     MIN_DAILY_CONFIDENCE,
-    risk_adjusted_return_score,
+    pick_ranking_score,
 )
 
 DB = ROOT / "data" / "football.db"
@@ -238,7 +238,7 @@ def ah_candidates(row: dict, *, shallow_only: bool) -> list[dict]:
         for s in sides:
             if s["conf"] < best - 1e-9 or s["conf"] < MIN_DAILY_CONFIDENCE:
                 continue
-            s["score"] = risk_adjusted_return_score(s["conf"], s["odd"])
+            s["score"] = pick_ranking_score(s["conf"])
             out.append(s)
     return out
 
@@ -274,7 +274,7 @@ def report_ah(rows: list[dict]) -> None:
     print("=" * 78)
     print("二、让球候选范围回测")
     print("=" * 78)
-    print("每块盘先留命中率更高的一侧，再按风险调整分选一注。\n")
+    print("每块盘先留命中率更高的一侧，再按校准命中概率选一注。\n")
 
     def by_score(cands):
         return max(cands, key=lambda c: c["score"])

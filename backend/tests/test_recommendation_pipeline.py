@@ -1,4 +1,4 @@
-"""Recommendation pipeline orchestration (no official API calls)."""
+﻿"""Recommendation pipeline orchestration (no official API calls)."""
 
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -79,6 +79,44 @@ def _processed(
         calibration=calibration,
         strategy=strategy,
     )
+
+
+def _away_market_package(*, strong: bool) -> dict:
+    opening_lines = [
+        {"line": str(line), "home": 1.90, "away": 1.90}
+        for line in (-1.0, -0.75, -0.5, -0.25, 0.0, 0.25)
+    ]
+    current_lines = [
+        {"line": str(line), "home": 2.10, "away": 1.75}
+        for line in (-1.0, -0.75, -0.5, -0.25, 0.0, 0.25)
+    ]
+    if not strong:
+        opening_lines = []
+        current_lines = []
+    return {
+        "odds_opening": {
+            "available": True,
+            "captured_at": "2026-08-28T08:00:00+00:00",
+            "asian_handicap": {
+                "bookmaker": "Pinnacle",
+                "line": "-0.75",
+                "home": 1.90,
+                "away": 1.90,
+                "lines": opening_lines,
+            },
+        },
+        "odds": {
+            "available": True,
+            "captured_at": "2026-08-28T14:00:00+00:00",
+            "asian_handicap": {
+                "bookmaker": "Pinnacle",
+                "line": "-0.5",
+                "home": 2.10,
+                "away": 1.75,
+                "lines": current_lines,
+            },
+        },
+    }
 
 
 def test_build_match_features_in_process_match() -> None:
@@ -192,7 +230,7 @@ def test_valid_half_ball_board_always_uses_ah_despite_market_feedback(
 def test_one_goal_board_uses_market_probability_instead_of_moneyline(
     monkeypatch,
 ) -> None:
-    """复现维拉利尔：主让 1 球没有冻结 AH 模型概率时，仍用主盘去水概率推让球。"""
+    """没有独立 AH 概率时，主盘去水概率只会得到负 EV，不能拿来凑数。"""
     match = _match(1, ah_line="-1", ah_cover_prob=None, goal_lean="大(3.25)")
     assert match.odds is not None
     match.odds["match_winner"] = {"home": 1.51, "draw": 4.60, "away": 6.00}
@@ -222,15 +260,13 @@ def test_one_goal_board_uses_market_probability_instead_of_moneyline(
         limit_per_day=4,
     )
 
-    assert result["selected_count"] == 1
-    assert result["selected"][0]["market"] == "ah"
-    assert result["selected"][0]["lean"] == "主-1"
-    assert result["selected"][0]["decimal_odd"] == 1.83
+    assert result["selected_count"] == 0
+    assert result["candidate_count"] == 0
     assert all(item["market"] != "1x2" for item in result["selected"])
 
 
 def test_weak_deep_ah_falls_back_to_goals_not_moneyline(monkeypatch) -> None:
-    """深盘信心不足才降级大小球；线深本身不是降级条件。"""
+    """让球无正 EV 时，正 EV 大小球可以降级补位，不能退成独赢。"""
     match = _match(1, ah_line="-1", ah_cover_prob=0.35, goal_lean="大(3.25)")
     assert match.odds is not None
     match.odds["match_winner"] = {"home": 1.51, "draw": 4.60, "away": 6.00}
@@ -253,6 +289,10 @@ def test_weak_deep_ah_falls_back_to_goals_not_moneyline(monkeypatch) -> None:
         "app.services.recommendation.pipeline.process_match",
         lambda _match, *, artifact=None: processed,
     )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.calibrate_probability",
+        lambda _artifact, market, probability: 0.60 if market == "ou" else probability,
+    )
 
     result = run_pipeline(
         [match],
@@ -268,18 +308,15 @@ def test_weak_deep_ah_falls_back_to_goals_not_moneyline(monkeypatch) -> None:
 
 
 def test_deep_board_buys_the_side_the_card_can_tell(monkeypatch) -> None:
-    """复现曼城让 1.5 桑德兰：受让侧水位更低，但卡片只能把它讲成「客胜 1-3」。
-
-    客+1.5 去水 52.6% 确实高于主-1.5 的 47.4%，可胜负方向只有主胜 / 客胜两格，
-    装不下「输一球以内也算赢」。深盘改跟本场最可能结果，卡片给出主胜 3-1 与
-    主-1.5 三件套；浅盘不受影响，仍买概率更高的一侧。
-    """
+    """深盘取卡片能讲清的让球方，但必须有正 EV。"""
     match = _match(1, ah_line="-1.5", goal_lean="大(3)", both_score_lean="双进:是")
     assert match.odds is not None
     match.odds["match_winner"] = {"home": 1.22, "draw": 6.80, "away": 13.0}
-    match.odds["asian_handicap"] = {"line": "-1.5", "home": 2.00, "away": 1.80}
+    match.odds["asian_handicap"] = {"line": "-1.5", "home": 1.83, "away": 2.09}
     processed = replace(
         _processed(1, choice="home", confidence=0.78),
+        ah_cover_prob=0.60,
+        ah_model_line=-1.5,
         calibration={
             "match_id": 1,
             "calibrated_home_prob": 0.78,
@@ -303,7 +340,7 @@ def test_deep_board_buys_the_side_the_card_can_tell(monkeypatch) -> None:
     assert selected["result_lean"] == "主胜"
     assert selected["handicap_lean"] == "主-1.5"
     assert selected["score_hint"] == "比分:3-1"
-    assert selected["decimal_odd"] == 2.00
+    assert selected["decimal_odd"] == 1.83
 
 
 def test_deep_board_fallback_hides_the_handicap_row_instead_of_dropping(
@@ -337,6 +374,10 @@ def test_deep_board_fallback_hides_the_handicap_row_instead_of_dropping(
         "app.services.recommendation.pipeline.process_match",
         lambda _match, *, artifact=None: processed,
     )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.calibrate_probability",
+        lambda _artifact, market, probability: 0.60 if market == "ou" else probability,
+    )
 
     result = run_pipeline([match], artifact={}, market_artifact={}, limit_per_day=4)
 
@@ -349,14 +390,10 @@ def test_deep_board_fallback_hides_the_handicap_row_instead_of_dropping(
     assert result["consistency_rejected_count"] == 0
 
 
-def test_shallow_board_never_buys_the_lower_probability_side(monkeypatch) -> None:
-    """复现布拉加：主胜 51.9% 时不得推对面 48.1% 的高水让负。
-
-    让球盘两侧的条件命中概率之和恒为 1，而基础分 ``p × 净赔率 ** e`` 代入去水
-    概率后正比于 ``√(p(1-p))``，关于 0.5 对称。让胜 0.519 与让负 0.481 的概率项
-    实测完全相等（各 0.249639），排序只剩抽水差（让胜 -3.0% / 让负 -1.8%），
-    没有这道闸就会买进水位更高的低概率侧。
-    """
+def test_shallow_board_probability_over_half_does_not_mask_negative_ev(
+    monkeypatch,
+) -> None:
+    """51.9% @1.869 仍是负 EV，禁止用“覆盖过半”包装成推荐。"""
     match = MatchPipelineInput(
         fixture_id=1,
         league_id=94,
@@ -366,6 +403,8 @@ def test_shallow_board_never_buys_the_lower_probability_side(monkeypatch) -> Non
             "available": True,
             "match_winner": {"home": 1.85, "draw": 3.60, "away": 4.60},
             "asian_handicap": {"line": "-0.5", "home": 1.869, "away": 2.042},
+            "goals_ou": {"line": "2.5", "home": 1.96, "away": 1.90},
+            "both_teams_score": {"home": 2.05, "away": 1.75},
         },
         goal_lean="小(2.5)",
         both_score_lean="双进:否",
@@ -394,11 +433,103 @@ def test_shallow_board_never_buys_the_lower_probability_side(monkeypatch) -> Non
         limit_per_day=4,
     )
 
+    assert result["selected_count"] == 0
+    assert result["candidate_count"] == 0
+
+
+def test_shallow_board_positive_ev_below_half_is_allowed(monkeypatch) -> None:
+    """48% @2.20 是正 EV，不得用“AH 必须过半”机械拒绝。"""
+    match = _match(1, ah_line="-0.5")
+    assert match.odds is not None
+    match.odds["asian_handicap"] = {"line": "-0.5", "home": 2.20, "away": 2.40}
+    processed = replace(
+        _processed(1, choice="home", confidence=0.48),
+        calibration={
+            "match_id": 1,
+            "calibrated_home_prob": 0.48,
+            "calibrated_draw_prob": 0.25,
+            "calibrated_away_prob": 0.27,
+            "reliability": 0.7,
+            "sample_size": 100,
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        lambda _match, *, artifact=None: processed,
+    )
+
+    result = run_pipeline([match], artifact={}, market_artifact={}, limit_per_day=4)
+
     assert result["selected_count"] == 1
     selected = result["selected"][0]
     assert selected["market"] == "ah"
-    assert selected["lean"] == "主-0.5"
-    assert selected["handicap_lean"] == "主-0.5"
+    assert selected["ev"] == pytest.approx(0.056)
+    assert "市场方向：不明确" in selected["reason"]
+    assert "算法方向：主队" in selected["reason"]
+    assert "两者：无法校验" in selected["reason"]
+    assert "EV：+5.60%" in selected["reason"]
+
+
+def test_strong_six_line_market_conflict_rejects_the_pick(monkeypatch) -> None:
+    """六档一致偏客时，算法主队方向即使正 EV 也必须淘汰并等待补位。"""
+    match = replace(
+        _match(1, ah_line="-0.5"),
+        package=_away_market_package(strong=True),
+    )
+    processed = replace(
+        _processed(1, choice="home", confidence=0.56, ev=0.12),
+        calibration={
+            "match_id": 1,
+            "calibrated_home_prob": 0.56,
+            "calibrated_draw_prob": 0.24,
+            "calibrated_away_prob": 0.20,
+            "reliability": 0.7,
+            "sample_size": 100,
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        lambda _match, *, artifact=None: processed,
+    )
+
+    result = run_pipeline([match], artifact={}, market_artifact={}, limit_per_day=4)
+
+    assert result["selected_count"] == 0
+    assert result["direction_rejected_count"] == 1
+    assert result["rejected"][0]["conflict_reason"] == "逆强市场方向，不推荐"
+    assert "可比6档" in result["rejected"][0]["conflict_detail"]
+
+
+def test_weak_market_conflict_is_marked_and_downweighted(monkeypatch) -> None:
+    """只有一段让球线逆向属于弱冲突：保留、标记逆向推荐并降权。"""
+    match = replace(
+        _match(1, ah_line="-0.5"),
+        package=_away_market_package(strong=False),
+    )
+    processed = replace(
+        _processed(1, choice="home", confidence=0.56, ev=0.12),
+        calibration={
+            "match_id": 1,
+            "calibrated_home_prob": 0.56,
+            "calibrated_draw_prob": 0.24,
+            "calibrated_away_prob": 0.20,
+            "reliability": 0.7,
+            "sample_size": 100,
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.process_match",
+        lambda _match, *, artifact=None: processed,
+    )
+
+    result = run_pipeline([match], artifact={}, market_artifact={}, limit_per_day=4)
+
+    selected = result["selected"][0]
+    assert selected["direction_alignment"] == "reverse"
+    assert selected["market_direction"] == "away"
+    assert selected["score"] == pytest.approx(0.56 * 0.75)
+    assert "逆向推荐" in selected["reason"]
+    assert "EV：" in selected["reason"]
 
 
 def test_quarter_ball_refund_survives_adverse_market_feedback() -> None:
@@ -414,7 +545,9 @@ def test_quarter_ball_refund_survives_adverse_market_feedback() -> None:
         match_day="2026-08-29",
         odds={
             "available": True,
-            "match_winner": {"home": 2.16, "draw": 3.61, "away": 3.39},
+            # Keep the protected -0.25 side above the independent 53% AH gate;
+            # this test isolates historical feedback, not weak-pick eligibility.
+            "match_winner": {"home": 1.85, "draw": 3.61, "away": 4.20},
             "asian_handicap": {"line": "-0.25", "home": 1.88, "away": 2.03},
         },
         goal_lean="大(2.5)",
@@ -440,7 +573,7 @@ def test_quarter_ball_refund_survives_adverse_market_feedback() -> None:
 
 
 def test_run_pipeline_keeps_top_four_by_confidence_per_day(monkeypatch) -> None:
-    """EV 与置信度反向排列，验证选场只看置信度、EV 只是随行审计字段。"""
+    """候选都已为正 EV 时，层内按置信度排序而不是按 EV 大小排序。"""
     processed = [
         _processed(1, confidence=0.62, ev=0.05),
         _processed(2, confidence=0.60, ev=0.10),
@@ -465,8 +598,8 @@ def test_run_pipeline_keeps_top_four_by_confidence_per_day(monkeypatch) -> None:
     assert result["selected"][0]["quality_rating"] == 5.0
 
 
-def test_negative_ev_candidates_still_fill_the_daily_four(monkeypatch) -> None:
-    """1X2 模型跑不赢市场时 EV 恒为负；日推不能因此空池。"""
+def test_negative_ev_candidates_leave_the_daily_pool_empty(monkeypatch) -> None:
+    """没有正 EV 时宁可 0 场，也不能挑亏得较少的一侧补满四场。"""
     processed = [
         _processed(i, confidence=0.60 - i / 100, ev=-0.03 - i / 1000)
         for i in range(1, 7)
@@ -481,10 +614,9 @@ def test_negative_ev_candidates_still_fill_the_daily_four(monkeypatch) -> None:
         fake_process,
     )
     result = run_pipeline([_match(i) for i in range(1, 7)], artifact={}, limit_per_day=4)
-    assert result["candidate_count"] == 6
-    assert result["selected_count"] == 4
-    assert [item["fixture_id"] for item in result["selected"]] == [1, 2, 3, 4]
-    assert all(item["ev"] < 0 for item in result["selected"])
+    assert result["candidate_count"] == 0
+    assert result["selected_count"] == 0
+    assert result["selected"] == []
 
 
 def test_run_pipeline_feedback_reorders_without_changing_the_pick_side(
@@ -574,6 +706,12 @@ def test_ou_then_btts_precede_board_free_moneyline(monkeypatch) -> None:
         "app.services.recommendation.pipeline.process_match",
         fake_process,
     )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.calibrate_probability",
+        lambda _artifact, market, probability: (
+            0.65 if market in {"ou", "btts"} else probability
+        ),
+    )
     result = run_pipeline(
         matches,
         artifact={},
@@ -618,6 +756,10 @@ def test_ou_displaces_board_free_moneyline(monkeypatch) -> None:
         "app.services.recommendation.pipeline.process_match",
         fake_process,
     )
+    monkeypatch.setattr(
+        "app.services.recommendation.pipeline.calibrate_probability",
+        lambda _artifact, market, probability: 0.90 if market == "ou" else probability,
+    )
     result = run_pipeline(
         matches,
         artifact={},
@@ -647,7 +789,8 @@ def test_deep_board_without_ah_probability_is_skipped_and_backfilled(
         "app.services.recommendation.pipeline.process_match",
         fake_process,
     )
-    # 主让 1.5 仍可凭主盘去水概率进候选；比分穿不过盘时自洽闸淘汰，由后续场次补位。
+    # 主让 1.5 没有独立 AH 概率，只能回退主盘去水概率，因此 EV 为负并在价值闸
+    # 直接跳过；后续正 EV 浅盘补位，不再走到一致性闸。
     matches = [
         _match(1, ah_line="-1.5"),
         *[_match(i, ah_line="-0.5") for i in range(2, 7)],
@@ -656,9 +799,8 @@ def test_deep_board_without_ah_probability_is_skipped_and_backfilled(
 
     assert [item["fixture_id"] for item in result["selected"]] == [2, 3, 4, 5]
     assert result["selected_count"] == 4
-    assert result["consistency_rejected_count"] == 1
-    assert result["rejected"][0]["fixture_id"] == 1
-    assert result["rejected"][0]["is_consistent"] is False
+    assert result["consistency_rejected_count"] == 0
+    assert result["rejected"] == []
     assert all(item["fixture_id"] != 1 for item in result["selected"])
     assert all(item["is_consistent"] is True for item in result["selected"])
     assert all(item["handicap_lean"] == "主-0.5" for item in result["selected"])
@@ -749,7 +891,7 @@ def test_daily_four_follows_pure_score_order_across_markets() -> None:
         recommended_choice="home",
         ev=-0.03,
         confidence=0.52,
-        reason="风险调整回报最高",
+        reason="校准命中概率最高",
         decimal_odd=1.95,
         raw_confidence=0.52,
         calibrated_home_prob=0.56,
@@ -798,7 +940,7 @@ def test_same_fixture_cannot_occupy_two_slots_with_both_markets() -> None:
         recommended_choice="home",
         ev=-0.02,
         confidence=0.53,
-        reason="风险调整回报最高",
+        reason="校准命中概率最高",
         decimal_odd=1.83,
         raw_confidence=0.53,
         calibrated_home_prob=0.46,
@@ -866,12 +1008,8 @@ def test_quiet_day_may_pick_fewer_but_never_more_than_four() -> None:
     assert len(select_daily_picks_by_match_day(picks[:2], limit_per_day=4)) == 2
 
 
-def test_short_pool_is_the_only_excuse_for_fewer_than_four(caplog) -> None:
-    """池子 ≥ 6 场却选不满 4 场才算异常，池子小于 6 场不告警。
-
-    告警必须按比赛日判断：多日窗口的聚合 selected 通常是 4×有赛日，
-    恒大于 4，用聚合数字判断等于告警永不触发。
-    """
+def test_positive_value_gate_allows_fewer_than_four_without_warning(caplog) -> None:
+    """即使池子很大，正 EV 候选不足也可少推，不再为“补满四场”告警。"""
     with caplog.at_level("WARNING"):
         log_sync_summary(
             total_matches=11,
@@ -884,5 +1022,4 @@ def test_short_pool_is_the_only_excuse_for_fewer_than_four(caplog) -> None:
         )
 
     alerts = [record.getMessage() for record in caplog.records]
-    assert any("match_day=2026-09-04" in message for message in alerts)
-    assert not any("match_day=2026-09-03" in message for message in alerts)
+    assert alerts == []

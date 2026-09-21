@@ -531,8 +531,7 @@ async def run_model_status() -> None:
     print(
         "board_thresholds: "
         f"n={ah_board.get('n_samples')} "
-        f"deadzone={ah_board.get('water_deadzone')} "
-        f"giving_median={ah_board.get('giving_odd_median')}"
+        f"deadzone={ah_board.get('water_deadzone')}"
     )
     print("--- 进球分布 (Poisson) ---")
     print(f"artifact_ready: {goal_status['artifact_ready']}")

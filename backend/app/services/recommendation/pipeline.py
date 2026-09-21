@@ -32,6 +32,7 @@ from app.services.auto_favorites import (
     within_day_quality_ratings,
 )
 from app.services.match_day import fixture_match_day
+from app.services.market_analysis import HandicapDirectionSignal, handicap_direction_signal
 from app.services.prediction import implied_probs_from_odds
 from app.services.prematch_package import package_from_record, rehydrate_odds_markets
 from app.services.probability_calibration import (
@@ -58,9 +59,9 @@ from app.services.user_scope import ANON_OWNER_ID
 from app.services.recommendation.strategy import (
     DAILY_PICK_OUTCOMES,
     MIN_DAILY_CONFIDENCE,
-    REASON_RISK_ADJUSTED_RETURN,
+    REASON_POSITIVE_VALUE,
     decide_match,
-    risk_adjusted_return_score,
+    pick_ranking_score,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ MARKET_FALLBACK_TIER = {
     MARKET_BTTS: 2,
     MARKET_1X2: 3,
 }
-MIN_MATCHES_FOR_FULL_QUOTA = 6
+REVERSE_DIRECTION_WEIGHT = 0.75
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,9 @@ class DailyRecommendationPick:
     is_consistent: bool = True
     conflict_reason: str = "自洽"
     conflict_detail: str = ""
+    market_direction: str | None = None
+    direction_strength: str = "none"
+    direction_alignment: str = "not_applicable"
 
 
 def _count_matches_by_day(matches: list[MatchPipelineInput]) -> dict[str, int]:
@@ -155,7 +159,7 @@ def log_sync_summary(
     matches_by_day: dict[str, int] | None = None,
     selected_by_day: dict[str, int] | None = None,
 ) -> None:
-    """Emit sync metrics; warn per match day when a ≥6 pool still yields <4."""
+    """Emit sync metrics; positive-value filtering may legitimately yield 0–4."""
     day_label = day or "unknown"
     logger.info(
         "Recommendation sync summary day=%s total_matches=%s candidates=%s selected=%s "
@@ -167,33 +171,19 @@ def log_sync_summary(
         feedback_written,
         consistency_rejected,
     )
-    # 配额是按比赛日算的，聚合数字判断不出来：多日窗口里 selected 通常是
-    # 4×有赛日，恒大于 4，告警永远不触发。
     pools = matches_by_day or {}
     picked = selected_by_day or {}
     for match_day in sorted(pools):
         pool = int(pools[match_day])
         count = int(picked.get(match_day, 0))
-        if pool >= MIN_MATCHES_FOR_FULL_QUOTA and count < AUTO_PICK_LIMIT:
-            logger.warning(
-                "Recommendation sync alert match_day=%s selected=%s<%s "
-                "while pool=%s>=%s",
-                match_day,
-                count,
-                AUTO_PICK_LIMIT,
-                pool,
-                MIN_MATCHES_FOR_FULL_QUOTA,
-            )
-        elif pool < MIN_MATCHES_FOR_FULL_QUOTA:
-            logger.info(
-                "Recommendation sync match_day=%s pool=%s<%s; fewer than %s allowed, "
-                "selected=%s",
-                match_day,
-                pool,
-                MIN_MATCHES_FOR_FULL_QUOTA,
-                AUTO_PICK_LIMIT,
-                count,
-            )
+        logger.info(
+            "Recommendation sync match_day=%s pool=%s positive_value_selected=%s "
+            "limit=%s",
+            match_day,
+            pool,
+            count,
+            AUTO_PICK_LIMIT,
+        )
 
 
 def _decimal_odd_for_choice(
@@ -307,6 +297,8 @@ def _to_ah_picks(
         line,
     )
     ev = stake_share * (hit_rate * decimal_odd - 1.0)
+    if ev <= 0.0:
+        return []
     return [
         DailyRecommendationPick(
             **_base_pick_fields(result),
@@ -316,10 +308,10 @@ def _to_ah_picks(
             recommended_choice=side,
             ev=ev,
             confidence=hit_rate,
-            reason=REASON_RISK_ADJUSTED_RETURN,
+            reason=REASON_POSITIVE_VALUE,
             decimal_odd=decimal_odd,
             raw_confidence=raw_confidence,
-            score=risk_adjusted_return_score(hit_rate, decimal_odd),
+            score=pick_ranking_score(hit_rate),
         )
     ]
 
@@ -339,6 +331,9 @@ def _to_1x2_pick(
     confidence = float(calibration.get(f"calibrated_{choice}_prob") or 0.0)
     if confidence < MIN_DAILY_CONFIDENCE:
         return None
+    ev = float(result.strategy.get("ev") or 0.0)
+    if ev <= 0.0:
+        return None
     implied = implied_probs_from_odds(odds) or {}
     lean = OUTCOME_TO_LEAN[choice]
     return DailyRecommendationPick(
@@ -347,12 +342,12 @@ def _to_1x2_pick(
         lean=lean,
         market_lean=lean,
         recommended_choice=choice,
-        ev=float(result.strategy.get("ev") or 0.0),
+        ev=ev,
         confidence=confidence,
         reason=str(result.strategy.get("reason") or ""),
         decimal_odd=decimal_odd,
         raw_confidence=float(implied.get(choice, confidence)),
-        score=risk_adjusted_return_score(confidence, decimal_odd),
+        score=pick_ranking_score(confidence),
     )
 
 
@@ -427,6 +422,9 @@ def _two_way_market_pick(
     )
     if confidence < MIN_DAILY_CONFIDENCE:
         return None
+    ev = confidence * selected_odd - 1.0
+    if ev <= 0.0:
+        return None
 
     choice = _companion_result_choice(result)
     return DailyRecommendationPick(
@@ -435,7 +433,7 @@ def _two_way_market_pick(
         lean=OUTCOME_TO_LEAN[choice],
         market_lean=market_lean,
         recommended_choice=choice,
-        ev=confidence * selected_odd - 1.0,
+        ev=ev,
         confidence=confidence,
         reason=(
             "核心玩法不足，按大小球降级补位"
@@ -444,7 +442,7 @@ def _two_way_market_pick(
         ),
         decimal_odd=selected_odd,
         raw_confidence=raw_confidence,
-        score=risk_adjusted_return_score(confidence, selected_odd),
+        score=pick_ranking_score(confidence),
     )
 
 
@@ -501,6 +499,138 @@ def _to_daily_picks(
     return picks
 
 
+def _direction_label(side: str | None) -> str:
+    return {"home": "主队", "away": "客队"}.get(side, "不明确")
+
+
+def _value_reason(
+    pick: DailyRecommendationPick,
+    *,
+    signal: HandicapDirectionSignal | None,
+    alignment: str,
+) -> str:
+    algorithm = (
+        _direction_label(pick.recommended_choice)
+        if pick.market in {MARKET_AH, MARKET_1X2}
+        else "不适用"
+    )
+    market = (
+        "不适用"
+        if alignment == "not_applicable"
+        else _direction_label(signal.direction if signal is not None else None)
+    )
+    relation = {
+        "aligned": "一致",
+        "reverse": "不一致（逆向推荐）",
+        "unknown": "无法校验",
+        "not_applicable": "不适用",
+    }[alignment]
+    strength = (
+        "none"
+        if alignment == "not_applicable"
+        else signal.strength
+        if signal is not None
+        else "none"
+    )
+    return (
+        f"市场方向：{market}（{strength}）；算法方向：{algorithm}；"
+        f"两者：{relation}；EV：{pick.ev:+.2%}"
+    )
+
+
+def _apply_market_direction_gate(
+    picks: list[DailyRecommendationPick],
+    *,
+    package_by_fixture: dict[int, dict[str, Any] | None],
+) -> tuple[list[DailyRecommendationPick], list[dict[str, Any]]]:
+    """Reject strong reverse directions and penalise weak reverse directions."""
+    accepted: list[DailyRecommendationPick] = []
+    rejected: list[dict[str, Any]] = []
+    signals: dict[int, HandicapDirectionSignal] = {}
+
+    for pick in picks:
+        signal = signals.get(pick.fixture_id)
+        if signal is None:
+            signal = handicap_direction_signal(
+                package_by_fixture.get(pick.fixture_id)
+            )
+            signals[pick.fixture_id] = signal
+        if pick.market not in {MARKET_AH, MARKET_1X2}:
+            accepted.append(
+                replace(
+                    pick,
+                    reason=_value_reason(
+                        pick, signal=signal, alignment="not_applicable"
+                    ),
+                    market_direction=signal.direction,
+                    direction_strength=signal.strength,
+                    direction_alignment="not_applicable",
+                )
+            )
+            continue
+
+        if signal.direction not in DAILY_PICK_OUTCOMES:
+            accepted.append(
+                replace(
+                    pick,
+                    reason=_value_reason(pick, signal=signal, alignment="unknown"),
+                    market_direction=None,
+                    direction_strength=signal.strength,
+                    direction_alignment="unknown",
+                )
+            )
+            continue
+
+        if pick.recommended_choice == signal.direction:
+            accepted.append(
+                replace(
+                    pick,
+                    reason=_value_reason(pick, signal=signal, alignment="aligned"),
+                    market_direction=signal.direction,
+                    direction_strength=signal.strength,
+                    direction_alignment="aligned",
+                )
+            )
+            continue
+
+        if signal.strength == "strong":
+            detail = (
+                f"{signal.detail}；算法方向{_direction_label(pick.recommended_choice)}"
+                f"与强一致市场方向{_direction_label(signal.direction)}相反；"
+                f"EV {pick.ev:+.2%}，淘汰"
+            )
+            rejected.append(
+                {
+                    "fixture_id": pick.fixture_id,
+                    "match_day": pick.match_day,
+                    "market": pick.market,
+                    "lean": pick.market_lean or pick.lean,
+                    "is_consistent": False,
+                    "conflict_reason": "逆强市场方向，不推荐",
+                    "conflict_detail": detail,
+                }
+            )
+            logger.warning(
+                "Daily candidate rejected by market direction fixture=%s market=%s %s",
+                pick.fixture_id,
+                pick.market,
+                detail,
+            )
+            continue
+
+        accepted.append(
+            replace(
+                pick,
+                score=pick.score * REVERSE_DIRECTION_WEIGHT,
+                reason=_value_reason(pick, signal=signal, alignment="reverse"),
+                market_direction=signal.direction,
+                direction_strength=signal.strength,
+                direction_alignment="reverse",
+            )
+        )
+    return accepted, rejected
+
+
 def _daily_pick_rank_key(
     pick: DailyRecommendationPick,
 ) -> tuple[int, float, datetime, int]:
@@ -531,8 +661,8 @@ def _ah_side_probability(
     """Return (conditional win probability, stake share at risk).
 
     浅盘用 1X2 计入退半/走水。深盘优先读已收缩的 AH 推断概率；没有冻结值时
-    用主盘两侧去水概率。线深本身不是降级条件，过 ``MIN_DAILY_CONFIDENCE``
-    就可以推让球。
+    用主盘两侧去水概率。线深本身不是降级条件；候选统一过 40% 最低置信度与
+    ``EV > 0`` 价值闸，失败后交给 O/U、BTTS 补位。
     """
     pick = "让胜" if side == "home" else "让负"
     units = outcome_settlement_units(line, pick)
@@ -586,10 +716,7 @@ def select_daily_picks_by_match_day(
     selected_fixture_ids: set[int] = set()
     for day in sorted(by_day):
         day_picks = sorted(by_day[day], key=_daily_pick_rank_key)
-        # 每次重挑每个比赛日恒定最多 4 场。`MIN_MATCHES_FOR_FULL_QUOTA` 管的是
-        # 「几时允许少于 4 场」，不是「几时可以多于 4 场」；曾写成候选少时
-        # day_limit = len(day_picks)，把「允许少推」实现成「取消上限」，
-        # 09-03 只有 5 场进管线就推了 5 场。
+        # 每次重挑每个比赛日最多 4 场；正 EV 闸后允许少于 4 场甚至 0 场。
         # 这是**展示**上限，不是当日结算注数上限：管线只收未开赛场次，已开赛的
         # `AutoPickSnapshot` 不删，密刷每小时重挑一次，所以一个比赛日累计冻结
         # 8~20 注属正常（真源见 `sync_daily_auto_favorites` 的删除范围）。
@@ -627,6 +754,7 @@ def run_pipeline(
         else load_market_calibration_artifact()
     )
     odds_by_fixture = {match.fixture_id: match.odds for match in matches}
+    package_by_fixture = {match.fixture_id: match.package for match in matches}
     goal_lean_by_fixture = {match.fixture_id: match.goal_lean for match in matches}
     both_score_lean_by_fixture = {
         match.fixture_id: match.both_score_lean for match in matches
@@ -650,12 +778,16 @@ def run_pipeline(
             )
         )
 
+    picks, direction_rejected = _apply_market_direction_gate(
+        picks,
+        package_by_fixture=package_by_fixture,
+    )
     picks = apply_feedback_to_picks(picks, state=incentive_state)
     picks.sort(key=_daily_pick_rank_key)
     candidate_count = len(picks)
     skipped = skip_fixture_ids or set()
     consistency_pool = [pick for pick in picks if pick.fixture_id not in skipped]
-    consistent_pairs, rejected = validate_consistency_batch(
+    consistent_pairs, consistency_rejected = validate_consistency_batch(
         consistency_pool,
         probs_by_fixture={
             pick.fixture_id: {
@@ -714,7 +846,8 @@ def run_pipeline(
         "matches_by_day": matches_count_by_day,
         "processed_count": len(processed),
         "candidate_count": candidate_count,
-        "consistency_rejected_count": len(rejected),
+        "consistency_rejected_count": len(consistency_rejected),
+        "direction_rejected_count": len(direction_rejected),
         "selected_count": len(selected),
         "by_day": by_day_counts,
         "feedback": feedback_summary(incentive_state),
@@ -730,6 +863,9 @@ def run_pipeline(
                 "ev": round(pick.ev, 4),
                 "confidence": round(pick.confidence, 4),
                 "reason": pick.reason,
+                "market_direction": pick.market_direction,
+                "direction_strength": pick.direction_strength,
+                "direction_alignment": pick.direction_alignment,
                 "decimal_odd": round(pick.decimal_odd, 3),
                 "expected_return": round(pick.ev, 4),
                 "score": round(pick.score, 4),
@@ -747,7 +883,7 @@ def run_pipeline(
             }
             for pick in selected
         ],
-        "rejected": rejected,
+        "rejected": [*direction_rejected, *consistency_rejected],
         "picks": selected,
         "ratings": ratings,
     }
@@ -936,6 +1072,9 @@ async def sync_daily_recommendations(
         "selected_count": pipeline_result["selected_count"],
         "consistency_rejected_count": pipeline_result.get(
             "consistency_rejected_count", 0
+        ),
+        "direction_rejected_count": pipeline_result.get(
+            "direction_rejected_count", 0
         ),
         "feedback_written": feedback_written,
         "calibration": {

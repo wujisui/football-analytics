@@ -1,9 +1,8 @@
-"""Read the bookmaker main AH board: water gap, dead zone, giving-side median.
+"""Read the bookmaker main AH board: water gap and dead zone.
 
-Thresholds come from local finished quotes. The dead zone is the 25th percentile
-of |home-away water|, clipped so it stays a noise band rather than the typical
-gap (the median of all boards is ~0.15 and would empty the daily slate). The
-moneyline gate is the median giving-side water, refreshed from the same sample.
+The dead zone comes from local finished quotes: the 25th percentile of
+|home-away water|, clipped so it stays a noise band rather than the typical gap
+(the median of all boards is ~0.15 and would empty the daily slate).
 """
 
 from __future__ import annotations
@@ -24,7 +23,6 @@ MODEL_DIR = BACKEND_ROOT / "data" / "models"
 THRESHOLDS_NAME = "ah_market_thresholds.json"
 
 FALLBACK_WATER_DEADZONE = 0.06
-FALLBACK_GIVING_ODD_MEDIAN = 1.94
 DEADZONE_MIN = 0.04
 DEADZONE_MAX = 0.08
 MIN_THRESHOLD_SAMPLES = 30
@@ -49,9 +47,7 @@ class AhBoardStance:
     follow_up: bool
     ah_pick: str
     result_choice: str
-    allow_moneyline: bool
     water_deadzone: float
-    giving_odd_median: float
 
     @property
     def lean_token(self) -> str:
@@ -79,10 +75,6 @@ def _percentile(values: list[float], p: float) -> float | None:
     return ordered[lo] * (1.0 - weight) + ordered[hi] * weight
 
 
-def _median(values: list[float]) -> float | None:
-    return _percentile(values, 0.5)
-
-
 def giving_side_and_odds(
     line: float, home_odd: float, away_odd: float
 ) -> tuple[str, float, float]:
@@ -99,29 +91,22 @@ def giving_side_and_odds(
 def thresholds_from_quotes(
     quotes: list[tuple[float, float, float]],
 ) -> dict[str, Any]:
-    """Build dead zone + giving-odd median from ``(line, home_odd, away_odd)``."""
+    """Build the dead zone from ``(line, home_odd, away_odd)``."""
     abs_diffs: list[float] = []
-    giving_odds: list[float] = []
-    for line, home_odd, away_odd in quotes:
+    for _line, home_odd, away_odd in quotes:
         if home_odd <= 0 or away_odd <= 0:
             continue
         abs_diffs.append(abs(home_odd - away_odd))
-        _side, giving_odd, _recv = giving_side_and_odds(line, home_odd, away_odd)
-        giving_odds.append(giving_odd)
-    n = min(len(abs_diffs), len(giving_odds))
+    n = len(abs_diffs)
     p25 = _percentile(abs_diffs, 0.25)
-    median_giving = _median(giving_odds)
-    if n < MIN_THRESHOLD_SAMPLES or p25 is None or median_giving is None:
+    if n < MIN_THRESHOLD_SAMPLES or p25 is None:
         deadzone = FALLBACK_WATER_DEADZONE
-        giving_median = FALLBACK_GIVING_ODD_MEDIAN
     else:
         deadzone = min(DEADZONE_MAX, max(DEADZONE_MIN, float(p25)))
-        giving_median = float(median_giving)
     return {
         "n_samples": n,
         "water_deadzone": deadzone,
         "water_diff_p25": None if p25 is None else round(float(p25), 4),
-        "giving_odd_median": giving_median,
         "abs_water_mean": (
             round(sum(abs_diffs) / len(abs_diffs), 4) if abs_diffs else None
         ),
@@ -133,7 +118,6 @@ def fallback_thresholds() -> dict[str, Any]:
         "n_samples": 0,
         "water_deadzone": FALLBACK_WATER_DEADZONE,
         "water_diff_p25": FALLBACK_WATER_DEADZONE,
-        "giving_odd_median": FALLBACK_GIVING_ODD_MEDIAN,
         "abs_water_mean": None,
     }
 
@@ -187,12 +171,6 @@ def classify_ah_board(
         deadzone = float(cfg.get("water_deadzone") or FALLBACK_WATER_DEADZONE)
     except (TypeError, ValueError):
         deadzone = FALLBACK_WATER_DEADZONE
-    try:
-        giving_median = float(
-            cfg.get("giving_odd_median") or FALLBACK_GIVING_ODD_MEDIAN
-        )
-    except (TypeError, ValueError):
-        giving_median = FALLBACK_GIVING_ODD_MEDIAN
     deadzone = min(DEADZONE_MAX, max(DEADZONE_MIN, deadzone))
 
     giving_side, giving_odd, receiving_odd = giving_side_and_odds(
@@ -212,15 +190,12 @@ def classify_ah_board(
         else:
             ah_pick = "让胜/负"
             result_choice = ""
-        allow_moneyline = False
     elif follow_up:
         ah_pick = "让胜" if giving_side == "home" else "让负"
         result_choice = giving_side
-        allow_moneyline = (not even) and giving_odd < giving_median
     else:
         ah_pick = "让负" if giving_side == "home" else "让胜"
         result_choice = "away" if giving_side == "home" else "home"
-        allow_moneyline = False
     return AhBoardStance(
         line=line,
         home_odd=home_odd,
@@ -234,9 +209,7 @@ def classify_ah_board(
         follow_up=follow_up,
         ah_pick=ah_pick,
         result_choice=result_choice,
-        allow_moneyline=allow_moneyline,
         water_deadzone=deadzone,
-        giving_odd_median=giving_median,
     )
 
 
@@ -294,9 +267,8 @@ async def refresh_ah_market_thresholds(session: Any) -> dict[str, Any]:
     payload = thresholds_from_quotes(quotes)
     save_thresholds(payload)
     logger.info(
-        "AH market thresholds n=%s deadzone=%.3f giving_median=%.3f",
+        "AH market thresholds n=%s deadzone=%.3f",
         payload.get("n_samples"),
         payload.get("water_deadzone"),
-        payload.get("giving_odd_median"),
     )
     return payload
