@@ -27,7 +27,7 @@ defineOptions({name: 'BetPlans'})
 
 const SCORE_CHUNK = 200
 
-/** Same palette order as 赛程「历史统计」第一行：胜平负 / 每日推荐 / 比分. */
+/** Same palette order as 赛程「历史统计」第一行：胜平负 / 当日累计推荐 / 比分. */
 const PLAN_STAT_ITEMS = [
   {key: 'won' as const, label: '中奖', color: ACCURACY_COLOR_BY_HIT_KEY.result},
   {key: 'settled' as const, label: '已结算', color: ACCURACY_COLOR_BY_HIT_KEY.auto_pick},

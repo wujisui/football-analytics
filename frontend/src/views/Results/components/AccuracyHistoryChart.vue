@@ -20,8 +20,9 @@ import {
 import VChart from 'vue-echarts'
 
 import type { AccuracyDayPoint, AccuracyStat } from '@/api/fixtures'
-import { ACCURACY_COLORS } from '@/utils/accuracyColors'
+import { ACCURACY_COLOR_BY_HIT_KEY } from '@/utils/accuracyColors'
 import { addCalendarDays, scheduleTodayDate } from '@/utils/homeDateStrip'
+import { RESULTS_HIT_LABEL, type ResultsHitKey } from '@/utils/resultsPageState'
 
 use([
   CanvasRenderer,
@@ -32,17 +33,21 @@ use([
   MarkLineComponent,
 ])
 
-type PlayKey = 'result' | 'auto_pick' | 'handicap' | 'score' | 'ou' | 'btts'
-
-/** Line order matches ``seriesIndex``; labels/colors mirror 当日统计 cards. */
-const PLAY_LINES: ReadonlyArray<{ name: string; color: string; key: PlayKey }> = [
-  { name: '胜平负', color: ACCURACY_COLORS.result, key: 'result' },
-  { name: '每日推荐', color: ACCURACY_COLORS.autoPick, key: 'auto_pick' },
-  { name: '让球胜平负', color: ACCURACY_COLORS.handicap, key: 'handicap' },
-  { name: '比分', color: ACCURACY_COLORS.score, key: 'score' },
-  { name: '大小球', color: ACCURACY_COLORS.ou, key: 'ou' },
-  { name: '双方进球', color: ACCURACY_COLORS.btts, key: 'btts' },
+/** Legend order (drives ``seriesIndex``); labels/colors come from 当日统计 cards. */
+const PLAY_ORDER: ReadonlyArray<ResultsHitKey> = [
+  'result',
+  'auto_pick',
+  'handicap',
+  'score',
+  'ou',
+  'btts',
 ]
+
+const PLAY_LINES = PLAY_ORDER.map((key) => ({
+  key,
+  name: RESULTS_HIT_LABEL[key],
+  color: ACCURACY_COLOR_BY_HIT_KEY[key],
+}))
 
 const props = withDefaults(
   defineProps<{

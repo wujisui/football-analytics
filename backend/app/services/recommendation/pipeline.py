@@ -586,10 +586,13 @@ def select_daily_picks_by_match_day(
     selected_fixture_ids: set[int] = set()
     for day in sorted(by_day):
         day_picks = sorted(by_day[day], key=_daily_pick_rank_key)
-        # 每个比赛日恒定最多 4 场。`MIN_MATCHES_FOR_FULL_QUOTA` 管的是「几时
-        # 允许少于 4 场」，不是「几时可以多于 4 场」；曾写成候选少时
+        # 每次重挑每个比赛日恒定最多 4 场。`MIN_MATCHES_FOR_FULL_QUOTA` 管的是
+        # 「几时允许少于 4 场」，不是「几时可以多于 4 场」；曾写成候选少时
         # day_limit = len(day_picks)，把「允许少推」实现成「取消上限」，
         # 09-03 只有 5 场进管线就推了 5 场。
+        # 这是**展示**上限，不是当日结算注数上限：管线只收未开赛场次，已开赛的
+        # `AutoPickSnapshot` 不删，密刷每小时重挑一次，所以一个比赛日累计冻结
+        # 8~20 注属正常（真源见 `sync_daily_auto_favorites` 的删除范围）。
         day_limit = min(limit_per_day, len(day_picks))
         count = 0
         # Ranking by risk-adjusted return is the only cross-fixture criterion:

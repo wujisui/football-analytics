@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 
-from app.services.results_accuracy import settle_auto_pick_hit
+from app.services.results_accuracy import _day_key, settle_auto_pick_hit
 from app.services.prediction import summarize_accuracy
 
 
 class AutoPickAccuracyTests(unittest.TestCase):
+    def test_accuracy_groups_by_persisted_match_day_not_utc_kickoff_day(self) -> None:
+        """A UTC-midnight crossing must stay in its venue-local daily-pick slate."""
+        fixture = SimpleNamespace(
+            match_day="2026-09-13",
+            date=datetime(2026, 9, 14, 1, 30),
+        )
+        self.assertEqual(_day_key(fixture), "2026-09-13")
+
     def test_1x2_single_lean(self) -> None:
         self.assertTrue(
             settle_auto_pick_hit(

@@ -287,9 +287,12 @@ async def fetch_finished_fixtures(
     end: date,
     league_ids: list[int],
 ) -> list[Fixture]:
-    end_dt = datetime.combine(end, datetime.max.time())
+    # Results pages and daily picks are grouped by the persisted venue-local
+    # match day. Filtering by the UTC kickoff date moves late-night American
+    # fixtures into the following day and mixes two daily-pick slates.
     filters = [
-        Fixture.date <= end_dt,
+        Fixture.match_day.is_not(None),
+        Fixture.match_day <= end.isoformat(),
         Fixture.status == "finished",
         Fixture.home_goals.is_not(None),
         Fixture.away_goals.is_not(None),
@@ -297,7 +300,7 @@ async def fetch_finished_fixtures(
     if league_ids:
         filters.append(Fixture.league_id.in_(league_ids))
     if start is not None:
-        filters.append(Fixture.date >= datetime.combine(start, datetime.min.time()))
+        filters.append(Fixture.match_day >= start.isoformat())
     stmt = (
         select(Fixture)
         .where(*filters)
@@ -306,14 +309,19 @@ async def fetch_finished_fixtures(
             selectinload(Fixture.away_team),
             selectinload(Fixture.league),
         )
-        .order_by(Fixture.date)
+        .order_by(Fixture.match_day, Fixture.date)
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
-def _day_key(fixture_date: datetime) -> str:
-    return fixture_date.date().isoformat()
+def _day_key(fixture: Fixture) -> str:
+    """Venue-local grouping key shared with fixtures and daily picks."""
+    if fixture.match_day:
+        return fixture.match_day
+    # Defensive fallback for an unmigrated legacy row. New writes always set
+    # match_day, and fetch_finished_fixtures excludes null rows.
+    return fixture.date.date().isoformat()
 
 
 async def build_history_accuracy(
@@ -366,7 +374,7 @@ async def build_history_accuracy(
             ),
         }
         overall_rows.append(row)
-        day = _day_key(fx.date)
+        day = _day_key(fx)
         by_day.setdefault(day, []).append(row)
 
     # Chart series: only days that actually have prediction / auto-pick samples.
