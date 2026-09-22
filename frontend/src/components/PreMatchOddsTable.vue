@@ -95,25 +95,29 @@ const tableRows = computed((): OddsRow[] => {
     })
   })
 
-  if (ou.value) {
+  // 大小球与双进共用一行：两者都只有主客两个方向，多一行会把卡片撑高，
+  // 在【关注】里拉伸同排的其他卡片。
+  if (ou.value || btts.value) {
+    const play: string[] = []
+    const home: string[] = []
+    const away: string[] = []
+    if (ou.value) {
+      play.push('大小')
+      home.push(labeledOdd('大', ou.value.home))
+      away.push(labeledOdd('小', ou.value.away))
+    }
+    if (btts.value) {
+      play.push('双进')
+      home.push(labeledOdd('是', btts.value.home))
+      away.push(labeledOdd('否', btts.value.away))
+    }
     rows.push({
-      key: 'ou',
-      play: '大小',
-      home: labeledOdd('大', ou.value.home),
-      mid: ou.value.line || '—',
-      away: labeledOdd('小', ou.value.away),
-      midKind: 'line',
-    })
-  }
-
-  if (btts.value) {
-    rows.push({
-      key: 'btts',
-      play: '双进',
-      home: labeledOdd('是', btts.value.home),
-      mid: '—',
-      away: labeledOdd('否', btts.value.away),
-      midKind: 'text',
+      key: 'goals',
+      play: play.join('\\'),
+      home: home.join('\\'),
+      mid: ou.value?.line || '—',
+      away: away.join('\\'),
+      midKind: ou.value ? 'line' : 'text',
     })
   }
 
@@ -126,7 +130,7 @@ function buildColumns(linkMidHeader: boolean): DataTableColumns<OddsRow> {
       title: '玩法',
       key: 'play',
       align: 'center',
-      width: 72,
+      width: 84,
       render: (row) => {
         if (!row.play) return null
         const showExtra = row.midKind === 'popover' && ahExtraCount.value > 0
@@ -263,6 +267,7 @@ function renderMidCell(row: OddsRow) {
   font-size: 12px;
   color: var(--fa-text-secondary);
   font-weight: 500;
+  white-space: nowrap;
   user-select: none;
 }
 
@@ -271,6 +276,7 @@ function renderMidCell(row: OddsRow) {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--fa-text);
+  white-space: nowrap;
   user-select: none;
 }
 
