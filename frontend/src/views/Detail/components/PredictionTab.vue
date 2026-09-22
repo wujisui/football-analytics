@@ -25,32 +25,38 @@ interface OddsStage {
   capturedAt: string
 }
 
+/** 落槽前的候选：盘口可能整段缺失，只有中盘之后才知道采集时间。 */
+type OddsStageSource = Omit<OddsStage, 'odds' | 'capturedAt'> & {
+  odds?: OddsPackage | null
+}
+
 const oddsStages = computed<OddsStage[]>(() => {
   const pkg = props.fixture.analysis.package
-  const candidates = [
+  const sources: OddsStageSource[] = [
     {
-      key: 'initial' as const,
+      key: 'initial',
       title: '初盘',
       description: '首次采集的机构盘口',
       odds: pkg?.odds_opening,
     },
     {
-      key: 'mid' as const,
+      key: 'mid',
       title: '中盘',
       odds: pkg?.odds_mid,
     },
     {
-      key: 'late' as const,
+      key: 'late',
       title: '临场',
       odds: pkg?.odds_late,
     },
     {
-      key: 'current' as const,
+      key: 'current',
       title: '即时盘',
       odds: pkg?.odds,
     },
-  ].filter(
-    (stage): stage is Omit<OddsStage, 'capturedAt'> =>
+  ]
+  const candidates = sources.filter(
+    (stage): stage is OddsStageSource & { odds: OddsPackage } =>
       !!stage.odds && hasOddsMarkets(stage.odds),
   )
 
