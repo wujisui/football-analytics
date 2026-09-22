@@ -39,15 +39,26 @@ function percent(value: number): string {
 const isPhone = useIsPhone()
 const rating = computed(() => normalizeQualityRating(props.value))
 
-/** 槽位很窄：只给方向与命中概率，其余明细留给 tooltip。 */
+/**
+ * 槽位很窄：方向已由行内标签高亮，这里只给命中概率，否则手机上会换行。
+ * 方向与其余明细留给 tooltip。
+ */
 const label = computed(() => {
   if (rating.value != null) return ''
   const lean = (props.referenceLean || '').trim()
   if (!lean) return ''
   if (lean === REFERENCE_UNAVAILABLE) return '数据不足'
   if (props.referenceProbability == null) return lean
-  return `${lean} ${(props.referenceProbability * 100).toFixed(1)}%`
+  return `${(props.referenceProbability * 100).toFixed(1)}%`
 })
+
+/**
+ * 概率与行内被高亮的那个玩法标签同色，视觉上把「这个百分比属于哪一注」连起来。
+ * 「数据不足」「只有方向」不是高亮，保持弱化。
+ */
+const showsProbability = computed(
+  () => !!label.value && props.referenceProbability != null,
+)
 
 const detail = computed(() => {
   const parts: string[] = []
@@ -89,7 +100,13 @@ const detail = computed(() => {
     :delay="200"
   >
     <template #trigger>
-      <span class="strength-slot reference">{{ label }}</span>
+      <n-text
+        class="strength-slot reference"
+        :type="showsProbability ? 'success' : 'default'"
+        :depth="showsProbability ? undefined : 3"
+      >
+        {{ label }}
+      </n-text>
     </template>
     <span class="reference-detail">{{ detail }}</span>
   </n-tooltip>
@@ -102,11 +119,11 @@ const detail = computed(() => {
   cursor: default;
 }
 
+/* 颜色交给 n-text 的 type / depth，按主题解析，勿在此覆盖 */
 .reference {
   flex-shrink: 1;
   overflow: hidden;
   max-width: min(100%, 220px);
-  color: var(--n-text-color-3);
   font-size: 12px;
   line-height: 1.4;
   white-space: nowrap;

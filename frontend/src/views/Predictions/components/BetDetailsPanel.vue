@@ -1,10 +1,5 @@
 <script setup lang="ts">
-import {
-  ChevronDownOutline,
-  ChevronUpOutline,
-  ImageOutline,
-  TrashOutline,
-} from '@vicons/ionicons5'
+import { ImageOutline, TrashOutline } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -254,18 +249,13 @@ onBeforeUnmount(() => {
           保存方案
         </n-button>
         <n-button
-          class="detail-button"
           size="small"
           type="primary"
           :disabled="!groupedSelections.length"
           :aria-label="showDetails ? '收起投注详情' : '展开投注详情'"
           @click="toggleDetails"
         >
-          <template #icon>
-            <n-icon
-              :component="showDetails ? ChevronDownOutline : ChevronUpOutline"
-            />
-          </template>
+          详情
         </n-button>
         <n-button
           class="clear-button"
