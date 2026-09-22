@@ -48,6 +48,11 @@ const showMarkets = computed(() => hasOddsMarkets(props.odds))
 
 const ahRows = computed(() => (ahLines.value.length ? [ahLines.value[0]] : []))
 
+function labeledOdd(label: string, value?: string | number | null): string {
+  const odd = formatOdd(value)
+  return odd === '—' ? '—' : `${label}/${odd}`
+}
+
 function middleLinkable(): boolean {
   return !!(props.linkMiddleToDetail && props.fixtureId)
 }
@@ -93,9 +98,9 @@ const tableRows = computed((): OddsRow[] => {
     rows.push({
       key: 'ou',
       play: '大小',
-      home: formatOdd(ou.value.home),
+      home: labeledOdd('大', ou.value.home),
       mid: ou.value.line || '—',
-      away: formatOdd(ou.value.away),
+      away: labeledOdd('小', ou.value.away),
       midKind: 'line',
     })
   }
