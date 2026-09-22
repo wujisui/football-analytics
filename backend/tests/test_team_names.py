@@ -149,6 +149,31 @@ def test_hot_friendly_leagues_include_youth_national_sides() -> None:
     assert BY_ID[2] == "法国"
 
 
+def test_hot_efl_trophy_and_youth_ids_match_official_clubs() -> None:
+    """英锦联与热门友谊赛/亚运缺译名按官方 id 补，不能串到同名成年队。"""
+    expected = {
+        4: "俄罗斯",
+        61: "维冈",
+        74: "谢周三",
+        1348: "米尔顿凯恩斯",
+        1356: "布莱克浦",
+        5531: "多米尼克",
+        7196: "利物浦U21",
+        8150: "安圭拉",
+        10177: "韩国U23",
+        10955: "沙特U23",
+        12522: "美国U17",
+        12786: "泽伦多夫赫塔",
+        25282: "美国U19",
+    }
+    for team_id, zh in expected.items():
+        assert BY_ID[team_id] == zh, f"team {team_id} mistranslated"
+    assert team_name_zh("Korea Republic U23", team_id=10177) == "韩国U23"
+    assert team_name_zh("Liverpool U21", team_id=7196) == "利物浦U21"
+    assert BY_ID[40] == "利物浦"
+    assert BY_ID[17] == "韩国"
+
+
 def test_arabic_club_names_are_transliterated_not_glossed() -> None:
     """阿拉伯语队名按音译或沿用既有「城市+阿赫利」格式，不做字面意译。
 
