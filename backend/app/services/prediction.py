@@ -464,7 +464,7 @@ def _resolve_ou_side(
     市场只有 54.0% 的场次大盘更低，命中 24/57 与「恒买大」完全相同——这一层没有
     提供任何信息，还把目标总进球顶到 4，叠上「双进:是」后比分全是 3-1 / 4-0。
 
-    回测 1203 场（真源 `backend/scripts/backtest_ou_side.py`）：跟盘口 54.8%、旧
+    回测 1203 场（真源 `backend/scripts/backtest_goal_side.py`）：跟盘口 54.8%、旧
     启发式 54.5%，命中率在噪声内；但判大占比从 60.9% 回到 51.0%，与市场一致。
     """
     return (
@@ -482,7 +482,21 @@ def _btts_yes(
     features: dict[str, float] | None,
     odds: dict[str, Any] | None = None,
 ) -> bool:
-    """BTTS lean from O/U market shape + 1X2 balance (+ optional form)."""
+    """双进方向以**它自己那块盘**为准，同价或缺盘才回退启发式。
+
+    与 `_resolve_ou_side` 同一条口径。原先只读大小球盘形态与 1X2 均衡度打分，从不看
+    是/否 的报价：1282 场里启发式 52.5%（留出段 52.1%），跟盘口低水侧 58.2%
+    （留出段 58.3%），而启发式只有 49.1% 的场次判「是」，样本真实发生率是 59.0%——
+    它系统性偏向「否」。真源 `backend/scripts/backtest_goal_side.py`。
+    注意跟盘口并未赢过「恒买是」（59.0%），这块盘的方向信息基本等于基础发生率，
+    因此这是修掉一个有害启发式，不是发现优势；不要据此给双进加权。
+    """
+    btts = (odds or {}).get("both_teams_score") if isinstance(odds, dict) else None
+    btts = btts if isinstance(btts, dict) else {}
+    yes_odd, no_odd = _odd_float(btts.get("home")), _odd_float(btts.get("away"))
+    if yes_odd and no_odd and yes_odd != no_odd:
+        return yes_odd < no_odd
+
     score = 0.0
     ou = (odds or {}).get("goals_ou") if isinstance(odds, dict) else None
     ou = ou if isinstance(ou, dict) else {}

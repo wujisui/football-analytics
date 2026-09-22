@@ -145,6 +145,32 @@ class PredictionCopyTests(unittest.TestCase):
             derive_prediction_leans(probs, odds)["goal_lean"].startswith("大")
         )
 
+    def test_btts_side_follows_its_own_board(self) -> None:
+        """双进方向以是/否的报价为准，不再由大小球形态与 1X2 均衡度打分推。
+
+        1282 场：启发式 52.5%（留出段 52.1%），跟盘口低水侧 58.2%（留出段 58.3%）；
+        启发式只判 49.1% 的「是」，真实发生率 59.0%，系统性偏「否」。
+        """
+        from app.services.prediction import derive_prediction_leans
+
+        # 强主队：启发式的「top >= 0.55 且平局概率低」减分项命中并判否，
+        # 但双进盘自己说「是」更便宜。大小球取大盘，两者可共存（2-1）。
+        odds = {
+            "available": True,
+            "match_winner": {"home": 1.30, "draw": 5.0, "away": 7.9},
+            "goals_ou": {"line": 2.75, "home": 1.86, "away": 2.02},
+            "both_teams_score": {"home": 1.69, "away": 2.10},
+        }
+        probs = {"home": 0.70, "draw": 0.18, "away": 0.12}
+        self.assertEqual(
+            derive_prediction_leans(probs, odds)["both_score_lean"], "双进:是"
+        )
+
+        odds["both_teams_score"] = {"home": 2.10, "away": 1.69}
+        self.assertEqual(
+            derive_prediction_leans(probs, odds)["both_score_lean"], "双进:否"
+        )
+
     def test_draw_scoreline_for_ou_over_25(self) -> None:
         from app.services.prediction import (
             _align_score_with_ou,
