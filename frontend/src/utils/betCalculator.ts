@@ -87,9 +87,9 @@ export function outcomeTitle(
   outcome: CalcOutcome,
 ): string {
   if (market === 'spf' || market === 'ah') {
-    if (outcome === 'home') return '胜'
+    if (outcome === 'home') return '主胜'
     if (outcome === 'draw') return '平'
-    if (outcome === 'away') return '负'
+    if (outcome === 'away') return '客胜'
   }
   if (market === 'ou') {
     if (outcome === 'over') return '大'
