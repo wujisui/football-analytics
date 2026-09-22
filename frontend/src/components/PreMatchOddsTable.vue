@@ -262,6 +262,12 @@ function renderMidCell(row: OddsRow) {
   height: auto;
 }
 
+/* 行高压到贴着文字：手机弹窗里这张表是全部内容，留白多一倍就多顶一屏。 */
+.pre-match-odds-table :deep(.n-data-table-th),
+.pre-match-odds-table :deep(.n-data-table-td) {
+  padding: 4px 8px;
+}
+
 /* Cell content — table chrome matches MatchStatsTable (n-data-table). */
 :deep(.play-cell) {
   font-size: 12px;

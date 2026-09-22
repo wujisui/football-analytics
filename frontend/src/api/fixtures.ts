@@ -99,8 +99,6 @@ export interface ResultFixture {
   auto_pick_hit?: boolean | null
   auto_pick_market?: string | null
   auto_pick_lean?: string | null
-  /** 1–5 星推荐强度（日推快照冻结）。 */
-  quality_rating?: number | null
   home_rank?: number | null
   away_rank?: number | null
 }

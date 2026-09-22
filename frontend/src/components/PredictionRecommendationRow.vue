@@ -2,8 +2,7 @@
 import { computed } from 'vue'
 
 import type { AutoFavoriteMarket } from '@/api/favorites'
-import RecommendationStrength from '@/components/RecommendationStrength.vue'
-import { autoFavoritePick, favoriteQualityRating } from '@/composables/useFavoriteFixtures'
+import { autoFavoritePick } from '@/composables/useFavoriteFixtures'
 import { isPredictionPending, adaptHandicapLean } from '@/utils/handicapDisplay'
 const props = withDefaults(
   defineProps<{
@@ -12,18 +11,10 @@ const props = withDefaults(
     goalLean?: string
     bothScore?: string
     scoreHint?: string
+    /** 每场参考只用于给对应玩法的标签着色，不再单独展示。 */
     referenceMarket?: AutoFavoriteMarket | string | null
     referenceLean?: string | null
-    referenceEv?: number | null
-    referenceSource?: string | null
     referenceProbability?: number | null
-    referenceAlignment?: string | null
-    referenceReason?: string | null
-    /**
-     * 行尾自带星级/参考槽位。宿主卡片已有让球行那个预留位时置 false，
-     * 避免同一场比赛出现两份推荐强度。
-     */
-    inlineStrength?: boolean
     clickable?: boolean
     /** Resolves the auto-favorite market/lean for this fixture. */
     fixtureId?: number | null
@@ -36,12 +27,7 @@ const props = withDefaults(
     scoreHint: '',
     referenceMarket: null,
     referenceLean: null,
-    referenceEv: null,
-    referenceSource: null,
     referenceProbability: null,
-    referenceAlignment: null,
-    referenceReason: null,
-    inlineStrength: true,
     clickable: false,
     fixtureId: null,
   },
@@ -56,8 +42,6 @@ const emit = defineEmits<{
  * 被日推选中的场次整行改用日推那套自洽三件套，禁止两套混排。
  */
 const pick = computed(() => autoFavoritePick(props.fixtureId))
-/** 同一槽位：日推场次给星级，其余场次给每场参考。 */
-const qualityRating = computed(() => favoriteQualityRating(props.fixtureId))
 
 function isPick(market: AutoFavoriteMarket): boolean {
   return pick.value?.market === market
@@ -213,17 +197,6 @@ function open() {
     >
       <n-ellipsis style="max-width: 100%">{{ scoreText }}</n-ellipsis>
     </n-tag>
-    <RecommendationStrength
-      v-if="inlineStrength"
-      :value="qualityRating"
-      :reference-lean="referenceLean"
-      :reference-ev="referenceEv"
-      :reference-source="referenceSource"
-      :reference-probability="referenceProbability"
-      :reference-alignment="referenceAlignment"
-      :reference-reason="referenceReason"
-      @click.stop
-    />
   </div>
 </template>
 
@@ -277,5 +250,15 @@ function open() {
 
 .clickable {
   cursor: pointer;
+}
+
+/*
+ * 手机上整行只占一行：超宽时由让球/比分标签的省略号吸收。靠换行让步会让
+ * 同一列卡片高度在一行与两行之间跳。
+ */
+@media (max-width: 767px) {
+  .recommendation-row {
+    flex-wrap: nowrap;
+  }
 }
 </style>

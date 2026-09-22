@@ -155,7 +155,6 @@ def _to_favorite_response(
         auto_lean=fav.auto_lean,
         auto_handicap_lean=fav.auto_handicap_lean,
         auto_score_hint=fav.auto_score_hint,
-        quality_rating=fav.quality_rating,
     )
 
 
@@ -346,7 +345,6 @@ async def add_favorite(
         fav.auto_market = None
         fav.auto_market_lean = None
         fav.auto_lean = None
-        fav.quality_rating = None
     await db.commit()
 
     response = await get_favorite_response(db, fixture_id, user_id=owner)

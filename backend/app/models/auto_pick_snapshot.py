@@ -35,7 +35,7 @@ class AutoPickSnapshot(Base):
     score_hint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Probability before the per-key calibration layer.
     raw_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Probability after calibration; this is what ranking and stars read.
+    # Probability after calibration; this is what ranking reads.
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     decimal_odd: Mapped[float | None] = mapped_column(Float, nullable=True)
     # EV is audit-only: board probabilities make it structurally negative.
@@ -50,8 +50,6 @@ class AutoPickSnapshot(Base):
     direction_alignment: Mapped[str | None] = mapped_column(String(24), nullable=True)
     # Calibrated hit probability minus the market-direction penalty.
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # 1–5 星 absolute band mapped from the ranking score.
-    quality_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     picked_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),

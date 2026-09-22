@@ -2,7 +2,7 @@
 
 /** Controls that own their own click semantics — ignore for reading marks. */
 export const FIXTURE_CARD_MARK_IGNORE =
-  'button, a, input, textarea, select, [role="button"], .n-tag, .n-rate, .n-checkbox'
+  'button, a, input, textarea, select, [role="button"], .n-tag, .n-checkbox'
 
 export function isFixtureCardMarkClickIgnored(event: Event): boolean {
   const el = event.target as Element | null

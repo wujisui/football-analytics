@@ -49,7 +49,6 @@ from app.services.recommendation.decision import (
     MatchDecision,
     RecommendationCandidate,
     build_match_decision,
-    star_rating,
 )
 from app.services.results_capture import prematch_list_clause
 from app.services.user_scope import ANON_OWNER_ID
@@ -469,7 +468,6 @@ def run_pipeline(
         skip_fixture_ids=skip_fixture_ids,
     )
     selected_ids = {pick.fixture_id for pick in selected}
-    ratings = {pick.fixture_id: star_rating(pick.score) for pick in selected}
     matches_by_day: dict[str, int] = {}
     eligible_by_day: dict[str, int] = {}
     selected_by_day: dict[str, int] = {}
@@ -550,7 +548,6 @@ def run_pipeline(
                 "direction_alignment": pick.direction_alignment,
                 "direction_penalty": pick.direction_penalty,
                 "decimal_odd": round(pick.decimal_odd, 3),
-                "quality_rating": ratings[pick.fixture_id],
                 "score_hint": pick.score_hint,
             }
             for pick in selected
@@ -570,7 +567,6 @@ def run_pipeline(
         ],
         "rejected": [],
         "picks": selected,
-        "ratings": ratings,
         "decisions": decisions,
         "selected_ids": selected_ids,
         "alerts": alerts,
@@ -755,7 +751,6 @@ async def sync_daily_recommendations(
         skip_fixture_ids=manual_ids,
     )
     selected: list[DailyRecommendationPick] = pipeline_result["picks"]
-    ratings: dict[int, float] = pipeline_result["ratings"]
     selected_ids = {pick.fixture_id for pick in selected}
     prematch_ids = {match.fixture_id for match in matches}
     saved_at = _utc_now()
@@ -784,7 +779,6 @@ async def sync_daily_recommendations(
                 auto_lean=pick.lean,
                 auto_handicap_lean=pick.handicap_lean,
                 auto_score_hint=pick.score_hint,
-                quality_rating=ratings[pick.fixture_id],
                 saved_at=saved_at,
             )
         )
@@ -822,7 +816,6 @@ async def sync_daily_recommendations(
                 calibrator_version=pick.calibrator_version,
                 direction_alignment=pick.direction_alignment,
                 score=pick.score,
-                quality_rating=ratings[pick.fixture_id],
                 picked_at=saved_at,
             )
         )

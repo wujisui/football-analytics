@@ -10,7 +10,6 @@ from app.services.recommendation.decision import (
     build_match_decision,
     select_reference_candidate,
     settlement_expected_return,
-    star_rating,
 )
 from app.services.recommendation.pipeline import MatchPipelineInput, run_pipeline
 
@@ -125,26 +124,6 @@ def test_settlement_ev_accounts_for_half_results_and_push() -> None:
         "loss": 0.30,
     }
     assert settlement_expected_return(distribution, 2.0) == pytest.approx(0.0)
-
-
-@pytest.mark.parametrize(
-    ("probability", "rating"),
-    [
-        (0.66, 5.0),
-        (0.61, 4.5),
-        (0.58, 4.0),
-        (0.55, 3.5),
-        (0.52, 3.0),
-        (0.49, 2.5),
-        (0.46, 2.0),
-        (0.43, 1.5),
-        (0.40, 1.0),
-    ],
-)
-def test_star_rating_uses_absolute_probability_bands(
-    probability: float, rating: float
-) -> None:
-    assert star_rating(probability) == rating
 
 
 def test_strict_market_order_keeps_ah_even_when_goals_look_stronger() -> None:

@@ -53,8 +53,6 @@ class FavoriteFixture(Base):
     # 分析器那套（pre_match_data）按最可能结果推导，两者允许不同向，不得混用。
     auto_handicap_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
     auto_score_hint: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Auto tip strength as 1–5 stars from absolute adjusted-EV bands.
-    quality_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     saved_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),

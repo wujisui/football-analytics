@@ -49,8 +49,6 @@ export interface FavoriteFixtureRecord {
   /** 与 auto_lean 同源的自洽展示；分析器那套在 recommendation / handicap_lean。 */
   auto_handicap_lean?: string | null
   auto_score_hint?: string | null
-  /** 1–5 星推荐强度（调整后 EV 的绝对分档）。 */
-  quality_rating?: number | null
 }
 
 export interface FavoriteFixturesResponse {

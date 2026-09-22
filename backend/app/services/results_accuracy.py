@@ -135,27 +135,20 @@ def evaluate_fixture_prediction(
         "auto_pick_hit": None,
         "auto_pick_market": None,
         "auto_pick_lean": None,
-        "quality_rating": None,
         # Unsettled rows (feed still live) carry provisional scores — show, never grade.
         "evaluable": fixture_ready_to_grade(fixture),
     }
 
-    def _attach_auto_pick(*, grade: bool) -> None:
+    def _attach_auto_pick(*, grade: bool, fallback_line: float | None = None) -> None:
         if auto_pick is None:
             return
         payload["auto_pick_market"] = auto_pick.market
         payload["auto_pick_lean"] = auto_pick.lean
-        rating = getattr(auto_pick, "quality_rating", None)
-        try:
-            rating_f = float(rating) if rating is not None else None
-        except (TypeError, ValueError):
-            rating_f = None
-        payload["quality_rating"] = rating_f if rating_f and rating_f > 0 else None
         if not grade:
             return
-        ah_line = None
+        ah_line = fallback_line
         if auto_pick.market == "ah":
-            ah_line = handicap_line_from_lean(auto_pick.lean)
+            ah_line = handicap_line_from_lean(auto_pick.lean) or fallback_line
         payload["auto_pick_hit"] = settle_auto_pick_hit(
             market=auto_pick.market,
             lean=auto_pick.lean,
@@ -236,19 +229,7 @@ def evaluate_fixture_prediction(
     payload["ou_hit"] = hits["ou_hit"]
     payload["btts_hit"] = hits["btts_hit"]
 
-    if auto_pick is not None:
-        payload["auto_pick_market"] = auto_pick.market
-        payload["auto_pick_lean"] = auto_pick.lean
-        ah_line = line_f
-        if auto_pick.market == "ah":
-            ah_line = handicap_line_from_lean(auto_pick.lean) or line_f
-        payload["auto_pick_hit"] = settle_auto_pick_hit(
-            market=auto_pick.market,
-            lean=auto_pick.lean,
-            home_goals=fixture.home_goals,
-            away_goals=fixture.away_goals,
-            handicap_line=ah_line,
-        )
+    _attach_auto_pick(grade=True, fallback_line=line_f)
     return payload
 
 

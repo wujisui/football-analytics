@@ -4,7 +4,6 @@ from app.services.recommendation.decision import (
     MatchDecision,
     RecommendationCandidate,
     settlement_expected_return,
-    star_rating,
 )
 from app.services.recommendation.pipeline import (
     MatchPipelineInput,
@@ -20,6 +19,5 @@ __all__ = [
     "log_sync_summary",
     "run_pipeline",
     "settlement_expected_return",
-    "star_rating",
     "sync_daily_recommendations",
 ]

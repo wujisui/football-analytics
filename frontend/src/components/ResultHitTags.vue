@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import RecommendationStrength from '@/components/RecommendationStrength.vue'
 import { adaptHandicapLean, handicapLeanLabel } from '@/utils/handicapDisplay'
 import { hitTagMissed, hitTagType, type HitTagFixture } from '@/utils/resultsDisplay'
 import type { ResultsHitKey } from '@/utils/resultsPageState'
@@ -112,11 +111,6 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
     >
       {{ handicapTagLabel }}
     </n-tag>
-    <RecommendationStrength
-      class="hit-rate"
-      :value="fixture.quality_rating"
-      @click.stop
-    />
   </n-flex>
 </template>
 
@@ -129,11 +123,6 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
 
 .hit-tag.clickable {
   cursor: pointer;
-}
-
-/* 跟着标签一起换行，落在最后一枚标签后面 */
-.hit-rate {
-  align-self: center;
 }
 
 .hit-tag.active {

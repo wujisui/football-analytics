@@ -264,16 +264,10 @@ export interface FixtureResponse {
   away_goals?: number | null
   league_country?: string | null
   analysis: AnalysisResponse
-  /** 所有比赛都有的统一参考；星级仅属于日推。 */
+  /** 每场参考：只用于给对应玩法的标签着色，不单独展示。 */
   reference_market?: '1x2' | 'ah' | 'ou' | 'btts' | string | null
   reference_lean?: string | null
-  /** 含庄家抽水的结算口径 EV，仅供审计，不参与排序。 */
-  reference_ev?: number | null
-  /** market=盘口去水，model=已通过时间留出验证的模型。 */
-  reference_source?: 'market' | 'model' | string | null
   reference_probability?: number | null
-  reference_alignment?: string | null
-  reference_reason?: string | null
   home_rank?: number | null
   away_rank?: number | null
   /** 即时盘列表摘要。 */

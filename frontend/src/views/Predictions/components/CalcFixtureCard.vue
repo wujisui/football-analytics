@@ -132,11 +132,7 @@ function goDetail() {
       :score-hint="prediction.score_hint"
       :reference-market="fixture.reference_market"
       :reference-lean="fixture.reference_lean"
-      :reference-ev="fixture.reference_ev"
-      :reference-source="fixture.reference_source"
       :reference-probability="fixture.reference_probability"
-      :reference-alignment="fixture.reference_alignment"
-      :reference-reason="fixture.reference_reason"
       :fixture-id="fixture.fixture_id"
       clickable
       @open="showOddsModal = true"

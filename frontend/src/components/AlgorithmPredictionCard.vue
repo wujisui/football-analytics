@@ -8,9 +8,7 @@ import DetailTabHint from '@/components/DetailTabHint.vue'
 import FavoriteButton from '@/components/FavoriteButton.vue'
 import FixtureMatchup from '@/components/FixtureMatchup.vue'
 import PredictionRecommendationRow from '@/components/PredictionRecommendationRow.vue'
-import RecommendationStrength from '@/components/RecommendationStrength.vue'
 import WdlProbabilityBars from '@/components/WdlProbabilityBars.vue'
-import { favoriteQualityRating } from '@/composables/useFavoriteFixtures'
 import {
   formatLocalMonthDayMinute,
   formatOdd,
@@ -173,9 +171,6 @@ const primaryAwayOdd = computed(() =>
   primaryAh.value ? formatOdd(primaryAh.value.away) : '—',
 )
 const primaryLine = computed(() => primaryAh.value?.line || '—')
-
-/** 让球行右列：日推场次给 1–5 星推荐强度，其余场次给每场参考。 */
-const qualityRating = computed(() => favoriteQualityRating(resolvedFixtureId.value))
 
 const probs = computed(() => {
   if (!predictionReady.value) return []
@@ -388,15 +383,6 @@ function onOddsClick() {
         </div>
         <span v-else class="handicap-empty">暂无盘口</span>
       </div>
-      <RecommendationStrength
-        :value="qualityRating"
-        :reference-lean="fixture?.reference_lean"
-        :reference-ev="fixture?.reference_ev"
-        :reference-source="fixture?.reference_source"
-        :reference-probability="fixture?.reference_probability"
-        :reference-alignment="fixture?.reference_alignment"
-        :reference-reason="fixture?.reference_reason"
-      />
     </div>
 
     <DetailTabHint tab="briefing">
@@ -408,12 +394,7 @@ function onOddsClick() {
         :score-hint="prediction.score_hint"
         :reference-market="fixture?.reference_market"
         :reference-lean="fixture?.reference_lean"
-        :reference-ev="fixture?.reference_ev"
-        :reference-source="fixture?.reference_source"
         :reference-probability="fixture?.reference_probability"
-        :reference-alignment="fixture?.reference_alignment"
-        :reference-reason="fixture?.reference_reason"
-        :inline-strength="!standalone"
         :fixture-id="resolvedFixtureId"
         clickable
         @open="goBriefing"
@@ -523,23 +504,13 @@ function onOddsClick() {
   background: var(--fa-bg-elevated);
 }
 
-/* 左让球 6、右星级 4；未上推荐的场次在右列显示每场参考，两侧不跟着内容跳宽度 */
 .handicap-line {
-  display: grid;
-  grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
-  align-items: center;
-  gap: 8px;
   min-width: 0;
   padding: 4px 8px;
   border-radius: var(--fa-radius-card);
   background: var(--fa-bg-elevated);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-}
-
-.handicap-line :deep(.strength-slot) {
-  justify-self: end;
-  text-align: right;
 }
 
 .handicap-main {

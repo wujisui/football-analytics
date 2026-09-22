@@ -11,7 +11,6 @@ import {
 } from '@/api/favorites'
 import { oddsSnippetFromFixture } from '@/utils/oddsDisplay'
 import { snapshotFromAnalysis, type PredictionSnapshot } from '@/utils/opinionAdjust'
-import { normalizeQualityRating } from '@/utils/qualityRating'
 
 export type { FavoriteFixtureRecord }
 
@@ -55,7 +54,6 @@ function optimisticFromFixture(fixture: FixtureResponse): FavoriteFixtureRecord 
     auto_market: null,
     auto_market_lean: null,
     auto_lean: null,
-    quality_rating: null,
     odds_snippet: oddsSnippetFromFixture(fixture),
     home_rank: fixture.home_rank ?? null,
     away_rank: fixture.away_rank ?? null,
@@ -88,7 +86,6 @@ function optimisticFromResult(fixture: ResultFixture): FavoriteFixtureRecord {
     auto_market: null,
     auto_market_lean: null,
     auto_lean: null,
-    quality_rating: null,
     has_prediction: hasPrediction,
     recommendation: fixture.recommendation ?? undefined,
     handicap_lean: fixture.handicap_lean ?? undefined,
@@ -154,7 +151,7 @@ export function clearPrivateFavorites() {
 
 /**
  * 【关注】只承载用户主动点亮星标、并经收藏接口落库的记录。
- * 自动推荐仍保留在内部缓存，为比赛/赛果列表提供 [荐]、质量星和置顶依据。
+ * 自动推荐仍保留在内部缓存，为比赛/赛果列表提供 [荐]、命中概率和置顶依据。
  */
 const favoriteList = computed<FavoriteFixtureRecord[]>(() => favorites.value)
 
@@ -330,16 +327,6 @@ export function autoFavoritePick(
     handicapLean: (item.auto_handicap_lean || '').trim(),
     scoreHint: (item.auto_score_hint || '').trim(),
   }
-}
-
-/** 1–5 星推荐强度；非算法推荐时为 null。 */
-export function favoriteQualityRating(
-  fixtureId: number | null | undefined,
-): number | null {
-  if (fixtureId == null) return null
-  const item = autoPicks.value.find((row) => row.fixture_id === fixtureId)
-  if (!item) return null
-  return normalizeQualityRating(item.quality_rating)
 }
 
 export function useFavoriteFixtures() {

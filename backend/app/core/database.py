@@ -122,7 +122,6 @@ async def _migrate_favorite_fixtures_owner_pk(conn) -> None:
                 source TEXT NOT NULL DEFAULT 'manual',
                 auto_market TEXT,
                 auto_lean TEXT,
-                quality_rating REAL,
                 saved_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
                 PRIMARY KEY (user_id, fixture_id),
                 FOREIGN KEY(fixture_id) REFERENCES fixtures (id) ON DELETE CASCADE
@@ -134,23 +133,18 @@ async def _migrate_favorite_fixtures_owner_pk(conn) -> None:
         await conn.execute(text("PRAGMA table_info(favorite_fixtures_legacy)"))
     ).fetchall()}
     has_source = "source" in legacy_cols
-    # Legacy quality_low was a boolean gate; ratings are recomputed on next sync.
-    quality_expr = (
-        "quality_rating" if "quality_rating" in legacy_cols else "NULL"
-    )
     source_expr = "COALESCE(source, 'manual')" if has_source else "'manual'"
     await conn.execute(
         text(
             f"""
             INSERT OR IGNORE INTO favorite_fixtures
-                (user_id, fixture_id, source, auto_market, auto_lean, quality_rating, saved_at)
+                (user_id, fixture_id, source, auto_market, auto_lean, saved_at)
             SELECT
                 COALESCE(user_id, ''),
                 fixture_id,
                 {source_expr},
                 auto_market,
                 auto_lean,
-                {quality_expr},
                 saved_at
             FROM favorite_fixtures_legacy
             """
@@ -279,7 +273,6 @@ async def _ensure_sqlite_columns(conn) -> None:
             "auto_lean": "TEXT",
             "auto_handicap_lean": "TEXT",
             "auto_score_hint": "TEXT",
-            "quality_rating": "REAL",
         },
     )
     await _ensure_table_columns(
@@ -288,7 +281,6 @@ async def _ensure_sqlite_columns(conn) -> None:
         {
             "raw_confidence": "REAL",
             "score": "REAL",
-            "quality_rating": "REAL",
             "handicap_lean": "TEXT",
             "score_hint": "TEXT",
             "adjusted_ev": "REAL",
@@ -326,9 +318,13 @@ async def _ensure_sqlite_columns(conn) -> None:
     await conn.execute(
         text("UPDATE bet_plans SET user_id = '' WHERE user_id IS NULL")
     )
-    # quality_low 已被 1–5 星校准命中概率强度的 quality_rating 取代。
-    await _drop_table_columns(conn, "favorite_fixtures", ("quality_low",))
-    await _drop_table_columns(conn, "auto_pick_snapshots", ("quality_low",))
+    # 卡片不再展示推荐强度；命中概率只留 auto_pick_snapshots 那份审计。
+    await _drop_table_columns(
+        conn, "favorite_fixtures", ("quality_low", "quality_rating", "confidence")
+    )
+    await _drop_table_columns(
+        conn, "auto_pick_snapshots", ("quality_low", "quality_rating")
+    )
     # raw_model_probability 拆成了 implied_probability / model_probability 两列。
     await _drop_table_columns(
         conn, "recommendation_candidate_snapshots", ("raw_model_probability",)

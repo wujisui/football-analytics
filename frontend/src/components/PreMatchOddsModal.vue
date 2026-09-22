@@ -40,14 +40,14 @@ watch(
 </script>
 
 <template>
+  <!-- 无标题：点空白处即可关闭，标题栏只是白占高度。 -->
   <n-modal
     :show="show"
     preset="card"
-    title="赛前盘口"
     to="body"
     :auto-focus="false"
     :style="{ width: 'min(360px, calc(100vw - 24px))' }"
-    :segmented="{ content: true, footer: false }"
+    :content-style="{ padding: '10px' }"
     @update:show="emit('update:show', $event)"
   >
     <PreMatchOddsTable

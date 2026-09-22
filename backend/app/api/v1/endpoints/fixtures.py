@@ -320,11 +320,7 @@ def _reference_fields(stored: PreMatchData | None) -> dict[str, Any]:
     return {
         "reference_market": stored.reference_market,
         "reference_lean": stored.reference_lean,
-        "reference_ev": stored.reference_ev,
-        "reference_source": stored.reference_source,
         "reference_probability": stored.reference_probability,
-        "reference_alignment": stored.reference_alignment,
-        "reference_reason": stored.reference_reason,
     }
 
 
@@ -733,7 +729,6 @@ async def get_fixture_results(
                 auto_pick_hit=evaluated["auto_pick_hit"],
                 auto_pick_market=evaluated["auto_pick_market"],
                 auto_pick_lean=evaluated["auto_pick_lean"],
-                quality_rating=evaluated.get("quality_rating"),
                 score_hit=evaluated["score_hit"],
                 ou_hit=evaluated["ou_hit"],
                 btts_hit=evaluated["btts_hit"],

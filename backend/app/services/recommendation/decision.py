@@ -162,32 +162,6 @@ class MatchDecision:
     candidates: tuple[RecommendationCandidate, ...]
 
 
-def star_rating(ranking_score: float) -> float:
-    """Absolute confidence bands over the calibrated hit probability.
-
-    Bands are fixed, so a thin day cannot manufacture five stars out of its own
-    best-of-a-bad-lot.  EV is not an input: under board probabilities it only
-    restates the bookmaker's margin.
-    """
-    if ranking_score >= 0.65:
-        return 5.0
-    if ranking_score >= 0.60:
-        return 4.5
-    if ranking_score >= 0.57:
-        return 4.0
-    if ranking_score >= 0.54:
-        return 3.5
-    if ranking_score >= 0.51:
-        return 3.0
-    if ranking_score >= 0.48:
-        return 2.5
-    if ranking_score >= 0.45:
-        return 2.0
-    if ranking_score >= 0.42:
-        return 1.5
-    return 1.0
-
-
 def settlement_expected_return(
     distribution: dict[str, float],
     decimal_odd: float,

@@ -337,20 +337,8 @@ class FixtureResponse(BaseModel):
     analysis: AnalysisResponse = Field(..., description="赛前分析结果")
     reference_market: str | None = Field(default=None, description="每场参考玩法")
     reference_lean: str | None = Field(default=None, description="每场参考方向")
-    reference_ev: float | None = Field(
-        default=None, description="结算口径 EV，含庄家抽水，仅供审计"
-    )
-    reference_source: str | None = Field(
-        default=None, description="概率来源：market=盘口去水，model=已过门禁的模型"
-    )
     reference_probability: float | None = Field(
         default=None, description="同玩法同来源 Platt 校准后的命中概率"
-    )
-    reference_alignment: str | None = Field(
-        default=None, description="推荐方向与同玩法盘口方向关系"
-    )
-    reference_reason: str | None = Field(
-        default=None, description="概率或赔率缺失时的原因，否则为审计说明"
     )
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
@@ -418,10 +406,6 @@ class ResultFixtureResponse(BaseModel):
     auto_pick_lean: str | None = Field(
         default=None, description="每日自动推荐文案"
     )
-    quality_rating: float | None = Field(
-        default=None,
-        description="1–5 星推荐强度（调整后 EV 绝对分档，开赛后冻结）",
-    )
     home_rank: int | None = Field(default=None, description="本赛事积分榜排名（主）")
     away_rank: int | None = Field(default=None, description="本赛事积分榜排名（客）")
 
@@ -476,8 +460,6 @@ class FavoriteFixtureResponse(BaseModel):
     # 与 auto_lean 同源的自洽展示；分析器那套在 recommendation/handicap_lean。
     auto_handicap_lean: str | None = None
     auto_score_hint: str | None = None
-    # 1–5 星推荐强度（按调整后 EV 的绝对区间）。
-    quality_rating: float | None = None
 
     @field_serializer("fixture_date", "saved_at")
     def serialize_datetimes(self, value: datetime) -> str:
