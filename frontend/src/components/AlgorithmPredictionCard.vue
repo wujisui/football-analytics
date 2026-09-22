@@ -406,6 +406,7 @@ function onOddsClick() {
         :goal-lean="prediction.goal_lean"
         :both-score="prediction.both_score_lean"
         :score-hint="prediction.score_hint"
+        :reference-market="fixture?.reference_market"
         :reference-lean="fixture?.reference_lean"
         :reference-ev="fixture?.reference_ev"
         :reference-source="fixture?.reference_source"

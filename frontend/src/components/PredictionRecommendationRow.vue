@@ -12,6 +12,7 @@ const props = withDefaults(
     goalLean?: string
     bothScore?: string
     scoreHint?: string
+    referenceMarket?: AutoFavoriteMarket | string | null
     referenceLean?: string | null
     referenceEv?: number | null
     referenceSource?: string | null
@@ -33,6 +34,7 @@ const props = withDefaults(
     goalLean: '',
     bothScore: '',
     scoreHint: '',
+    referenceMarket: null,
     referenceLean: null,
     referenceEv: null,
     referenceSource: null,
@@ -59,6 +61,15 @@ const qualityRating = computed(() => favoriteQualityRating(props.fixtureId))
 
 function isPick(market: AutoFavoriteMarket): boolean {
   return pick.value?.market === market
+}
+
+function isReference(market: AutoFavoriteMarket): boolean {
+  return (
+    !pick.value
+    && props.referenceMarket === market
+    && props.referenceProbability != null
+    && props.referenceLean !== '数据不足'
+  )
 }
 
 /** 有 [荐] 时整行只展示日推自洽三件套，禁止与分析器 handicap/score 混排。 */
@@ -94,11 +105,14 @@ const showGoal = computed(() => !isPredictionPending(goalText.value))
 const showBothScore = computed(() => !isPredictionPending(bothScoreText.value))
 const showScore = computed(() => !isPredictionPending(scoreText.value))
 /**
- * 普通场次统一 info；每日推荐场次只突出实际主推，其他预测退为 default。
+ * 普通场次用 success 标出统一决策链选出的每场参考，其余保持 info；
+ * 每日推荐场次只突出实际主推，其他预测退为 default。
  * 赛前没有命中态，主推借用赛果命中 tag 的 error 红色建立一致视觉。
  */
-function tagType(market?: AutoFavoriteMarket): 'error' | 'default' | 'info' {
-  if (!pick.value) return 'info'
+function tagType(
+  market?: AutoFavoriteMarket,
+): 'error' | 'success' | 'default' | 'info' {
+  if (!pick.value) return market && isReference(market) ? 'success' : 'info'
   return market && isPick(market) ? 'error' : 'default'
 }
 
