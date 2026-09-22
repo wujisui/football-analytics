@@ -153,16 +153,69 @@ def test_strict_market_order_keeps_ah_even_when_goals_look_stronger() -> None:
     assert select_reference_candidate([ah, ou], has_ah=True) == ah
 
 
+def test_direction_penalty_can_demote_a_barely_qualified_ah() -> None:
+    ah = _candidate(
+        1,
+        market="ah",
+        direction="home",
+        probability=0.511,
+        penalty=0.02,
+        alignment="reverse_weak",
+    )
+    ou = _candidate(1, market="ou", direction="under", probability=0.531)
+    btts = _candidate(1, market="btts", direction="no", probability=0.571)
+
+    assert ah.ranking_score == pytest.approx(0.491)
+    assert ah.eligible_for_daily_pick() is False
+    # O/U and BTTS share the fallback tier; the stronger adjusted probability wins.
+    assert select_reference_candidate([ah, ou, btts], has_ah=True) == btts
+
+
 def test_ah_without_a_probability_falls_back_to_ou() -> None:
     ah = _candidate(1, market="ah", direction="home", probability=None)
     ou = _candidate(1, market="ou", direction="under", probability=0.55)
     assert select_reference_candidate([ah, ou], has_ah=True) == ou
 
 
-def test_board_free_match_uses_1x2_before_goals() -> None:
+def test_board_free_match_keeps_1x2_as_the_last_fallback() -> None:
     moneyline = _candidate(1, market="1x2", direction="home", probability=0.44)
     ou = _candidate(1, market="ou", direction="over", probability=0.70)
-    assert select_reference_candidate([moneyline, ou], has_ah=False) == moneyline
+    assert select_reference_candidate([moneyline, ou], has_ah=False) == ou
+
+
+def test_pipeline_falls_from_penalized_ah_to_best_secondary_market(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ah = _candidate(
+        1,
+        market="ah",
+        direction="home",
+        probability=0.511,
+        penalty=0.02,
+        alignment="reverse_weak",
+    )
+    ou = _candidate(1, market="ou", direction="under", probability=0.531)
+    btts = _candidate(1, market="btts", direction="no", probability=0.571)
+    reference = select_reference_candidate([ah, ou, btts], has_ah=True)
+
+    monkeypatch.setattr(
+        pipeline,
+        "build_match_decision",
+        lambda **_: MatchDecision(
+            fixture_id=1,
+            match_day="2026-09-21",
+            reference=reference,
+            candidates=(ah, ou, btts),
+        ),
+    )
+    result = run_pipeline(
+        [_match(1, datetime(2026, 9, 21, 10))],
+        market_artifact={"version": "test"},
+    )
+
+    assert result["selected_count"] == 1
+    assert result["picks"][0].market == "btts"
+    assert result["picks"][0].market_lean == "双进:否"
 
 
 def test_negative_ev_still_produces_a_pick(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -365,7 +418,7 @@ def test_lower_layers_only_fill_seats_the_handicap_left_empty(
     _decisions(
         monkeypatch,
         {
-            1: _candidate(1, market="ou", direction="over", probability=0.78),
+            1: _candidate(1, market="ou", direction="over", probability=0.70),
             2: _candidate(2, market="btts", direction="yes", probability=0.74),
             3: _candidate(3, market="ah", direction="home", probability=0.51),
             4: _candidate(4, market="1x2", direction="home", probability=0.70),
@@ -375,7 +428,7 @@ def test_lower_layers_only_fill_seats_the_handicap_left_empty(
         [_match(index, datetime(2026, 9, 21, 10 + index)) for index in range(1, 5)],
         market_artifact={"version": "test"},
     )
-    assert [pick.market for pick in result["picks"]] == ["ah", "ou", "btts", "1x2"]
+    assert [pick.market for pick in result["picks"]] == ["ah", "btts", "ou", "1x2"]
 
 
 def test_sub_floor_confidence_and_reverse_direction_are_dropped(

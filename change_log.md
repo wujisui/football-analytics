@@ -1204,3 +1204,9 @@ Brier 只从 0.24878 改善到 0.24661。
 
 `score_hint_for_lean` 补上双进对齐；让球降级后比分不得写成穿盘（走水/输盘可）。
 抽出 `_swap_score_within_shape`。1549790 `3-0` → `2-1`。
+
+## 2026-09-22（周二）
+
+- AH 日推门槛改用 `ranking_score`（校准概率 − 方向惩罚）过 50%；不过闸降到大小球/双进同层竞争，独赢仍只在无 AH 盘时兜底。`MARKET_FALLBACK_TIER` 里 OU 与 BTTS 合为一层。真源 `recommendation.decision`、`recommendation.pipeline`；回归 `test_direction_penalty_can_demote_a_barely_qualified_ah`、`test_pipeline_falls_from_penalized_ah_to_best_secondary_market`、`test_board_free_match_keeps_1x2_as_the_last_fallback`。
+- 盘口快照表新增双进行（`是/赔率`、`否/赔率`），大小球标注为 `大/赔率`、`小/赔率`；`hasOddsMarkets` 认可只有双进报价的盘口包。真源 `PreMatchOddsTable.vue`、`oddsDisplay.ts`。
+- 删除遗留调试脚本 `backend/_btts_probe.py`。

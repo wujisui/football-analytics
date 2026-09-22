@@ -131,12 +131,21 @@ class RecommendationCandidate:
         return float(self.calibrated_probability) - float(self.direction_penalty)
 
     def eligible_for_daily_pick(self) -> bool:
+        # AH only owns the match while its edge survives the market-direction
+        # penalty.  A weak reverse signal can therefore move a barely-over-half
+        # handicap into the O/U-BTTS fallback layer without adding a generic
+        # confidence buffer.
+        threshold_probability = (
+            self.ranking_score
+            if self.market == MARKET_AH
+            else self.calibrated_probability
+        )
         return (
             self.tellable
-            and self.calibrated_probability is not None
+            and threshold_probability is not None
             and self.decimal_odd is not None
             and self.direction_alignment != "reverse_strong"
-            and float(self.calibrated_probability) >= self.minimum_confidence
+            and float(threshold_probability) >= self.minimum_confidence
         )
 
     def settlement_json(self) -> str | None:
@@ -473,12 +482,21 @@ def _candidate(
     )
 
 
-def market_order(*, has_ah: bool) -> tuple[str, ...]:
-    """有 AH：AH→大小球→双进；无 AH：1X2→大小球→双进."""
+def market_groups(*, has_ah: bool) -> tuple[tuple[str, ...], ...]:
+    """AH first; then O/U and BTTS compete, with board-free 1X2 last."""
     return (
-        (MARKET_AH, MARKET_OU, MARKET_BTTS)
+        ((MARKET_AH,), (MARKET_OU, MARKET_BTTS))
         if has_ah
-        else (MARKET_1X2, MARKET_OU, MARKET_BTTS)
+        else ((MARKET_OU, MARKET_BTTS), (MARKET_1X2,))
+    )
+
+
+def market_order(*, has_ah: bool) -> tuple[str, ...]:
+    """Flattened deterministic order, used only for the no-data placeholder."""
+    return tuple(
+        market
+        for group in market_groups(has_ah=has_ah)
+        for market in group
     )
 
 
@@ -487,18 +505,17 @@ def select_reference_candidate(
     *,
     has_ah: bool,
 ) -> RecommendationCandidate | None:
-    """Choose one reference with strict market priority.
+    """Choose one reference by fallback group.
 
-    Ranking score is compared only between directions inside the same market;
-    a later market never outranks an earlier market that has a probability.
+    A qualifying AH owns the match.  Otherwise O/U and BTTS compete on adjusted
+    probability; 1X2 is only the final board-free fallback.
     """
-    for market in market_order(has_ah=has_ah):
+    for markets in market_groups(has_ah=has_ah):
         available = [
             candidate
             for candidate in candidates
-            if candidate.market == market
-            and candidate.ranking_score is not None
-            and candidate.tellable
+            if candidate.market in markets
+            and candidate.eligible_for_daily_pick()
         ]
         if available:
             return max(

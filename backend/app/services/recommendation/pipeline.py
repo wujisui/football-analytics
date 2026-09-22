@@ -1,7 +1,7 @@
 """Unified recommendation pipeline: 概率 → Platt → 每场参考 → 分层 Top 4.
 
 Ranking is the calibrated hit probability of a single reference per match, taken
-layer by layer (AH → 大小球 → 双进 → 无盘独赢).  EV rides along for auditing only:
+layer by layer (合格 AH → 大小球/双进 → 无盘独赢).  EV rides along for auditing only:
 while probabilities come from the board being bet, ``EV = 1/超额 − 1`` is negative
 by construction, so gating on it empties the pool instead of finding value.
 """
@@ -53,13 +53,13 @@ from app.services.user_scope import ANON_OWNER_ID
 
 logger = logging.getLogger(__name__)
 
-# 亚洲让球 → 大小球 → 双进 → 无有效 AH 盘的独赢。A lower layer never outranks a
-# higher one on score; it only fills the seats the higher layer could not.
+# 合格亚洲让球 → 大小球/双进 → 无有效 AH 盘的独赢。大小球与双进在同一层按
+# 调整后概率竞争；更低层只补更高层留下的席位。
 MARKET_FALLBACK_TIER = {
     MARKET_AH: 0,
     MARKET_OU: 1,
-    MARKET_BTTS: 2,
-    MARKET_1X2: 3,
+    MARKET_BTTS: 1,
+    MARKET_1X2: 2,
 }
 # 池子小于这个数时给不满 4 场属正常，不告警。
 MIN_MATCHES_FOR_FULL_QUOTA = 6
@@ -283,11 +283,6 @@ def _to_pick(
         if has_ah
         else {MARKET_1X2, MARKET_OU, MARKET_BTTS}
     )
-    local_order = (
-        {MARKET_AH: 0, MARKET_OU: 1, MARKET_BTTS: 2}
-        if has_ah
-        else {MARKET_1X2: 0, MARKET_OU: 1, MARKET_BTTS: 2}
-    )
     candidates = sorted(
         (
             item
@@ -295,7 +290,7 @@ def _to_pick(
             if item.market in allowed_markets and item.eligible_for_daily_pick()
         ),
         key=lambda item: (
-            local_order.get(item.market, 99),
+            MARKET_FALLBACK_TIER.get(item.market, 99),
             -float(item.ranking_score or 0.0),
         ),
     )
@@ -341,8 +336,8 @@ def _to_pick(
         direction_penalty=candidate.direction_penalty,
         adjusted_ev=candidate.adjusted_ev,
         conflict_detail=(
-            "严格玩法顺序：有 AH 时 AH→大小球→双进；"
-            "无 AH 时 1X2→大小球→双进"
+            "玩法降级：调整后达标的 AH 优先；否则大小球与双进按概率竞争；"
+            "仅无 AH 盘时以独赢兜底"
         ),
     )
 
@@ -355,9 +350,9 @@ def select_daily_picks_by_match_day(
 ) -> list[DailyRecommendationPick]:
     """Take each venue-local day's picks, layer by layer.
 
-    Sorting by tier first is what makes 大小球 a *fallback*: it only reaches the
-    board when 亚洲让球 ran out of qualifying matches, never because its number
-    happened to look bigger.
+    Sorting by tier first keeps qualifying AH ahead of fallbacks. O/U and BTTS
+    share one tier and therefore compete on adjusted probability; board-free
+    1X2 only fills the final layer.
     """
     skip = skip_fixture_ids or set()
     by_day: dict[str, list[DailyRecommendationPick]] = {}
