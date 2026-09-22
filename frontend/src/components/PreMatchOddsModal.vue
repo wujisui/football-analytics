@@ -40,11 +40,12 @@ watch(
 </script>
 
 <template>
-  <!-- 无标题：点空白处即可关闭，标题栏只是白占高度。 -->
+  <!-- 无标题无关闭键：点空白处即可关闭，整条标题栏只是白占高度。 -->
   <n-modal
     :show="show"
     preset="card"
     to="body"
+    :closable="false"
     :auto-focus="false"
     :style="{ width: 'min(360px, calc(100vw - 24px))' }"
     :content-style="{ padding: '10px' }"

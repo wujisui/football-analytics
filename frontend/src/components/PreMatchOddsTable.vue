@@ -130,7 +130,7 @@ function buildColumns(linkMidHeader: boolean): DataTableColumns<OddsRow> {
       title: '玩法',
       key: 'play',
       align: 'center',
-      width: 84,
+      width: 68,
       render: (row) => {
         if (!row.play) return null
         const showExtra = row.midKind === 'popover' && ahExtraCount.value > 0
@@ -169,7 +169,7 @@ function buildColumns(linkMidHeader: boolean): DataTableColumns<OddsRow> {
           : '指数',
       key: 'mid',
       align: 'center',
-      width: 72,
+      width: 58,
       render: (row) => renderMidCell(row),
     },
     {
@@ -262,10 +262,13 @@ function renderMidCell(row: OddsRow) {
   height: auto;
 }
 
-/* 行高压到贴着文字：手机弹窗里这张表是全部内容，留白多一倍就多顶一屏。 */
+/*
+ * 留白压到贴着文字：手机弹窗宽 360px，「大/1.83\是/1.53」这种合并格
+ * 一旦被挤出去，客队整列就会被裁掉。
+ */
 .pre-match-odds-table :deep(.n-data-table-th),
 .pre-match-odds-table :deep(.n-data-table-td) {
-  padding: 4px 8px;
+  padding: 4px 6px;
 }
 
 /* Cell content — table chrome matches MatchStatsTable (n-data-table). */
@@ -278,7 +281,7 @@ function renderMidCell(row: OddsRow) {
 }
 
 :deep(.value-cell) {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--fa-text);
