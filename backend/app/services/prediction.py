@@ -1010,6 +1010,27 @@ def _align_score_with_ou(
     return out
 
 
+def _unique_scores(lines: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Drop repeats while preserving order."""
+    seen: set[tuple[int, int]] = set()
+    unique: list[tuple[int, int]] = []
+    for pair in lines:
+        if pair not in seen:
+            seen.add(pair)
+            unique.append(pair)
+    return unique
+
+
+def _score_hint_text(lines: list[tuple[int, int]]) -> str:
+    """参考比分的唯一出文案口，去重必须落在这里。
+
+    生成器出的两组比分会被后续对齐步骤（双进 / 大小球 / 让球）映射成同一组，
+    只在生成时去重不够，否则标签写成「比分:3-1/3-1」。
+    No spaces around「/」so multi-score tags stay on one list row.
+    """
+    return "/".join(f"{home}-{away}" for home, away in _unique_scores(lines))
+
+
 def _score_hints_for_recommendation(
     recommendation: str,
     probs: dict[str, float],
@@ -1080,16 +1101,8 @@ def _score_hints_for_recommendation(
             )
         )
 
-    # Deduplicate while preserving order.
-    seen: set[tuple[int, int]] = set()
-    unique: list[tuple[int, int]] = []
-    for pair in lines:
-        if pair not in seen:
-            seen.add(pair)
-            unique.append(pair)
-    # No spaces around「/」so multi-score tags stay on one list row.
-    text = "/".join(f"{h}-{a}" for h, a in unique)
-    return text, unique
+    unique = _unique_scores(lines)
+    return _score_hint_text(unique), unique
 
 
 def _leans_without_1x2_market(
@@ -1261,9 +1274,7 @@ def derive_prediction_leans(
     )
     btts_yes = _reconcile_btts_with_scores(score_lines, btts_yes)
     score_hint = (
-        f"比分:{'/'.join(f'{h}-{a}' for h, a in score_lines)}"
-        if score_lines
-        else "比分:待分析"
+        f"比分:{_score_hint_text(score_lines)}" if score_lines else "比分:待分析"
     )
     both_score_lean = "双进:是" if btts_yes else "双进:否"
     return {
@@ -1332,7 +1343,7 @@ def score_hint_for_lean(
     kept = [pair for pair in lines if _score_matches_outcomes(*pair, outcomes)]
     if not kept:
         return None
-    return "比分:" + "/".join(f"{home}-{away}" for home, away in kept)
+    return "比分:" + _score_hint_text(kept)
 
 
 def score_hint_for_consistent_bundle(
@@ -1404,7 +1415,28 @@ def score_hint_for_consistent_bundle(
 
     if any(not _score_matches_outcomes(home, away, outcomes) for home, away in scores):
         return None
-    return "比分:" + "/".join(f"{home}-{away}" for home, away in scores)
+    # 卡片上四项都摆在同一行，比分必须同时结算得了让球、大小球和双进。
+    # 对齐步骤只是「尽量」让开，漏检双进就会发出「双进:是 · 小(3) · 2-0」——
+    # 主胜下双方进球最少 2-1，总进球 3 已经不小于 3，这组条件本就无解，
+    # 应当返回 None 让流水线降级，而不是挑一项悄悄背叛。
+    if parsed_ou is not None and any(
+        not _score_settles_ou(home, away, ou_line, ou_side) for home, away in scores
+    ):
+        return None
+    if not _scores_settle_btts(scores, both_score_lean):
+        return None
+    return "比分:" + _score_hint_text(scores)
+
+
+def _scores_settle_btts(
+    scores: list[tuple[int, int]], both_score_lean: str | None
+) -> bool:
+    """每条比分的双方进球形态是否都与该双进倾向一致（无明确倾向即放过）。"""
+    lean = (both_score_lean or "").strip()
+    if "是" not in lean and "否" not in lean:
+        return True
+    wants_both = "是" in lean
+    return all((home > 0 and away > 0) is wants_both for home, away in scores)
 
 
 def _scores_settle_as(

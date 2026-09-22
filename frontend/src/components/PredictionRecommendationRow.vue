@@ -63,13 +63,33 @@ function isPick(market: AutoFavoriteMarket): boolean {
   return pick.value?.market === market
 }
 
-function isReference(market: AutoFavoriteMarket): boolean {
+/**
+ * 每场参考是与分析器并行的另一条轨道，方向可以不同。整行文案恒取同一来源
+ * （有 [荐] 用日推三件套，否则全用分析器），只在参考方向与本行已展示的方向
+ * 一致时才着色：否则会把「双进否 + 比分 2-0」标成看好「双进是」。
+ */
+function isReference(market: AutoFavoriteMarket, shownLean: string): boolean {
   return (
     !pick.value
     && props.referenceMarket === market
     && props.referenceProbability != null
     && props.referenceLean !== '数据不足'
+    && sameDirection(market, shownLean, props.referenceLean || '')
   )
+}
+
+/** 同玩法两段文案是否指向同一侧；让球与独赢按整串比，大小球和双进只看方向字。 */
+function sameDirection(
+  market: AutoFavoriteMarket,
+  shown: string,
+  reference: string,
+): boolean {
+  const a = shown.trim()
+  const b = reference.trim()
+  if (!a || !b) return false
+  if (market === 'ou') return a.startsWith('大') === b.startsWith('大')
+  if (market === 'btts') return a.includes('是') === b.includes('是')
+  return a === b
 }
 
 /** 有 [荐] 时整行只展示日推自洽三件套，禁止与分析器 handicap/score 混排。 */
@@ -104,6 +124,14 @@ const showHandicap = computed(() => !isPredictionPending(handicapText.value))
 const showGoal = computed(() => !isPredictionPending(goalText.value))
 const showBothScore = computed(() => !isPredictionPending(bothScoreText.value))
 const showScore = computed(() => !isPredictionPending(scoreText.value))
+/** 本行该玩法实际展示的文案，着色前用它与参考方向比对。 */
+function shownLean(market: AutoFavoriteMarket): string {
+  if (market === '1x2') return recommendationText.value || ''
+  if (market === 'ah') return handicapText.value || ''
+  if (market === 'ou') return goalText.value || ''
+  return bothScoreText.value || ''
+}
+
 /**
  * 普通场次用 success 标出统一决策链选出的每场参考，其余保持 info；
  * 每日推荐场次只突出实际主推，其他预测退为 default。
@@ -112,7 +140,9 @@ const showScore = computed(() => !isPredictionPending(scoreText.value))
 function tagType(
   market?: AutoFavoriteMarket,
 ): 'error' | 'success' | 'default' | 'info' {
-  if (!pick.value) return market && isReference(market) ? 'success' : 'info'
+  if (!pick.value) {
+    return market && isReference(market, shownLean(market)) ? 'success' : 'info'
+  }
   return market && isPick(market) ? 'error' : 'default'
 }
 

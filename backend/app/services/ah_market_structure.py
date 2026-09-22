@@ -227,16 +227,25 @@ def side_speaks_for_result(line: float, side: str) -> bool:
     return own + _LINE_EPSILON < DEEP_AH_LINE
 
 
-def outright_win_settles(line: float, side: str) -> bool:
-    """Would an outright win by ``side`` keep that side of the board from losing?
+def companion_side_for_result(line: float, result: str) -> str | None:
+    """Which side of the board can sit beside a non-AH bet's result row?
 
-    纯结算问题，供非 AH 注挑选可以并排展示的让球行：受让方赢球必然全赢；让球方只到
-    一球盘为止（赢一球在 -1 走水、-0.75 半赢，更深则半输或全输）。
+    纯结算问题：该结果能不能保证这一侧不输盘。三种结果一条规则答完，调用方不再
+    分支：
+
+    - 主胜 / 客胜 → 赢球那一侧。受让方赢球必然全赢；让球方只到一球盘为止
+      （赢一球在 -1 走水、-0.75 半赢，更深则半输或全输），更深时返回 ``None``。
+    - 和局 → 受让方（让球为正的那一侧）。平局在 +0.5 及更深的受让盘上就是全赢，
+      +0.25 半赢，平手盘走水退本，一律不输。**禁止因为「平局讲不圆」而隐藏这一行**：
+      受让方不输盘是算得出来的结论，扔掉等于把算法答案换成空白。
     """
+    if result == "draw":
+        return "away" if line < -_LINE_EPSILON else "home"
+    side = "home" if result == "home" else "away"
     own = _own_line(line, side)
     if own >= -_LINE_EPSILON:
-        return True
-    return abs(own) <= DEEP_AH_LINE + _LINE_EPSILON
+        return side
+    return side if abs(own) <= DEEP_AH_LINE + _LINE_EPSILON else None
 
 
 def bettable_side(stance: AhBoardStance) -> str:

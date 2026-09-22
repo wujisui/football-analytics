@@ -206,6 +206,25 @@ class PredictionCopyTests(unittest.TestCase):
                     msg=f"{h}-{a} fights {side} {line}",
                 )
 
+    def test_score_tag_never_repeats_the_same_score(self) -> None:
+        """截图回归：对齐把两组比分压成同一组后，标签不得写成「比分:3-1/3-1」。"""
+        from app.services.prediction import _align_score_with_btts, _score_hint_text
+
+        self.assertEqual(_score_hint_text([(3, 1), (3, 1)]), "3-1")
+        self.assertEqual(_score_hint_text([(2, 0), (3, 0)]), "2-0/3-0")
+
+        collapsed = _align_score_with_btts(
+            [(2, 0), (3, 0)],
+            btts_yes=True,
+            probs={"home": 0.76, "draw": 0.15, "away": 0.09},
+            total=3,
+            recommendation="主胜",
+            ou_line=3.5,
+            ou_side="under",
+        )
+        parts = _score_hint_text(collapsed).split("/")
+        self.assertEqual(parts, list(dict.fromkeys(parts)))
+
     def test_score_candidates_follow_single_away_recommendation(self) -> None:
         """截图回归：客胜主推不得同时给出主胜或平局比分。"""
         from app.services.prediction import (

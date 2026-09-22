@@ -1,7 +1,7 @@
 from app.services.ah_market_structure import (
     FALLBACK_WATER_DEADZONE,
     classify_ah_board,
-    outright_win_settles,
+    companion_side_for_result,
     side_speaks_for_result,
     thresholds_from_quotes,
 )
@@ -120,19 +120,25 @@ def test_one_depth_rule_serves_both_the_bet_and_the_companion_row() -> None:
     """两条问句、一个 ``DEEP_AH_LINE``，不许调用方各自手抄阈值。
 
     ``side_speaks_for_result`` 回答「这一侧能不能当成胜负方向卖出去」，
-    ``outright_win_settles`` 回答「赢球能不能保证这一侧不输」。两者对让球方 / 受让方
-    恰好相反，早先被拍成同一个 ``abs(line) > 1`` 判断，于是 主+2 明明赢球必赢盘却被
-    当作讲不圆藏掉，客+2 反而被当成客胜卖了出去。
+    ``companion_side_for_result`` 回答「这个结果保证哪一侧不输盘」。两者对让球方 /
+    受让方恰好相反，早先被拍成同一个 ``abs(line) > 1`` 判断，于是 主+2 明明赢球必赢盘
+    却被当作讲不圆藏掉，客+2 反而被当成客胜卖了出去。
     """
     # 主队让 2 球：卖出去的只能是让球方，而能并排展示的只有受让方。
     assert side_speaks_for_result(-2.0, "home") is True
     assert side_speaks_for_result(-2.0, "away") is False
-    assert outright_win_settles(-2.0, "home") is False
-    assert outright_win_settles(-2.0, "away") is True
+    assert companion_side_for_result(-2.0, "home") is None
+    assert companion_side_for_result(-2.0, "away") == "away"
 
     # 一球盘：赢一球走水，仍算不输；再深半球就不成立。
-    assert outright_win_settles(-1.0, "home") is True
-    assert outright_win_settles(-1.25, "home") is False
+    assert companion_side_for_result(-1.0, "home") == "home"
+    assert companion_side_for_result(-1.25, "home") is None
+
+    # 平局保证受让方不输：主让 0.5 → 客+0.5 全赢；平手盘走水退本。
+    assert companion_side_for_result(-0.5, "draw") == "away"
+    assert companion_side_for_result(0.5, "draw") == "home"
+    assert companion_side_for_result(-2.0, "draw") == "away"
+    assert companion_side_for_result(0.0, "draw") == "home"
 
     # 浅盘两侧都讲得圆，规则不变。
     for line in (-0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75):

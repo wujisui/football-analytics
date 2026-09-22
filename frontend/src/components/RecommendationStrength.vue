@@ -44,9 +44,9 @@ const label = computed(() => {
   if (rating.value != null) return ''
   const lean = (props.referenceLean || '').trim()
   if (!lean) return ''
-  if (lean === REFERENCE_UNAVAILABLE) return '参考数据不足'
-  if (props.referenceProbability == null) return `参考 ${lean}`
-  return `参考 ${lean} ${(props.referenceProbability * 100).toFixed(1)}%`
+  if (lean === REFERENCE_UNAVAILABLE) return '数据不足'
+  if (props.referenceProbability == null) return lean
+  return `${lean} ${(props.referenceProbability * 100).toFixed(1)}%`
 })
 
 const detail = computed(() => {

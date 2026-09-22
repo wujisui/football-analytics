@@ -218,6 +218,57 @@ def test_pipeline_falls_from_penalized_ah_to_best_secondary_market(
     assert result["picks"][0].market_lean == "双进:否"
 
 
+def test_companion_result_row_yields_instead_of_killing_the_best_bet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """西雅图那场：双进:是 去水 60.9% 是全池最高，不能被伴随胜负行毙掉。
+
+    「双进:是 + 小(3)」本身不矛盾（1-1 同时满足），无解只出现在伴随行固定写
+    「主胜」时。让伴随行让步到和局并隐藏让球行，那一注才留得住。
+    """
+    btts = _candidate(1, market="btts", direction="yes", probability=0.609)
+    ah = _candidate(1, market="ah", direction="home", probability=0.499, line=-0.5)
+    monkeypatch.setattr(
+        pipeline,
+        "build_match_decision",
+        lambda **_: MatchDecision(
+            fixture_id=1,
+            match_day="2026-09-21",
+            reference=btts,
+            candidates=(ah, btts),
+        ),
+    )
+    match = MatchPipelineInput(
+        fixture_id=1,
+        league_id=253,
+        kickoff=datetime(2026, 9, 23, 16, 30),
+        match_day="2026-09-21",
+        odds=None,
+        recommendation="主胜",
+        handicap_lean="主-0.5",
+        score_hint="比分:1-0",
+        goal_lean="小(3)",
+        both_score_lean="双进:是",
+        home_win_prob=0.493,
+        draw_prob=0.247,
+        away_win_prob=0.259,
+    )
+    result = run_pipeline([match], market_artifact={"version": "test"})
+
+    assert result["selected_count"] == 1
+    pick = result["picks"][0]
+    assert pick.market == "btts"
+    assert pick.market_lean == "双进:是"
+    assert pick.lean == "和局"
+    # 平局保证受让方不输盘，伴随让球行指向受让方，不得隐藏。
+    assert pick.handicap_lean == "客+0.5"
+    for pair in pick.score_hint.removeprefix("比分:").split("/"):
+        home, away = (int(value) for value in pair.split("-"))
+        assert home == away, "和局伴随行下的比分必须是平局"
+        assert home > 0 and away > 0, "双进:是 要求两队都进球"
+        assert home + away < 3, "小(3) 要求总进球低于 3"
+
+
 def test_negative_ev_still_produces_a_pick(monkeypatch: pytest.MonkeyPatch) -> None:
     # Board de-vig probabilities make EV = 1/超额 − 1, always negative.  Gating on
     # it empties the pool instead of finding value.
@@ -296,6 +347,39 @@ def test_reference_score_keeps_the_btts_call() -> None:
         home, away = (int(value) for value in pair.split("-"))
         assert home > 0 and away > 0
         assert home + away > 2.75
+
+
+def test_btts_call_never_pairs_with_a_clean_sheet_score() -> None:
+    """截图回归：西雅图那场发出「[荐] 双进:是 · 小(3) · 比分 2-0」。
+
+    主胜下双方进球最少 2-1，总进球 3 已经不小于 3，三项条件本就无解；
+    一致性闸必须返回 None 让流水线降级，不能挑一项悄悄背叛。
+    """
+    probs = {"home": 0.493, "draw": 0.247, "away": 0.259}
+    assert (
+        score_hint_for_consistent_bundle(
+            "主胜",
+            "主-0.5",
+            probs,
+            goal_lean="小(3)",
+            both_score_lean="双进:是",
+        )
+        is None
+    )
+    # 同一块大小球盘换成双进:否，就有解。
+    hint = score_hint_for_consistent_bundle(
+        "主胜",
+        "主-0.5",
+        probs,
+        goal_lean="小(3)",
+        both_score_lean="双进:否",
+    )
+    assert hint is not None
+    for pair in hint.removeprefix("比分:").split("/"):
+        home, away = (int(value) for value in pair.split("-"))
+        assert home > away
+        assert home + away < 3
+        assert away == 0
 
 
 def test_score_never_covers_the_board_the_pick_passed_on() -> None:

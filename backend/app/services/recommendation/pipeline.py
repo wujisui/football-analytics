@@ -30,10 +30,13 @@ from app.models.pre_match_data import PreMatchData
 from app.models.recommendation_candidate import RecommendationCandidateSnapshot
 from app.services.auto_favorites import AUTO_PICK_LIMIT
 from app.services.ah_features import format_handicap_lean_text
-from app.services.ah_market_structure import outright_win_settles
+from app.services.ah_market_structure import companion_side_for_result
 from app.services.match_day import fixture_match_day
 from app.services.prematch_package import package_from_record, rehydrate_odds_markets
-from app.services.prediction import score_hint_for_consistent_bundle
+from app.services.prediction import (
+    recommendation_outcomes,
+    score_hint_for_consistent_bundle,
+)
 from app.services.probability_calibration import (
     load_calibration_artifact,
     train_from_frozen_history,
@@ -121,27 +124,47 @@ class DailyRecommendationPick:
         return MARKET_FALLBACK_TIER.get(self.market, len(MARKET_FALLBACK_TIER))
 
 
-def _companion_lean(match: MatchPipelineInput) -> str:
-    text = str(match.recommendation or "").strip()
-    if text in {"主胜", "胜"}:
-        return "主胜"
-    if text in {"客胜", "负"}:
-        return "客胜"
-    return (
-        "主胜"
-        if float(match.home_win_prob or 0.0) >= float(match.away_win_prob or 0.0)
-        else "客胜"
-    )
-
-
-def _result_lean_for_candidate(
+def _result_leans_for_candidate(
     match: MatchPipelineInput,
     candidate: RecommendationCandidate,
-) -> str:
-    """胜负方向恒等于所投的那一侧；深盘受让侧在决策层就已不可入选。"""
+) -> list[str]:
+    """胜负行的候选顺序；调用方按顺序试到能生成自洽比分为止。
+
+    让球 / 独赢注只有一个答案：胜负方向恒等于所投那一侧（深盘受让侧在决策层就已
+    不可入选）。大小球 / 双进注的胜负行只是**伴随展示**，挡住比分时应当让步，而不是
+    把那一注毙掉——西雅图那场「双进:是」去水 60.9% 是全池最高的候选，却因为伴随行
+    固定写「主胜」（主胜 + 双方进球 + 总进球小于 3 无解）整注被淘汰，席位让给了低
+    9.5 个点的小(3)；而「双进:是 + 小(3)」本身不矛盾，1-1 同时满足两者。
+    先取最可能结果，再按概率退让。和局只作伴随展示，仍不是可投注方向
+    （真源 ``strategy.DAILY_PICK_OUTCOMES``）。
+    """
     if candidate.market in {MARKET_AH, MARKET_1X2}:
-        return "主胜" if candidate.direction == "home" else "客胜"
-    return _companion_lean(match)
+        return ["主胜" if candidate.direction == "home" else "客胜"]
+    home = float(match.home_win_prob or 0.0)
+    away = float(match.away_win_prob or 0.0)
+    probs = {
+        "主胜": home,
+        "客胜": away,
+        "和局": (
+            float(match.draw_prob)
+            if match.draw_prob is not None
+            else max(0.0, 1.0 - home - away)
+        ),
+    }
+    stored = str(match.recommendation or "").strip()
+    first = (
+        "主胜"
+        if stored in {"主胜", "胜"}
+        else "客胜"
+        if stored in {"客胜", "负"}
+        else max(("主胜", "客胜"), key=lambda lean: probs[lean])
+    )
+    rest = sorted(
+        (lean for lean in probs if lean != first),
+        key=lambda lean: probs[lean],
+        reverse=True,
+    )
+    return [first, *rest]
 
 
 def _display_handicap_for_candidate(
@@ -149,15 +172,18 @@ def _display_handicap_for_candidate(
     candidate: RecommendationCandidate,
     result_lean: str,
 ) -> str | None:
-    """Return the handicap row that the selected result can honestly support.
+    """Return the handicap row that the companion result can honestly support.
 
-    An AH pick displays its actual betting side.  For every other market the row
-    is only a companion to the win direction, so it is shown when that outright
-    win keeps the same side from losing the board (``outright_win_settles``) and
-    hidden otherwise, instead of fabricating a contradictory bundle.
+    An AH pick shows its actual betting side. For every other market the row is
+    only a companion, so it shows whichever side that result keeps from losing
+    the board — including the receiving side on a draw — and is hidden only when
+    no side qualifies. 真源 ``ah_market_structure.companion_side_for_result``。
     """
     if candidate.market == MARKET_AH:
         return candidate.lean
+    outcomes = recommendation_outcomes(result_lean)
+    if not outcomes or len(outcomes) != 1:
+        return None
     ah_candidates = [
         item
         for item in decision.candidates
@@ -166,11 +192,10 @@ def _display_handicap_for_candidate(
     if not ah_candidates:
         return None
     line = float(ah_candidates[0].line)
-    side = "home" if result_lean == "主胜" else "away"
-    if not outright_win_settles(line, side):
+    side = companion_side_for_result(line, next(iter(outcomes)))
+    if side is None:
         return None
-    pick = "让胜" if side == "home" else "让负"
-    return format_handicap_lean_text(pick, line)
+    return format_handicap_lean_text("让胜" if side == "home" else "让负", line)
 
 
 def _declined_board_lean(
@@ -197,11 +222,11 @@ def _consistent_bundle(
     decision: MatchDecision,
     candidate: RecommendationCandidate,
 ) -> tuple[str, str | None, str] | None:
-    """Build result / handicap / score from the same selected direction."""
-    result_lean = _result_lean_for_candidate(match, candidate)
-    handicap_lean = _display_handicap_for_candidate(
-        decision, candidate, result_lean
-    )
+    """Build result / handicap / score from the same selected direction.
+
+    所投那一注的方向固定不动；只有伴随的胜负行会让步（见
+    ``_result_leans_for_candidate`` 的候选顺序），逐个试到能生成自洽比分为止。
+    """
     goal_lean = candidate.lean if candidate.market == MARKET_OU else match.goal_lean
     both_score_lean = (
         candidate.lean if candidate.market == MARKET_BTTS else match.both_score_lean
@@ -213,19 +238,23 @@ def _consistent_bundle(
         if match.draw_prob is not None
         else max(0.0, 1.0 - home - away)
     )
-    score_hint = score_hint_for_consistent_bundle(
-        result_lean,
-        handicap_lean,
-        {"home": home, "draw": draw, "away": away},
-        goal_lean=goal_lean,
-        both_score_lean=both_score_lean,
-        declined_handicap_lean=_declined_board_lean(
-            decision, candidate, handicap_lean
-        ),
-    )
-    if score_hint is None:
-        return None
-    return result_lean, handicap_lean, score_hint
+    for result_lean in _result_leans_for_candidate(match, candidate):
+        handicap_lean = _display_handicap_for_candidate(
+            decision, candidate, result_lean
+        )
+        score_hint = score_hint_for_consistent_bundle(
+            result_lean,
+            handicap_lean,
+            {"home": home, "draw": draw, "away": away},
+            goal_lean=goal_lean,
+            both_score_lean=both_score_lean,
+            declined_handicap_lean=_declined_board_lean(
+                decision, candidate, handicap_lean
+            ),
+        )
+        if score_hint is not None:
+            return result_lean, handicap_lean, score_hint
+    return None
 
 
 def _reason(candidate: RecommendationCandidate) -> str:
