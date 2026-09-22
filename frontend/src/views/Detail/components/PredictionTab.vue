@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import PredictionResult from '@/views/Detail/components/PredictionResult.vue'
 import type { FixtureResponse, OddsPackage } from '@/api/types'
-import { formatDateTime } from '@/utils/format'
+import { formatLocalMonthDayMinute } from '@/utils/format'
 import { useAuthSession } from '@/composables/useAuthSession'
 import { hasOddsMarkets } from '@/utils/oddsDisplay'
 
@@ -20,7 +20,7 @@ const { isAdmin } = useAuthSession()
 interface OddsStage {
   key: 'initial' | 'mid' | 'late' | 'current'
   title: string
-  description: string
+  description?: string
   odds: OddsPackage
   capturedAt: string
 }
@@ -31,25 +31,22 @@ const oddsStages = computed<OddsStage[]>(() => {
     {
       key: 'initial' as const,
       title: '初盘',
-      description: '首次采集的机构盘口 · 基准锚点',
+      description: '首次采集的机构盘口',
       odds: pkg?.odds_opening,
     },
     {
       key: 'mid' as const,
       title: '中盘',
-      description: 'T-6h · 市场资金已进场，首发未出',
       odds: pkg?.odds_mid,
     },
     {
       key: 'late' as const,
       title: '临场',
-      description: 'T-1h · 首发已出，最接近真实概率',
       odds: pkg?.odds_late,
     },
     {
       key: 'current' as const,
       title: '即时盘',
-      description: '离开赛最近的赛前盘口',
       odds: pkg?.odds,
     },
   ].filter(
@@ -97,13 +94,13 @@ const canRefreshOdds = computed(
         <div class="board-head">
           <div class="board-title">
             <h3 class="fa-section-title">{{ stage.title }}</h3>
-            <n-text depth="3" class="board-description">
+            <n-text v-if="stage.description" depth="3" class="board-description">
               {{ stage.description }}
             </n-text>
           </div>
           <n-flex align="center" :size="8">
             <n-text v-if="stage.capturedAt" depth="3" class="board-time">
-              采集 {{ formatDateTime(stage.capturedAt) }}
+              {{ formatLocalMonthDayMinute(stage.capturedAt) }}
             </n-text>
             <n-button
               v-if="canRefreshOdds && stage.key === 'current'"
@@ -151,7 +148,7 @@ const canRefreshOdds = computed(
       :fixture="fixture"
       :is-finished="isFinished"
       :data-source="fixture.analysis.data_source"
-      :analyzed-at="formatDateTime(fixture.analysis.analyzed_at)"
+      :analyzed-at="formatLocalMonthDayMinute(fixture.analysis.analyzed_at)"
       :handicap-market-note="fixture.analysis.handicap_market_note || ''"
     />
   </div>

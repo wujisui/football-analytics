@@ -110,13 +110,6 @@ export function toScheduleDayKey(dateStr: string | Date): string {
   return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`
 }
 
-function tzOffsetLabel(date: Date): string {
-  const offsetMin = -date.getTimezoneOffset()
-  const sign = offsetMin >= 0 ? '+' : '-'
-  const abs = Math.abs(offsetMin)
-  return `UTC${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`
-}
-
 function formatLocaleDate(
   dateStr: string,
   options: Intl.DateTimeFormatOptions,
@@ -133,23 +126,6 @@ function formatLocaleTime(
   const d = parseApiDate(dateStr)
   if (Number.isNaN(d.getTime())) return dateStr
   return d.toLocaleTimeString(ZH_LOCALE, options)
-}
-
-/** Local kickoff: 2026-07-09 22:00 (UTC+08:00) */
-export function formatDateTime(dateStr: string): string {
-  const d = parseApiDate(dateStr)
-  if (Number.isNaN(d.getTime())) return dateStr
-  const date = d.toLocaleDateString(ZH_LOCALE, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  const time = d.toLocaleTimeString(ZH_LOCALE, {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-  return `${date} ${time} (${tzOffsetLabel(d)})`
 }
 
 /** Local date: 07-09 周四 */
