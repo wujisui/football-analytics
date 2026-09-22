@@ -42,6 +42,7 @@ const router = useRouter()
 
 const mw = computed(() => props.odds?.match_winner ?? null)
 const ou = computed(() => props.odds?.goals_ou ?? null)
+const btts = computed(() => props.odds?.both_teams_score ?? null)
 const ahLines = computed(() => ahLinesOf(props.odds?.asian_handicap))
 const ahExtraCount = computed(() => Math.max(0, ahLines.value.length - 1))
 const showMarkets = computed(() => hasOddsMarkets(props.odds))
@@ -102,6 +103,17 @@ const tableRows = computed((): OddsRow[] => {
       mid: ou.value.line || '—',
       away: labeledOdd('小', ou.value.away),
       midKind: 'line',
+    })
+  }
+
+  if (btts.value) {
+    rows.push({
+      key: 'btts',
+      play: '双进',
+      home: labeledOdd('是', btts.value.home),
+      mid: '—',
+      away: labeledOdd('否', btts.value.away),
+      midKind: 'text',
     })
   }
 

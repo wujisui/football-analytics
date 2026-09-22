@@ -21,6 +21,7 @@ export function hasOddsMarkets(odds: OddsLike): boolean {
   return !!(
     odds.match_winner ||
     odds.goals_ou ||
+    odds.both_teams_score ||
     ahLinesOf(odds.asian_handicap).length
   )
 }
