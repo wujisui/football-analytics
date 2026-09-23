@@ -95,29 +95,25 @@ const tableRows = computed((): OddsRow[] => {
     })
   })
 
-  // 大小球与双进共用一行：两者都只有主客两个方向，多一行会把卡片撑高，
-  // 在【关注】里拉伸同排的其他卡片。
-  if (ou.value || btts.value) {
-    const play: string[] = []
-    const home: string[] = []
-    const away: string[] = []
-    if (ou.value) {
-      play.push('大小')
-      home.push(labeledOdd('大', ou.value.home))
-      away.push(labeledOdd('小', ou.value.away))
-    }
-    if (btts.value) {
-      play.push('双进')
-      home.push(labeledOdd('是', btts.value.home))
-      away.push(labeledOdd('否', btts.value.away))
-    }
+  if (ou.value) {
     rows.push({
-      key: 'goals',
-      play: play.join('\\'),
-      home: home.join('\\'),
-      mid: ou.value?.line || '—',
-      away: away.join('\\'),
-      midKind: ou.value ? 'line' : 'text',
+      key: 'ou',
+      play: '大小',
+      home: labeledOdd('大', ou.value.home),
+      mid: ou.value.line || '—',
+      away: labeledOdd('小', ou.value.away),
+      midKind: 'line',
+    })
+  }
+
+  if (btts.value) {
+    rows.push({
+      key: 'btts',
+      play: '双进',
+      home: labeledOdd('是', btts.value.home),
+      mid: '—',
+      away: labeledOdd('否', btts.value.away),
+      midKind: 'text',
     })
   }
 
@@ -262,10 +258,7 @@ function renderMidCell(row: OddsRow) {
   height: auto;
 }
 
-/*
- * 留白压到贴着文字：手机弹窗宽 360px，「大/1.83\是/1.53」这种合并格
- * 一旦被挤出去，客队整列就会被裁掉。
- */
+/* 留白压到贴着文字：手机弹窗宽 360px，留白稍多客队整列就会被裁掉。 */
 .pre-match-odds-table :deep(.n-data-table-th),
 .pre-match-odds-table :deep(.n-data-table-td) {
   padding: 4px 6px;
