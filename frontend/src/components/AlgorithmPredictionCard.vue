@@ -523,6 +523,7 @@ function onOddsClick() {
 
 .handicap-values {
   display: flex;
+  justify-content: space-around;
   align-items: center;
   gap: 50px;
   min-width: 0;
