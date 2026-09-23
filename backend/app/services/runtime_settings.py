@@ -186,8 +186,10 @@ async def set_subscription_enabled(
     session: AsyncSession,
     subscribed: bool,
 ) -> bool:
+    """订阅只单向约束密刷：关订阅强制关密刷，开订阅仅解禁、不代开。"""
     await set_enable_free_quota(session, not subscribed)
-    await set_subscription_dense_odds(session, subscribed)
+    if not subscribed:
+        await set_subscription_dense_odds(session, False)
     return bool(subscribed)
 
 
@@ -195,7 +197,7 @@ async def get_subscription_dense_odds(
     session: AsyncSession | None = None,
 ) -> tuple[bool, SettingSource]:
     """Whether a subscriber uses the continuous 30-minute odds schedule."""
-    return await _get_bool_setting(KEY_SUBSCRIPTION_DENSE_ODDS, True, session)
+    return await _get_bool_setting(KEY_SUBSCRIPTION_DENSE_ODDS, False, session)
 
 
 async def set_subscription_dense_odds(

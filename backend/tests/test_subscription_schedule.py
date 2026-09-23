@@ -124,7 +124,8 @@ def test_1055_dense_refresh_runs_after_full_batch() -> None:
     }
 
 
-def test_subscription_toggle_keeps_dense_switch_bound() -> None:
+def test_opening_subscription_only_unlocks_dense_refresh() -> None:
+    """开订阅不代开密刷，关订阅强制关闭。"""
     from app.services import runtime_settings
 
     set_free = AsyncMock()
@@ -144,7 +145,7 @@ def test_subscription_toggle_keeps_dense_switch_bound() -> None:
     asyncio.run(_run(True))
     asyncio.run(_run(False))
     assert [call.args[1] for call in set_free.await_args_list] == [False, True]
-    assert [call.args[1] for call in set_dense.await_args_list] == [True, False]
+    assert [call.args[1] for call in set_dense.await_args_list] == [False]
 
 
 def test_subscribed_full_batch_only_fetches_missing_future_days() -> None:
