@@ -177,6 +177,19 @@ def test_afcon_qualification_ids_match_official_nations() -> None:
     assert team_name_zh("Congo DR", team_id=1508) == "刚果（金）"
 
 
+def test_a_league_ids_are_not_german_club_188() -> None:
+    """澳超是联赛 id 188；球队 id 188 是比勒费尔德，不能按联赛号猜队。"""
+    assert BY_ID[188] == "比勒费尔德"
+    assert BY_ID[941] == "中岸水手"
+    assert BY_ID[942] == "惠灵顿凤凰"
+    assert BY_ID[943] == "悉尼FC"
+    assert BY_ID[944] == "墨尔本胜利"
+    assert BY_ID[947] == "布里斯班狮吼"
+    assert team_name_zh("Sydney", team_id=943) == "悉尼FC"
+    assert team_name_zh("Melbourne Victory", team_id=944) == "墨尔本胜利"
+    assert team_name_zh("Melbourne City", team_id=945) == "墨尔本城"
+
+
 
 def test_hot_efl_trophy_and_youth_ids_match_official_clubs() -> None:
     """英锦联与热门友谊赛/亚运缺译名按官方 id 补，不能串到同名成年队。"""
