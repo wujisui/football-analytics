@@ -149,6 +149,21 @@ def test_hot_friendly_leagues_include_youth_national_sides() -> None:
     assert BY_ID[2] == "法国"
 
 
+def test_uwcl_and_new_window_ids_match_official_clubs() -> None:
+    """女足欧冠与 9/23 新赛程按官方 id 写，女足不能写成男足简称。"""
+    assert BY_ID[1850] == "阿森纳女足"
+    assert BY_ID[1667] == "巴黎女足"
+    assert BY_ID[1676] == "巴黎FC女足"
+    assert BY_ID[1918] == "巴萨女足"
+    assert BY_ID[7533] == "国际米兰女足"
+    assert BY_ID[1912] == "皇家社会女足"
+    assert team_name_zh("Arsenal W", team_id=1850) == "阿森纳女足"
+    assert BY_ID[42] == "阿森纳"
+    assert BY_ID[21466] == "英格兰U18"
+    assert BY_ID[10] == "英格兰"
+    assert BY_ID[1494] == "圣多美和普林西比"
+
+
 def test_hot_efl_trophy_and_youth_ids_match_official_clubs() -> None:
     """英锦联与热门友谊赛/亚运缺译名按官方 id 补，不能串到同名成年队。"""
     expected = {
