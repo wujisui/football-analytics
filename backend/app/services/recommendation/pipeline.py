@@ -286,6 +286,7 @@ def _skip_reason_text(candidate: RecommendationCandidate) -> str:
         "probability_unavailable": "这块盘没有可用报价，算不出命中概率",
         "odds_missing": "缺少可结算赔率，只能给方向",
         "deep_board_receiving_side": "深盘受让侧赢在「输一球以内」，卡片的胜负方向讲不圆，不推这一侧",
+        "extreme_handicap_low_price": "让球达到两球且让球方赔率低于1.60，回报不足以覆盖穿盘风险，降级推荐",
         "odds_and_model_unavailable": "盘口与模型数据均不足，暂时给不出方向",
     }.get(candidate.skip_reason or "")
     return reason or _reason(candidate)
@@ -297,8 +298,9 @@ def _to_pick(
 ) -> DailyRecommendationPick | None:
     """Turn a match reference into a daily candidate, or drop it.
 
-    Drops are only for missing numbers, a sub-floor probability, or a direction
-    that fights a strongly-moved board — never for negative EV.
+    Drops are only for missing numbers, a sub-floor probability, an extreme
+    low-price giving board, or a direction that fights a strongly-moved board
+    — never for negative EV.
     """
     has_ah = any(
         item.market == MARKET_AH

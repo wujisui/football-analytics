@@ -414,6 +414,53 @@ def test_deep_board_receiving_side_is_never_sold_as_an_outright_win() -> None:
     assert decision.reference.market != "ah" or decision.reference.direction == "home"
 
 
+@pytest.mark.parametrize(
+    ("line", "home_odd", "away_odd", "giving_side", "expected_allowed"),
+    [
+        (-2.0, 1.59, 2.63, "home", False),
+        (2.0, 2.63, 1.59, "away", False),
+        (-2.0, 1.60, 2.63, "home", True),
+        (-1.75, 1.44, 2.63, "home", True),
+    ],
+)
+def test_extreme_low_price_giving_side_downgrades_only_at_both_boundaries(
+    line: float,
+    home_odd: float,
+    away_odd: float,
+    giving_side: str,
+    expected_allowed: bool,
+) -> None:
+    decision = build_match_decision(
+        fixture_id=1,
+        league_id=39,
+        match_day="2026-09-21",
+        odds={
+            "match_winner": {"home": 1.25, "draw": 6.0, "away": 11.0},
+            "asian_handicap": {
+                "line": line,
+                "home": home_odd,
+                "away": away_odd,
+            },
+            "goals_ou": {"line": 3.25, "home": 1.90, "away": 1.90},
+        },
+        package={},
+        calibration_artifact=None,
+    )
+    giving_ah = next(
+        item
+        for item in decision.candidates
+        if item.market == "ah" and item.direction == giving_side
+    )
+
+    assert giving_ah.daily_pick_allowed is expected_allowed
+    assert giving_ah.skip_reason == (
+        None if expected_allowed else "extreme_handicap_low_price"
+    )
+    if not expected_allowed:
+        assert giving_ah.eligible_for_daily_pick() is False
+        assert decision.reference.market in {"ou", "btts"}
+
+
 def test_impossible_deep_handicap_falls_back_and_hides_handicap_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

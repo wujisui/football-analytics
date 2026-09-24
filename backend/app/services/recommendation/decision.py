@@ -63,6 +63,11 @@ SOURCE_MODEL = "model"
 # a three-way board rarely prices any single outcome above one half.
 MIN_DAILY_CONFIDENCE = 0.40
 MIN_AH_CONFIDENCE = 0.50
+# A very short price is poor compensation for the goal-margin risk on an
+# extreme giving board.  Keep the direction for analysis/audit, but let the
+# daily pipeline fall through to O/U, BTTS, or another fixture.
+EXTREME_AH_LINE = 2.0
+MIN_EXTREME_AH_ODD = 1.60
 
 _RESULT_KEYS = (ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH, ASIAN_HALF_LOSS, ASIAN_LOSS)
 _DIRECTION_PENALTIES = {
@@ -113,6 +118,7 @@ class RecommendationCandidate:
     # a board deeper than one goal wins by "losing by less than the line", which
     # 主胜 / 客胜 cannot express.  Still frozen for audit and calibration.
     tellable: bool = True
+    daily_pick_allowed: bool = True
 
     @property
     def minimum_confidence(self) -> float:
@@ -142,6 +148,7 @@ class RecommendationCandidate:
         )
         return (
             self.tellable
+            and self.daily_pick_allowed
             and threshold_probability is not None
             and self.decimal_odd is not None
             and self.direction_alignment != "reverse_strong"
@@ -369,6 +376,24 @@ def _alignment(
     return key, _DIRECTION_PENALTIES[key]
 
 
+def _extreme_low_price_giving_side(
+    *,
+    market: str,
+    direction: str,
+    line: float | None,
+    decimal_odd: float | None,
+) -> bool:
+    if (
+        market != MARKET_AH
+        or line is None
+        or decimal_odd is None
+        or abs(float(line)) < EXTREME_AH_LINE
+    ):
+        return False
+    giving_side = "home" if float(line) < 0 else "away" if float(line) > 0 else None
+    return direction == giving_side and float(decimal_odd) < MIN_EXTREME_AH_ODD
+
+
 def _candidate(
     *,
     fixture_id: int,
@@ -423,6 +448,14 @@ def _candidate(
         reason = "odds_missing"
     elif not tellable:
         reason = "deep_board_receiving_side"
+    daily_pick_allowed = not _extreme_low_price_giving_side(
+        market=market,
+        direction=direction,
+        line=line,
+        decimal_odd=decimal_odd,
+    )
+    if reason is None and not daily_pick_allowed:
+        reason = "extreme_handicap_low_price"
 
     signal = _market_direction(package, market)
     alignment, penalty = _alignment(direction, signal)
@@ -453,6 +486,7 @@ def _candidate(
         adjusted_ev=adjusted,
         skip_reason=reason,
         tellable=tellable,
+        daily_pick_allowed=daily_pick_allowed,
     )
 
 
