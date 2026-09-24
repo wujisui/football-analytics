@@ -29,6 +29,25 @@ def test_prediction_advice_and_winner_are_localized() -> None:
     assert parsed["comparison"][0]["label"] == "泊松分布"
 
 
+def test_official_placeholder_counts_as_no_briefing() -> None:
+    """33/33/33 是官方「没有预测」的占位，不能当成三种结果各三成。"""
+    parsed = parse_predictions_payload(
+        {
+            "response": [
+                {
+                    "predictions": {
+                        "advice": "No predictions available",
+                        "percent": {"home": "33%", "draw": "33%", "away": "33%"},
+                    },
+                    "comparison": {"total": {"home": "50%", "away": "50%"}},
+                }
+            ]
+        }
+    )
+
+    assert parsed == {"available": False, "fetched": True}
+
+
 def test_stored_combo_advice_is_localized_on_read() -> None:
     localized = localize_briefing(
         {

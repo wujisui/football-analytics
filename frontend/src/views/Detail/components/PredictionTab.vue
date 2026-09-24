@@ -405,8 +405,8 @@ const officialComparisonColumns = computed<DataTableColumns<OfficialComparisonRo
         :row-key="(row: OfficialComparisonRow) => row.key"
       />
       <n-empty
-        v-else-if="!adviceRows.length"
-        description="官方暂无赛前建议（部分联赛无 coverage.predictions）"
+        v-if="!adviceRows.length && !officialComparisonRows.length"
+        description="官方暂无赛前建议（本场无预测覆盖）"
         size="small"
       />
     </n-space>

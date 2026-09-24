@@ -1108,10 +1108,26 @@ def _translate_winner_comment(value: Any) -> str | None:
     }.get(text.casefold(), text or None)
 
 
+# 官方对没有预测覆盖的场次不会留空，而是回一句 advice 加三等分的胜平负。
+# 照搬会被读成「官方认为三种结果各三成」，所以在真源判成没有简报。
+_NO_PREDICTION_ADVICE = "no predictions available"
+
+
+def _is_placeholder_briefing(briefing: dict[str, Any]) -> bool:
+    advice = str(briefing.get("advice") or "").strip().casefold()
+    if advice == _NO_PREDICTION_ADVICE:
+        return True
+    percent = briefing.get("percent") or {}
+    shares = [str(percent.get(side) or "").strip() for side in ("home", "draw", "away")]
+    return shares == ["33%", "33%", "33%"]
+
+
 def localize_briefing(briefing: dict[str, Any]) -> dict[str, Any]:
     """Localize both newly parsed and already-stored official predictions."""
     if not isinstance(briefing, dict):
         return briefing
+    if _is_placeholder_briefing(briefing):
+        return {"available": False, "fetched": briefing.get("fetched", True)}
     localized = dict(briefing)
     localized["advice"] = _translate_prediction_advice(localized.get("advice"))
     winner = dict(localized.get("winner") or {})
