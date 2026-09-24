@@ -32,7 +32,16 @@ def test_list_membership_depends_only_on_kickoff_time() -> None:
     # 本地 status 可能仍是 pending；列表归属以开赛时刻为主。
     assert "fixtures.date > '2026-08-11 01:53:00'" in prematch
     assert "fixtures.date <= '2026-08-11 01:53:00'" in results
-    assert "fixtures.status" not in prematch
+    assert "pending" not in prematch
+
+
+def test_rescheduled_fixtures_leave_the_prematch_list() -> None:
+    """官方改期后本地仍停在旧开赛时刻，不能继续冒充未开赛场次。
+
+    这类行永远等不到盘口：后续同步只会去官方改到的那个新日期。
+    """
+    prematch = _sql(prematch_list_clause(NOW))
+    assert "postponed" in prematch
 
 
 def test_stale_postponed_fixtures_leave_results_list() -> None:

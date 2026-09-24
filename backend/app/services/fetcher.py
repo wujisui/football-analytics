@@ -920,11 +920,13 @@ class FootballFetcher:
                 allowed_league_ids=allowed,
                 fetch_teams=fetch_teams,
             )
+            rescheduled = await self._mark_fixtures_missing_from_day(day, fixtures)
             logger.info(
-                "Worldwide fallback date=%s allowed=%s saved=%s",
+                "Worldwide fallback date=%s allowed=%s saved=%s rescheduled=%s",
                 date_str,
                 "all" if allowed is None else sorted(allowed),
                 saved,
+                rescheduled,
             )
             return saved
         except Exception as exc:
@@ -935,6 +937,57 @@ class FootballFetcher:
                 exc_info=True,
             )
             return 0
+
+    async def _mark_fixtures_missing_from_day(
+        self,
+        day: date,
+        fixtures: list[dict[str, Any]],
+    ) -> int:
+        """Rows the official day feed no longer lists were moved to another date.
+
+        ``date=`` returns the whole day in one unpaged response, so a local row
+        that is absent from it is not playing that day. Only future kickoffs are
+        touched: the row would otherwise sit in 【比赛】 forever without odds,
+        since later syncs only ever revisit the date the official now uses.
+        """
+        from sqlalchemy import select
+
+        from app.services.results_capture import prematch_list_clause
+
+        assert self.session is not None
+        official_ids = {int(item["id"]) for item in fixtures if item.get("id") is not None}
+        if not official_ids:
+            # An empty day is indistinguishable from a silently truncated feed.
+            return 0
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        start = datetime.combine(day, datetime.min.time())
+        stale = [
+            fixture
+            for fixture in (
+                await self.session.execute(
+                    select(Fixture).where(
+                        Fixture.date >= start,
+                        Fixture.date < start + timedelta(days=1),
+                        Fixture.status == "pending",
+                        prematch_list_clause(now),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+            if fixture.id not in official_ids
+        ]
+        for fixture in stale:
+            fixture.status = "postponed"
+        if stale:
+            await self._commit()
+            logger.info(
+                "Fixtures dropped from date=%s feed marked postponed: %s",
+                day.isoformat(),
+                sorted(fixture.id for fixture in stale),
+            )
+        return len(stale)
 
     async def fetch_fixtures_for_date(
         self,

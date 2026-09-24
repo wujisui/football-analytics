@@ -52,8 +52,16 @@ def as_naive_utc(value: datetime) -> datetime:
 
 
 def prematch_list_clause(now: datetime | None = None) -> ColumnElement[bool]:
-    """【比赛】：开赛时刻仍在未来；不依赖可能滞后的本地状态。"""
-    return Fixture.date > (now or datetime.utcnow())
+    """【比赛】：开赛时刻仍在未来；不依赖可能滞后的本地状态。
+
+    唯一的状态例外是 ``postponed``：官方把它挪到别的日子后，本地这行的开赛时刻
+    还停在旧日期，会一直冒充未开赛场次占位（还永远拉不到盘口）。官方改到新日期
+    时会带着新时间回到某天的赛程里，届时自动复位成 ``pending``。
+    """
+    return and_(
+        Fixture.date > (now or datetime.utcnow()),
+        Fixture.status != "postponed",
+    )
 
 
 def results_list_clause(now: datetime | None = None) -> ColumnElement[bool]:
