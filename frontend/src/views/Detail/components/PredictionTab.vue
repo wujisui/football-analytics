@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, h } from 'vue'
-import type { DataTableColumns } from 'naive-ui'
+import { NButton, NTooltip, type DataTableColumns } from 'naive-ui'
 
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import DetailSectionTitle from '@/views/Detail/components/DetailSectionTitle.vue'
@@ -183,6 +183,12 @@ const comparisonColumns: DataTableColumns<ComparisonRow> = [
 ]
 
 type AdviceRow = { item: string; value: string }
+type OfficialComparisonRow = {
+  key: string
+  label: string
+  home?: string | null
+  away?: string | null
+}
 
 function localizeGoalField(raw: string | null | undefined): string {
   if (raw == null || String(raw).trim() === '') return ''
@@ -238,6 +244,57 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
     },
   },
 ]
+
+const officialComparisonRows = computed(
+  () => pkg.value?.briefing?.comparison ?? [],
+)
+
+const officialComparisonColumns = computed<DataTableColumns<OfficialComparisonRow>>(
+  () => [
+    {
+      title: '维度',
+      key: 'label',
+      width: 100,
+      align: 'center',
+      render(row) {
+        if (row.key !== 'poisson_distribution') return row.label
+        return h('span', { class: 'comparison-label-with-help' }, [
+          row.label,
+          h(
+            NTooltip,
+            { trigger: 'hover', placement: 'bottom' },
+            {
+              trigger: () =>
+                h(
+                  NButton,
+                  {
+                    quaternary: true,
+                    circle: true,
+                    tertiary: true,
+                    size: 'tiny',
+                    'aria-label': '泊松分布说明',
+                  },
+                  { default: () => '?' },
+                ),
+              default: () =>
+                '依据两队历史进球与失球数据，用泊松模型估算本场进球分布。这里显示双方的相对强弱占比，不等同于上方胜平负概率。',
+            },
+          ),
+        ])
+      },
+    },
+    {
+      title: props.fixture.home_team_name || '—',
+      key: 'home',
+      align: 'center',
+    },
+    {
+      title: props.fixture.away_team_name || '—',
+      key: 'away',
+      align: 'center',
+    },
+  ],
+)
 </script>
 
 <template>
@@ -336,8 +393,19 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
         :data="adviceRows"
         :row-key="(row: AdviceRow) => row.item"
       />
+      <n-data-table
+        v-if="officialComparisonRows.length"
+        class="compact-table official-comparison-table"
+        size="small"
+        :bordered="false"
+        :single-line="false"
+        :pagination="false"
+        :columns="officialComparisonColumns"
+        :data="officialComparisonRows"
+        :row-key="(row: OfficialComparisonRow) => row.key"
+      />
       <n-empty
-        v-else
+        v-else-if="!adviceRows.length"
         description="官方暂无赛前建议（部分联赛无 coverage.predictions）"
         size="small"
       />
@@ -374,6 +442,10 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
   min-width: 0;
 }
 
+.board-title .fa-section-title {
+  color: var(--fa-text-secondary);
+}
+
 .board-description,
 .board-time {
   font-size: 12px;
@@ -404,5 +476,11 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
   font-weight: 500;
   white-space: normal;
   line-height: 1.6;
+}
+
+:deep(.comparison-label-with-help) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 </style>

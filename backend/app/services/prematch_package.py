@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 from app.core.config import get_settings
 from app.services.api_utils import extract_items, first_value
 from app.services.league_names import localize_match_row, localize_matches_block
+from app.services.team_names import team_name_zh
 
 logger = logging.getLogger(__name__)
 
@@ -1048,6 +1050,78 @@ def _side_percent(value: Any) -> str | None:
     return text or None
 
 
+def _translate_prediction_subject(value: str) -> str:
+    text = value.strip()
+    if text.casefold() == "draw":
+        return "平局"
+    return team_name_zh(text) or text
+
+
+def _translate_prediction_advice(value: Any) -> str | None:
+    """Translate API-Sports' small prediction-advice grammar at the source."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+
+    prefix_map = {
+        "Combo Double chance :": "组合双重机会：",
+        "Double chance :": "双重机会：",
+        "Combo Winner :": "组合胜方：",
+        "Winner :": "胜方：",
+    }
+    translated_prefix = ""
+    for english, chinese in prefix_map.items():
+        if text.casefold().startswith(english.casefold()):
+            translated_prefix = chinese
+            text = text[len(english) :].strip()
+            break
+
+    parts = re.split(r"\s+(or|and)\s+", text, flags=re.IGNORECASE)
+    translated: list[str] = []
+    for part in parts:
+        lower = part.casefold()
+        if lower == "or":
+            translated.append("或")
+            continue
+        if lower == "and":
+            translated.append("且")
+            continue
+        goals = re.fullmatch(r"([+-])\s*(\d+(?:[.,]\d+)?)\s+goals?", part, re.IGNORECASE)
+        if goals:
+            direction = "大于" if goals.group(1) == "+" else "小于"
+            translated.append(f"总进球{direction}{goals.group(2).replace(',', '.')}")
+            continue
+        translated.append(_translate_prediction_subject(part))
+    return translated_prefix + " ".join(translated)
+
+
+def _translate_winner_comment(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return {
+        "win or draw": "胜或平",
+        "winner": "胜方",
+        "win": "胜",
+    }.get(text.casefold(), text or None)
+
+
+def localize_briefing(briefing: dict[str, Any]) -> dict[str, Any]:
+    """Localize both newly parsed and already-stored official predictions."""
+    if not isinstance(briefing, dict):
+        return briefing
+    localized = dict(briefing)
+    localized["advice"] = _translate_prediction_advice(localized.get("advice"))
+    winner = dict(localized.get("winner") or {})
+    if winner.get("name"):
+        winner["name"] = team_name_zh(winner["name"], winner.get("id"))
+    winner["comment"] = _translate_winner_comment(winner.get("comment"))
+    localized["winner"] = winner
+    return localized
+
+
 def parse_predictions_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Normalize official GET /predictions into package.briefing (赛前简报).
 
@@ -1100,7 +1174,7 @@ def parse_predictions_payload(payload: dict[str, Any]) -> dict[str, Any]:
         or any(percent.values())
         or comparison_out
     )
-    return {
+    return localize_briefing({
         "available": available,
         "fetched": True,
         "advice": advice,
@@ -1114,7 +1188,7 @@ def parse_predictions_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "goals": goals,
         "percent": percent,
         "comparison": comparison_out,
-    }
+    })
 
 
 def rehydrate_odds_markets(odds: dict[str, Any] | None) -> dict[str, Any]:
@@ -1237,7 +1311,11 @@ def package_from_record(
             getattr(record, "standings_json", None),
             {"available": False},
         ),
-        "briefing": briefing if briefing else {"available": False, "fetched": False},
+        "briefing": (
+            localize_briefing(briefing)
+            if briefing
+            else {"available": False, "fetched": False}
+        ),
         "home_formation": getattr(record, "home_formation", None)
         or (lineups.get("home") or {}).get("formation"),
         "away_formation": getattr(record, "away_formation", None)
