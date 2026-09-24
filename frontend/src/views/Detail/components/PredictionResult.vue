@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent } from 'vue'
 
 import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
+import DetailSectionTitle from '@/views/Detail/components/DetailSectionTitle.vue'
 import type { FixtureResponse } from '@/api/types'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { toPercent } from '@/utils/format'
@@ -52,12 +53,11 @@ const matchupText = computed(
 
 <template>
   <section class="prediction-result">
-    <div class="head">
-      <h2 class="section-title">预测对比</h2>
-      <div class="meta">
+    <DetailSectionTitle title="预测对比">
+      <template #extra>
         <span class="muted">来源 {{ dataSource }} · {{ analyzedAt }}</span>
-      </div>
-    </div>
+      </template>
+    </DetailSectionTitle>
 
     <div class="compare-grid">
       <section class="fa-section panel">
@@ -162,28 +162,6 @@ const matchupText = computed(
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.section-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--fa-text-strong);
-}
-
-.meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 .muted {

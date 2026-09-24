@@ -3,6 +3,7 @@ import { computed, h } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
+import DetailSectionTitle from '@/views/Detail/components/DetailSectionTitle.vue'
 import PredictionResult from '@/views/Detail/components/PredictionResult.vue'
 import type {
   FixtureResponse,
@@ -241,7 +242,8 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
 
 <template>
   <div class="prediction-tab">
-    <template v-if="showAnyBoard">
+    <div v-if="showAnyBoard || canRefreshOdds" class="board-block">
+      <DetailSectionTitle title="盘口" />
       <section
         v-for="stage in oddsStages"
         :key="stage.key"
@@ -273,24 +275,23 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
         </div>
         <PreMatchOddsTable :odds="stage.odds" />
       </section>
-    </template>
 
-    <section v-else-if="canRefreshOdds" class="fa-section">
-      <div class="board-head">
-        <h3 class="fa-section-title">盘口</h3>
-        <n-button
-          size="tiny"
-          secondary
-          type="primary"
-          :loading="oddsRefreshing"
-          :disabled="oddsRefreshBlocked"
-          @click="emit('refresh-odds')"
-        >
-          更新盘口
-        </n-button>
-      </div>
-      <n-empty description="暂无官方盘口，可手动更新本场" />
-    </section>
+      <section v-if="!showAnyBoard" class="fa-section">
+        <div class="board-head">
+          <n-empty description="暂无官方盘口，可手动更新本场" />
+          <n-button
+            size="tiny"
+            secondary
+            type="primary"
+            :loading="oddsRefreshing"
+            :disabled="oddsRefreshBlocked"
+            @click="emit('refresh-odds')"
+          >
+            更新盘口
+          </n-button>
+        </div>
+      </section>
+    </div>
 
     <n-alert
       v-if="canRefreshOdds && officialSyncBusy"
@@ -309,10 +310,7 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
     />
 
     <n-space vertical :size="8">
-      <n-flex class="section-band" align="center" :size="8">
-        <span class="title-bar" aria-hidden="true" />
-        <n-text strong style="font-size: 15px">数据对比</n-text>
-      </n-flex>
+      <DetailSectionTitle title="数据对比" />
       <n-data-table
         class="compact-table"
         size="small"
@@ -326,10 +324,7 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
     </n-space>
 
     <n-space vertical :size="8">
-      <n-flex class="section-band" align="center" :size="8">
-        <span class="title-bar" aria-hidden="true" />
-        <n-text strong style="font-size: 15px">API-Sports 官方建议</n-text>
-      </n-flex>
+      <DetailSectionTitle title="API-Sports 官方建议" />
       <n-data-table
         v-if="adviceRows.length"
         class="compact-table"
@@ -357,6 +352,12 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
   gap: 16px;
 }
 
+.board-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .board-head {
   display: flex;
   align-items: center;
@@ -376,19 +377,6 @@ const adviceColumns: DataTableColumns<AdviceRow> = [
 .board-description,
 .board-time {
   font-size: 12px;
-}
-
-.section-band {
-  padding: 10px 12px;
-  background: var(--fa-bg-soft);
-}
-
-.title-bar {
-  width: 3px;
-  height: 14px;
-  border-radius: 1px;
-  background: var(--fa-wdl-win);
-  flex-shrink: 0;
 }
 
 .compact-table :deep(.n-data-table-th),

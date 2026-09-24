@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import DetailSectionTitle from '@/views/Detail/components/DetailSectionTitle.vue'
 import MatchStatsSummary from '@/views/Detail/components/MatchStatsSummary.vue'
 import MatchStatsTable from '@/views/Detail/components/MatchStatsTable.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
@@ -90,22 +91,20 @@ function injuryNote(reason?: string | null, type?: string | null): string {
   <n-space v-else vertical :size="12">
     <template v-if="hasRecord">
       <n-space vertical :size="12">
-        <n-flex class="section-band" justify="space-between" align="center" :size="12">
-          <n-flex align="center" :size="8">
-            <span class="title-bar" aria-hidden="true" />
-            <n-text strong style="font-size: 15px">历史交锋</n-text>
-          </n-flex>
-          <n-flex align="center" :size="8">
-            <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
-            <n-select
-              v-model:value="h2hLimit"
-              size="small"
-              :options="limitOptions"
-              :consistent-menu-width="false"
-              style="width: 120px"
-            />
-          </n-flex>
-        </n-flex>
+        <DetailSectionTitle title="历史交锋">
+          <template #extra>
+            <n-flex align="center" :size="8">
+              <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
+              <n-select
+                v-model:value="h2hLimit"
+                size="small"
+                :options="limitOptions"
+                :consistent-menu-width="false"
+                style="width: 120px"
+              />
+            </n-flex>
+          </template>
+        </DetailSectionTitle>
         <MatchStatsSummary
           :matches="h2hMatches"
           :focus-team-id="fixture.home_team_id"
@@ -117,22 +116,20 @@ function injuryNote(reason?: string | null, type?: string | null): string {
         />
       </n-space>
 
-      <n-flex class="section-band" justify="space-between" align="center" :size="12">
-        <n-flex align="center" :size="8">
-          <span class="title-bar" aria-hidden="true" />
-          <n-text strong style="font-size: 15px">近期战绩</n-text>
-        </n-flex>
-        <n-flex align="center" :size="8">
-          <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
-          <n-select
-            v-model:value="formLimit"
-            size="small"
-            :options="limitOptions"
-            :consistent-menu-width="false"
-            style="width: 120px"
-          />
-        </n-flex>
-      </n-flex>
+      <DetailSectionTitle title="近期战绩">
+        <template #extra>
+          <n-flex align="center" :size="8">
+            <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
+            <n-select
+              v-model:value="formLimit"
+              size="small"
+              :options="limitOptions"
+              :consistent-menu-width="false"
+              style="width: 120px"
+            />
+          </n-flex>
+        </template>
+      </DetailSectionTitle>
 
       <n-grid :cols="formCols" :x-gap="16" :y-gap="16">
         <n-gi>
@@ -185,10 +182,7 @@ function injuryNote(reason?: string | null, type?: string | null): string {
     </template>
 
     <n-space vertical :size="8">
-      <n-flex class="section-band" align="center" :size="8">
-        <span class="title-bar" aria-hidden="true" />
-        <n-text strong style="font-size: 15px">伤病</n-text>
-      </n-flex>
+      <DetailSectionTitle title="伤病" />
       <n-grid :cols="formCols" :x-gap="16" :y-gap="8">
         <n-gi>
           <n-text strong>{{ homeZh }}</n-text>
@@ -220,19 +214,6 @@ function injuryNote(reason?: string | null, type?: string | null): string {
 </template>
 
 <style scoped>
-.section-band {
-  padding: 10px 12px;
-  background: var(--fa-bg-soft);
-}
-
-.title-bar {
-  width: 3px;
-  height: 14px;
-  border-radius: 1px;
-  background: var(--fa-wdl-win);
-  flex-shrink: 0;
-}
-
 .injury-list {
   margin: 6px 0 0;
   padding-left: 18px;
