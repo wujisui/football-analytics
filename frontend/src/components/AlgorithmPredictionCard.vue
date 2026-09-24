@@ -217,7 +217,7 @@ function goBriefing() {
   void router.push(
     fixtureDetailRoute(resolvedFixtureId.value, {
       from: props.from,
-      tab: 'briefing',
+      tab: 'analysis',
       date: props.date,
     }),
   )
@@ -229,7 +229,7 @@ function goPredictionDetail(e?: Event) {
   void router.push(
     fixtureDetailRoute(resolvedFixtureId.value, {
       from: props.from,
-      tab: 'prediction',
+      tab: 'analysis',
       date: props.date,
     }),
   )
@@ -385,7 +385,7 @@ function onOddsClick() {
       </div>
     </div>
 
-    <DetailTabHint tab="briefing">
+    <DetailTabHint tab="analysis">
       <PredictionRecommendationRow
         :recommendation="prediction.recommendation"
         :handicap-lean="prediction.handicap_lean"

@@ -339,7 +339,7 @@ function goDetail(fixtureId: number) {
   void router.push(
       fixtureDetailRoute(fixtureId, {
         from: 'results',
-        tab: 'prediction',
+        tab: 'analysis',
         date: selectedDay.value,
       }),
   )

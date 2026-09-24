@@ -64,30 +64,68 @@ const awayRecent = computed(
 )
 const homeForm = computed(() => props.pkg?.home_form ?? null)
 const awayForm = computed(() => props.pkg?.away_form ?? null)
+const homeInjuries = computed(() => props.pkg?.injuries?.home ?? [])
+const awayInjuries = computed(() => props.pkg?.injuries?.away ?? [])
 
-const hasAny = computed(
+const hasRecord = computed(
   () =>
     currentMatch.value != null ||
     (props.pkg?.head_to_head?.matches?.length ?? 0) > 0 ||
     (props.pkg?.home_form?.matches?.length ?? 0) > 0 ||
     (props.pkg?.away_form?.matches?.length ?? 0) > 0,
 )
+const hasInjuries = computed(
+  () => homeInjuries.value.length > 0 || awayInjuries.value.length > 0,
+)
+const hasAny = computed(() => hasRecord.value || hasInjuries.value)
+
+function injuryNote(reason?: string | null, type?: string | null): string {
+  return reason || type || ''
+}
 </script>
 
 <template>
-  <n-empty v-if="!hasAny" description="暂无交战与近期战绩" />
+  <n-empty v-if="!hasAny" description="暂无交战、近期战绩与伤病" />
 
   <n-space v-else vertical :size="12">
-    <n-space vertical :size="12">
+    <template v-if="hasRecord">
+      <n-space vertical :size="12">
+        <n-flex class="section-band" justify="space-between" align="center" :size="12">
+          <n-flex align="center" :size="8">
+            <span class="title-bar" aria-hidden="true" />
+            <n-text strong style="font-size: 15px">历史交锋</n-text>
+          </n-flex>
+          <n-flex align="center" :size="8">
+            <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
+            <n-select
+              v-model:value="h2hLimit"
+              size="small"
+              :options="limitOptions"
+              :consistent-menu-width="false"
+              style="width: 120px"
+            />
+          </n-flex>
+        </n-flex>
+        <MatchStatsSummary
+          :matches="h2hMatches"
+          :focus-team-id="fixture.home_team_id"
+        />
+        <MatchStatsTable
+          :matches="displayedH2HMatches"
+          :focus-team-id="fixture.home_team_id"
+          empty-description="双方暂无直接交锋记录"
+        />
+      </n-space>
+
       <n-flex class="section-band" justify="space-between" align="center" :size="12">
         <n-flex align="center" :size="8">
           <span class="title-bar" aria-hidden="true" />
-          <n-text strong style="font-size: 15px">历史交锋</n-text>
+          <n-text strong style="font-size: 15px">近期战绩</n-text>
         </n-flex>
         <n-flex align="center" :size="8">
           <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
           <n-select
-            v-model:value="h2hLimit"
+            v-model:value="formLimit"
             size="small"
             :options="limitOptions"
             :consistent-menu-width="false"
@@ -95,82 +133,89 @@ const hasAny = computed(
           />
         </n-flex>
       </n-flex>
-      <MatchStatsSummary
-        :matches="h2hMatches"
-        :focus-team-id="fixture.home_team_id"
-      />
-      <MatchStatsTable
-        :matches="displayedH2HMatches"
-        :focus-team-id="fixture.home_team_id"
-        empty-description="双方暂无直接交锋记录"
-      />
-    </n-space>
 
-    <n-flex class="section-band" justify="space-between" align="center" :size="12">
-      <n-flex align="center" :size="8">
+      <n-grid :cols="formCols" :x-gap="16" :y-gap="16">
+        <n-gi>
+          <n-space vertical :size="8">
+            <n-text strong>{{ homeZh }}</n-text>
+            <n-flex v-if="homeForm?.form" class="badges" :size="6" :wrap="false">
+              <span
+                v-for="(zh, i) in formCharsZh(homeForm.form, formLimit)"
+                :key="i"
+                class="badge"
+                :class="formCharClass(zh)"
+              >
+                {{ zh }}
+              </span>
+            </n-flex>
+            <MatchStatsSummary
+              :matches="homeRecent"
+              :focus-team-id="fixture.home_team_id"
+            />
+            <MatchStatsTable
+              :matches="homeRecent"
+              :focus-team-id="fixture.home_team_id"
+            />
+          </n-space>
+        </n-gi>
+        <n-gi>
+          <n-space vertical :size="8">
+            <n-text strong>{{ awayZh }}</n-text>
+            <n-flex v-if="awayForm?.form" class="badges" :size="6" :wrap="false">
+              <span
+                v-for="(zh, i) in formCharsZh(awayForm.form, formLimit)"
+                :key="i"
+                class="badge"
+                :class="formCharClass(zh)"
+              >
+                {{ zh }}
+              </span>
+            </n-flex>
+            <MatchStatsSummary
+              :matches="awayRecent"
+              :focus-team-id="fixture.away_team_id"
+            />
+            <MatchStatsTable
+              :matches="awayRecent"
+              :focus-team-id="fixture.away_team_id"
+            />
+          </n-space>
+        </n-gi>
+      </n-grid>
+    </template>
+
+    <n-space vertical :size="8">
+      <n-flex class="section-band" align="center" :size="8">
         <span class="title-bar" aria-hidden="true" />
-        <n-text strong style="font-size: 15px">近期战绩</n-text>
+        <n-text strong style="font-size: 15px">伤病</n-text>
       </n-flex>
-      <n-flex align="center" :size="8">
-        <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
-        <n-select
-          v-model:value="formLimit"
-          size="small"
-          :options="limitOptions"
-          :consistent-menu-width="false"
-          style="width: 120px"
-        />
-      </n-flex>
-    </n-flex>
-
-    <n-grid :cols="formCols" :x-gap="16" :y-gap="16">
-      <n-gi>
-        <n-space vertical :size="8">
+      <n-grid :cols="formCols" :x-gap="16" :y-gap="8">
+        <n-gi>
           <n-text strong>{{ homeZh }}</n-text>
-          <n-flex v-if="homeForm?.form" class="badges" :size="6" :wrap="false">
-            <span
-              v-for="(zh, i) in formCharsZh(homeForm.form, formLimit)"
-              :key="i"
-              class="badge"
-              :class="formCharClass(zh)"
-            >
-              {{ zh }}
-            </span>
-          </n-flex>
-          <MatchStatsSummary
-            :matches="homeRecent"
-            :focus-team-id="fixture.home_team_id"
-          />
-          <MatchStatsTable
-            :matches="homeRecent"
-            :focus-team-id="fixture.home_team_id"
-          />
-        </n-space>
-      </n-gi>
-      <n-gi>
-        <n-space vertical :size="8">
+          <ul v-if="homeInjuries.length" class="injury-list">
+            <li v-for="(item, idx) in homeInjuries" :key="idx">
+              {{ item.player_name }}
+              <span v-if="injuryNote(item.reason, item.type)" class="injury-note">
+                — {{ injuryNote(item.reason, item.type) }}
+              </span>
+            </li>
+          </ul>
+          <n-text v-else depth="3" class="injury-empty">无伤病信息</n-text>
+        </n-gi>
+        <n-gi>
           <n-text strong>{{ awayZh }}</n-text>
-          <n-flex v-if="awayForm?.form" class="badges" :size="6" :wrap="false">
-            <span
-              v-for="(zh, i) in formCharsZh(awayForm.form, formLimit)"
-              :key="i"
-              class="badge"
-              :class="formCharClass(zh)"
-            >
-              {{ zh }}
-            </span>
-          </n-flex>
-          <MatchStatsSummary
-            :matches="awayRecent"
-            :focus-team-id="fixture.away_team_id"
-          />
-          <MatchStatsTable
-            :matches="awayRecent"
-            :focus-team-id="fixture.away_team_id"
-          />
-        </n-space>
-      </n-gi>
-    </n-grid>
+          <ul v-if="awayInjuries.length" class="injury-list">
+            <li v-for="(item, idx) in awayInjuries" :key="idx">
+              {{ item.player_name }}
+              <span v-if="injuryNote(item.reason, item.type)" class="injury-note">
+                — {{ injuryNote(item.reason, item.type) }}
+              </span>
+            </li>
+          </ul>
+          <n-text v-else depth="3" class="injury-empty">无伤病信息</n-text>
+        </n-gi>
+      </n-grid>
+    </n-space>
   </n-space>
 </template>
 
@@ -186,6 +231,24 @@ const hasAny = computed(
   border-radius: 1px;
   background: var(--fa-wdl-win);
   flex-shrink: 0;
+}
+
+.injury-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.injury-note,
+.injury-empty {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.injury-empty {
+  display: block;
+  margin-top: 6px;
 }
 
 /* W/D/L chips — business viz (allowed outside Naive). */

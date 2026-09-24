@@ -1,15 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, h } from 'vue'
+import type { DataTableColumns } from 'naive-ui'
 
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import PredictionResult from '@/views/Detail/components/PredictionResult.vue'
-import type { FixtureResponse, OddsPackage } from '@/api/types'
+import type {
+  FixtureResponse,
+  FormMatch,
+  OddsPackage,
+  PrematchPackage,
+} from '@/api/types'
 import { formatLocalMonthDayMinute } from '@/utils/format'
 import { useAuthSession } from '@/composables/useAuthSession'
 import { hasOddsMarkets } from '@/utils/oddsDisplay'
 
 const props = defineProps<{
   fixture: FixtureResponse
+  pkg?: PrematchPackage | null
   oddsRefreshing?: boolean
   oddsRefreshBlocked?: boolean
   officialSyncBusy?: boolean
@@ -87,6 +94,149 @@ const canRefreshOdds = computed(
     isAdmin.value
     && props.fixture.odds_refresh_allowed === true,
 )
+
+const pkg = computed(
+  () => props.pkg ?? props.fixture.analysis.package ?? null,
+)
+
+type ComparisonRow = {
+  team: string
+  played: number
+  goalsFor: number
+  avgFor: string
+  goalsAgainst: number
+  avgAgainst: string
+}
+
+function scoreGoals(score: string): [number, number] | null {
+  const match = score.trim().match(/^(\d+)\s*[-:]\s*(\d+)$/)
+  return match ? [Number(match[1]), Number(match[2])] : null
+}
+
+function average(total: number, played: number): string {
+  if (!played) return '—'
+  return (total / played).toFixed(1)
+}
+
+function comparisonRow(
+  team: string,
+  teamId: number,
+  matches: FormMatch[],
+): ComparisonRow {
+  const recent = matches
+    .map((match) => ({ match, goals: scoreGoals(match.score) }))
+    .filter(
+      (item): item is { match: FormMatch; goals: [number, number] } =>
+        item.goals != null,
+    )
+    .slice(0, 5)
+  let goalsFor = 0
+  let goalsAgainst = 0
+  for (const { match, goals } of recent) {
+    if (Number(match.home_id) === teamId) {
+      goalsFor += goals[0]
+      goalsAgainst += goals[1]
+    } else if (Number(match.away_id) === teamId) {
+      goalsFor += goals[1]
+      goalsAgainst += goals[0]
+    }
+  }
+  return {
+    team,
+    played: recent.length,
+    goalsFor,
+    avgFor: average(goalsFor, recent.length),
+    goalsAgainst,
+    avgAgainst: average(goalsAgainst, recent.length),
+  }
+}
+
+const comparisonRows = computed<ComparisonRow[]>(() => [
+  comparisonRow(
+    props.fixture.home_team_name || '—',
+    props.fixture.home_team_id,
+    pkg.value?.home_form?.matches ?? [],
+  ),
+  comparisonRow(
+    props.fixture.away_team_name || '—',
+    props.fixture.away_team_id,
+    pkg.value?.away_form?.matches ?? [],
+  ),
+])
+
+const comparisonColumns: DataTableColumns<ComparisonRow> = [
+  {
+    title: '球队',
+    key: 'team',
+    align: 'center',
+    minWidth: 92,
+    render(row) {
+      return h('span', { class: 'comparison-team' }, row.team)
+    },
+  },
+  { title: '赛', key: 'played', align: 'center', width: 42 },
+  { title: '总进', key: 'goalsFor', align: 'center', width: 50 },
+  { title: '均进', key: 'avgFor', align: 'center', width: 50 },
+  { title: '总失', key: 'goalsAgainst', align: 'center', width: 50 },
+  { title: '均失', key: 'avgAgainst', align: 'center', width: 50 },
+]
+
+type AdviceRow = { item: string; value: string }
+
+function localizeGoalField(raw: string | null | undefined): string {
+  if (raw == null || String(raw).trim() === '') return ''
+  const s = String(raw).trim()
+  const lower = s.toLowerCase()
+  if (lower.startsWith('over')) {
+    const line = s.slice(4).trim().replace(',', '.')
+    return line ? `大球 ${line}` : '大球'
+  }
+  if (lower.startsWith('under')) {
+    const line = s.slice(5).trim().replace(',', '.')
+    return line ? `小球 ${line}` : '小球'
+  }
+  return s
+}
+
+const adviceRows = computed<AdviceRow[]>(() => {
+  const briefing = pkg.value?.briefing
+  if (!briefing?.available) return []
+  const rows: AdviceRow[] = []
+  if (briefing.advice) rows.push({ item: '建议', value: briefing.advice })
+  if (briefing.winner?.name) {
+    const comment = briefing.winner.comment ? `（${briefing.winner.comment}）` : ''
+    rows.push({ item: '倾向胜方', value: `${briefing.winner.name}${comment}` })
+  }
+  if (briefing.win_or_draw != null) {
+    rows.push({ item: '胜或平', value: briefing.win_or_draw ? '是' : '否' })
+  }
+  const underOver = localizeGoalField(briefing.under_over)
+  if (underOver) rows.push({ item: '大小球', value: underOver })
+  const goalsHome = localizeGoalField(briefing.goals?.home)
+  const goalsAway = localizeGoalField(briefing.goals?.away)
+  const goalsParts = [
+    goalsHome ? `主 ${goalsHome}` : '',
+    goalsAway ? `客 ${goalsAway}` : '',
+  ].filter(Boolean)
+  if (goalsParts.length) rows.push({ item: '预期进球', value: goalsParts.join(' / ') })
+  if (briefing.percent?.home) rows.push({ item: '主胜', value: briefing.percent.home })
+  if (briefing.percent?.draw) rows.push({ item: '平局', value: briefing.percent.draw })
+  if (briefing.percent?.away) rows.push({ item: '客胜', value: briefing.percent.away })
+  return rows
+})
+
+const adviceColumns: DataTableColumns<AdviceRow> = [
+  { title: '项目', key: 'item', align: 'center', width: 72 },
+  {
+    title: '结论',
+    key: 'value',
+    align: 'center',
+    minWidth: 120,
+    render(row) {
+      return h('span', { class: 'advice-value' }, row.value)
+    },
+  },
+]
 </script>
 
 <template>
@@ -157,6 +307,46 @@ const canRefreshOdds = computed(
       :analyzed-at="formatLocalMonthDayMinute(fixture.analysis.analyzed_at)"
       :handicap-market-note="fixture.analysis.handicap_market_note || ''"
     />
+
+    <n-space vertical :size="8">
+      <n-flex class="section-band" align="center" :size="8">
+        <span class="title-bar" aria-hidden="true" />
+        <n-text strong style="font-size: 15px">数据对比</n-text>
+      </n-flex>
+      <n-data-table
+        class="compact-table"
+        size="small"
+        :bordered="true"
+        :single-line="false"
+        :pagination="false"
+        :columns="comparisonColumns"
+        :data="comparisonRows"
+        :row-key="(row: ComparisonRow) => row.team"
+      />
+    </n-space>
+
+    <n-space vertical :size="8">
+      <n-flex class="section-band" align="center" :size="8">
+        <span class="title-bar" aria-hidden="true" />
+        <n-text strong style="font-size: 15px">API-Sports 官方建议</n-text>
+      </n-flex>
+      <n-data-table
+        v-if="adviceRows.length"
+        class="compact-table"
+        size="small"
+        :bordered="true"
+        :single-line="false"
+        :pagination="false"
+        :columns="adviceColumns"
+        :data="adviceRows"
+        :row-key="(row: AdviceRow) => row.item"
+      />
+      <n-empty
+        v-else
+        description="官方暂无赛前建议（部分联赛无 coverage.predictions）"
+        size="small"
+      />
+    </n-space>
   </div>
 </template>
 
@@ -186,5 +376,45 @@ const canRefreshOdds = computed(
 .board-description,
 .board-time {
   font-size: 12px;
+}
+
+.section-band {
+  padding: 10px 12px;
+  background: var(--fa-bg-soft);
+}
+
+.title-bar {
+  width: 3px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--fa-wdl-win);
+  flex-shrink: 0;
+}
+
+.compact-table :deep(.n-data-table-th),
+.compact-table :deep(.n-data-table-td) {
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+:deep(.comparison-team),
+:deep(.advice-value) {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  font-weight: 600;
+}
+
+:deep(.comparison-team) {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:deep(.advice-value) {
+  padding: 0 6px;
+  font-weight: 500;
+  white-space: normal;
+  line-height: 1.6;
 }
 </style>

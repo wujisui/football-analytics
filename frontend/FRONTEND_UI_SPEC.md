@@ -131,12 +131,12 @@
 n-layout-content（全屏滚动）
 ├── BasicInfo：n-breadcrumb + n-page-header（对阵 / 联赛 / 时间）
 └── TabsContainer（n-tabs）
-      ├── 统计 H2HTab（历史交锋 + 主客近期战绩，MatchStatsTable）
-      ├── 赛季数据 StatsTab
-      ├── 伤病与阵容 LineupTab
-      ├── 赛前简报 BriefingTab（官方 /predictions）
-      └── 我的预测 PredictionTab
-            └── PredictionResult（左算法预测 / 右盘口解释）
+      ├── 统计 H2HTab（历史交锋 + 主客近期战绩 + 伤病）
+      └── 赛前分析 PredictionTab
+            ├── 四阶段盘口表
+            ├── PredictionResult（预测对比：左算法 / 右盘口解释）
+            ├── 数据对比（双方近 5 场）
+            └── API-Sports 官方建议（结论表，不含官方队际对比表）
 ```
 
 面包屑：`赛前赛事` / `{联赛}` / `{主队 VS 客队}`（前两级可点击）。
@@ -151,18 +151,15 @@ n-layout-content（全屏滚动）
 2. 进入详情页请求一次：`GET /api/v1/fixtures/{fixture_id}/analysis`（本地优先；缺包时后端按需打官方并落库）
 3. 响应中的 `analysis` + `analysis.package`（赔率 / 近况 / 交锋 / 阵容 / 伤病 / 官方简报等）供各 Tab 共用
 4. Tabs：**首次切换到某 Tab 再挂载内容**（懒渲染）；已访问过的 Tab 保留，不重复请求。手机端左右滑动切上/下一个 Tab，但手势起点落在横向可滚动区域（数据表、图表、战绩徽标行）时让该区域自己滚，不翻页（真源 `composables/useHorizontalSwipe.ts`）
-5. 「我的预测」左侧为算法结论，右侧只读展示后端根据四类赛前快照生成的结构化盘口解释：初盘 `initial`（系统首次采集的机构盘口、基准锚点）、中盘 `mid`（最接近 T-6h）、临场 `late`（最接近 T-1h）、即时盘 `current`（最近一次赛前盘口）；无主观因素融合
-6. 「赛前简报」来自官方 `GET /predictions`，落库 `package.briefing`，与「我的预测」本地模型无关
+5. 「赛前分析」先展示四阶段盘口表，再是预测对比：左侧算法结论，右侧只读展示后端根据四类赛前快照生成的结构化盘口解释：初盘 `initial`（系统首次采集的机构盘口、基准锚点）、中盘 `mid`（最接近 T-6h）、临场 `late`（最接近 T-1h）、即时盘 `current`（最近一次赛前盘口）；无主观因素融合
+6. 预测对比之后是双方近 5 场数据对比；再后是官方 `GET /predictions` 结论表（建议 / 倾向胜方 / 胜或平 / 大小球 / 预期进球 / 胜平负占比），与本地算法无关，不展示官方队际对比表
 
 ### 4.3 各 Tab 展示要求
 
 | Tab   | 内容                                                                                                                    |
 |-------|-----------------------------------------------------------------------------------------------------------------------|
-| 统计 | 无外层 card；历史交锋 / 近期战绩色带分隔；`MatchStatsSummary` + **`n-data-table`（MatchStatsTable）**；表列为赛事、日期、半场、对阵；交锋另加本地初盘/即时盘让球主档（有库存才显示，不打官方）；近期主客 `n-grid` 左右分栏 |
-| 赛季数据  | 在独立 stats 接口就绪前，可用近况估算胜率、场均进/失球；可附带 1X2 赔率参考；需标明数据来源局限                                                                |
-| 伤病与阵容 | 双方伤病列表；首发 / 替补 / 阵型（无数据时空态）                                                                                           |
-| 赛前简报 | 官方 advice / 胜平负占比 / 大小球 / 对比表；无 coverage 时空态                                                                 |
-| 我的预测  | 「赛前结果预测」与「盘口解释」为并排 `section.fa-section`，标题右侧同行显示本场对局名；赛前段未开赛时内联展示胜平负 + 推荐 + 饼图，已开赛改渲染 `AlgorithmPredictionCard`，两态共用同一段与标题；胜平负三行上方固定标注「下面的百分比来自主盘赔率折算（已扣掉博彩公司抽成），代表市场的看法」（`published_match_probabilities` 恒返回去水盘口概率，模型只喂推荐，不进展示百分比）；盘口区按初盘 `initial` → 中盘 `mid`（T-6h）→ 临场 `late`（T-1h）→ 即时盘 `current` 顺序展示；初盘标题旁只留「首次采集的机构盘口」，其余阶段不写说明；时间用本地 `MM-DD HH:mm`（`formatLocalMonthDayMinute`），不标时区、不加「采集」；按采集时间去重，同一次采集只保留语义更靠后的阶段；右侧展示后端盘口解释：四阶段主盘轨迹、同庄家同档去水概率、1X2 / 大小球交叉验证、让球返还后期望收益及不可比警告。**面向用户的文案一律白话**：术语换成「买主队（让 0.25 球）」「平均每投 100 元亏 4.6 元」「两家不同的博彩公司」这类说法；`让胜(-0.25)` 保留原样但补一句白话，初盘 / 即时盘、加减号和大小球不再夹注；真源仍是 `market_analysis.py`，前端不自行推断走势 |
+| 统计 | 无外层 card；历史交锋 / 近期战绩 / 伤病以色带标题分隔。交锋与近期战绩使用 `MatchStatsSummary` + **`n-data-table`（MatchStatsTable）**，交锋另加本地初盘/即时盘让球主档（有库存才显示，不打官方）；近期主客 `n-grid` 左右分栏；伤病只列双方伤员与原因，不展示阵容 |
+| 赛前分析 | 先四阶段盘口表，再预测对比，再数据对比（双方近 5 场：赛 / 总进 / 均进 / 总失 / 均失，两行），最后 API-Sports 官方建议（项目/结论表）。「赛前结果预测」与「盘口解释」为并排 `section.fa-section`；赛前段未开赛时内联展示胜平负 + 推荐 + 饼图，已开赛改渲染 `AlgorithmPredictionCard`；胜平负三行上方固定标注「下面的百分比来自主盘赔率折算（已扣掉博彩公司抽成），代表市场的看法」；盘口区按初盘 `initial` → 中盘 `mid`（T-6h）→ 临场 `late`（T-1h）→ 即时盘 `current` 顺序展示；初盘标题旁只留「首次采集的机构盘口」，其余阶段不写说明；时间用本地 `MM-DD HH:mm`（`formatLocalMonthDayMinute`），不标时区、不加「采集」；按采集时间去重，同一次采集只保留语义更靠后的阶段；右侧展示后端盘口解释。**面向用户的文案一律白话**；真源仍是 `market_analysis.py`，前端不自行推断走势 |
 
 ### 4.4 状态处理
 
@@ -228,8 +225,6 @@ frontend/src/
 │       ├── H2HTab.vue             # 统计页编排
 │       ├── MatchStatsSummary.vue  # 共N场 + 胜率/进失汇总
 │       ├── MatchStatsTable.vue    # 对阵统计表（matches + focusTeamId）
-│       ├── StatsTab.vue
-│       ├── LineupTab.vue
 │       ├── PredictionTab.vue
 │       └── PredictionResult.vue
 ├── composables/

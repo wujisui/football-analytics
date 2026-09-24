@@ -10,15 +10,12 @@ import {
 
 export type DetailFrom = 'results' | 'predictions' | 'favorites'
 
-export type DetailTab = 'record' | 'stats' | 'lineup' | 'briefing' | 'prediction'
+export type DetailTab = 'record' | 'analysis'
 
 /** Detail tab bar order + labels (`short` for phone). Single source of truth. */
 export const DETAIL_TABS: { name: DetailTab; label: string; short: string }[] = [
   { name: 'record', label: '统计', short: '统计' },
-  { name: 'stats', label: '赛季数据', short: '数据' },
-  { name: 'lineup', label: '伤病与阵容', short: '阵容' },
-  { name: 'briefing', label: '赛前简报', short: '简报' },
-  { name: 'prediction', label: '我的预测', short: '预测' },
+  { name: 'analysis', label: '赛前分析', short: '分析' },
 ]
 
 export function detailTabLabel(tab: DetailTab): string {
@@ -44,6 +41,8 @@ export function parseDetailFrom(raw: unknown): DetailFrom {
 }
 
 export function parseDetailTab(raw: unknown): DetailTab | null {
+  if (raw === 'stats' || raw === 'lineup') return 'record'
+  if (raw === 'briefing' || raw === 'prediction') return 'analysis'
   return DETAIL_TABS.find((t) => t.name === raw)?.name ?? null
 }
 

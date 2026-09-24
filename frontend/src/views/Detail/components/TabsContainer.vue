@@ -1,11 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import BriefingTab from '@/views/Detail/components/BriefingTab.vue'
 import H2HTab from '@/views/Detail/components/H2HTab.vue'
-import LineupTab from '@/views/Detail/components/LineupTab.vue'
 import PredictionTab from '@/views/Detail/components/PredictionTab.vue'
-import StatsTab from '@/views/Detail/components/StatsTab.vue'
 import { useHorizontalSwipe } from '@/composables/useHorizontalSwipe'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import type { FixtureResponse, PrematchPackage } from '@/api/types'
@@ -147,27 +144,10 @@ watch(
                     :fixture="fixture"
                     :pkg="pkg"
                   />
-                  <StatsTab
-                    v-else-if="tab.name === 'stats'"
-                    :fixture="fixture"
-                    :pkg="pkg"
-                  />
-                  <LineupTab
-                    v-else-if="tab.name === 'lineup'"
-                    :fixture="fixture"
-                    :pkg="pkg"
-                  />
-                  <BriefingTab
-                    v-else-if="tab.name === 'briefing'"
-                    :home-team-name="fixture.home_team_name"
-                    :away-team-name="fixture.away_team_name"
-                    :home-team-id="fixture.home_team_id"
-                    :away-team-id="fixture.away_team_id"
-                    :pkg="pkg"
-                  />
                   <PredictionTab
-                    v-else-if="tab.name === 'prediction'"
+                    v-else-if="tab.name === 'analysis'"
                     :fixture="fixture"
+                    :pkg="pkg"
                     :odds-refreshing="oddsRefreshing"
                     :odds-refresh-blocked="oddsRefreshBlocked"
                     :official-sync-busy="officialSyncBusy"

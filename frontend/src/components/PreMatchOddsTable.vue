@@ -32,7 +32,7 @@ const props = withDefaults(
   {
     linkMiddleToDetail: false,
     from: 'predictions',
-    detailTab: 'prediction',
+    detailTab: 'analysis',
     date: null,
     emptyText: '暂无盘口（打开详情拉取后显示）',
   },
