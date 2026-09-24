@@ -164,6 +164,20 @@ def test_uwcl_and_new_window_ids_match_official_clubs() -> None:
     assert BY_ID[1494] == "圣多美和普林西比"
 
 
+def test_afcon_qualification_ids_match_official_nations() -> None:
+    """非洲杯预选赛按官方 team id 写，刚果（金）/ 刚果（布）不能串。"""
+    assert BY_ID[19] == "尼日利亚"
+    assert BY_ID[1508] == "刚果（金）"
+    assert BY_ID[1517] == "刚果（布）"
+    assert BY_ID[1513] == "几内亚比绍"
+    assert BY_ID[1496] == "南苏丹"
+    assert BY_ID[8050] == "索马里"
+    assert team_name_zh("Nigeria", team_id=19) == "尼日利亚"
+    assert team_name_zh("Congo", team_id=1517) == "刚果（布）"
+    assert team_name_zh("Congo DR", team_id=1508) == "刚果（金）"
+
+
+
 def test_hot_efl_trophy_and_youth_ids_match_official_clubs() -> None:
     """英锦联与热门友谊赛/亚运缺译名按官方 id 补，不能串到同名成年队。"""
     expected = {
