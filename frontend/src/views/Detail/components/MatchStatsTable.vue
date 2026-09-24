@@ -3,13 +3,13 @@ import { computed, h } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 
 import type { FormMatch, HistoryMarketLine } from '@/api/types'
-import { formatDateYyMmDd } from '@/utils/format'
+import { formatDateYyMmDd, homeResultCode, parseScoreGoals } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
 const props = withDefaults(
   defineProps<{
     matches: FormMatch[]
-    /** AH line and settlement are shown from this team's point of view. */
+    /** Name/score tint, AH line and settlement all read from this team's side. */
     focusTeamId?: number
     emptyDescription?: string
   }>(),
@@ -84,6 +84,34 @@ function focusIsAway(row: FormMatch): boolean {
   )
 }
 
+function focusResultCode(row: FormMatch): string {
+  const focusTeamId = props.focusTeamId
+  const goals = parseScoreGoals(row.score)
+  if (focusTeamId != null && row.home_id != null && row.away_id != null && goals) {
+    const [hs, as] = goals
+    if (Number(row.home_id) === focusTeamId) return homeResultCode(hs, as)
+    if (Number(row.away_id) === focusTeamId) return homeResultCode(as, hs)
+  }
+  if (row.result === 'W' || row.result === 'D' || row.result === 'L') return row.result
+  if (row.outcome_for_current_home === 'home') return 'W'
+  if (row.outcome_for_current_home === 'away') return 'L'
+  if (row.outcome_for_current_home === 'draw') return 'D'
+  return ''
+}
+
+/** Only the focus side is tinted: H2H follows the home team, form the owner. */
+function teamTone(row: FormMatch, side: 'home' | 'away'): string {
+  const focusTeamId = props.focusTeamId
+  if (focusTeamId == null) return ''
+  const id = side === 'home' ? row.home_id : row.away_id
+  if (id == null || Number(id) !== focusTeamId) return ''
+  const code = focusResultCode(row)
+  if (code === 'W') return 'tone-win'
+  if (code === 'D') return 'tone-draw'
+  if (code === 'L') return 'tone-loss'
+  return ''
+}
+
 function ahResultLabel(result: FormMatch['ah_result']): string {
   if (!result) return '—'
   return {
@@ -114,6 +142,16 @@ function settlementTone(result?: string | null): string {
     return 'tone-loss'
   }
   return result === 'push' ? 'tone-draw' : ''
+}
+
+function renderScoreFt(row: FormMatch) {
+  const goals = parseScoreGoals(row.score)
+  if (!goals) return h('span', { class: 'score-ft' }, row.score || '—')
+  return h('span', { class: 'score-ft' }, [
+    h('span', { class: teamTone(row, 'home') || undefined }, String(goals[0])),
+    h('span', { class: 'score-sep' }, '-'),
+    h('span', { class: teamTone(row, 'away') || undefined }, String(goals[1])),
+  ])
 }
 
 function renderTwoLines(primary: string, secondary: string, tone = '') {
@@ -147,9 +185,9 @@ const columns = computed<DataTableColumns<FormMatch>>(() => {
         // the second row always sits under the full-time score, whatever the
         // team names measure.
         return h('div', { class: 'matchup-cell' }, [
-          h('span', { class: ['team-name', 'home'] }, row.home || '—'),
-          h('span', { class: 'score-ft' }, row.score || '—'),
-          h('span', { class: ['team-name', 'away'] }, row.away || '—'),
+          h('span', { class: ['team-name', 'home', teamTone(row, 'home')] }, row.home || '—'),
+          renderScoreFt(row),
+          h('span', { class: ['team-name', 'away', teamTone(row, 'away')] }, row.away || '—'),
           h(
             'span',
             { class: ['secondary-line', 'score-ht'] },
@@ -285,6 +323,10 @@ function rowKey(row: FormMatch): string | number {
   color: var(--fa-highlight-text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+:deep(.score-sep) {
+  margin: 0 1px;
 }
 
 /* Second row: only the middle track is filled. */
