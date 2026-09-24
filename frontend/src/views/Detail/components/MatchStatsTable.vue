@@ -1,191 +1,205 @@
 <script setup lang="ts">
 import { computed, h } from 'vue'
-import { NEllipsis, type DataTableColumns } from 'naive-ui'
+import type { DataTableColumns } from 'naive-ui'
 
-import type { FormMatch, HistoryAhLine } from '@/api/types'
-import { formatDateYyMmDd, formatOdd, homeResultCode, leagueTagColor, parseScoreGoals, resultToZh } from '@/utils/format'
+import type { FormMatch, HistoryMarketLine } from '@/api/types'
+import { formatDateYyMmDd } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
 const props = withDefaults(
   defineProps<{
     matches: FormMatch[]
-    /** Result / name highlight relative to this team. */
+    /** AH line and settlement are shown from this team's point of view. */
     focusTeamId?: number
     emptyDescription?: string
-    /** H2H: also show locally stored opening / current AH main lines. */
-    showOdds?: boolean
   }>(),
-  { emptyDescription: '暂无赛果', showOdds: false },
+  { emptyDescription: '暂无赛果' },
 )
 
 function competitionLabel(m: FormMatch): string {
   return leagueLabel(m.league_name)
 }
 
-function leagueCellStyle(row: FormMatch) {
-  if (row.league_id == null) return undefined
-  const color = leagueTagColor(Number(row.league_id))
-  return { backgroundColor: `${color}18`, color }
+function isPending(row: FormMatch): boolean {
+  return (row.status ?? '').toLowerCase() === 'pending'
 }
 
-function focusResultCode(m: FormMatch): string {
-  const focusTeamId = props.focusTeamId
-  const goals = parseScoreGoals(m.score)
-  if (focusTeamId != null && m.home_id != null && m.away_id != null && goals) {
-    const [hs, as] = goals
-    const hid = Number(m.home_id)
-    const aid = Number(m.away_id)
-    if (hid === focusTeamId) return homeResultCode(hs, as)
-    if (aid === focusTeamId) return homeResultCode(as, hs)
+function lineNumber(raw: string): number | null {
+  const text = raw.trim().replace(',', '.')
+  if (!text) return null
+  if (text.includes('/')) {
+    const negative = text.startsWith('-')
+    const values = text
+      .replace(/^[+-]/, '')
+      .split('/')
+      .map(Number)
+    if (values.length !== 2 || values.some((value) => !Number.isFinite(value))) {
+      return null
+    }
+    const average = (values[0] + values[1]) / 2
+    return negative ? -average : average
   }
-  if (m.result === 'W' || m.result === 'D' || m.result === 'L') return m.result
-  if (m.outcome_for_current_home === 'home') return 'W'
-  if (m.outcome_for_current_home === 'away') return 'L'
-  if (m.outcome_for_current_home === 'draw') return 'D'
-  return ''
+  const value = Number(text)
+  return Number.isFinite(value) ? value : null
 }
 
-function focusTone(code: string): string {
-  if (code === 'W') return 'tone-win'
-  if (code === 'D') return 'tone-draw'
-  if (code === 'L') return 'tone-loss'
-  return ''
-}
-
-function teamTone(m: FormMatch, side: 'home' | 'away'): string {
-  const focusTeamId = props.focusTeamId
-  if (focusTeamId == null) return ''
-  const id = side === 'home' ? m.home_id : m.away_id
-  if (id == null || Number(id) !== focusTeamId) return ''
-  return focusTone(focusResultCode(m))
-}
-
-function renderScoreFt(row: FormMatch) {
-  const goals = parseScoreGoals(row.score)
-  if (!goals) {
-    return h('span', { class: 'score-ft' }, row.score || '—')
+/** 0.75 → 0.5/1, preserving the selected team's +/- AH direction. */
+function asianLineLabel(line?: HistoryMarketLine | null, invert = false): string {
+  if (!line?.line) return '—'
+  const parsed = lineNumber(line.line)
+  if (parsed == null) return line.line
+  const value = invert ? -parsed : parsed
+  if (Math.abs(value) < 1e-9) return '0'
+  const sign = value > 0 ? '+' : '-'
+  const abs = Math.abs(value)
+  const quarters = Math.round(abs * 4)
+  if (Math.abs(abs * 4 - quarters) < 1e-7 && quarters % 2 === 1) {
+    const lower = (quarters - 1) / 4
+    const upper = (quarters + 1) / 4
+    return `${sign}${compactNumber(lower)}/${compactNumber(upper)}`
   }
-  const [homeGoals, awayGoals] = goals
-  return h('span', { class: 'score-ft' }, [
-    h('span', { class: teamTone(row, 'home') || undefined }, String(homeGoals)),
-    h('span', { class: 'score-sep' }, '-'),
-    h('span', { class: teamTone(row, 'away') || undefined }, String(awayGoals)),
-  ])
+  return `${sign}${compactNumber(abs)}`
 }
 
-function renderResultCell(row: FormMatch) {
-  if ((row.status ?? '').toLowerCase() === 'pending') {
-    return h('span', { class: ['result-text', 'pending'] }, '未开赛')
+function totalLineLabel(line?: HistoryMarketLine | null): string {
+  if (!line?.line) return '—'
+  const parsed = lineNumber(line.line)
+  if (parsed == null) return line.line
+  const quarters = Math.round(parsed * 4)
+  if (Math.abs(parsed * 4 - quarters) < 1e-7 && quarters % 2 === 1) {
+    return `${compactNumber((quarters - 1) / 4)}/${compactNumber((quarters + 1) / 4)}`
   }
-  const code = focusResultCode(row)
-  return h('span', { class: ['result-text', focusTone(code)] }, resultToZh(code))
+  return compactNumber(parsed)
 }
 
-function renderAh(line?: HistoryAhLine | null) {
-  if (!line?.line) {
-    return h('span', { class: 'ah-empty' }, '—')
+function compactNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)))
+}
+
+function focusIsAway(row: FormMatch): boolean {
+  return (
+    props.focusTeamId != null &&
+    row.away_id != null &&
+    Number(row.away_id) === props.focusTeamId
+  )
+}
+
+function ahResultLabel(result: FormMatch['ah_result']): string {
+  if (!result) return '—'
+  return {
+    win: '赢',
+    half_win: '赢半',
+    push: '走',
+    half_loss: '输半',
+    loss: '输',
+  }[result]
+}
+
+function ouResultLabel(result: FormMatch['ou_result']): string {
+  if (!result) return '—'
+  return {
+    over: '大',
+    over_half: '大半',
+    push: '走',
+    under_half: '小半',
+    under: '小',
+  }[result]
+}
+
+function settlementTone(result?: string | null): string {
+  if (result === 'win' || result === 'half_win' || result === 'over' || result === 'over_half') {
+    return 'tone-win'
   }
-  return h('span', { class: 'ah-cell' }, [
-    h('span', {}, formatOdd(line.home)),
-    h('span', { class: 'ah-line' }, line.line),
-    h('span', {}, formatOdd(line.away)),
+  if (result === 'loss' || result === 'half_loss' || result === 'under' || result === 'under_half') {
+    return 'tone-loss'
+  }
+  return result === 'push' ? 'tone-draw' : ''
+}
+
+function renderTwoLines(primary: string, secondary: string, tone = '') {
+  return h('div', { class: 'two-line-cell' }, [
+    h('span', { class: 'primary-line' }, primary),
+    h('span', { class: ['secondary-line', tone] }, secondary),
   ])
 }
 
 const columns = computed<DataTableColumns<FormMatch>>(() => {
-  const cols: DataTableColumns<FormMatch> = [
+  return [
     {
-      title: '赛事',
-      key: 'league',
+      title: '日期/赛事',
+      key: 'date_league',
       align: 'center',
-      width: 88,
-      className: 'league-col',
-      cellProps(row) {
-        return { style: leagueCellStyle(row) }
-      },
+      width: 70,
       render(row) {
-        return h(NEllipsis, {}, { default: () => competitionLabel(row) || '—' })
+        return renderTwoLines(
+          formatDateYyMmDd(row.date || '') || '—',
+          competitionLabel(row) || '—',
+        )
       },
     },
     {
-      title: '日期',
-      key: 'date',
-      align: 'center',
-      width: 78,
-      render(row) {
-        return h('span', { class: 'date-cell' }, formatDateYyMmDd(row.date || ''))
-      },
-    },
-    {
-      title: '半场',
-      key: 'score_ht',
-      align: 'center',
-      width: 52,
-      render(row) {
-        return h('span', { class: 'ht-cell' }, row.score_ht || '—')
-      },
-    },
-    {
-      title: '主队 比分 客队',
+      title: '对阵',
       key: 'matchup',
       align: 'center',
-      minWidth: 168,
+      minWidth: 150,
       render(row) {
-        return h('div', { class: 'matchup' }, [
+        // Home / score / away are fixed grid tracks so the halftime score in
+        // the second row always sits under the full-time score, whatever the
+        // team names measure.
+        return h('div', { class: 'matchup-cell' }, [
+          h('span', { class: ['team-name', 'home'] }, row.home || '—'),
+          h('span', { class: 'score-ft' }, row.score || '—'),
+          h('span', { class: ['team-name', 'away'] }, row.away || '—'),
           h(
-            NEllipsis,
-            { class: ['team-name', 'home', teamTone(row, 'home')] },
-            { default: () => row.home || '—' },
-          ),
-          renderScoreFt(row),
-          h(
-            NEllipsis,
-            { class: ['team-name', 'away', teamTone(row, 'away')] },
-            { default: () => row.away || '—' },
+            'span',
+            { class: ['secondary-line', 'score-ht'] },
+            row.score_ht ? `(${row.score_ht})` : '—',
           ),
         ])
       },
     },
-  ]
-  if (props.showOdds) {
-    cols.push(
-      {
-        title: '初盘',
-        key: 'ah_opening',
-        align: 'center',
-        width: 118,
-        render(row) {
-          return renderAh(row.ah_opening)
-        },
+    {
+      title: '让球',
+      key: 'ah',
+      align: 'center',
+      width: 54,
+      render(row) {
+        const invert = focusIsAway(row)
+        const current = asianLineLabel(row.ah_current ?? row.ah_opening, invert)
+        const secondary = isPending(row)
+          ? asianLineLabel(row.ah_opening, invert)
+          : ahResultLabel(row.ah_result)
+        return renderTwoLines(
+          current,
+          secondary,
+          isPending(row) ? '' : settlementTone(row.ah_result),
+        )
       },
-      {
-        title: '即时盘',
-        key: 'ah_current',
-        align: 'center',
-        width: 118,
-        render(row) {
-          return renderAh(row.ah_current)
-        },
-      },
-    )
-  }
-  cols.push({
-    title: '赛果',
-    key: 'result',
-    align: 'center',
-    width: 52,
-    render(row) {
-      return renderResultCell(row)
     },
-  })
-  return cols
+    {
+      title: '总进球',
+      key: 'ou',
+      align: 'center',
+      width: 54,
+      render(row) {
+        const current = totalLineLabel(row.ou_current ?? row.ou_opening)
+        const secondary = isPending(row)
+          ? totalLineLabel(row.ou_opening)
+          : ouResultLabel(row.ou_result)
+        return renderTwoLines(
+          current,
+          secondary,
+          isPending(row) ? '' : settlementTone(row.ou_result),
+        )
+      },
+    },
+  ]
 })
 
 function rowKey(row: FormMatch): string | number {
   return row.fixture_id ?? `${row.date ?? ''}-${row.home}-${row.away}`
 }
 
-const scrollX = computed(() => (props.showOdds ? 780 : 520))
 </script>
 
 <template>
@@ -196,7 +210,6 @@ const scrollX = computed(() => (props.showOdds ? 780 : 520))
     :bordered="true"
     :single-line="false"
     :pagination="false"
-    :scroll-x="scrollX"
     :columns="columns"
     :data="matches"
     :row-key="rowKey"
@@ -205,88 +218,78 @@ const scrollX = computed(() => (props.showOdds ? 780 : 520))
 </template>
 
 <style scoped>
-.stats-table :deep(.n-data-table-th) {
-  padding: 6px 8px;
-  font-size: 12px;
-}
-
+/* No cell padding: the 1.6 line-height below already keeps text off the
+   borders, and the saved width goes to the team names. */
+.stats-table :deep(.n-data-table-th),
 .stats-table :deep(.n-data-table-td) {
-  padding: 4px 8px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
-.stats-table :deep(.league-col) {
-  background: var(--fa-bg-soft);
+:deep(.two-line-cell) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
-:deep(.date-cell),
-:deep(.ht-cell) {
+/* 主队 / 比分 / 客队 are three tracks shared by both rows, so the halftime
+   score lands directly under the full-time score in every row. */
+:deep(.matchup-cell) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  justify-items: center;
+  min-width: 0;
+  column-gap: 5px;
+}
+
+:deep(.primary-line) {
+  color: var(--fa-text);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+:deep(.secondary-line) {
   font-size: 12px;
   color: var(--fa-text-secondary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-:deep(.matchup) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  column-gap: 8px;
-  width: 100%;
-}
-
 :deep(.team-name) {
+  overflow: hidden;
+  max-width: 100%;
   min-width: 0;
+  text-overflow: ellipsis;
+  font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 :deep(.team-name.home) {
-  text-align: right;
+  justify-self: end;
 }
 
 :deep(.team-name.away) {
-  text-align: left;
+  justify-self: start;
 }
 
 :deep(.score-ft) {
   font-weight: 700;
-  font-size: 13px;
-  color: var(--fa-highlight-text);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-:deep(.score-sep) {
-  margin: 0 1px;
-}
-
-:deep(.ah-cell) {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   font-size: 12px;
+  color: var(--fa-highlight-text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  color: var(--fa-text);
 }
 
-:deep(.ah-line) {
-  font-weight: 700;
-  color: var(--fa-highlight-text);
-}
-
-:deep(.ah-empty) {
-  color: var(--fa-text-faint);
-}
-
-:deep(.result-text) {
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-:deep(.result-text.pending) {
-  color: var(--fa-text-secondary);
-  font-weight: 500;
+/* Second row: only the middle track is filled. */
+:deep(.score-ht) {
+  grid-column: 2;
 }
 
 :deep(.tone-win) {
@@ -302,5 +305,11 @@ const scrollX = computed(() => (props.showOdds ? 780 : 520))
 :deep(.tone-draw) {
   color: var(--fa-wdl-draw);
   font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  :deep(.matchup-cell) {
+    column-gap: 3px;
+  }
 }
 </style>

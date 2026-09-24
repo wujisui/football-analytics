@@ -253,14 +253,14 @@ def summarize_h2h_payload(payload: dict[str, Any], home_team_id: int, limit: int
     }
 
 
-def history_ah_line_from_raw(
+def history_market_lines_from_raw(
     raw: str | None,
     *,
     match_start_time: datetime | str | None,
     fixture_id: int | None,
     stage: str,
-) -> dict[str, str] | None:
-    """Main AH line for history tables; empty when the stored board is unusable."""
+) -> dict[str, dict[str, str] | None]:
+    """Main AH / O-U lines for history tables from one frozen board."""
     from app.services.odds_snapshot import normalize_odds_snapshot
 
     board = rehydrate_odds_markets(
@@ -272,36 +272,121 @@ def history_ah_line_from_raw(
             log_invalid=False,
         )
     )
-    ah = board.get("asian_handicap") if isinstance(board, dict) else None
-    if not isinstance(ah, dict):
-        return None
-    line = ah.get("line")
-    if line is None or str(line).strip() == "":
-        return None
-    snippet: dict[str, str] = {"line": str(line)}
-    if ah.get("home") is not None:
-        snippet["home"] = str(ah.get("home"))
-    if ah.get("away") is not None:
-        snippet["away"] = str(ah.get("away"))
-    return snippet
-
-
-async def attach_history_ah_snippets(session: Any, package: dict[str, Any]) -> None:
-    """Stamp H2H rows with locally stored opening/current AH. No official calls."""
-    h2h = package.get("head_to_head")
-    if not isinstance(h2h, dict):
-        return
-    matches = h2h.get("matches")
-    if not isinstance(matches, list) or not matches:
-        return
-    ids: list[int] = []
-    for match in matches:
-        if not isinstance(match, dict) or match.get("fixture_id") is None:
+    result: dict[str, dict[str, str] | None] = {"ah": None, "ou": None}
+    for key, market_name in (
+        ("ah", "asian_handicap"),
+        ("ou", "goals_ou"),
+    ):
+        market = board.get(market_name) if isinstance(board, dict) else None
+        if not isinstance(market, dict):
             continue
+        line = market.get("line")
+        if line is None or str(line).strip() == "":
+            continue
+        snippet: dict[str, str] = {"line": str(line)}
+        if market.get("home") is not None:
+            snippet["home"] = str(market.get("home"))
+        if market.get("away") is not None:
+            snippet["away"] = str(market.get("away"))
+        result[key] = snippet
+    return result
+
+
+def _history_settlements(match: dict[str, Any], focus_team_id: int) -> None:
+    """Settle the final AH / O-U board without duplicating Asian rules."""
+    from app.services.ah_features import (
+        ASIAN_HALF_LOSS,
+        ASIAN_HALF_WIN,
+        ASIAN_LOSS,
+        ASIAN_PUSH,
+        ASIAN_WIN,
+        settle_asian_total,
+        settle_handicap_pick,
+    )
+
+    match["ah_result"] = None
+    match["ou_result"] = None
+    score = str(match.get("score") or "")
+    parts = score.split("-")
+    if len(parts) != 2:
+        return
+    try:
+        home_goals, away_goals = (int(part.strip()) for part in parts)
+    except ValueError:
+        return
+
+    ah = match.get("ah_current")
+    if isinstance(ah, dict):
         try:
-            ids.append(int(match["fixture_id"]))
+            line = float(str(ah.get("line")).replace(",", "."))
         except (TypeError, ValueError):
-            continue
+            line = None
+        home_id = match.get("home_id")
+        away_id = match.get("away_id")
+        pick = None
+        if home_id is not None and int(home_id) == focus_team_id:
+            pick = "让胜"
+        elif away_id is not None and int(away_id) == focus_team_id:
+            pick = "让负"
+        if line is not None and pick is not None:
+            match["ah_result"] = settle_handicap_pick(
+                home_goals,
+                away_goals,
+                line,
+                pick,
+            )
+
+    ou = match.get("ou_current")
+    if not isinstance(ou, dict):
+        return
+    try:
+        ou_line = float(str(ou.get("line")).replace(",", "."))
+    except (TypeError, ValueError):
+        return
+    over_result = settle_asian_total(
+        home_goals + away_goals,
+        ou_line,
+        over=True,
+    )
+    match["ou_result"] = {
+        ASIAN_WIN: "over",
+        ASIAN_HALF_WIN: "over_half",
+        ASIAN_PUSH: "push",
+        ASIAN_HALF_LOSS: "under_half",
+        ASIAN_LOSS: "under",
+    }.get(over_result)
+
+
+async def attach_history_odds_snippets(
+    session: Any,
+    package: dict[str, Any],
+    *,
+    home_team_id: int,
+    away_team_id: int,
+) -> None:
+    """Stamp H2H and both form blocks with frozen AH / O-U boards."""
+    blocks: list[tuple[list[dict[str, Any]], int]] = []
+    for key, focus_team_id in (
+        ("head_to_head", home_team_id),
+        ("home_form", home_team_id),
+        ("away_form", away_team_id),
+    ):
+        block = package.get(key)
+        matches = block.get("matches") if isinstance(block, dict) else None
+        if isinstance(matches, list):
+            blocks.append((matches, focus_team_id))
+    if not blocks:
+        return
+
+    ids: list[int] = []
+    for matches, _ in blocks:
+        for match in matches:
+            if not isinstance(match, dict) or match.get("fixture_id") is None:
+                continue
+            try:
+                ids.append(int(match["fixture_id"]))
+            except (TypeError, ValueError):
+                continue
     if not ids:
         return
 
@@ -318,31 +403,38 @@ async def attach_history_ah_snippets(session: Any, package: dict[str, Any]) -> N
         )
     ).all()
     by_id = {stored.fixture_id: (stored, kickoff) for stored, kickoff in rows}
-    for match in matches:
-        if not isinstance(match, dict) or match.get("fixture_id") is None:
-            continue
-        try:
-            fid = int(match["fixture_id"])
-        except (TypeError, ValueError):
-            continue
-        pair = by_id.get(fid)
-        if pair is None:
-            match.setdefault("ah_opening", None)
-            match.setdefault("ah_current", None)
-            continue
-        stored, kickoff = pair
-        match["ah_opening"] = history_ah_line_from_raw(
-            stored.odds_opening_json,
-            match_start_time=kickoff,
-            fixture_id=fid,
-            stage="initial",
-        )
-        match["ah_current"] = history_ah_line_from_raw(
-            stored.odds_json,
-            match_start_time=kickoff,
-            fixture_id=fid,
-            stage="current",
-        )
+    for matches, focus_team_id in blocks:
+        for match in matches:
+            if not isinstance(match, dict) or match.get("fixture_id") is None:
+                continue
+            try:
+                fid = int(match["fixture_id"])
+            except (TypeError, ValueError):
+                continue
+            pair = by_id.get(fid)
+            if pair is None:
+                for key in ("ah_opening", "ah_current", "ou_opening", "ou_current"):
+                    match.setdefault(key, None)
+                _history_settlements(match, focus_team_id)
+                continue
+            stored, kickoff = pair
+            opening = history_market_lines_from_raw(
+                stored.odds_opening_json,
+                match_start_time=kickoff,
+                fixture_id=fid,
+                stage="initial",
+            )
+            current = history_market_lines_from_raw(
+                stored.odds_json,
+                match_start_time=kickoff,
+                fixture_id=fid,
+                stage="current",
+            )
+            match["ah_opening"] = opening["ah"]
+            match["ah_current"] = current["ah"]
+            match["ou_opening"] = opening["ou"]
+            match["ou_current"] = current["ou"]
+            _history_settlements(match, focus_team_id)
 
 
 def _normalize_line_token(token: str) -> str:

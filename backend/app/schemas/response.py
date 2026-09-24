@@ -110,7 +110,7 @@ class InjuriesPackageResponse(BaseModel):
     away: list[InjuryItemResponse] = Field(default_factory=list)
 
 
-class HistoryAhLineResponse(BaseModel):
+class HistoryMarketLineResponse(BaseModel):
     line: str
     home: str | None = None
     away: str | None = None
@@ -131,8 +131,14 @@ class FormMatchResponse(BaseModel):
     league_country: str = ""
     result: str | None = None
     outcome_for_current_home: str | None = None
-    ah_opening: HistoryAhLineResponse | None = None
-    ah_current: HistoryAhLineResponse | None = None
+    ah_opening: HistoryMarketLineResponse | None = None
+    ah_current: HistoryMarketLineResponse | None = None
+    ou_opening: HistoryMarketLineResponse | None = None
+    ou_current: HistoryMarketLineResponse | None = None
+    # Asian settlement enums. Null when the row is pending or has no board.
+    ah_result: str | None = None
+    # over | over_half | push | under_half | under
+    ou_result: str | None = None
 
 
 class FormPackageResponse(BaseModel):

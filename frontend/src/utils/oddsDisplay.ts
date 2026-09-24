@@ -38,6 +38,22 @@ export function primaryAhLine(odds: OddsLike): {
   return { line: String(line.line), home: line.home, away: line.away }
 }
 
+/** Main whole-match O/U line for compact history-table cells. */
+export function primaryOuLine(odds: OddsLike): {
+  line: string
+  home?: string | number | null
+  away?: string | number | null
+} | null {
+  if (!odds || !hasOddsMarkets(odds)) return null
+  const market = odds.goals_ou
+  if (!market?.line) return null
+  return {
+    line: String(market.line),
+    home: market.home,
+    away: market.away,
+  }
+}
+
 function capturedAtMs(odds: OddsLike): number | null {
   const at =
     odds && 'scraped_at' in odds && odds.scraped_at

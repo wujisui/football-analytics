@@ -295,27 +295,35 @@ class RefreshGuardTests(unittest.IsolatedAsyncioTestCase):
         fetcher._fetch_odds_with_rate_limit.assert_not_awaited()
 
 
-class HistoryAhSnippetTests(unittest.IsolatedAsyncioTestCase):
-    def test_opening_board_yields_main_ah_line(self) -> None:
-        from app.services.prematch_package import history_ah_line_from_raw
+class HistoryOddsSnippetTests(unittest.IsolatedAsyncioTestCase):
+    def test_opening_board_yields_main_ah_and_ou_lines(self) -> None:
+        from app.services.prematch_package import history_market_lines_from_raw
 
         raw = json.dumps(
             {
                 "available": True,
                 "captured_at": _iso(KICKOFF - timedelta(hours=20)),
                 "asian_handicap": {"line": "-0.25", "home": "1.97", "away": "1.88"},
+                "goals_ou": {"line": "2.75", "home": "1.91", "away": "1.95"},
             }
         )
-        line = history_ah_line_from_raw(
+        lines = history_market_lines_from_raw(
             raw,
             match_start_time=KICKOFF,
             fixture_id=1,
             stage="initial",
         )
-        self.assertEqual(line, {"line": "-0.25", "home": "1.97", "away": "1.88"})
+        self.assertEqual(
+            lines["ah"],
+            {"line": "-0.25", "home": "1.97", "away": "1.88"},
+        )
+        self.assertEqual(
+            lines["ou"],
+            {"line": "2.75", "home": "1.91", "away": "1.95"},
+        )
 
-    async def test_attach_stamps_h2h_rows_from_local_pre_match(self) -> None:
-        from app.services.prematch_package import attach_history_ah_snippets
+    async def test_attach_stamps_all_history_blocks_and_settles_focus_side(self) -> None:
+        from app.services.prematch_package import attach_history_odds_snippets
 
         stored = MagicMock()
         stored.fixture_id = 77
@@ -324,6 +332,7 @@ class HistoryAhSnippetTests(unittest.IsolatedAsyncioTestCase):
                 "available": True,
                 "captured_at": _iso(KICKOFF - timedelta(days=1)),
                 "asian_handicap": {"line": "-0.25", "home": "1.97", "away": "1.88"},
+                "goals_ou": {"line": "2.25", "home": "1.91", "away": "1.95"},
             }
         )
         stored.odds_json = json.dumps(
@@ -331,6 +340,7 @@ class HistoryAhSnippetTests(unittest.IsolatedAsyncioTestCase):
                 "available": True,
                 "captured_at": _iso(KICKOFF - timedelta(hours=2)),
                 "asian_handicap": {"line": "-0.25", "home": "1.97", "away": "1.92"},
+                "goals_ou": {"line": "2.25", "home": "1.93", "away": "1.93"},
             }
         )
         session = MagicMock()
@@ -339,13 +349,42 @@ class HistoryAhSnippetTests(unittest.IsolatedAsyncioTestCase):
         session.execute = AsyncMock(return_value=result)
         package = {
             "head_to_head": {
-                "matches": [{"fixture_id": 77, "score": "1-0"}],
-            }
+                "matches": [
+                    {
+                        "fixture_id": 77,
+                        "home_id": 1,
+                        "away_id": 2,
+                        "score": "2-0",
+                    }
+                ],
+            },
+            "home_form": {"matches": []},
+            "away_form": {
+                "matches": [
+                    {
+                        "fixture_id": 77,
+                        "home_id": 1,
+                        "away_id": 2,
+                        "score": "2-0",
+                    }
+                ]
+            },
         }
-        await attach_history_ah_snippets(session, package)
+        await attach_history_odds_snippets(
+            session,
+            package,
+            home_team_id=1,
+            away_team_id=2,
+        )
         match = package["head_to_head"]["matches"][0]
         self.assertEqual(match["ah_opening"]["away"], "1.88")
         self.assertEqual(match["ah_current"]["away"], "1.92")
+        self.assertEqual(match["ou_current"]["line"], "2.25")
+        self.assertEqual(match["ah_result"], "win")
+        self.assertEqual(match["ou_result"], "under_half")
+        # The same match in the away team's form settles from the opposite side.
+        away_match = package["away_form"]["matches"][0]
+        self.assertEqual(away_match["ah_result"], "loss")
 
 
 if __name__ == "__main__":

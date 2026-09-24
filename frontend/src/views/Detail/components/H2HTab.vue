@@ -6,7 +6,7 @@ import MatchStatsTable from '@/views/Detail/components/MatchStatsTable.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import type { FixtureResponse, FormMatch, PrematchPackage } from '@/api/types'
 import { formCharClass, formCharsZh, hasKickedOff } from '@/utils/format'
-import { primaryAhLine } from '@/utils/oddsDisplay'
+import { primaryAhLine, primaryOuLine } from '@/utils/oddsDisplay'
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -49,6 +49,8 @@ const currentMatch = computed<FormMatch | null>(() => {
     league_country: props.fixture.league_country,
     ah_opening: primaryAhLine(props.pkg?.odds_opening ?? null),
     ah_current: primaryAhLine(props.pkg?.odds ?? null),
+    ou_opening: primaryOuLine(props.pkg?.odds_opening ?? null),
+    ou_current: primaryOuLine(props.pkg?.odds ?? null),
   }
 })
 const displayedH2HMatches = computed(() =>
@@ -101,7 +103,6 @@ const hasAny = computed(
         :matches="displayedH2HMatches"
         :focus-team-id="fixture.home_team_id"
         empty-description="双方暂无直接交锋记录"
-        show-odds
       />
     </n-space>
 

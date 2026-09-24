@@ -92,7 +92,7 @@ export interface InjuriesPackage {
   away: InjuryItem[]
 }
 
-export interface HistoryAhLine {
+export interface HistoryMarketLine {
   line: string
   home?: string | number | null
   away?: string | number | null
@@ -114,8 +114,12 @@ export interface FormMatch {
   league_country?: string | null
   result?: string | null
   outcome_for_current_home?: string | null
-  ah_opening?: HistoryAhLine | null
-  ah_current?: HistoryAhLine | null
+  ah_opening?: HistoryMarketLine | null
+  ah_current?: HistoryMarketLine | null
+  ou_opening?: HistoryMarketLine | null
+  ou_current?: HistoryMarketLine | null
+  ah_result?: 'win' | 'half_win' | 'push' | 'half_loss' | 'loss' | null
+  ou_result?: 'over' | 'over_half' | 'push' | 'under_half' | 'under' | null
 }
 
 export interface FormPackage {

@@ -52,7 +52,7 @@ from app.services.prediction import (
     resolve_match_probabilities,
 )
 from app.services.prematch_package import (
-    attach_history_ah_snippets,
+    attach_history_odds_snippets,
     loads_json,
     rehydrate_odds_markets,
 )
@@ -893,7 +893,12 @@ async def get_fixture_analysis(
     set_no_store_headers(response, analysis.data_source)
     package = analysis.package if isinstance(analysis.package, dict) else {}
     if package:
-        await attach_history_ah_snippets(db, package)
+        await attach_history_odds_snippets(
+            db,
+            package,
+            home_team_id=fixture.home_team_id,
+            away_team_id=fixture.away_team_id,
+        )
     standings = package.get("standings") or {}
     odds_snippet = _odds_snippet_from_package(package.get("odds"))
     odds_opening_snippet = _odds_snippet_from_package(package.get("odds_opening"))
