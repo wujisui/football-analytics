@@ -1,17 +1,9 @@
-"""Single recommendation decision engine.
+"""Daily-pick decision from the quoted board only.
 
-Every direction carries two probabilities: the board's de-vig price and the
-trained model's shadow output.  O/U, BTTS and 1X2 rank on the model only when
-that model beat the board on its time holdout.  Asian handicap never does:
-a shallow line ranks on the 1X2 de-vig settlement (refunds included), a deeper
-line ranks on the AH de-vig price, and the model probability stays a shadow.
-That is the pre-2026-09-12 side rule.  The model may take the AH side only
-after it beats both that rule and the board on a later holdout.
-
-Expected return is computed for auditing from whichever probability ranks the
-candidate.  It is structurally negative under board probabilities (``p ≈ 1/赔率``
-means ``EV = 1/超额 − 1``), so it never gates a candidate — see the daily-pick
-rules in ``.cursor/rules/project-scope.mdc``.
+Shallow Asian lines rank on the 1X2 de-vig settlement, refunds included.
+Deeper lines, totals, both-teams and 1X2 rank on that market's own de-vig
+price.  No trained model is consulted.  Expected return is audit-only: under
+board probabilities it is ``1/超额 − 1`` and never gates a candidate.
 """
 
 from __future__ import annotations
@@ -26,31 +18,12 @@ from app.services.ah_features import (
     ASIAN_LOSS,
     ASIAN_PUSH,
     ASIAN_WIN,
-    build_ah_features,
     extract_main_ah_line,
     format_handicap_lean_text,
     outcome_settlement_units,
-    settle_asian_total,
-    settle_handicap_pick,
 )
 from app.services.ah_market_structure import side_speaks_for_result
-from app.services.ah_predictor import (
-    model_status as ah_model_status,
-    predict_handicap,
-    shadow_cover_probability,
-)
-from app.services.goal_predictor import (
-    distribution_summary,
-    model_status as goal_model_status,
-    predict_goals,
-    score_matrix,
-)
 from app.services.market_analysis import handicap_direction_signal
-from app.services.ml_predictor import (
-    model_status as one_x_two_model_status,
-    predict_probabilities,
-    shadow_probabilities,
-)
 from app.services.prediction import _odd_float
 from app.services.probability_calibration import calibrate_probability
 
@@ -60,7 +33,6 @@ MARKET_OU = "ou"
 MARKET_BTTS = "btts"
 
 SOURCE_MARKET = "market"
-SOURCE_MODEL = "model"
 
 # Board de-vig probability is a two-way price; a side below this is the wrong
 # half of a coin flip, not a recommendation.  1X2 keeps the lower floor because
@@ -77,7 +49,6 @@ MIN_EXTREME_AH_ODD = 1.60
 # be settled that way and stay on the AH de-vig price.
 SHALLOW_AH_SETTLEMENT_LINE = 0.5
 
-_RESULT_KEYS = (ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH, ASIAN_HALF_LOSS, ASIAN_LOSS)
 _DIRECTION_PENALTIES = {
     "aligned_strong": 0.0,
     "aligned_weak": 0.0,
@@ -191,44 +162,6 @@ def settlement_expected_return(
     )
 
 
-def _normalise_distribution(values: dict[str, float]) -> dict[str, float]:
-    cleaned = {key: max(0.0, float(values.get(key, 0.0))) for key in _RESULT_KEYS}
-    total = sum(cleaned.values())
-    if total <= 0:
-        return {key: 0.0 for key in _RESULT_KEYS}
-    return {key: value / total for key, value in cleaned.items()}
-
-
-def _conditional_positive(distribution: dict[str, float]) -> float | None:
-    positive = distribution[ASIAN_WIN] + distribution[ASIAN_HALF_WIN]
-    negative = distribution[ASIAN_HALF_LOSS] + distribution[ASIAN_LOSS]
-    at_risk = positive + negative
-    return positive / at_risk if at_risk > 0 else None
-
-
-def _rescale_distribution(
-    distribution: dict[str, float],
-    positive_probability: float,
-) -> dict[str, float]:
-    """Preserve push/half-state shape while replacing the positive probability."""
-    base = _normalise_distribution(distribution)
-    push = base[ASIAN_PUSH]
-    at_risk = max(0.0, 1.0 - push)
-    positive_mass = at_risk * max(0.0, min(1.0, positive_probability))
-    negative_mass = at_risk - positive_mass
-    positive_base = base[ASIAN_WIN] + base[ASIAN_HALF_WIN]
-    negative_base = base[ASIAN_HALF_LOSS] + base[ASIAN_LOSS]
-    win_share = base[ASIAN_WIN] / positive_base if positive_base > 0 else 1.0
-    loss_share = base[ASIAN_LOSS] / negative_base if negative_base > 0 else 1.0
-    return {
-        ASIAN_WIN: positive_mass * win_share,
-        ASIAN_HALF_WIN: positive_mass * (1.0 - win_share),
-        ASIAN_PUSH: push,
-        ASIAN_HALF_LOSS: negative_mass * (1.0 - loss_share),
-        ASIAN_LOSS: negative_mass * loss_share,
-    }
-
-
 def _binary_distribution(probability: float) -> dict[str, float]:
     p = max(0.0, min(1.0, float(probability)))
     return {
@@ -238,37 +171,6 @@ def _binary_distribution(probability: float) -> dict[str, float]:
         ASIAN_HALF_LOSS: 0.0,
         ASIAN_LOSS: 1.0 - p,
     }
-
-
-def _score_distribution(
-    matrix: Any,
-    *,
-    market: str,
-    direction: str,
-    line: float | None,
-) -> dict[str, float] | None:
-    if market not in {MARKET_AH, MARKET_OU} or line is None:
-        return None
-    totals = {key: 0.0 for key in _RESULT_KEYS}
-    for home in range(matrix.shape[0]):
-        for away in range(matrix.shape[1]):
-            probability = float(matrix[home, away])
-            if market == MARKET_AH:
-                result = settle_handicap_pick(
-                    home,
-                    away,
-                    line,
-                    "让胜" if direction == "home" else "让负",
-                )
-            else:
-                result = settle_asian_total(
-                    home + away,
-                    line,
-                    over=direction == "over",
-                )
-            if result in totals:
-                totals[result] += probability
-    return _normalise_distribution(totals)
 
 
 def _fair_pair(first: float, second: float) -> tuple[float, float]:
@@ -448,49 +350,29 @@ def _candidate(
     direction: str,
     lean: str,
     line: float | None,
-    model_source: str | None,
-    model_version: str | None,
-    model_probability: float | None,
-    model_deployable: bool,
     decimal_odd: float | None,
     implied_probability: float | None,
-    raw_distribution: dict[str, float] | None,
     calibration_artifact: dict[str, Any] | None,
     package: dict[str, Any] | None,
     tellable: bool = True,
     ranking_probability: float | None = None,
     side_blocked: bool = False,
 ) -> RecommendationCandidate:
-    # AH passes ranking_probability so a deployable model cannot replace the
-    # side.  Other markets still rank on the model only after it beats the board.
-    if ranking_probability is not None:
-        source = SOURCE_MARKET
-        raw = ranking_probability
-    else:
-        use_model = model_deployable and model_probability is not None
-        source = SOURCE_MODEL if use_model else SOURCE_MARKET
-        raw = model_probability if use_model else implied_probability
-
+    raw = ranking_probability if ranking_probability is not None else implied_probability
     calibrated: float | None = None
     calibrator_version: str | None = None
     if raw is not None:
         calibrated, calibrator_version = calibrate_probability(
             calibration_artifact,
             market,
-            source,
+            SOURCE_MARKET,
             direction,
             float(raw),
         )
 
-    # Keep the model's settlement shape (push / half-ball mass) and move only the
-    # positive mass onto the ranking probability.
-    distribution: dict[str, float] | None = raw_distribution
+    distribution: dict[str, float] | None = None
     ev: float | None = None
-    if calibrated is not None and raw_distribution is not None:
-        distribution = _rescale_distribution(raw_distribution, calibrated)
-        if decimal_odd is not None:
-            ev = settlement_expected_return(distribution, decimal_odd)
-    elif calibrated is not None and decimal_odd is not None:
+    if calibrated is not None and decimal_odd is not None:
         distribution = _binary_distribution(calibrated)
         ev = settlement_expected_return(distribution, decimal_odd)
 
@@ -524,11 +406,11 @@ def _candidate(
         direction=direction,
         lean=lean,
         line=line,
-        model_source=model_source,
-        model_version=model_version,
+        model_source=None,
+        model_version=None,
         implied_probability=implied_probability,
-        model_probability=model_probability,
-        probability_source=source,
+        model_probability=None,
+        probability_source=SOURCE_MARKET,
         raw_probability=float(raw) if raw is not None else None,
         calibrator_version=calibrator_version,
         calibrated_probability=calibrated,
@@ -606,15 +488,9 @@ def build_match_decision(
     package = package if isinstance(package, dict) else {}
     candidates: list[RecommendationCandidate] = []
 
-    one_x_two = predict_probabilities(package)
-    one_status = one_x_two_model_status()
-    base_features = one_x_two.features
-    one_shadow = shadow_probabilities(base_features)
-    one_deployable = bool(one_status.get("deployable"))
     winner = odds.get("match_winner") if isinstance(odds.get("match_winner"), dict) else {}
     implied_1x2 = _fair_1x2(winner) if winner else None
     for direction, lean in (("home", "主胜"), ("away", "客胜")):
-        shadow = (one_shadow or {}).get(direction)
         odd = _odd_float(winner.get(direction)) if winner else None
         candidates.append(
             _candidate(
@@ -625,37 +501,14 @@ def build_match_decision(
                 direction=direction,
                 lean=lean,
                 line=None,
-                model_source=one_x_two.source,
-                model_version=str(one_status.get("feature_version") or ""),
-                model_probability=float(shadow) if shadow is not None else None,
-                model_deployable=one_deployable,
                 decimal_odd=odd,
                 implied_probability=(implied_1x2 or {}).get(direction),
-                raw_distribution=None,
                 calibration_artifact=calibration_artifact,
                 package=package,
             )
         )
 
-    # Shadow goals: the settlement shape (push / half-ball mass) is needed for
-    # every Asian line even while the O/U and BTTS target gates are closed.
-    goal_prediction = predict_goals(base_features, odds, ignore_deployable=True)
-    goal_status = goal_model_status()
-    goal_matrix = score_matrix(goal_prediction) if goal_prediction is not None else None
-
     line, ah_home_odd, ah_away_odd = extract_main_ah_line(odds)
-    ah_features, _, _, _ = build_ah_features(
-        {**package, "odds": odds},
-        league_id=league_id,
-    )
-    ah_status = ah_model_status()
-    ah_model_prob = shadow_cover_probability(ah_features)
-    ah_prediction = predict_handicap(
-        odds,
-        package=package,
-        league_id=league_id,
-        features=base_features,
-    )
     if line is not None:
         implied_ah = (
             _fair_pair(ah_home_odd, ah_away_odd)
@@ -692,23 +545,6 @@ def build_match_decision(
             else None
         )
         for direction, odd, pick, board in side_rows:
-            shadow = (
-                float(ah_model_prob)
-                if direction == "home" and ah_model_prob is not None
-                else 1.0 - float(ah_model_prob)
-                if ah_model_prob is not None
-                else None
-            )
-            base_distribution = (
-                _score_distribution(
-                    goal_matrix,
-                    market=MARKET_AH,
-                    direction=direction,
-                    line=line,
-                )
-                if goal_matrix is not None
-                else None
-            )
             candidates.append(
                 _candidate(
                     fixture_id=fixture_id,
@@ -718,18 +554,9 @@ def build_match_decision(
                     direction=direction,
                     lean=format_handicap_lean_text(pick, line),
                     line=line,
-                    model_source=ah_prediction.source if ah_prediction else None,
-                    model_version=(
-                        ah_prediction.model_version
-                        if ah_prediction
-                        else str(ah_status.get("ah_feature_version") or "")
-                    ),
-                    model_probability=shadow,
-                    model_deployable=False,
                     decimal_odd=odd,
                     implied_probability=board,
                     ranking_probability=ranking_by_side[direction],
-                    raw_distribution=base_distribution,
                     calibration_artifact=calibration_artifact,
                     package=package,
                     tellable=side_speaks_for_result(float(line), direction),
@@ -749,27 +576,9 @@ def build_match_decision(
             if over_odd is not None and under_odd is not None
             else (None, None)
         )
-        ou_deployable = bool(
-            goal_prediction is not None and goal_prediction.deploy_ou
-        )
         for index, (direction, odd) in enumerate(
             (("over", over_odd), ("under", under_odd))
         ):
-            base_distribution = (
-                _score_distribution(
-                    goal_matrix,
-                    market=MARKET_OU,
-                    direction=direction,
-                    line=ou_line,
-                )
-                if goal_matrix is not None
-                else None
-            )
-            shadow = (
-                _conditional_positive(base_distribution)
-                if base_distribution is not None
-                else None
-            )
             candidates.append(
                 _candidate(
                     fixture_id=fixture_id,
@@ -779,15 +588,8 @@ def build_match_decision(
                     direction=direction,
                     lean=f"{'大' if direction == 'over' else '小'}({ou_line:g})",
                     line=ou_line,
-                    model_source=(
-                        goal_prediction.source if goal_prediction is not None else None
-                    ),
-                    model_version=str(goal_status.get("feature_version") or ""),
-                    model_probability=shadow,
-                    model_deployable=ou_deployable,
                     decimal_odd=odd,
                     implied_probability=implied_ou[index],
-                    raw_distribution=base_distribution,
                     calibration_artifact=calibration_artifact,
                     package=package,
                 )
@@ -805,28 +607,12 @@ def build_match_decision(
             if yes_odd is not None and no_odd is not None
             else (None, None)
         )
-        btts_summary = (
-            distribution_summary(goal_prediction)
-            if goal_prediction is not None
-            else None
-        )
-        btts_deployable = bool(
-            goal_prediction is not None and goal_prediction.deploy_btts
-        )
-        yes_prob = float(btts_summary["btts_prob"]) if btts_summary is not None else None
         for index, (direction, odd, lean) in enumerate(
             (
                 ("yes", yes_odd, "双进:是"),
                 ("no", no_odd, "双进:否"),
             )
         ):
-            shadow = (
-                yes_prob
-                if direction == "yes" and yes_prob is not None
-                else 1.0 - yes_prob
-                if yes_prob is not None
-                else None
-            )
             candidates.append(
                 _candidate(
                     fixture_id=fixture_id,
@@ -836,17 +622,8 @@ def build_match_decision(
                     direction=direction,
                     lean=lean,
                     line=None,
-                    model_source=(
-                        goal_prediction.source if goal_prediction is not None else None
-                    ),
-                    model_version=str(goal_status.get("feature_version") or ""),
-                    model_probability=shadow,
-                    model_deployable=btts_deployable,
                     decimal_odd=odd,
                     implied_probability=implied_btts[index],
-                    raw_distribution=(
-                        _binary_distribution(shadow) if shadow is not None else None
-                    ),
                     calibration_artifact=calibration_artifact,
                     package=package,
                 )
@@ -857,9 +634,8 @@ def build_match_decision(
     reference = select_reference_candidate(candidates, has_ah=has_ah)
 
     if reference is None:
-        # Neither estimator produced a probability (usually a board with no
-        # usable prices).  Keep a deterministic direction for the all-match
-        # reference and let the skip reason explain the missing numbers.
+        # No quoted price produced a probability.  Keep a deterministic
+        # direction for the all-match reference and persist why.
         reference = RecommendationCandidate(
             fixture_id=fixture_id,
             league_id=league_id,
@@ -884,7 +660,7 @@ def build_match_decision(
             direction_alignment="unknown",
             direction_penalty=0.01,
             adjusted_ev=None,
-            skip_reason="odds_and_model_unavailable",
+            skip_reason="odds_missing",
         )
     return MatchDecision(
         fixture_id=fixture_id,

@@ -1,7 +1,7 @@
-"""Unified recommendation pipeline: 概率 → Platt → 每场参考 → 分层 Top 4.
+"""Daily picks from the quoted board: 每场参考 → 分层 Top 4.
 
-Ranking is the calibrated hit probability of a single reference per match, taken
-layer by layer (合格 AH → 大小球/双进 → 无盘独赢).  EV rides along for auditing only:
+Ranking is the board hit probability of one reference per match, taken layer by
+layer (合格 AH → 大小球/双进 → 无盘独赢).  EV rides along for auditing only:
 while probabilities come from the board being bet, ``EV = 1/超额 − 1`` is negative
 by construction, so gating on it empties the pool instead of finding value.
 """
@@ -36,10 +36,6 @@ from app.services.prematch_package import package_from_record, rehydrate_odds_ma
 from app.services.prediction import (
     recommendation_outcomes,
     score_hint_for_consistent_bundle,
-)
-from app.services.probability_calibration import (
-    load_calibration_artifact,
-    train_from_frozen_history,
 )
 from app.services.recommendation.decision import (
     MARKET_1X2,
@@ -286,8 +282,8 @@ def _skip_reason_text(candidate: RecommendationCandidate) -> str:
         "probability_unavailable": "这块盘没有可用报价，算不出命中概率",
         "odds_missing": "缺少可结算赔率，只能给方向",
         "deep_board_receiving_side": "深盘受让侧赢在「输一球以内」，卡片的胜负方向讲不圆，不推这一侧",
+        "ah_lower_side": "同一块让球盘只保留条件命中率更高的一侧",
         "extreme_handicap_low_price": "让球达到两球且让球方赔率低于1.60，回报不足以覆盖穿盘风险，降级推荐",
-        "odds_and_model_unavailable": "盘口与模型数据均不足，暂时给不出方向",
     }.get(candidate.skip_reason or "")
     return reason or _reason(candidate)
 
@@ -439,12 +435,12 @@ def run_pipeline(
     limit_per_day: int = AUTO_PICK_LIMIT,
     skip_fixture_ids: set[int] | None = None,
 ) -> dict[str, Any]:
-    """Build every reference, then fill each day's four seats layer by layer."""
-    calibration = (
-        market_artifact
-        if market_artifact is not None
-        else load_calibration_artifact()
-    )
+    """Build every reference, then fill each day's four seats layer by layer.
+
+    Ranking uses the quoted board.  ``market_artifact`` is only for tests that
+    inject a calibrator; the live sync does not load or retrain one.
+    """
+    calibration = market_artifact
     decisions: list[MatchDecision] = []
     match_by_id = {match.fixture_id: match for match in matches}
     for match in matches:
@@ -733,7 +729,6 @@ async def sync_daily_recommendations(
     owner = ANON_OWNER_ID
     settings = get_settings()
     current = now or _utc_now()
-    calibration = await train_from_frozen_history(db, now=current)
     matches = await collect_prematch_pipeline_inputs(db, now=current)
     manual_ids = {
         int(row[0])
@@ -748,7 +743,6 @@ async def sync_daily_recommendations(
     }
     pipeline_result = run_pipeline(
         matches,
-        market_artifact=calibration,
         limit_per_day=limit,
         skip_fixture_ids=manual_ids,
     )
@@ -836,11 +830,6 @@ async def sync_daily_recommendations(
         "eligible_by_day": pipeline_result["eligible_by_day"],
         "selected": pipeline_result["selected"],
         "alerts": pipeline_result["alerts"],
-        "calibration": {
-            "version": calibration.get("version"),
-            "n_samples": calibration.get("n_samples"),
-            "markets": len(calibration.get("markets") or {}),
-        },
         "skipped_manual": sorted(manual_ids & prematch_ids),
     }
     log_sync_summary(

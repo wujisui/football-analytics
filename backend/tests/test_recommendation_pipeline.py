@@ -444,26 +444,8 @@ def test_shallow_board_can_buy_the_higher_price_when_1x2_settlement_says_so() ->
     assert decision.reference.direction == "home"
 
 
-def test_ah_model_shadow_does_not_flip_the_board_side(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """未在留出集上同时赢过这条规则和盘口之前，模型不能改让球方向。"""
-
-    def deployable_status() -> dict[str, object]:
-        return {"deployable": True, "ah_feature_version": "test"}
-
-    def shadow(features: object) -> float:
-        del features
-        return 0.86
-
-    monkeypatch.setattr(
-        "app.services.recommendation.decision.ah_model_status",
-        deployable_status,
-    )
-    monkeypatch.setattr(
-        "app.services.recommendation.decision.shadow_cover_probability",
-        shadow,
-    )
+def test_daily_pick_does_not_store_a_model_probability() -> None:
+    """日推只读盘口。深盘取让球去水更高的一侧，不写模型概率。"""
     decision = build_match_decision(
         fixture_id=1,
         league_id=39,
@@ -479,7 +461,8 @@ def test_ah_model_shadow_does_not_flip_the_board_side(
     ah = {item.direction: item for item in decision.candidates if item.market == "ah"}
     assert ah["away"].eligible_for_daily_pick() is True
     assert ah["away"].probability_source == "market"
-    assert ah["home"].model_probability == pytest.approx(0.86)
+    assert ah["home"].model_probability is None
+    assert ah["away"].model_probability is None
     assert ah["home"].skip_reason == "ah_lower_side"
     assert decision.reference.market == "ah"
     assert decision.reference.direction == "away"
