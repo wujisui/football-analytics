@@ -1,9 +1,12 @@
 """Single recommendation decision engine.
 
 Every direction carries two probabilities: the board's de-vig price and the
-trained model's shadow output.  Ranking uses the model only for markets whose
-model beat the board on its time holdout; everywhere else the board is the
-estimate, which is what keeps the product running while models are unproven.
+trained model's shadow output.  O/U, BTTS and 1X2 rank on the model only when
+that model beat the board on its time holdout.  Asian handicap never does:
+a shallow line ranks on the 1X2 de-vig settlement (refunds included), a deeper
+line ranks on the AH de-vig price, and the model probability stays a shadow.
+That is the pre-2026-09-12 side rule.  The model may take the AH side only
+after it beats both that rule and the board on a later holdout.
 
 Expected return is computed for auditing from whichever probability ranks the
 candidate.  It is structurally negative under board probabilities (``p ≈ 1/赔率``
@@ -26,6 +29,7 @@ from app.services.ah_features import (
     build_ah_features,
     extract_main_ah_line,
     format_handicap_lean_text,
+    outcome_settlement_units,
     settle_asian_total,
     settle_handicap_pick,
 )
@@ -68,6 +72,10 @@ MIN_AH_CONFIDENCE = 0.50
 # daily pipeline fall through to O/U, BTTS, or another fixture.
 EXTREME_AH_LINE = 2.0
 MIN_EXTREME_AH_ODD = 1.60
+# |line| <= 0.5 settles from the 1X2 result alone, so the daily side is the
+# higher conditional hit rate, not the lower AH price.  Deeper lines cannot
+# be settled that way and stay on the AH de-vig price.
+SHALLOW_AH_SETTLEMENT_LINE = 0.5
 
 _RESULT_KEYS = (ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH, ASIAN_HALF_LOSS, ASIAN_LOSS)
 _DIRECTION_PENALTIES = {
@@ -376,6 +384,43 @@ def _alignment(
     return key, _DIRECTION_PENALTIES[key]
 
 
+def _conditional_cover(
+    probs: dict[str, float],
+    line: float,
+    pick: str,
+) -> float | None:
+    """Hit rate of one AH side given 1X2 probabilities, refunds included."""
+    units = outcome_settlement_units(line, pick)
+    if units is None:
+        return None
+    won = sum(probs[key] * unit for key, unit in units.items() if unit > 0)
+    lost = sum(probs[key] * -unit for key, unit in units.items() if unit < 0)
+    at_risk = won + lost
+    if at_risk <= 0:
+        return None
+    return won / at_risk
+
+
+def _ah_ranking_probability(
+    *,
+    line: float,
+    pick: str,
+    board_probability: float | None,
+    one_x_two: dict[str, float] | None,
+) -> float | None:
+    """Side probability used to choose and rank an AH daily candidate.
+
+    Shallow lines use the 1X2 de-vig settlement so the higher-priced AH side
+    can win when draw refunds make it the better conditional bet.  Deeper
+    lines use the AH de-vig price.  The trained model is not an input.
+    """
+    if abs(float(line)) <= SHALLOW_AH_SETTLEMENT_LINE + 1e-9 and one_x_two is not None:
+        conditional = _conditional_cover(one_x_two, float(line), pick)
+        if conditional is not None:
+            return conditional
+    return board_probability
+
+
 def _extreme_low_price_giving_side(
     *,
     market: str,
@@ -413,10 +458,18 @@ def _candidate(
     calibration_artifact: dict[str, Any] | None,
     package: dict[str, Any] | None,
     tellable: bool = True,
+    ranking_probability: float | None = None,
+    side_blocked: bool = False,
 ) -> RecommendationCandidate:
-    use_model = model_deployable and model_probability is not None
-    source = SOURCE_MODEL if use_model else SOURCE_MARKET
-    raw = model_probability if use_model else implied_probability
+    # AH passes ranking_probability so a deployable model cannot replace the
+    # side.  Other markets still rank on the model only after it beats the board.
+    if ranking_probability is not None:
+        source = SOURCE_MARKET
+        raw = ranking_probability
+    else:
+        use_model = model_deployable and model_probability is not None
+        source = SOURCE_MODEL if use_model else SOURCE_MARKET
+        raw = model_probability if use_model else implied_probability
 
     calibrated: float | None = None
     calibrator_version: str | None = None
@@ -446,15 +499,18 @@ def _candidate(
         reason = "probability_unavailable"
     elif decimal_odd is None:
         reason = "odds_missing"
+    elif side_blocked:
+        reason = "ah_lower_side"
     elif not tellable:
         reason = "deep_board_receiving_side"
-    daily_pick_allowed = not _extreme_low_price_giving_side(
+    extreme_low_price = _extreme_low_price_giving_side(
         market=market,
         direction=direction,
         line=line,
         decimal_odd=decimal_odd,
     )
-    if reason is None and not daily_pick_allowed:
+    daily_pick_allowed = not extreme_low_price and not side_blocked
+    if reason is None and extreme_low_price:
         reason = "extreme_handicap_low_price"
 
     signal = _market_direction(package, market)
@@ -593,7 +649,6 @@ def build_match_decision(
         league_id=league_id,
     )
     ah_status = ah_model_status()
-    ah_deployable = bool(ah_status.get("deployable"))
     ah_model_prob = shadow_cover_probability(ah_features)
     ah_prediction = predict_handicap(
         odds,
@@ -607,12 +662,36 @@ def build_match_decision(
             if ah_home_odd is not None and ah_away_odd is not None
             else (None, None)
         )
-        for index, (direction, odd, pick) in enumerate(
-            (
-                ("home", ah_home_odd, "让胜"),
-                ("away", ah_away_odd, "让负"),
+        side_rows = (
+            ("home", ah_home_odd, "让胜", implied_ah[0]),
+            ("away", ah_away_odd, "让负", implied_ah[1]),
+        )
+        ranking_by_side = {
+            direction: _ah_ranking_probability(
+                line=float(line),
+                pick=pick,
+                board_probability=board,
+                one_x_two=implied_1x2,
             )
-        ):
+            for direction, _odd, pick, board in side_rows
+        }
+        ranked_sides = [
+            (direction, odd, ranking_by_side[direction])
+            for direction, odd, _pick, _board in side_rows
+            if ranking_by_side[direction] is not None
+        ]
+        preferred_side = (
+            max(
+                ranked_sides,
+                key=lambda item: (
+                    float(item[2]),
+                    -(float(item[1]) if item[1] is not None else 1e9),
+                ),
+            )[0]
+            if ranked_sides
+            else None
+        )
+        for direction, odd, pick, board in side_rows:
             shadow = (
                 float(ah_model_prob)
                 if direction == "home" and ah_model_prob is not None
@@ -646,13 +725,15 @@ def build_match_decision(
                         else str(ah_status.get("ah_feature_version") or "")
                     ),
                     model_probability=shadow,
-                    model_deployable=ah_deployable,
+                    model_deployable=False,
                     decimal_odd=odd,
-                    implied_probability=implied_ah[index],
+                    implied_probability=board,
+                    ranking_probability=ranking_by_side[direction],
                     raw_distribution=base_distribution,
                     calibration_artifact=calibration_artifact,
                     package=package,
                     tellable=side_speaks_for_result(float(line), direction),
+                    side_blocked=preferred_side is not None and direction != preferred_side,
                 )
             )
 

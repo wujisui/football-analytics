@@ -409,9 +409,80 @@ def test_deep_board_receiving_side_is_never_sold_as_an_outright_win() -> None:
     assert ah["away"].tellable is False
     assert ah["away"].skip_reason == "deep_board_receiving_side"
     assert ah["away"].eligible_for_daily_pick() is False
-    # The giving side stays a normal candidate, judged on its own probability.
+    # 低水在受让方且卡片讲不清时，不改买高水让球方。
     assert ah["home"].tellable is True
-    assert decision.reference.market != "ah" or decision.reference.direction == "home"
+    assert ah["home"].skip_reason == "ah_lower_side"
+    assert ah["home"].eligible_for_daily_pick() is False
+    assert decision.reference.market != "ah"
+
+
+def test_shallow_board_can_buy_the_higher_price_when_1x2_settlement_says_so() -> None:
+    """半球盘的日推侧是胜平负条件命中率，不是让球盘低水。
+
+    主队让 0.25、让球水位主 2.05 / 客 1.80，低水在客。胜平负去水后主胜远高于
+    客胜，把平局的退半算进去以后，买主队的条件命中率更高，所以日推买高水侧。
+    """
+    decision = build_match_decision(
+        fixture_id=1,
+        league_id=39,
+        match_day="2026-09-21",
+        odds={
+            "match_winner": {"home": 1.70, "draw": 3.60, "away": 5.00},
+            "asian_handicap": {"line": -0.25, "home": 2.05, "away": 1.80},
+            "goals_ou": {"line": 2.5, "home": 1.90, "away": 1.90},
+        },
+        package={},
+        calibration_artifact=None,
+    )
+    ah = {item.direction: item for item in decision.candidates if item.market == "ah"}
+    assert ah["home"].decimal_odd == 2.05
+    assert ah["away"].decimal_odd == 1.80
+    assert ah["home"].eligible_for_daily_pick() is True
+    assert ah["away"].skip_reason == "ah_lower_side"
+    assert ah["home"].probability_source == "market"
+    assert decision.reference.market == "ah"
+    assert decision.reference.direction == "home"
+
+
+def test_ah_model_shadow_does_not_flip_the_board_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """未在留出集上同时赢过这条规则和盘口之前，模型不能改让球方向。"""
+
+    def deployable_status() -> dict[str, object]:
+        return {"deployable": True, "ah_feature_version": "test"}
+
+    def shadow(features: object) -> float:
+        del features
+        return 0.86
+
+    monkeypatch.setattr(
+        "app.services.recommendation.decision.ah_model_status",
+        deployable_status,
+    )
+    monkeypatch.setattr(
+        "app.services.recommendation.decision.shadow_cover_probability",
+        shadow,
+    )
+    decision = build_match_decision(
+        fixture_id=1,
+        league_id=39,
+        match_day="2026-09-21",
+        odds={
+            "match_winner": {"home": 2.40, "draw": 3.20, "away": 2.90},
+            "asian_handicap": {"line": -0.75, "home": 2.10, "away": 1.75},
+            "goals_ou": {"line": 2.5, "home": 1.90, "away": 1.90},
+        },
+        package={},
+        calibration_artifact=None,
+    )
+    ah = {item.direction: item for item in decision.candidates if item.market == "ah"}
+    assert ah["away"].eligible_for_daily_pick() is True
+    assert ah["away"].probability_source == "market"
+    assert ah["home"].model_probability == pytest.approx(0.86)
+    assert ah["home"].skip_reason == "ah_lower_side"
+    assert decision.reference.market == "ah"
+    assert decision.reference.direction == "away"
 
 
 @pytest.mark.parametrize(
