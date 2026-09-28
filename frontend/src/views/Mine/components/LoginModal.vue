@@ -38,7 +38,7 @@ const message = useMessage()
 const formRef = ref<FormInst | null>(null)
 const submitting = ref(false)
 const mode = ref<'login' | 'register'>('login')
-const rememberAccount = ref(!!readRememberedAccount())
+const rememberAccount = ref(true)
 const model = ref({
   username: '',
   password: '',
@@ -85,7 +85,7 @@ function resetForm(keepUsername = false) {
 
 function hydrateRememberedAccount() {
   const remembered = readRememberedAccount()
-  rememberAccount.value = !!remembered
+  rememberAccount.value = true
   if (remembered) model.value.username = remembered
 }
 
@@ -97,7 +97,7 @@ function onAfterLeave() {
   resetForm(false)
   submitting.value = false
   mode.value = 'login'
-  rememberAccount.value = !!readRememberedAccount()
+  rememberAccount.value = true
 }
 
 function switchMode(next: 'login' | 'register') {
