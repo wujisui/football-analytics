@@ -176,10 +176,16 @@ def _structural_pick(
             f"赢在「输一球以内」，这层意思用胜负方向讲不出来，所以仍取让球方"
             f"{lean_text}"
         )
+    elif not stance.directional:
+        note = f"两边赔率一样（都是 {home_odd:.2f}），按盘口规则取{lean_text}"
     else:
+        picked_home = pick == "cover"
+        picked_odd, other_odd = (
+            (home_odd, away_odd) if picked_home else (away_odd, home_odd)
+        )
         note = (
-            f"按主盘水位差 {stance.water_diff:+.3f}（让球方 {stance.giving_odd:.2f}、"
-            f"受让 {stance.receiving_odd:.2f}），所以选{lean_text}"
+            f"{'主队' if picked_home else '客队'}这边赔率更低（{picked_odd:.2f} 对 "
+            f"{other_odd:.2f}），市场认为这一侧打出的可能更大，所以选{lean_text}"
         )
     if stance.even and stance.directional:
         note += f"；水位差在死区 {stance.water_deadzone:.3f} 内，只作展示不进日推"

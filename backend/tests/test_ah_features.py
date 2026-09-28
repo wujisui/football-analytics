@@ -75,7 +75,8 @@ class AhFeaturesTests(unittest.TestCase):
         self.assertEqual(pred.pick, "no_cover")
         self.assertAlmostEqual(pred.cover_prob, 0.4718, places=3)
         self.assertEqual(format_handicap_lean(pred), "客+0.5")
-        self.assertIn("水位差", pred.market_note)
+        self.assertIn("客队这边赔率更低（1.84 对 2.06）", pred.market_note)
+        self.assertNotIn("水位差", pred.market_note)
 
     def test_west_ham_regression_market_prices_choose_handicap_loss(self) -> None:
         """胜/平和参考比分不得把 2.06/1.84 的主盘热门侧翻回让胜。"""
@@ -188,7 +189,7 @@ class AhFeaturesTests(unittest.TestCase):
         }
         lean, note = handicap_bundle_from_markets(home_leaning, "胜/平")
         self.assertEqual(lean, "主0")
-        self.assertIn("水位差", note)
+        self.assertIn("主队这边赔率更低（1.81 对 2.07）", note)
 
         away_leaning = {
             "available": True,
@@ -212,7 +213,7 @@ class AhFeaturesTests(unittest.TestCase):
         }
         lean, note = handicap_bundle_from_markets(level, "胜/平")
         self.assertEqual(lean, "主0")
-        self.assertIn("水位差 +0.000", note)
+        self.assertIn("两边赔率一样（都是 1.95）", note)
 
     def test_outcome_settlement_units_only_cover_result_settled_lines(self) -> None:
         from app.services.ah_features import outcome_settlement_units

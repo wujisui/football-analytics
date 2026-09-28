@@ -307,6 +307,32 @@ def test_same_capture_is_not_described_as_fake_movement() -> None:
     assert "比开盘时" not in text
 
 
+def test_unchanged_1x2_is_not_reported_as_the_biggest_move() -> None:
+    opening = _board(
+        "2026-08-26T08:00:00+00:00",
+        role="initial",
+        ah_line="-0.25",
+        ah_home="1.94",
+        ah_away="1.89",
+        ou_line="3.25",
+        ou_home="1.86",
+        ou_away="1.95",
+        home="2.18",
+        draw="3.91",
+        away="2.81",
+    )
+    current = {**opening, "role": "current", "captured_at": "2026-08-27T17:00:00+00:00"}
+    result = build_market_analysis(
+        {"odds_opening": opening, "odds": current},
+        probabilities={"home": 0.43, "draw": 0.24, "away": 0.33},
+        recommendation="胜/平",
+        handicap_lean="让胜(-0.25)",
+    )
+    text = "\n".join(result["bullets"])
+    assert "变化最大" not in text
+    assert "胜平负开盘到现在没有变化" in text
+
+
 def test_bookmaker_swap_is_reported_but_not_called_a_market_move() -> None:
     opening = _board(
         "2026-08-26T08:00:00+00:00",

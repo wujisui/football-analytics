@@ -436,6 +436,9 @@ def _add_1x2_analysis(
         return
     deltas = {key: current[key] - opening[key] for key in _OUTCOMES}
     moved = max(_OUTCOMES, key=lambda key: abs(deltas[key]))
+    if _pct(opening[moved]) == _pct(current[moved]):
+        bullets.append("胜平负开盘到现在没有变化（同一家博彩公司）。")
+        return
     bullets.append(
         f"开盘到现在变化最大的是「{_OUTCOME_LABELS[moved]}」："
         f"从 {_pct(opening[moved])} 变成 {_pct(current[moved])}（同一家博彩公司）。"
