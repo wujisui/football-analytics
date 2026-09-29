@@ -100,26 +100,29 @@ class PruneJudgmentTests(unittest.TestCase):
             should_prune_fixture(_old_fixture(), _analyzed_stored(), None, now=NOW)
         )
 
-    def test_recent_finished_without_board_kept_for_results_page(self) -> None:
-        """后端漏跑那几天的赛果只有比分没有盘口，删了就永久空白。
-
-        赛果回填走全球按日接口，不带盘口，所以这些场次每次同步都会被重新拉回来
-        又立刻删掉，白耗官方配额，而【赛程】日期条上那一天始终是空的。
-        日期条还能选到的比赛日一律保留。
-        """
-        for days_ago in (0, 1, RESULTS_BROWSABLE_DAYS - 1):
-            with self.subTest(days_ago=days_ago):
-                self.assertFalse(
+    def test_kicked_off_without_board_is_pruned(self) -> None:
+        """开赛后仍没有盘口就是无效行，完场与进行中都删，不等日期条过期。"""
+        for status, goals in (
+            ("finished", (1, 0)),
+            ("pending", (None, None)),
+            ("live", (1, 0)),
+        ):
+            with self.subTest(status=status):
+                self.assertTrue(
                     should_prune_fixture(
-                        _fixture(date=NOW - timedelta(days=days_ago)),
+                        _fixture(
+                            status,
+                            date=NOW - timedelta(hours=1),
+                            home_goals=goals[0],
+                            away_goals=goals[1],
+                        ),
                         None,
                         None,
                         now=NOW,
                     )
                 )
 
-    def test_finished_without_board_pruned_once_out_of_date_strip(self) -> None:
-        """超出日期条范围后恢复删除：准确率与训练标签不收无盘口场次。"""
+    def test_finished_without_board_stays_pruned_after_the_date_strip(self) -> None:
         self.assertTrue(
             should_prune_fixture(
                 _fixture(date=NOW - timedelta(days=RESULTS_BROWSABLE_DAYS + 1)),
@@ -140,6 +143,25 @@ class PruneJudgmentTests(unittest.TestCase):
         """盘口凭证也可以来自冻结特征（has_odds=1）。"""
         feature = SimpleNamespace(features_json='{"has_odds": 1}')
         self.assertFalse(should_prune_fixture(_fixture(), None, feature))
+
+    def test_handicap_only_board_keeps_kicked_off_fixture(self) -> None:
+        stored = SimpleNamespace(
+            odds_json=json.dumps(
+                {
+                    "available": True,
+                    "asian_handicap": {"line": "-0.5", "home": "1.90", "away": "1.96"},
+                }
+            ),
+            odds_opening_json=None,
+        )
+        self.assertFalse(
+            should_prune_fixture(
+                _fixture(date=NOW - timedelta(hours=1)),
+                stored,
+                None,
+                now=NOW,
+            )
+        )
 
     def test_upcoming_pending_never_pruned(self) -> None:
         """开赛前的赛程必须留着，盘口常常临近开赛才开。"""
@@ -223,8 +245,7 @@ class PruneJudgmentTests(unittest.TestCase):
         )
         self.assertFalse(should_prune_fixture(fresh, stored, None, now=NOW))
         self.assertTrue(should_prune_fixture(stale, stored, None, now=NOW))
-        # 刚延期且还没开盘也留着：盘口常常临近开赛才开。
-        self.assertFalse(should_prune_fixture(fresh, None, None, now=NOW))
+        self.assertTrue(should_prune_fixture(fresh, None, None, now=NOW))
 
 
 class PruneAtScaleTests(unittest.TestCase):
@@ -236,7 +257,6 @@ class PruneAtScaleTests(unittest.TestCase):
 
     def test_prunes_more_fixtures_than_sqlite_variable_limit(self) -> None:
         fixture_count = 6000
-        # 必须落在【赛程】日期条之外，否则按可浏览窗口保留，测不到删除路径。
         kickoff = datetime.utcnow() - timedelta(days=RESULTS_BROWSABLE_DAYS + 30)
 
         async def run() -> tuple[int, int]:

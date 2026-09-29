@@ -801,6 +801,8 @@ class FootballFetcher:
         call, but can never expand it.
         """
         assert self.session is not None
+        from app.services.data_cleanup import delete_fixture_rows, listed_odds_fixture_ids
+
         competition_ids = await catalog_allowed_league_ids(self.session)
         effective_ids = (
             competition_ids
@@ -809,10 +811,24 @@ class FootballFetcher:
         )
         league_ids: set[int] = set()
         saved = 0
+        now = datetime.utcnow()
+        kicked_off_ids: set[int] = set()
+        for fixture in fixtures:
+            if int(fixture["league_id"]) not in effective_ids:
+                continue
+            kickoff = fixture["date"]
+            if isinstance(kickoff, datetime) and kickoff.tzinfo is not None:
+                kickoff = kickoff.astimezone(timezone.utc).replace(tzinfo=None)
+            if isinstance(kickoff, datetime) and kickoff <= now:
+                kicked_off_ids.add(int(fixture["id"]))
+        kept_odds = await listed_odds_fixture_ids(self.session, kicked_off_ids)
 
         for fixture in fixtures:
             league_id = int(fixture["league_id"])
             if league_id not in effective_ids:
+                continue
+            fixture_id = int(fixture["id"])
+            if fixture_id in kicked_off_ids and fixture_id not in kept_odds:
                 continue
             try:
                 raw_league_name = str(fixture.get("league_name") or f"League {league_id}")
@@ -864,6 +880,7 @@ class FootballFetcher:
             except Exception as exc:
                 logger.error("Failed to save fixture %s: %s", fixture, exc, exc_info=True)
 
+        await delete_fixture_rows(self.session, kicked_off_ids - kept_odds)
         await self._commit()
 
         if fetch_teams:

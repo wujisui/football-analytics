@@ -5,16 +5,19 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 from sqlalchemy import and_, delete, or_, select, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.api_snapshot import ApiSnapshot
+from app.models.auto_pick_snapshot import AutoPickSnapshot
 from app.models.favorite_fixture import FavoriteFixture
 from app.models.fixture import Fixture
 from app.models.league import League
 from app.models.match_feature import MatchFeature
 from app.models.pre_match_data import PreMatchData
+from app.models.recommendation_candidate import RecommendationCandidateSnapshot
 from app.models.team import Team
 from app.services.cache import (
     analysis_cache_key,
@@ -30,10 +33,7 @@ from app.services.cache import (
 from app.services.league_catalog import allowed_league_ids
 from app.services.features import has_match_winner_odds
 from app.services.prematch_package import loads_json, rehydrate_odds_markets
-from app.services.results_capture import (
-    POSTPONED_HIDE_AFTER_DAYS,
-    RESULTS_BROWSABLE_DAYS,
-)
+from app.services.results_capture import POSTPONED_HIDE_AFTER_DAYS
 
 # Statuses whose packages may be slimmed: the match is over as far as we know.
 TERMINAL_STATUSES = ("finished", "cancelled", "postponed")
@@ -75,14 +75,21 @@ class PruneReport:
         return asdict(self)
 
 
-def _stored_has_1x2(stored: PreMatchData | None) -> bool:
+def _package_has_listed_odds(raw: str | None) -> bool:
+    odds = rehydrate_odds_markets(loads_json(raw, {"available": False}))
+    if not isinstance(odds, dict):
+        return False
+    if has_match_winner_odds(odds):
+        return True
+    return any(odds.get(key) for key in ("asian_handicap", "goals_ou", "both_teams_score"))
+
+
+def _stored_has_listed_odds(stored: PreMatchData | None) -> bool:
     if stored is None:
         return False
-    for raw in (stored.odds_json, stored.odds_opening_json):
-        odds = rehydrate_odds_markets(loads_json(raw, {"available": False}))
-        if has_match_winner_odds(odds):
-            return True
-    return False
+    return _package_has_listed_odds(stored.odds_json) or _package_has_listed_odds(
+        stored.odds_opening_json
+    )
 
 
 def _feature_has_1x2(feature: MatchFeature | None) -> bool:
@@ -95,12 +102,68 @@ def _feature_has_1x2(feature: MatchFeature | None) -> bool:
         return False
 
 
-def record_has_prematch_1x2(
+def record_has_listed_odds(
     stored: PreMatchData | None,
     feature: MatchFeature | None,
 ) -> bool:
-    """Whether a fixture has a usable stored pre-match 1X2 board."""
-    return _stored_has_1x2(stored) or _feature_has_1x2(feature)
+    """Whether a fixture has any usable stored pre-match market."""
+    return _stored_has_listed_odds(stored) or _feature_has_1x2(feature)
+
+
+async def listed_odds_fixture_ids(
+    session: AsyncSession,
+    fixture_ids: set[int],
+) -> set[int]:
+    """Fixture ids in ``fixture_ids`` that already have a stored pre-match board."""
+    found: set[int] = set()
+    ordered = sorted(fixture_ids)
+    for start in range(0, len(ordered), DELETE_CHUNK_SIZE):
+        chunk = ordered[start : start + DELETE_CHUNK_SIZE]
+        stored_rows = (
+            await session.execute(
+                select(PreMatchData).where(PreMatchData.fixture_id.in_(chunk))
+            )
+        ).scalars().all()
+        for stored in stored_rows:
+            if _stored_has_listed_odds(stored):
+                found.add(int(stored.fixture_id))
+        feature_rows = (
+            await session.execute(
+                select(MatchFeature.fixture_id, MatchFeature.features_json).where(
+                    MatchFeature.fixture_id.in_(chunk)
+                )
+            )
+        ).all()
+        for fixture_id, features_json in feature_rows:
+            if _feature_has_1x2(SimpleNamespace(features_json=features_json)):
+                found.add(int(fixture_id))
+    return found
+
+
+async def delete_fixture_rows(session: AsyncSession, fixture_ids: set[int]) -> None:
+    """Remove fixtures and the rows that point at them."""
+    if not fixture_ids:
+        return
+    await _delete_ids(session, FavoriteFixture, FavoriteFixture.fixture_id, fixture_ids)
+    await _delete_ids(session, MatchFeature, MatchFeature.fixture_id, fixture_ids)
+    await _delete_ids(session, PreMatchData, PreMatchData.fixture_id, fixture_ids)
+    await _delete_ids(
+        session,
+        RecommendationCandidateSnapshot,
+        RecommendationCandidateSnapshot.fixture_id,
+        fixture_ids,
+    )
+    await _delete_ids(
+        session, AutoPickSnapshot, AutoPickSnapshot.fixture_id, fixture_ids
+    )
+    await _delete_ids(session, Fixture, Fixture.id, fixture_ids)
+    sync = session.sync_session if hasattr(session, "sync_session") else session
+    for obj in list(sync.identity_map.values()):
+        fixture_id = getattr(obj, "fixture_id", None)
+        if fixture_id in fixture_ids or (
+            isinstance(obj, Fixture) and obj.id in fixture_ids
+        ):
+            session.expunge(obj)
 
 
 def never_settles(fixture: Fixture, *, now: datetime | None = None) -> bool:
@@ -131,26 +194,18 @@ def should_prune_fixture(
 ) -> bool:
     """Delete rows that 赛果统计 / ML can never score.
 
-    Two cases: the match never settles at all, or it settled without a pre-match
-    1X2 board. 缺盘口的场次即使库里冻结过预测也删——没有盘口就没有推断依据，
-    这种预测属于无效数据，留着只会污染准确率与训练标签。
-
-    但「完场缺盘口」要等【赛程】日期条选不到那天之后再删：准确率与 ML 本来就只
-    收有命中标记的场次，多留几天不影响；立刻删则会让后端漏跑期间的比赛日在赛果
-    页永久空白——赛果回填走全球按日接口，只带比分不带盘口，删掉后每次同步都重新
-    拉一遍再被删，白耗官方配额。
+    Two cases: the match never settles at all, or kickoff has passed and there
+    is still no pre-match board. 缺盘口的场次即使库里冻结过预测也删——没有盘口
+    就没有推断依据，这种预测属于无效数据。未开赛的留下，盘口可能临近开赛才开。
     """
     if fixture.status not in PRUNABLE_STATUSES:
         return False
     if never_settles(fixture, now=now):
         return True
-    if fixture.status != "finished":
-        # 未结算且尚未陈旧（含未开赛与刚延期）：盘口可能稍后才开，必须保留。
-        return False
-    if record_has_prematch_1x2(stored, feature):
-        return False
     current = now or datetime.utcnow()
-    return fixture.date <= current - timedelta(days=RESULTS_BROWSABLE_DAYS)
+    if fixture.date > current:
+        return False
+    return not record_has_listed_odds(stored, feature)
 
 
 async def _delete_ids(
@@ -177,9 +232,10 @@ async def prune_low_value_data(
     """Delete fixtures 赛果统计 / ML can never score.
 
     Covers matches that never settle (cancelled, score-less, or stuck at
-    postponed / pending / live past a stale kickoff) plus settled ones that never
-    got a pre-match 1X2 board. Upcoming fixtures outside the competition whitelist
-    are removed immediately; in-scope fixtures before kickoff are never touched.
+    postponed / pending / live past a stale kickoff) plus any kicked-off fixture
+    that never got a pre-match board. Upcoming fixtures outside the competition
+    whitelist are removed immediately; in-scope fixtures before kickoff are never
+    touched.
     Empty ``leagues`` rows (no fixtures left) may be removed after fixture prune.
     """
     now = datetime.utcnow()
