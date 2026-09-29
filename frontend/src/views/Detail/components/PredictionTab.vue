@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h } from 'vue'
+import { computed, h, ref } from 'vue'
 import { NButton, NTooltip, type DataTableColumns } from 'naive-ui'
 
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
@@ -116,10 +116,17 @@ function average(total: number, played: number): string {
   return (total / played).toFixed(1)
 }
 
+const comparisonLimit = ref(10)
+const comparisonLimitOptions = [
+  { label: '近 10 场', value: 10 },
+  { label: '近 20 场', value: 20 },
+]
+
 function comparisonRow(
   team: string,
   teamId: number,
   matches: FormMatch[],
+  limit: number,
 ): ComparisonRow {
   const recent = matches
     .map((match) => ({ match, goals: scoreGoals(match.score) }))
@@ -127,7 +134,7 @@ function comparisonRow(
       (item): item is { match: FormMatch; goals: [number, number] } =>
         item.goals != null,
     )
-    .slice(0, 5)
+    .slice(0, limit)
   let goalsFor = 0
   let goalsAgainst = 0
   for (const { match, goals } of recent) {
@@ -154,11 +161,13 @@ const comparisonRows = computed<ComparisonRow[]>(() => [
     props.fixture.home_team_name || '—',
     props.fixture.home_team_id,
     pkg.value?.home_form?.matches ?? [],
+    comparisonLimit.value,
   ),
   comparisonRow(
     props.fixture.away_team_name || '—',
     props.fixture.away_team_id,
     pkg.value?.away_form?.matches ?? [],
+    comparisonLimit.value,
   ),
 ])
 
@@ -363,7 +372,20 @@ const officialComparisonColumns = computed<DataTableColumns<OfficialComparisonRo
     />
 
     <n-space vertical :size="8">
-      <DetailSectionTitle title="数据对比" />
+      <DetailSectionTitle title="数据对比">
+        <template #extra>
+          <n-flex align="center" :size="8">
+            <n-text depth="3" style="font-size: 13px; white-space: nowrap">展示场次</n-text>
+            <n-select
+              v-model:value="comparisonLimit"
+              size="small"
+              :options="comparisonLimitOptions"
+              :consistent-menu-width="false"
+              style="width: 120px"
+            />
+          </n-flex>
+        </template>
+      </DetailSectionTitle>
       <n-data-table
         class="compact-table"
         size="small"

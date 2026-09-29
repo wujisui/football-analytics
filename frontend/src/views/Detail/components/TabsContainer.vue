@@ -44,13 +44,6 @@ const tabs = DETAIL_TABS
 
 const tabKeys = tabs.map((t) => t.name)
 
-const tabItems = computed(() =>
-  tabs.map((t) => ({
-    ...t,
-    display: isPhone.value ? t.short : t.label,
-  })),
-)
-
 /** Full /analysis settled — loading shell alone is not enough for tab bodies. */
 const ready = computed(
   () => !!props.fixture && !props.loading && !props.error,
@@ -113,10 +106,10 @@ watch(
       @update:value="onTabChange"
     >
       <n-tab-pane
-        v-for="tab in tabItems"
+        v-for="tab in tabs"
         :key="tab.name"
         :name="tab.name"
-        :tab="tab.display"
+        :tab="tab.label"
         :display-directive="isPhone ? 'if' : 'show:lazy'"
       >
         <div class="pane">

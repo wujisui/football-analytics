@@ -12,10 +12,10 @@ export type DetailFrom = 'results' | 'predictions' | 'favorites'
 
 export type DetailTab = 'record' | 'analysis'
 
-/** Detail tab bar order + labels (`short` for phone). Single source of truth. */
-export const DETAIL_TABS: { name: DetailTab; label: string; short: string }[] = [
-  { name: 'record', label: '统计', short: '统计' },
-  { name: 'analysis', label: '赛前分析', short: '分析' },
+/** Detail tab bar order + labels. Phone and desktop share these names. */
+export const DETAIL_TABS: { name: DetailTab; label: string }[] = [
+  { name: 'record', label: '数据统计' },
+  { name: 'analysis', label: '赛前分析' },
 ]
 
 export function detailTabLabel(tab: DetailTab): string {
