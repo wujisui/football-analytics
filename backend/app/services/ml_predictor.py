@@ -2,7 +2,7 @@
 
 Inference priority
 ------------------
-1. ``source=ml`` when artifact is deployable (beats market holdout)
+1. ``source=ml`` when artifact is deployable (holdout log-loss and Brier both beat the board)
 2. ``source=market_baseline`` when odds exist but ML is not deployable
 3. ``source=multifactor`` / ``form_fallback`` when odds or form are thin
 """
@@ -297,6 +297,20 @@ def predict_probabilities(package: dict[str, Any] | None) -> ProbabilityPredicti
     return ProbabilityPrediction(probs=probs, source="multifactor", features=features)
 
 
+def _beats_market_baseline(
+    model_metrics: dict[str, float],
+    market_metrics: dict[str, float],
+) -> bool:
+    """Time-holdout must improve both log-loss and Brier before the gate opens."""
+    try:
+        return (
+            float(model_metrics["log_loss"]) < float(market_metrics["log_loss"])
+            and float(model_metrics["brier"]) < float(market_metrics["brier"])
+        )
+    except (TypeError, ValueError, KeyError):
+        return False
+
+
 def train_from_rows(
     rows: list[tuple[dict[str, float], str]],
 ) -> dict[str, Any]:
@@ -323,14 +337,19 @@ def train_from_rows(
     model = _SoftmaxLogReg(n_features=X.shape[1])
     history = model.fit(X_train, y_train)
 
+    def _brier(probs: np.ndarray, labels: np.ndarray) -> float:
+        one_hot = np.zeros_like(probs)
+        one_hot[np.arange(len(labels)), labels] = 1.0
+        return float(np.mean(np.sum((probs - one_hot) ** 2, axis=1)))
+
     def _metrics(Xm: np.ndarray, ym: np.ndarray) -> dict[str, float]:
         if len(ym) == 0:
-            return {"log_loss": float("nan"), "accuracy": float("nan")}
+            return {"log_loss": float("nan"), "brier": float("nan"), "accuracy": float("nan")}
         p = model.predict_proba(Xm)
         eps = 1e-9
         ll = float(-np.mean(np.log(p[np.arange(len(ym)), ym] + eps)))
         acc = float(np.mean(np.argmax(p, axis=1) == ym))
-        return {"log_loss": ll, "accuracy": acc}
+        return {"log_loss": ll, "brier": _brier(p, ym), "accuracy": acc}
 
     train_m = _metrics(X_train, y_train)
     val_m = _metrics(X_val, y_val) if len(y_val) else train_m
@@ -344,6 +363,7 @@ def train_from_rows(
             "log_loss": float(
                 -np.mean(np.log(market[np.arange(len(ym)), ym] + eps))
             ),
+            "brier": _brier(market, ym),
             "accuracy": float(np.mean(np.argmax(market, axis=1) == ym)),
         }
 
@@ -385,7 +405,10 @@ def train_from_rows(
     majority_accuracy = float(np.mean(y_val == majority_class)) if len(y_val) else float(
         np.mean(y_train == majority_class)
     )
-    deployable = val_m["log_loss"] < market_val_m["log_loss"]
+    # One model for every competition. League, cup and friendly rows stay in
+    # this pool; a segment may earn its own feature only after a later holdout
+    # beats that segment's board on both metrics below.
+    deployable = _beats_market_baseline(val_m, market_val_m)
 
     # Refit on all data for deployment.
     final_model = _SoftmaxLogReg(n_features=X.shape[1])

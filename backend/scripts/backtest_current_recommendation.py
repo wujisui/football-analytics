@@ -44,7 +44,6 @@ from app.services.ah_features import (
 from app.services.probability_calibration import (
     CALIBRATION_VERSION,
     PROBABILITY_SOURCES,
-    load_calibration_artifact,
 )
 from app.services.recommendation.pipeline import (
     match_input_from_fixture_row,
@@ -229,7 +228,7 @@ async def main() -> None:
 
     live = run_pipeline(
         inputs,
-        market_artifact=load_calibration_artifact(),
+        market_artifact=None,
         limit_per_day=4,
     )
     live_score = _score(live, fixtures)

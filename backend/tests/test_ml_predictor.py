@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.services.ml_predictor import train_from_rows
+from app.services.ml_predictor import _beats_market_baseline, train_from_rows
 
 
 class MlPredictorTests(unittest.TestCase):
@@ -52,6 +52,19 @@ class MlPredictorTests(unittest.TestCase):
             self.assertTrue(meta.exists())
             saved = json.loads(meta.read_text(encoding="utf-8"))
             self.assertIn("deployable", saved)
+            self.assertIn("brier", val)
+            self.assertIn("brier", result.get("market_val_metrics") or {})
+
+    def test_gate_requires_both_log_loss_and_brier(self) -> None:
+        better = {"log_loss": 0.90, "brier": 0.50}
+        market = {"log_loss": 0.95, "brier": 0.55}
+        self.assertTrue(_beats_market_baseline(better, market))
+        self.assertFalse(
+            _beats_market_baseline({"log_loss": 0.90, "brier": 0.60}, market)
+        )
+        self.assertFalse(
+            _beats_market_baseline({"log_loss": 0.99, "brier": 0.50}, market)
+        )
 
 
 if __name__ == "__main__":

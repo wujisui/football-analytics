@@ -11,7 +11,12 @@ from app.services.recommendation.decision import (
     select_reference_candidate,
     settlement_expected_return,
 )
-from app.services.recommendation.pipeline import MatchPipelineInput, run_pipeline
+from app.services.recommendation.pipeline import (
+    DailyRecommendationPick,
+    MatchPipelineInput,
+    run_pipeline,
+    select_daily_picks_by_match_day,
+)
 
 LEANS = {
     ("ah", "home"): "主-0.5",
@@ -130,6 +135,33 @@ def test_strict_market_order_keeps_ah_even_when_goals_look_stronger() -> None:
     ah = _candidate(1, market="ah", direction="home", probability=0.52)
     ou = _candidate(1, market="ou", direction="over", probability=0.80)
     assert select_reference_candidate([ah, ou], has_ah=True) == ah
+
+
+def test_higher_secondary_score_cannot_pass_a_qualified_handicap() -> None:
+    """一天四场可以是不同玩法，但合格让球不能被更高的大小球分数越级。"""
+    kickoff = datetime(2026, 9, 29, 12, 0)
+
+    def pick(fixture_id: int, market: str, score: float) -> DailyRecommendationPick:
+        return DailyRecommendationPick(
+            fixture_id=fixture_id,
+            league_id=39,
+            kickoff=kickoff,
+            match_day="2026-09-29",
+            market=market,
+            lean="主-0.5" if market == "ah" else "大(2.5)",
+            recommended_choice="home" if market == "ah" else "over",
+            confidence=score,
+            reason="",
+            decimal_odd=2.40 if score < 0.6 else 1.40,
+            raw_confidence=score,
+            score=score,
+        )
+
+    selected = select_daily_picks_by_match_day(
+        [pick(1, "ou", 0.90), pick(2, "ah", 0.52)],
+        limit_per_day=1,
+    )
+    assert [item.market for item in selected] == ["ah"]
 
 
 def test_direction_penalty_can_demote_a_barely_qualified_ah() -> None:
