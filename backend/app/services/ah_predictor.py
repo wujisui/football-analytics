@@ -208,6 +208,21 @@ def _pick_from_probability(cover_prob: float, line_f: float) -> str:
     return "cover" if cover_prob > 0.5 else "no_cover"
 
 
+def shadow_cover_probability(ah_features: dict[str, float] | None) -> float | None:
+    """Trained home-cover probability with the deployability gate ignored.
+
+    Only the daily-pick audit row reads this.  Ranking stays on the board until
+    the model beats that board on a later time holdout.
+    """
+    if not ah_features:
+        return None
+    model, meta = load_trained_model()
+    if model is None or int(meta.get("n_samples", 0)) < min_train_samples():
+        return None
+    X = np.asarray([ah_feature_vector(ah_features)], dtype=np.float64)
+    return max(0.0, min(1.0, float(model.predict_proba(X)[0])))
+
+
 def _model_prediction(
     ah_features: dict[str, float],
     line_f: float,

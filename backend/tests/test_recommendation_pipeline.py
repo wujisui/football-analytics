@@ -444,8 +444,19 @@ def test_shallow_board_can_buy_the_higher_price_when_1x2_settlement_says_so() ->
     assert decision.reference.direction == "home"
 
 
-def test_daily_pick_does_not_store_a_model_probability() -> None:
-    """日推只读盘口。深盘取让球去水更高的一侧，不写模型概率。"""
+def test_model_shadow_is_stored_without_changing_the_board_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """模型影子记在旁边。深盘仍买让球去水更高的一侧。"""
+
+    def shadow(features: object) -> float:
+        del features
+        return 0.86
+
+    monkeypatch.setattr(
+        "app.services.recommendation.decision.shadow_cover_probability",
+        shadow,
+    )
     decision = build_match_decision(
         fixture_id=1,
         league_id=39,
@@ -461,8 +472,9 @@ def test_daily_pick_does_not_store_a_model_probability() -> None:
     ah = {item.direction: item for item in decision.candidates if item.market == "ah"}
     assert ah["away"].eligible_for_daily_pick() is True
     assert ah["away"].probability_source == "market"
-    assert ah["home"].model_probability is None
-    assert ah["away"].model_probability is None
+    assert ah["home"].model_probability == pytest.approx(0.86)
+    assert ah["away"].model_probability == pytest.approx(0.14)
+    assert ah["away"].raw_probability != pytest.approx(0.14)
     assert ah["home"].skip_reason == "ah_lower_side"
     assert decision.reference.market == "ah"
     assert decision.reference.direction == "away"

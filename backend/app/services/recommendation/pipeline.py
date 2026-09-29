@@ -33,6 +33,7 @@ from app.services.ah_features import format_handicap_lean_text
 from app.services.ah_market_structure import companion_side_for_result
 from app.services.match_day import fixture_match_day
 from app.services.prematch_package import package_from_record, rehydrate_odds_markets
+from app.services.probability_calibration import train_from_frozen_history
 from app.services.prediction import (
     recommendation_outcomes,
     score_hint_for_consistent_bundle,
@@ -438,7 +439,8 @@ def run_pipeline(
     """Build every reference, then fill each day's four seats layer by layer.
 
     Ranking uses the quoted board.  ``market_artifact`` is only for tests that
-    inject a calibrator; the live sync does not load or retrain one.
+    inject a calibrator.  The live sync stores the model shadow and refits that
+    calibrator offline, and does not load it back into this ranking.
     """
     calibration = market_artifact
     decisions: list[MatchDecision] = []
@@ -815,6 +817,11 @@ async def sync_daily_recommendations(
                 picked_at=saved_at,
             )
         )
+    challenger: dict[str, Any] = {}
+    try:
+        challenger = await train_from_frozen_history(db, now=current)
+    except Exception as exc:
+        logger.warning("Daily-pick challenger training skipped: %s", exc)
     await db.commit()
 
     try:
@@ -831,12 +838,17 @@ async def sync_daily_recommendations(
         "selected": pipeline_result["selected"],
         "alerts": pipeline_result["alerts"],
         "skipped_manual": sorted(manual_ids & prematch_ids),
+        "challenger": {
+            "version": challenger.get("version"),
+            "n_samples": challenger.get("n_samples"),
+            "trained_day": challenger.get("trained_day"),
+        },
     }
     log_sync_summary(
         total_matches=result["total_matches"],
         candidate_count=result["candidates"],
         selected_count=result["selected_count"],
-        feedback_written=False,
+        feedback_written=bool(challenger),
         day=local_day,
         matches_by_day=pipeline_result["matches_by_day"],
         selected_by_day=pipeline_result["by_day"],

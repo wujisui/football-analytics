@@ -1,8 +1,8 @@
-"""Optional Platt mapping for a probability that is already chosen.
+"""Offline Platt fit for the board price and the model shadow.
 
-Daily picks pass no artifact, so the raw board probability is what ranks.  A
-caller may still inject a keyed calibrator; an unvalidated key passes the raw
-value through.  Market and model estimators never share one fit.
+Live daily picks do not load this file, so it cannot change a published side.
+It records how each estimator's frozen probability later lined up with results.
+Market and model estimators never share one fit.
 """
 
 from __future__ import annotations
@@ -191,5 +191,146 @@ def load_calibration_artifact(path: Path | None = None) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as exc:
         logger.warning("Failed to load daily-pick calibration: %s", exc)
         return {}
+
+
+def save_calibration_artifact(
+    artifact: dict[str, Any],
+    path: Path | None = None,
+) -> None:
+    target = path or CALIBRATION_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(artifact, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+async def train_from_frozen_history(
+    db: Any,
+    *,
+    now: datetime | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Label every finished candidate, then refit the offline calibrator once a day.
+
+    Selected and unselected directions are both included.  The fit is not loaded
+    by the live daily-pick ranking.  Pushes are excluded from the binary target;
+    half wins count as hits and half losses as misses.
+    """
+    from sqlalchemy import select
+
+    from app.models.fixture import Fixture
+    from app.models.recommendation_candidate import RecommendationCandidateSnapshot
+    from app.services.ah_features import (
+        ASIAN_HALF_LOSS,
+        ASIAN_HALF_WIN,
+        ASIAN_LOSS,
+        ASIAN_PUSH,
+        ASIAN_WIN,
+        settle_asian_total,
+        settle_handicap_pick,
+    )
+
+    current = now or datetime.now(timezone.utc)
+    rows = (
+        await db.execute(
+            select(Fixture, RecommendationCandidateSnapshot)
+            .join(
+                RecommendationCandidateSnapshot,
+                RecommendationCandidateSnapshot.fixture_id == Fixture.id,
+            )
+            .where(
+                Fixture.home_goals.is_not(None),
+                Fixture.away_goals.is_not(None),
+                Fixture.status.in_(["finished", "ft", "aet", "pen"]),
+            )
+            .order_by(Fixture.date, Fixture.id, RecommendationCandidateSnapshot.id)
+        )
+    ).all()
+
+    samples: list[tuple[datetime, str, float, bool]] = []
+    return_units = {
+        ASIAN_WIN: 1.0,
+        ASIAN_HALF_WIN: 0.5,
+        ASIAN_PUSH: 0.0,
+        ASIAN_HALF_LOSS: -0.5,
+        ASIAN_LOSS: -1.0,
+    }
+    for fixture, candidate in rows:
+        home = int(fixture.home_goals)
+        away = int(fixture.away_goals)
+        result: str | None = None
+        hit: bool | None = None
+        if candidate.market == "1x2":
+            actual = "home" if home > away else "away" if away > home else "draw"
+            result = ASIAN_WIN if candidate.direction == actual else ASIAN_LOSS
+            hit = candidate.direction == actual
+        elif candidate.market == "btts":
+            actual = "yes" if home > 0 and away > 0 else "no"
+            result = ASIAN_WIN if candidate.direction == actual else ASIAN_LOSS
+            hit = candidate.direction == actual
+        elif candidate.market == "ah" and candidate.line is not None:
+            result = settle_handicap_pick(
+                home,
+                away,
+                candidate.line,
+                "让胜" if candidate.direction == "home" else "让负",
+            )
+        elif candidate.market == "ou" and candidate.line is not None:
+            result = settle_asian_total(
+                home + away,
+                candidate.line,
+                over=candidate.direction == "over",
+            )
+
+        if result in {ASIAN_WIN, ASIAN_HALF_WIN}:
+            hit = True
+        elif result in {ASIAN_LOSS, ASIAN_HALF_LOSS}:
+            hit = False
+        elif result == ASIAN_PUSH:
+            hit = None
+
+        candidate.settlement_result = result
+        unit = return_units.get(result or "")
+        if unit is not None and candidate.decimal_odd is not None:
+            candidate.actual_return = (
+                unit * (float(candidate.decimal_odd) - 1.0)
+                if unit > 0
+                else unit
+            )
+        if hit is None:
+            continue
+        for source, probability in (
+            ("market", candidate.implied_probability),
+            ("model", candidate.model_probability),
+        ):
+            if probability is None:
+                continue
+            value = float(probability)
+            samples.append((fixture.date, f"{candidate.market}:{source}", value, hit))
+            samples.append(
+                (
+                    fixture.date,
+                    f"{candidate.market}:{source}:{candidate.direction}",
+                    value,
+                    hit,
+                )
+            )
+
+    existing = load_calibration_artifact()
+    if not force and existing.get("trained_day") == current.date().isoformat():
+        return existing
+
+    artifact = build_calibration_artifact(samples, trained_at=current)
+    save_calibration_artifact(artifact)
+    logger.info(
+        "Daily-pick challenger calibration trained samples=%s markets=%s",
+        len(samples),
+        {
+            key: bool(value.get("deployable"))
+            for key, value in (artifact.get("markets") or {}).items()
+        },
+    )
+    return artifact
 
 

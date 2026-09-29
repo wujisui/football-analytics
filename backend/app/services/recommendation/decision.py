@@ -1,15 +1,16 @@
-"""Daily-pick decision from the quoted board only.
+"""Daily-pick decision from the quoted board, with a model shadow beside it.
 
 Shallow Asian lines rank on the 1X2 de-vig settlement, refunds included.
 Deeper lines, totals, both-teams and 1X2 rank on that market's own de-vig
-price.  No trained model is consulted.  Expected return is audit-only: under
-board probabilities it is ``1/超额 − 1`` and never gates a candidate.
+price.  The trained model is stored on ``model_probability`` for the later
+holdout and never replaces that ranking.  Expected return is audit-only.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 from typing import Any
 
 from app.services.ah_features import (
@@ -18,14 +19,31 @@ from app.services.ah_features import (
     ASIAN_LOSS,
     ASIAN_PUSH,
     ASIAN_WIN,
+    build_ah_features,
     extract_main_ah_line,
     format_handicap_lean_text,
     outcome_settlement_units,
 )
 from app.services.ah_market_structure import side_speaks_for_result
+from app.services.ah_predictor import (
+    model_status as ah_model_status,
+    shadow_cover_probability,
+)
+from app.services.features import extract_features
+from app.services.goal_predictor import (
+    distribution_summary,
+    model_status as goal_model_status,
+    predict_goals,
+)
 from app.services.market_analysis import handicap_direction_signal
+from app.services.ml_predictor import (
+    model_status as one_x_two_model_status,
+    shadow_probabilities,
+)
 from app.services.prediction import _odd_float
 from app.services.probability_calibration import calibrate_probability
+
+logger = logging.getLogger(__name__)
 
 MARKET_1X2 = "1x2"
 MARKET_AH = "ah"
@@ -357,7 +375,12 @@ def _candidate(
     tellable: bool = True,
     ranking_probability: float | None = None,
     side_blocked: bool = False,
+    model_source: str | None = None,
+    model_version: str | None = None,
+    model_probability: float | None = None,
 ) -> RecommendationCandidate:
+    # Ranking ignores model_probability.  It stays on the row so the holdout
+    # can compare the challenger with the board after the match.
     raw = ranking_probability if ranking_probability is not None else implied_probability
     calibrated: float | None = None
     calibrator_version: str | None = None
@@ -406,10 +429,10 @@ def _candidate(
         direction=direction,
         lean=lean,
         line=line,
-        model_source=None,
-        model_version=None,
+        model_source=model_source,
+        model_version=model_version,
         implied_probability=implied_probability,
-        model_probability=None,
+        model_probability=model_probability,
         probability_source=SOURCE_MARKET,
         raw_probability=float(raw) if raw is not None else None,
         calibrator_version=calibrator_version,
@@ -474,6 +497,42 @@ def select_reference_candidate(
     return None
 
 
+def _challenger_shadow(
+    package: dict[str, Any],
+    odds: dict[str, Any],
+    league_id: int,
+) -> dict[str, Any]:
+    """Model view of this match.  Failure leaves the board decision unchanged."""
+    empty: dict[str, Any] = {
+        "one": None,
+        "ah": None,
+        "goal": None,
+        "one_version": None,
+        "ah_version": None,
+        "goal_version": None,
+    }
+    try:
+        features = extract_features({**package, "odds": odds})
+        ah_features, _, _, _ = build_ah_features(
+            {**package, "odds": odds},
+            league_id=league_id,
+        )
+        one_status = one_x_two_model_status()
+        ah_status = ah_model_status()
+        goal_status = goal_model_status()
+        return {
+            "one": shadow_probabilities(features),
+            "ah": shadow_cover_probability(ah_features),
+            "goal": predict_goals(features, odds, ignore_deployable=True),
+            "one_version": str(one_status.get("feature_version") or "") or None,
+            "ah_version": str(ah_status.get("ah_feature_version") or "") or None,
+            "goal_version": str(goal_status.get("feature_version") or "") or None,
+        }
+    except Exception as exc:
+        logger.warning("Daily-pick challenger shadow skipped: %s", exc)
+        return empty
+
+
 def build_match_decision(
     *,
     fixture_id: int,
@@ -487,11 +546,19 @@ def build_match_decision(
     odds = odds if isinstance(odds, dict) else {}
     package = package if isinstance(package, dict) else {}
     candidates: list[RecommendationCandidate] = []
+    shadow = _challenger_shadow(package, odds, league_id)
+    one_shadow = shadow["one"] if isinstance(shadow["one"], dict) else None
+    goal_summary = (
+        distribution_summary(shadow["goal"])
+        if shadow["goal"] is not None
+        else None
+    )
 
     winner = odds.get("match_winner") if isinstance(odds.get("match_winner"), dict) else {}
     implied_1x2 = _fair_1x2(winner) if winner else None
     for direction, lean in (("home", "主胜"), ("away", "客胜")):
         odd = _odd_float(winner.get(direction)) if winner else None
+        one_prob = (one_shadow or {}).get(direction)
         candidates.append(
             _candidate(
                 fixture_id=fixture_id,
@@ -505,6 +572,9 @@ def build_match_decision(
                 implied_probability=(implied_1x2 or {}).get(direction),
                 calibration_artifact=calibration_artifact,
                 package=package,
+                model_source="ml" if one_prob is not None else None,
+                model_version=shadow["one_version"] if one_prob is not None else None,
+                model_probability=float(one_prob) if one_prob is not None else None,
             )
         )
 
@@ -544,7 +614,15 @@ def build_match_decision(
             if ranked_sides
             else None
         )
+        ah_cover = shadow["ah"]
         for direction, odd, pick, board in side_rows:
+            ah_prob = (
+                float(ah_cover)
+                if direction == "home" and ah_cover is not None
+                else 1.0 - float(ah_cover)
+                if ah_cover is not None
+                else None
+            )
             candidates.append(
                 _candidate(
                     fixture_id=fixture_id,
@@ -561,6 +639,9 @@ def build_match_decision(
                     package=package,
                     tellable=side_speaks_for_result(float(line), direction),
                     side_blocked=preferred_side is not None and direction != preferred_side,
+                    model_source="ml" if ah_prob is not None else None,
+                    model_version=shadow["ah_version"] if ah_prob is not None else None,
+                    model_probability=ah_prob,
                 )
             )
 
@@ -576,9 +657,22 @@ def build_match_decision(
             if over_odd is not None and under_odd is not None
             else (None, None)
         )
+        ou_summary = (
+            distribution_summary(shadow["goal"], total_line=ou_line)
+            if shadow["goal"] is not None
+            else None
+        )
+        over_prob = float(ou_summary["over_prob"]) if ou_summary is not None else None
         for index, (direction, odd) in enumerate(
             (("over", over_odd), ("under", under_odd))
         ):
+            ou_prob = (
+                over_prob
+                if direction == "over" and over_prob is not None
+                else 1.0 - over_prob
+                if over_prob is not None
+                else None
+            )
             candidates.append(
                 _candidate(
                     fixture_id=fixture_id,
@@ -592,6 +686,9 @@ def build_match_decision(
                     implied_probability=implied_ou[index],
                     calibration_artifact=calibration_artifact,
                     package=package,
+                    model_source="poisson_ml" if ou_prob is not None else None,
+                    model_version=shadow["goal_version"] if ou_prob is not None else None,
+                    model_probability=ou_prob,
                 )
             )
 
@@ -607,12 +704,20 @@ def build_match_decision(
             if yes_odd is not None and no_odd is not None
             else (None, None)
         )
+        btts_prob = float(goal_summary["btts_prob"]) if goal_summary is not None else None
         for index, (direction, odd, lean) in enumerate(
             (
                 ("yes", yes_odd, "双进:是"),
                 ("no", no_odd, "双进:否"),
             )
         ):
+            side_prob = (
+                btts_prob
+                if direction == "yes" and btts_prob is not None
+                else 1.0 - btts_prob
+                if btts_prob is not None
+                else None
+            )
             candidates.append(
                 _candidate(
                     fixture_id=fixture_id,
@@ -626,6 +731,9 @@ def build_match_decision(
                     implied_probability=implied_btts[index],
                     calibration_artifact=calibration_artifact,
                     package=package,
+                    model_source="poisson_ml" if side_prob is not None else None,
+                    model_version=shadow["goal_version"] if side_prob is not None else None,
+                    model_probability=side_prob,
                 )
             )
 
