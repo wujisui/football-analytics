@@ -13,6 +13,7 @@ from app.tasks.scheduler import (
     RESULTS_SYNC_HOUR,
     RESULTS_SYNC_JOB_ID,
     SUBSCRIBED_DENSE_ODDS_SLOTS,
+    SUBSCRIBED_FULL_SYNC_SLOTS,
     UNSUBSCRIBED_ODDS_HOURS,
     odds_job_id,
     register_jobs,
@@ -27,6 +28,9 @@ def test_subscription_schedule_constants() -> None:
     assert (FULL_SYNC_HOUR, FULL_SYNC_MINUTE) == (10, 55)
     assert RESULTS_SYNC_HOUR == 7
     assert RESULTS_SYNC_JOB_ID == "scheduled_results_sync_07"
+    assert SUBSCRIBED_FULL_SYNC_SLOTS == (
+        (4, 55), (10, 55), (16, 55), (22, 55),
+    )
     assert UNSUBSCRIBED_ODDS_HOURS == (22,)
     assert SUBSCRIBED_DENSE_ODDS_SLOTS[:4] == (
         (0, 25), (0, 55), (1, 25), (1, 55),
@@ -72,17 +76,22 @@ def test_subscribed_window_and_result_lookback() -> None:
 def test_subscriber_without_dense_refresh_uses_sparse_schedule() -> None:
     register_jobs(subscribed=True, dense_odds=False)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
+    assert "scheduled_fixtures_sync_0455" in job_ids
     assert "scheduled_fixtures_sync_1055" in job_ids
+    assert "scheduled_fixtures_sync_1655" in job_ids
+    assert "scheduled_fixtures_sync_2255" in job_ids
     assert RESULTS_SYNC_JOB_ID in job_ids
-    assert "scheduled_fixtures_sync_odds_22" in job_ids
+    assert "scheduled_fixtures_sync_odds_22" not in job_ids
     assert "scheduled_fixtures_sync_odds_1125" not in job_ids
-    assert FIXTURE_ROLLOVER_JOB_ID in job_ids
+    assert FIXTURE_ROLLOVER_JOB_ID not in job_ids
     full_job = scheduler.get_job("scheduled_fixtures_sync_1055")
-    assert full_job.kwargs == {"include_dense_odds": False}
+    assert full_job.kwargs["include_dense_odds"] is False
+    assert "hour='*'" in str(scheduler.get_job(RESULTS_SYNC_JOB_ID).trigger)
 
     register_jobs(subscribed=False)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
     assert RESULTS_SYNC_JOB_ID in job_ids
+    assert "scheduled_fixtures_sync_1655" not in job_ids
     assert "scheduled_fixtures_sync_odds_22" in job_ids
     assert "scheduled_fixtures_sync_odds_1125" not in job_ids
     assert FIXTURE_ROLLOVER_JOB_ID in job_ids
@@ -91,9 +100,15 @@ def test_subscriber_without_dense_refresh_uses_sparse_schedule() -> None:
 def test_subscribed_dense_jobs_run_continuously() -> None:
     register_jobs(subscribed=True, dense_odds=True)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
+    assert "scheduled_fixtures_sync_0455" in job_ids
     assert "scheduled_fixtures_sync_1055" in job_ids
+    assert "scheduled_fixtures_sync_1655" in job_ids
+    assert "scheduled_fixtures_sync_2255" in job_ids
     assert RESULTS_SYNC_JOB_ID in job_ids
     assert "scheduled_fixtures_sync_odds_1125" in job_ids
+    assert "scheduled_fixtures_sync_odds_0455" not in job_ids
+    assert "scheduled_fixtures_sync_odds_1655" not in job_ids
+    assert "scheduled_fixtures_sync_odds_2255" not in job_ids
     assert "scheduled_fixtures_sync_odds_1155" in job_ids
     assert "scheduled_fixtures_sync_odds_0025" in job_ids
     assert "scheduled_fixtures_sync_odds_1025" in job_ids
@@ -102,7 +117,7 @@ def test_subscribed_dense_jobs_run_continuously() -> None:
     assert "scheduled_fixtures_sync_odds_22" not in job_ids
     assert FIXTURE_ROLLOVER_JOB_ID not in job_ids
     full_job = scheduler.get_job("scheduled_fixtures_sync_1055")
-    assert full_job.kwargs == {"include_dense_odds": True}
+    assert full_job.kwargs["include_dense_odds"] is True
 
 
 def test_1055_dense_refresh_runs_after_full_batch() -> None:
@@ -120,6 +135,36 @@ def test_1055_dense_refresh_runs_after_full_batch() -> None:
     assert run_sync.await_args_list[0].kwargs == {"mode": "full"}
     assert run_sync.await_args_list[1].kwargs == {
         "task_name": "scheduled_fixtures_sync_odds_1055",
+        "mode": "odds",
+    }
+
+
+def test_subscribed_full_slot_runs_the_same_full_action_then_dense_odds() -> None:
+    import importlib
+
+    scheduler_module = importlib.import_module("app.tasks.scheduler")
+
+    run_sync = AsyncMock()
+
+    async def _run() -> None:
+        with patch.object(
+            scheduler_module, "run_scheduled_fixtures_sync", run_sync
+        ):
+            await scheduler_module.run_subscribed_full_sync(
+                task_name="scheduled_fixtures_sync_1655",
+                hour=16,
+                minute=55,
+                include_dense_odds=True,
+            )
+
+    asyncio.run(_run())
+    assert run_sync.await_count == 2
+    assert run_sync.await_args_list[0].kwargs == {
+        "task_name": "scheduled_fixtures_sync_1655",
+        "mode": "full",
+    }
+    assert run_sync.await_args_list[1].kwargs == {
+        "task_name": "scheduled_fixtures_sync_odds_1655",
         "mode": "odds",
     }
 

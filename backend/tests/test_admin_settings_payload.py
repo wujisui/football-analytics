@@ -77,17 +77,22 @@ def test_subscriber_without_dense_uses_sparse_times() -> None:
     assert payload.subscribed is True
     assert payload.dense_odds_enabled is False
     assert payload.api_remaining == 7000
-    assert payload.sync_times == ["07:00", "08:05", "10:55", "22:00"]
+    for clock in ("00:00", "04:55", "10:55", "16:55", "22:55", "23:00"):
+        assert clock in payload.sync_times
+    assert "08:05" not in payload.sync_times
+    assert len(payload.sync_times) == 28
 
 
 def test_subscribed_dense_sync_times_cover_all_half_hours() -> None:
     payload = _subscription_payload(True, dense_odds=True)
 
     assert payload.dense_odds_enabled is True
-    for clock in ("00:25", "10:25", "10:55", "11:25", "11:55", "23:55"):
+    for clock in (
+        "00:00", "00:25", "04:55", "10:25", "10:55",
+        "11:00", "11:25", "16:55", "22:00", "22:55", "23:55",
+    ):
         assert clock in payload.sync_times
-    for clock in ("04:00", "11:00", "22:00"):
-        assert clock not in payload.sync_times
+    assert "08:05" not in payload.sync_times
 
 
 def test_unsubscribed_sync_times_include_morning_results() -> None:

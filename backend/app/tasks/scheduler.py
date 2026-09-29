@@ -28,6 +28,12 @@ _scheduler_started = False
 
 FULL_SYNC_HOUR = 10
 FULL_SYNC_MINUTE = 55
+SUBSCRIBED_FULL_SYNC_SLOTS: tuple[tuple[int, int], ...] = (
+    (4, 55),
+    (10, 55),
+    (16, 55),
+    (22, 55),
+)
 RESULTS_SYNC_HOUR = 7
 UNSUBSCRIBED_ODDS_HOURS = (22,)
 # Dense refresh is a continuous 30-minute cycle anchored at 11:25.
@@ -50,8 +56,8 @@ def format_clock(hour: int, minute: int = 0) -> str:
     return f"{hour:02d}:{minute:02d}"
 
 
-def uses_sparse_sync_schedule(*, subscribed: bool, dense_odds: bool) -> bool:
-    return not subscribed or not dense_odds
+def uses_unsubscribed_schedule(*, subscribed: bool) -> bool:
+    return not subscribed
 
 
 def light_odds_slots(
@@ -59,11 +65,10 @@ def light_odds_slots(
     subscribed: bool,
     dense_odds: bool,
 ) -> list[tuple[int, int]]:
-    if uses_sparse_sync_schedule(
-        subscribed=subscribed,
-        dense_odds=dense_odds,
-    ):
+    if not subscribed:
         return [(hour, 0) for hour in UNSUBSCRIBED_ODDS_HOURS]
+    if not dense_odds:
+        return []
     return list(SUBSCRIBED_DENSE_ODDS_SLOTS)
 
 
@@ -204,8 +209,24 @@ async def run_scheduled_results_sync() -> None:
     await run_scheduled_fixtures_sync(task_name=RESULTS_SYNC_TASK, mode="results")
 
 
+async def run_subscribed_full_sync(
+    *,
+    task_name: str,
+    hour: int,
+    minute: int,
+    include_dense_odds: bool = False,
+) -> None:
+    """Run one subscribed full batch and its overlapping dense refresh."""
+    await run_scheduled_fixtures_sync(task_name=task_name, mode="full")
+    if include_dense_odds:
+        await run_scheduled_fixtures_sync(
+            task_name=odds_job_id(hour, minute),
+            mode="odds",
+        )
+
+
 async def run_daily_full_sync(*, include_dense_odds: bool = False) -> None:
-    """Run the 10:55 full batch, then its overlapping dense refresh when enabled."""
+    """Run the unsubscribed 10:55 full batch and optional dense refresh."""
     await run_scheduled_fixtures_sync(mode="full")
     if include_dense_odds:
         await run_scheduled_fixtures_sync(
@@ -425,19 +446,26 @@ def register_jobs(
     subscribed: bool | None = None,
     dense_odds: bool = False,
 ) -> None:
-    """Register results, the 10:55 full batch, and the selected odds schedule."""
+    """Register result, full-sync, and optional dense-odds schedules."""
     settings = get_settings()
     timezone = settings.SCHEDULER_TIMEZONE
     if subscribed is None:
         subscribed = not bool(settings.ENABLE_FREE_QUOTA)
 
     for job in list(scheduler.get_jobs()):
-        if str(job.id).startswith("scheduled_fixtures_sync_"):
+        job_id = str(job.id)
+        if job_id.startswith("scheduled_fixtures_sync_") or job_id.startswith(
+            "scheduled_results_sync_"
+        ):
             scheduler.remove_job(job.id)
 
     scheduler.add_job(
         run_scheduled_results_sync,
-        CronTrigger(hour=RESULTS_SYNC_HOUR, minute=0, timezone=timezone),
+        CronTrigger(
+            hour="*" if subscribed else RESULTS_SYNC_HOUR,
+            minute=0,
+            timezone=timezone,
+        ),
         id=RESULTS_SYNC_JOB_ID,
         name=RESULTS_SYNC_JOB_ID,
         replace_existing=True,
@@ -445,37 +473,42 @@ def register_jobs(
         coalesce=True,
     )
 
-    full_job_id = "scheduled_fixtures_sync_1055"
-    scheduler.add_job(
-        run_daily_full_sync,
-        CronTrigger(
-            hour=FULL_SYNC_HOUR,
-            minute=FULL_SYNC_MINUTE,
-            timezone=timezone,
-        ),
-        id=full_job_id,
-        name=full_job_id,
-        kwargs={"include_dense_odds": bool(subscribed and dense_odds)},
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
+    full_slots = (
+        SUBSCRIBED_FULL_SYNC_SLOTS
+        if subscribed
+        else ((FULL_SYNC_HOUR, FULL_SYNC_MINUTE),)
     )
+    for hour, minute in full_slots:
+        full_job_id = f"scheduled_fixtures_sync_{hour:02d}{minute:02d}"
+        scheduler.add_job(
+            run_subscribed_full_sync if subscribed else run_daily_full_sync,
+            CronTrigger(hour=hour, minute=minute, timezone=timezone),
+            id=full_job_id,
+            name=full_job_id,
+            kwargs=(
+                {
+                    "task_name": full_job_id,
+                    "hour": hour,
+                    "minute": minute,
+                    "include_dense_odds": bool(dense_odds),
+                }
+                if subscribed
+                else {"include_dense_odds": False}
+            ),
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
 
     odds_slots = light_odds_slots(
         subscribed=bool(subscribed),
         dense_odds=dense_odds,
     )
-    if not uses_sparse_sync_schedule(
-        subscribed=bool(subscribed),
-        dense_odds=dense_odds,
-    ):
-        # 10:55 is executed sequentially by run_daily_full_sync so both the
-        # full batch and overlapping dense refresh run despite the global lock.
-        odds_slots = [
-            slot
-            for slot in odds_slots
-            if slot != (FULL_SYNC_HOUR, FULL_SYNC_MINUTE)
-        ]
+    covered_by_sync = set(full_slots)
+    if not uses_unsubscribed_schedule(subscribed=bool(subscribed)):
+        # These minutes already run inside the full batch or the result retrain,
+        # so a second odds job would lose the global lock and skip.
+        odds_slots = [slot for slot in odds_slots if slot not in covered_by_sync]
     for hour, minute in odds_slots:
         job_id = odds_job_id(hour, minute)
         scheduler.add_job(
@@ -491,10 +524,7 @@ def register_jobs(
 
     if scheduler.get_job(FIXTURE_ROLLOVER_JOB_ID) is not None:
         scheduler.remove_job(FIXTURE_ROLLOVER_JOB_ID)
-    if uses_sparse_sync_schedule(
-        subscribed=bool(subscribed),
-        dense_odds=dense_odds,
-    ):
+    if uses_unsubscribed_schedule(subscribed=bool(subscribed)):
         scheduler.add_job(
             run_fixture_rollover,
             CronTrigger(hour=0, minute=5, timezone="UTC"),
@@ -509,8 +539,8 @@ def register_jobs(
     if scheduler.get_job("daily_auto_favorites") is not None:
         scheduler.remove_job("daily_auto_favorites")
 
-    # Low-value cleanup runs after the 10:55 full sync (and admin「立即同步」),
-    # not as a separate Monday 03:00 cron — machines often off overnight.
+    # Low-value cleanup is part of every full sync (and admin「立即同步」),
+    # not a separate cron that may be missed while the machine is off.
     if scheduler.get_job("clean_old_data") is not None:
         scheduler.remove_job("clean_old_data")
 

@@ -40,12 +40,13 @@ from app.tasks.scheduler import (
     PREMATCH_ODDS_TASK,
     RESULTS_SYNC_HOUR,
     RESULTS_SYNC_TASK,
+    SUBSCRIBED_FULL_SYNC_SLOTS,
     format_clock,
     get_task_status,
     light_odds_slots,
     refresh_fixture_sync_jobs,
     trigger_task,
-    uses_sparse_sync_schedule,
+    uses_unsubscribed_schedule,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -243,17 +244,23 @@ async def _subscription_payload(
     dense_odds = bool(subscribed and stored_dense_odds)
     results_clock = format_clock(RESULTS_SYNC_HOUR)
     full_clock = format_clock(FULL_SYNC_HOUR, FULL_SYNC_MINUTE)
-    times = [results_clock, full_clock] + [
+    times: list[str] = []
+    if subscribed:
+        times.extend(
+            format_clock(hour, minute)
+            for hour, minute in SUBSCRIBED_FULL_SYNC_SLOTS
+        )
+        times.extend(format_clock(hour) for hour in range(24))
+    else:
+        times.extend((results_clock, full_clock))
+    times += [
         format_clock(hour, minute)
         for hour, minute in light_odds_slots(
             subscribed=subscribed,
             dense_odds=dense_odds,
         )
     ]
-    if uses_sparse_sync_schedule(
-        subscribed=subscribed,
-        dense_odds=dense_odds,
-    ):
+    if uses_unsubscribed_schedule(subscribed=subscribed):
         times.append("08:05")
     times = sorted(set(times))
     last_sync = _last_sync_payload(await get_last_sync_run())
