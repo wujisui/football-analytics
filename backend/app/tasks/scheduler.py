@@ -5,6 +5,7 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
@@ -43,7 +44,10 @@ SUBSCRIBED_DENSE_ODDS_SLOTS: tuple[tuple[int, int], ...] = tuple(
 FIXTURE_ROLLOVER_JOB_ID = "fixture_rollover"
 RESULTS_SYNC_TASK = "scheduled_results_sync"
 RESULTS_SYNC_JOB_ID = "scheduled_results_sync_07"
+LIVE_RESULTS_TASK = "scheduled_results_sync_live"
+LIVE_RESULTS_JOB_ID = "scheduled_results_sync_live"
 PREMATCH_ODDS_TASK = "prematch_odds_sync"
+_live_results_enabled = False
 
 
 def odds_job_id(hour: int, minute: int = 0) -> str:
@@ -138,6 +142,8 @@ async def run_scheduled_fixtures_sync(
     *,
     mode: str = "full",
     fixture_ids: list[int] | None = None,
+    result_days: list | None = None,
+    publish_revision: bool = True,
 ) -> None:
     """Run the daily full batch or a today's-hot-odds light batch."""
     from app.services.fetcher import ApiAccountBlockedError, ApiKeyNotConfiguredError
@@ -146,7 +152,11 @@ async def run_scheduled_fixtures_sync(
     logger.info("Task %s started (mode=%s).", task_name, mode)
     start_count = get_cache_service().api_request_count
     try:
-        result = await scheduled_fixtures_sync(mode=mode, fixture_ids=fixture_ids)
+        result = await scheduled_fixtures_sync(
+            mode=mode,
+            fixture_ids=fixture_ids,
+            result_on_days=result_days,
+        )
         if result.get("status") != "completed":
             _set_task_status(
                 task_name,
@@ -157,10 +167,13 @@ async def run_scheduled_fixtures_sync(
             return
         if mode == "full":
             await clean_old_data()
-        from app.services.runtime_settings import touch_client_data_revision
+        if publish_revision:
+            from app.services.runtime_settings import touch_client_data_revision
 
-        async with AsyncSessionLocal() as session:
-            await touch_client_data_revision(session)
+            async with AsyncSessionLocal() as session:
+                await touch_client_data_revision(session)
+        if mode == "full" and _live_results_enabled:
+            await defer_live_results_schedule()
         _set_task_status(
             task_name,
             "completed",
@@ -207,6 +220,74 @@ async def run_scheduled_fixtures_sync(
 async def run_scheduled_results_sync() -> None:
     """Yesterday+today FT backfill; 07:00 cron and admin button share this path."""
     await run_scheduled_fixtures_sync(task_name=RESULTS_SYNC_TASK, mode="results")
+
+
+def schedule_live_results(next_run: datetime) -> None:
+    """Arm one future hot-score pass. DateTrigger does not keep a 30-minute idle loop."""
+    scheduler.add_job(
+        run_live_results_sync,
+        DateTrigger(run_date=next_run),
+        id=LIVE_RESULTS_JOB_ID,
+        name=LIVE_RESULTS_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
+    )
+
+
+async def defer_live_results_schedule() -> None:
+    """After a full batch already wrote scores, wait out the live interval."""
+    if not _live_results_enabled:
+        return
+    from app.services.live_results import build_live_results_plan
+
+    plan = await build_live_results_plan()
+    schedule_live_results(plan.next_run)
+
+
+async def run_live_results_sync() -> None:
+    """Refresh scores for hot matches that have kicked off, then arm the next wake-up."""
+    from app.services.live_results import (
+        LIVE_RESULTS_INTERVAL,
+        build_live_results_plan,
+        scoreboard_fingerprint,
+    )
+    from app.services.runtime_settings import touch_client_data_revision
+
+    next_run = _utc_now() + LIVE_RESULTS_INTERVAL
+    try:
+        plan = await build_live_results_plan()
+        next_run = plan.next_run
+        if not plan.fetch_dates:
+            logger.info(
+                "Live results idle until %s",
+                plan.next_run.isoformat(),
+            )
+            return
+        before = await scoreboard_fingerprint(list(plan.fetch_dates))
+        await run_scheduled_fixtures_sync(
+            task_name=LIVE_RESULTS_TASK,
+            mode="results",
+            result_days=list(plan.fetch_dates),
+            publish_revision=False,
+        )
+        after = await scoreboard_fingerprint(list(plan.fetch_dates))
+        if before != after:
+            async with AsyncSessionLocal() as session:
+                await touch_client_data_revision(session)
+        else:
+            logger.info(
+                "Live results fetched %s with no scoreboard change",
+                ",".join(day.isoformat() for day in plan.fetch_dates),
+            )
+        next_run = (await build_live_results_plan()).next_run
+    except Exception as exc:
+        logger.error("Live results sync failed: %s", exc, exc_info=True)
+        next_run = _utc_now() + LIVE_RESULTS_INTERVAL
+    finally:
+        if _live_results_enabled:
+            schedule_live_results(next_run)
 
 
 async def run_subscribed_full_sync(
@@ -447,10 +528,17 @@ def register_jobs(
     dense_odds: bool = False,
 ) -> None:
     """Register result, full-sync, and optional dense-odds schedules."""
+    global _live_results_enabled
     settings = get_settings()
     timezone = settings.SCHEDULER_TIMEZONE
     if subscribed is None:
         subscribed = not bool(settings.ENABLE_FREE_QUOTA)
+    _live_results_enabled = bool(subscribed)
+
+    preserved_live_run = None
+    existing_live = scheduler.get_job(LIVE_RESULTS_JOB_ID)
+    if existing_live is not None:
+        preserved_live_run = getattr(existing_live, "next_run_time", None)
 
     for job in list(scheduler.get_jobs()):
         job_id = str(job.id)
@@ -461,17 +549,17 @@ def register_jobs(
 
     scheduler.add_job(
         run_scheduled_results_sync,
-        CronTrigger(
-            hour="*" if subscribed else RESULTS_SYNC_HOUR,
-            minute=0,
-            timezone=timezone,
-        ),
+        CronTrigger(hour=RESULTS_SYNC_HOUR, minute=0, timezone=timezone),
         id=RESULTS_SYNC_JOB_ID,
         name=RESULTS_SYNC_JOB_ID,
         replace_existing=True,
         max_instances=1,
         coalesce=True,
     )
+    if subscribed:
+        schedule_live_results(
+            preserved_live_run or (_utc_now() + timedelta(seconds=5))
+        )
 
     full_slots = (
         SUBSCRIBED_FULL_SYNC_SLOTS

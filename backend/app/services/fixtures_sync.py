@@ -158,6 +158,7 @@ async def scheduled_fixtures_sync(
     *,
     mode: str = "full",
     fixture_ids: list[int] | None = None,
+    result_on_days: list[date] | None = None,
 ) -> dict:
     """Run a full, light-odds, results, or explicit prematch odds batch."""
     if _sync_lock.locked():
@@ -180,7 +181,9 @@ async def scheduled_fixtures_sync(
         for offset in range(1, FULL_BATCH_FUTURE_ODDS_DAYS + 1)
     ]
     result_days = clip_fixture_dates_for_plan(
-        result_days_for_batch(odds_anchor),
+        result_on_days
+        if result_on_days is not None
+        else result_days_for_batch(odds_anchor),
         today,
     )
 

@@ -10,6 +10,7 @@ from app.tasks.scheduler import (
     FULL_SYNC_HOUR,
     FULL_SYNC_MINUTE,
     FIXTURE_ROLLOVER_JOB_ID,
+    LIVE_RESULTS_JOB_ID,
     RESULTS_SYNC_HOUR,
     RESULTS_SYNC_JOB_ID,
     SUBSCRIBED_DENSE_ODDS_SLOTS,
@@ -81,16 +82,19 @@ def test_subscriber_without_dense_refresh_uses_sparse_schedule() -> None:
     assert "scheduled_fixtures_sync_1655" in job_ids
     assert "scheduled_fixtures_sync_2255" in job_ids
     assert RESULTS_SYNC_JOB_ID in job_ids
+    assert LIVE_RESULTS_JOB_ID in job_ids
     assert "scheduled_fixtures_sync_odds_22" not in job_ids
     assert "scheduled_fixtures_sync_odds_1125" not in job_ids
     assert FIXTURE_ROLLOVER_JOB_ID not in job_ids
     full_job = scheduler.get_job("scheduled_fixtures_sync_1055")
     assert full_job.kwargs["include_dense_odds"] is False
-    assert "hour='*'" in str(scheduler.get_job(RESULTS_SYNC_JOB_ID).trigger)
+    assert "hour='7'" in str(scheduler.get_job(RESULTS_SYNC_JOB_ID).trigger)
+    assert "hour='*'" not in str(scheduler.get_job(RESULTS_SYNC_JOB_ID).trigger)
 
     register_jobs(subscribed=False)
     job_ids = {str(job.id) for job in scheduler.get_jobs()}
     assert RESULTS_SYNC_JOB_ID in job_ids
+    assert LIVE_RESULTS_JOB_ID not in job_ids
     assert "scheduled_fixtures_sync_1655" not in job_ids
     assert "scheduled_fixtures_sync_odds_22" in job_ids
     assert "scheduled_fixtures_sync_odds_1125" not in job_ids
@@ -105,6 +109,7 @@ def test_subscribed_dense_jobs_run_continuously() -> None:
     assert "scheduled_fixtures_sync_1655" in job_ids
     assert "scheduled_fixtures_sync_2255" in job_ids
     assert RESULTS_SYNC_JOB_ID in job_ids
+    assert LIVE_RESULTS_JOB_ID in job_ids
     assert "scheduled_fixtures_sync_odds_1125" in job_ids
     assert "scheduled_fixtures_sync_odds_0455" not in job_ids
     assert "scheduled_fixtures_sync_odds_1655" not in job_ids
