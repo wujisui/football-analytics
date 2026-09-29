@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -35,6 +36,7 @@ from app.services.prediction import (
 
 # Official short codes that mean regulation (or AET/PEN) is final.
 _FINISHED_SHORT = frozenset({"FT", "AET", "PEN"})
+_SCORE_PAIR_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
 
 
 def fixture_ready_to_grade(fixture: Fixture) -> bool:
@@ -112,6 +114,25 @@ def settle_auto_pick_hit(
     return None
 
 
+def _snapshot_result_lean(auto_pick: Any) -> str | None:
+    """Read the frozen result row; derive old snapshots from their score."""
+    stored = canonical_recommendation(
+        (getattr(auto_pick, "result_lean", None) or "").strip()
+    )
+    if stored:
+        return stored
+    score = canonical_score_hint(getattr(auto_pick, "score_hint", None))
+    match = _SCORE_PAIR_RE.search(score)
+    if match is None:
+        return None
+    home, away = int(match.group(1)), int(match.group(2))
+    if home > away:
+        return "主胜"
+    if home < away:
+        return "客胜"
+    return "和局"
+
+
 def evaluate_fixture_prediction(
     fixture: Fixture,
     stored: PreMatchData | None,
@@ -144,6 +165,19 @@ def evaluate_fixture_prediction(
             return
         payload["auto_pick_market"] = auto_pick.market
         payload["auto_pick_lean"] = auto_pick.lean
+        result_lean = _snapshot_result_lean(auto_pick)
+        handicap_lean = (
+            getattr(auto_pick, "handicap_lean", None) or ""
+        ).strip()
+        score_hint = canonical_score_hint(getattr(auto_pick, "score_hint", None))
+        if result_lean or handicap_lean or score_hint:
+            payload["has_prediction"] = True
+        if result_lean:
+            payload["recommendation"] = result_lean
+        if handicap_lean:
+            payload["handicap_lean"] = handicap_lean
+        if score_hint:
+            payload["score_hint"] = score_hint
         if not grade:
             return
         ah_line = fallback_line
@@ -156,6 +190,29 @@ def evaluate_fixture_prediction(
             away_goals=fixture.away_goals,
             handicap_line=ah_line,
         )
+        bundle_hits = evaluate_prediction_vs_score(
+            home_goals=fixture.home_goals,
+            away_goals=fixture.away_goals,
+            score_hint=score_hint,
+            goal_lean="",
+            both_score_lean="",
+            recommendation=result_lean or "",
+        )
+        if result_lean:
+            payload["result_hit"] = bundle_hits["result_hit"]
+        if score_hint:
+            payload["score_hit"] = bundle_hits["score_hit"]
+        if handicap_lean:
+            line = handicap_line_from_lean(handicap_lean) or fallback_line
+            picks = handicap_picks_from_lean(handicap_lean)
+            if line is not None and len(picks) == 1:
+                settled = settle_handicap_pick(
+                    fixture.home_goals,
+                    fixture.away_goals,
+                    line,
+                    next(iter(picks)),
+                )
+                payload["handicap_hit"] = asian_result_counts_as_hit(settled)
 
     if (
         stored is None

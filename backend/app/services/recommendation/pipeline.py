@@ -800,6 +800,7 @@ async def sync_daily_recommendations(
                 match_day=pick.match_day,
                 market=pick.market,
                 lean=pick.market_lean or pick.lean,
+                result_lean=pick.lean,
                 handicap_lean=pick.handicap_lean,
                 score_hint=pick.score_hint,
                 raw_confidence=pick.raw_confidence,

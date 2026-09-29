@@ -281,6 +281,7 @@ async def _ensure_sqlite_columns(conn) -> None:
         {
             "raw_confidence": "REAL",
             "score": "REAL",
+            "result_lean": "TEXT",
             "handicap_lean": "TEXT",
             "score_hint": "TEXT",
             "adjusted_ev": "REAL",

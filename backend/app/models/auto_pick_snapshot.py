@@ -31,6 +31,7 @@ class AutoPickSnapshot(Base):
     market: Mapped[str] = mapped_column(String(16), nullable=False)
     lean: Mapped[str] = mapped_column(String(64), nullable=False)
     # 与 lean 同源的自洽展示，冻结用于审计（分析器那套另存 pre_match_data）。
+    result_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
     handicap_lean: Mapped[str | None] = mapped_column(String(64), nullable=True)
     score_hint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Probability before the per-key calibration layer.

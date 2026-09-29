@@ -6,7 +6,11 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from app.services.results_accuracy import _day_key, settle_auto_pick_hit
+from app.services.results_accuracy import (
+    _day_key,
+    evaluate_fixture_prediction,
+    settle_auto_pick_hit,
+)
 from app.services.prediction import summarize_accuracy
 
 
@@ -197,6 +201,46 @@ class AutoPickAccuracyTests(unittest.TestCase):
                 away_goals=2,
             )
         )
+
+    def test_results_card_uses_the_frozen_daily_bundle(self) -> None:
+        fixture = SimpleNamespace(
+            status="finished",
+            status_short="FT",
+            home_goals=1,
+            away_goals=2,
+        )
+        pick = SimpleNamespace(
+            market="ah",
+            lean="主+0.5",
+            result_lean="主胜",
+            handicap_lean="主+0.5",
+            score_hint="比分:2-1",
+        )
+        evaluated = evaluate_fixture_prediction(fixture, None, auto_pick=pick)
+        self.assertTrue(evaluated["has_prediction"])
+        self.assertEqual(evaluated["recommendation"], "主胜")
+        self.assertEqual(evaluated["handicap_lean"], "主+0.5")
+        self.assertEqual(evaluated["score_hint"], "比分:2-1")
+        self.assertFalse(evaluated["result_hit"])
+        self.assertFalse(evaluated["handicap_hit"])
+        self.assertFalse(evaluated["score_hit"])
+        self.assertFalse(evaluated["auto_pick_hit"])
+
+    def test_old_daily_snapshot_derives_result_row_from_score(self) -> None:
+        fixture = SimpleNamespace(
+            status="finished",
+            status_short="FT",
+            home_goals=1,
+            away_goals=2,
+        )
+        pick = SimpleNamespace(
+            market="ah",
+            lean="主+0.5",
+            handicap_lean="主+0.5",
+            score_hint="比分:2-1",
+        )
+        evaluated = evaluate_fixture_prediction(fixture, None, auto_pick=pick)
+        self.assertEqual(evaluated["recommendation"], "主胜")
 
 
 if __name__ == "__main__":
