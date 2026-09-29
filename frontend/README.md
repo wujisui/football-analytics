@@ -54,7 +54,6 @@ frontend/
 │   │   ├── LeagueMenu.vue
 │   │   ├── FixtureCard.vue
 │   │   ├── FixtureList.vue
-│   │   ├── ProbabilityChart.vue
 │   │   └── detail/          # 详情页分区组件
 │   ├── views/
 │   │   ├── Home.vue

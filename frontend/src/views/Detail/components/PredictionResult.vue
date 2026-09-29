@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue'
+import { computed } from 'vue'
 
 import DetailSectionTitle from '@/views/Detail/components/DetailSectionTitle.vue'
 import type { FixtureResponse } from '@/api/types'
@@ -7,11 +7,6 @@ import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { toPercent } from '@/utils/format'
 import { adaptHandicapLean, HANDICAP_MISSING_LABEL } from '@/utils/handicapDisplay'
 import { leanWdlTone, wdlTagColor } from '@/theme/wdlColors'
-
-/** echarts is heavy; load the pie only when a prediction renders. */
-const ProbabilityChart = defineAsyncComponent(
-  () => import('@/views/Detail/components/ProbabilityChart.vue'),
-)
 
 const props = defineProps<{
   fixture: FixtureResponse
@@ -63,56 +58,40 @@ const matchupText = computed(
           <h3 class="fa-section-title">赛前结果预测</h3>
           <n-text depth="3" class="matchup">{{ matchupText }}</n-text>
         </div>
-        <div
-          class="algo-body"
-          :class="{ 'no-chart': !original.probabilitiesAvailable }"
-        >
-          <div class="algo-copy">
-            <div class="rec">
-              推荐
-              <n-tag
-                size="small"
-                :bordered="false"
-                :type="recommendationTagColor ? undefined : 'default'"
-                :color="recommendationTagColor"
-              >
-                {{ original.recommendation }}
-              </n-tag>
-              <n-tag
-                size="small"
-                class="rec-tag"
-                :bordered="false"
-                :type="handicapTagColor ? undefined : 'default'"
-                :color="handicapTagColor"
-              >
-                {{ handicapLabel }}
-              </n-tag>
-            </div>
-            <p v-if="handicapMarketNote" class="handicap-note">{{ handicapMarketNote }}</p>
-            <p v-if="original.probabilitiesAvailable" class="prob-source">
-              下面的百分比来自主盘赔率折算（已扣掉博彩公司抽成），代表市场的看法
-            </p>
-            <ul v-if="original.probabilitiesAvailable" class="rows">
-              <li class="tone-win">主胜 {{ toPercent(original.home_win_prob) }}</li>
-              <li class="tone-draw">平局 {{ toPercent(original.draw_prob) }}</li>
-              <li class="tone-loss">客胜 {{ toPercent(original.away_win_prob) }}</li>
-              <li class="soft">{{ original.goal_lean }}</li>
-              <li class="soft">{{ original.both_score_lean }}</li>
-              <li class="soft">{{ original.score_hint }}</li>
-            </ul>
-            <p v-else class="empty-probs">暂无有效胜平负概率（缺近况或盘口），不展示占位百分比</p>
+        <div class="algo-body">
+          <div class="rec">
+            推荐
+            <n-tag
+              size="small"
+              :bordered="false"
+              :type="recommendationTagColor ? undefined : 'default'"
+              :color="recommendationTagColor"
+            >
+              {{ original.recommendation }}
+            </n-tag>
+            <n-tag
+              size="small"
+              class="rec-tag"
+              :bordered="false"
+              :type="handicapTagColor ? undefined : 'default'"
+              :color="handicapTagColor"
+            >
+              {{ handicapLabel }}
+            </n-tag>
           </div>
-          <ProbabilityChart
-            v-if="original.probabilitiesAvailable"
-            class="algo-chart"
-            :probabilities="{
-              available: true,
-              home_win_prob: original.home_win_prob,
-              draw_prob: original.draw_prob,
-              away_win_prob: original.away_win_prob,
-            }"
-            compact
-          />
+          <p v-if="handicapMarketNote" class="handicap-note">{{ handicapMarketNote }}</p>
+          <p v-if="original.probabilitiesAvailable" class="prob-source">
+            下面的百分比来自主盘赔率折算（已扣掉博彩公司抽成），代表市场的看法
+          </p>
+          <ul v-if="original.probabilitiesAvailable" class="rows">
+            <li class="tone-win">主胜 {{ toPercent(original.home_win_prob) }}</li>
+            <li class="tone-draw">平局 {{ toPercent(original.draw_prob) }}</li>
+            <li class="tone-loss">客胜 {{ toPercent(original.away_win_prob) }}</li>
+            <li class="soft">{{ original.goal_lean }}</li>
+            <li class="soft">{{ original.both_score_lean }}</li>
+            <li class="soft">{{ original.score_hint }}</li>
+          </ul>
+          <p v-else class="empty-probs">暂无有效胜平负概率（缺近况或盘口），不展示占位百分比</p>
         </div>
       </section>
 
@@ -222,37 +201,6 @@ const matchupText = computed(
   color: var(--fa-text-faint);
 }
 
-.algo-body {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  min-width: 0;
-}
-
-.algo-copy {
-  flex: 0 1 auto;
-  max-width: 42%;
-  min-width: 0;
-}
-
-.algo-body.no-chart .algo-copy {
-  max-width: none;
-  flex: 1 1 auto;
-}
-
-.algo-chart {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: auto;
-  align-self: stretch;
-  display: flex;
-}
-
-.algo-body :deep(.chart.compact) {
-  height: 100%;
-  min-height: 200px;
-}
-
 .rows {
   margin: 0;
   padding-left: 18px;
@@ -297,7 +245,6 @@ const matchupText = computed(
   font-size: 13px;
   font-weight: 400;
   white-space: normal;
-  max-width: 11em;
 }
 
 .empty-probs {
@@ -340,33 +287,8 @@ const matchupText = computed(
 }
 
 @media (max-width: 767px) {
-  .algo-body {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .algo-copy {
-    flex: none;
-    max-width: none;
-    width: 100%;
-  }
-
-  .algo-chart {
-    flex: none;
-    width: 100%;
-  }
-
   .rows {
     white-space: normal;
-  }
-
-  .rows .soft {
-    max-width: none;
-  }
-
-  .algo-body :deep(.chart.compact) {
-    height: 200px;
-    min-height: 200px;
   }
 }
 </style>
