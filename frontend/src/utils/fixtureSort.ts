@@ -1,4 +1,5 @@
 import { hasKickedOff, parseApiDate } from '@/utils/format'
+import { fixtureHasListedOdds } from '@/utils/oddsDisplay'
 
 const FINISHED_SHORT = new Set(['FT', 'AET', 'PEN'])
 
@@ -23,7 +24,9 @@ export function isInPlayFixture(fixture: {
   return status === 'pending' && hasKickedOff(fixture.fixture_date)
 }
 
-/** Live first, then daily picks, then favorites, then kickoff time. */
+/** Live first, then daily picks, then favorites, then kickoff time.
+ * On 【比赛】, fixtures with no listed odds sink to the end of that order.
+ */
 export function sortFixturesFavoritesFirst<
   T extends {
     fixture_id: number
@@ -35,7 +38,9 @@ export function sortFixturesFavoritesFirst<
   list: readonly T[],
   favoriteIds: ReadonlySet<number>,
   dailyPickIds: ReadonlySet<number> = new Set(),
+  options?: { demoteWithoutOdds?: boolean },
 ): T[] {
+  const demoteWithoutOdds = options?.demoteWithoutOdds === true
   return list.slice().sort((a, b) => {
     const aLive = isInPlayFixture(a)
     const bLive = isInPlayFixture(b)
@@ -46,6 +51,11 @@ export function sortFixturesFavoritesFirst<
     const aFav = favoriteIds.has(a.fixture_id)
     const bFav = favoriteIds.has(b.fixture_id)
     if (aFav !== bFav) return aFav ? -1 : 1
+    if (demoteWithoutOdds) {
+      const aOdds = fixtureHasListedOdds(a)
+      const bOdds = fixtureHasListedOdds(b)
+      if (aOdds !== bOdds) return aOdds ? -1 : 1
+    }
     return (
       parseApiDate(a.fixture_date).getTime() -
       parseApiDate(b.fixture_date).getTime()

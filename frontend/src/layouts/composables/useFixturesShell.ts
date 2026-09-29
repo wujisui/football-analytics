@@ -241,7 +241,9 @@ export function useFixturesShell() {
   function sortFixtures<T extends { fixture_id: number; fixture_date: string }>(
     list: T[],
   ) {
-    return sortFixturesFavoritesFirst(list, favoriteIds.value, dailyPickIds.value)
+    return sortFixturesFavoritesFirst(list, favoriteIds.value, dailyPickIds.value, {
+      demoteWithoutOdds: true,
+    })
   }
 
   const prematchDisplayedFixtures = computed(() =>

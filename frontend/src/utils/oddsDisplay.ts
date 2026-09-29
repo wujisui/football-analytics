@@ -26,6 +26,15 @@ export function hasOddsMarkets(odds: OddsLike): boolean {
   )
 }
 
+/** True when the list card has a usable prematch board (current or opening). */
+export function fixtureHasListedOdds(fixture: object): boolean {
+  const row = fixture as {
+    odds_snippet?: OddsLike
+    odds_opening_snippet?: OddsLike
+  }
+  return hasOddsMarkets(row.odds_snippet) || hasOddsMarkets(row.odds_opening_snippet)
+}
+
 /** Main AH line for compact history-table cells. */
 export function primaryAhLine(odds: OddsLike): {
   line: string
