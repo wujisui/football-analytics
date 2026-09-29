@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 
-import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import DetailSectionTitle from '@/views/Detail/components/DetailSectionTitle.vue'
 import type { FixtureResponse } from '@/api/types'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
@@ -16,7 +15,6 @@ const ProbabilityChart = defineAsyncComponent(
 
 const props = defineProps<{
   fixture: FixtureResponse
-  isFinished?: boolean
   dataSource: string
   analyzedAt: string
   handicapMarketNote?: string
@@ -65,9 +63,7 @@ const matchupText = computed(
           <h3 class="fa-section-title">赛前结果预测</h3>
           <n-text depth="3" class="matchup">{{ matchupText }}</n-text>
         </div>
-        <AlgorithmPredictionCard v-if="isFinished" :fixture="fixture" />
         <div
-          v-else
           class="algo-body"
           :class="{ 'no-chart': !original.probabilitiesAvailable }"
         >
@@ -178,7 +174,6 @@ const matchupText = computed(
 .panel {
   min-height: 0;
 }
-
 .panel-head {
   display: flex;
   align-items: center;

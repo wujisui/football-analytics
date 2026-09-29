@@ -87,9 +87,6 @@ const oddsStages = computed<OddsStage[]>(() => {
 })
 const showAnyBoard = computed(() => oddsStages.value.length > 0)
 
-const isFinished = computed(
-  () => (props.fixture.status ?? '').toLowerCase() === 'finished',
-)
 const canRefreshOdds = computed(
   () =>
     isStaff.value
@@ -360,7 +357,6 @@ const officialComparisonColumns = computed<DataTableColumns<OfficialComparisonRo
 
     <PredictionResult
       :fixture="fixture"
-      :is-finished="isFinished"
       :data-source="fixture.analysis.data_source"
       :analyzed-at="formatLocalMonthDayMinute(fixture.analysis.analyzed_at)"
       :handicap-market-note="fixture.analysis.handicap_market_note || ''"
