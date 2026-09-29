@@ -1,9 +1,9 @@
 """Resolve the current owner from the httpOnly session cookie.
 
 Missing / invalid cookie → ``None`` (guest). Private writes (收藏 / 方案) must
-use ``RequiredUserId`` and return 401. Admin ops accept either a logged-in
-``is_admin`` user or the legacy ``X-Admin-Key`` header. See
-``docs/AUTH_VIP_QUOTA.md`` §4.2 / §4.4.
+use ``RequiredUserId`` and return 401. Staff ops accept a logged-in
+system/ops admin or the legacy ``X-Admin-Key`` header. Subscription, catalog
+delete, backend wipe and user management require the system admin.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.user import User
 from app.services import auth as auth_service
+from app.services.user_roles import is_staff_role, is_system_admin_role
 
 
 def session_token_from_request(request: Request) -> str | None:
@@ -51,30 +52,22 @@ CurrentUserId = Annotated[str | None, Depends(get_current_user_id)]
 RequiredUserId = Annotated[str, Depends(require_current_user_id)]
 
 
-async def require_admin(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    x_admin_key: str | None = Header(default=None),
-) -> None:
-    """Allow admin routes when the session user is admin, or via X-Admin-Key.
+def _admin_key_matches(x_admin_key: str | None) -> bool:
+    configured = (get_settings().ADMIN_API_KEY or "").strip()
+    return bool(configured) and x_admin_key == configured
 
-    Cookie path is preferred for the Mine UI. The env key remains for scripts /
-    curl so ops are not blocked if no admin user exists yet.
-    """
+
+async def _session_user(request: Request, db: AsyncSession) -> User | None:
     user_id = await auth_service.resolve_user_id_from_token(
         db, session_token_from_request(request)
     )
-    if user_id:
-        user = await auth_service.get_user_by_id(db, user_id)
-        if user is not None and bool(user.is_admin):
-            return
+    if not user_id:
+        return None
+    return await auth_service.get_user_by_id(db, user_id)
 
-    settings = get_settings()
-    configured = (settings.ADMIN_API_KEY or "").strip()
-    if configured and x_admin_key == configured:
-        return
 
-    if not configured and not user_id:
+def _reject_admin(user: User | None) -> None:
+    if user is None and not (get_settings().ADMIN_API_KEY or "").strip():
         raise HTTPException(
             status_code=503,
             detail="未配置管理员：请用 manage.py set-admin 提升账号，或设置 ADMIN_API_KEY",
@@ -82,20 +75,50 @@ async def require_admin(
     raise HTTPException(status_code=403, detail="需要管理员权限")
 
 
-async def require_admin_user(
+async def require_admin(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    x_admin_key: str | None = Header(default=None),
+) -> None:
+    """System admin, ops admin, or the legacy X-Admin-Key.
+
+    Cookie path is preferred for the Mine UI. The env key remains for scripts.
+    """
+    user = await _session_user(request, db)
+    if user is not None and is_staff_role(user.role):
+        return
+    if _admin_key_matches(x_admin_key):
+        return
+    _reject_admin(user)
+
+
+async def require_system_admin(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    x_admin_key: str | None = Header(default=None),
+) -> None:
+    """System admin or X-Admin-Key. Ops admin is not enough."""
+    user = await _session_user(request, db)
+    if user is not None and is_system_admin_role(user.role):
+        return
+    if _admin_key_matches(x_admin_key):
+        return
+    if user is not None and is_staff_role(user.role):
+        raise HTTPException(status_code=403, detail="需要系统管理员权限")
+    _reject_admin(user)
+
+
+async def require_system_admin_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Logged-in ``is_admin`` account only (password confirm ops; no Admin Key)."""
-    user_id = await auth_service.resolve_user_id_from_token(
-        db, session_token_from_request(request)
-    )
-    if not user_id:
-        raise HTTPException(status_code=401, detail="请先用管理员账号登录")
-    user = await auth_service.get_user_by_id(db, user_id)
-    if user is None or not bool(user.is_admin):
-        raise HTTPException(status_code=403, detail="需要管理员账号登录")
+    """Logged-in system admin only. Admin Key cannot confirm a password."""
+    user = await _session_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="请先用系统管理员账号登录")
+    if not is_system_admin_role(user.role):
+        raise HTTPException(status_code=403, detail="需要系统管理员账号登录")
     return user
 
 
-AdminUser = Annotated[User, Depends(require_admin_user)]
+SystemAdminUser = Annotated[User, Depends(require_system_admin_user)]

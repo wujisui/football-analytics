@@ -11,6 +11,8 @@ import {
 } from '@vicons/ionicons5'
 import type { Component } from 'vue'
 
+import type { UserRole } from '@/api/auth'
+
 export type MineSection =
   | 'account'
   | 'plans'
@@ -18,6 +20,8 @@ export type MineSection =
   | 'hotLeagues'
   | 'adminOps'
   | 'adminBackend'
+  | 'users'
+  | 'vipLeagues'
   | 'vipMembers'
   | 'vipRecords'
   | 'about'
@@ -62,6 +66,18 @@ export const sectionMeta: Record<
     hint: '官方 Key 与比赛历史清空等高危操作',
     icon: ServerOutline,
   },
+  users: {
+    routeName: 'mine-users',
+    title: '用户管理',
+    hint: '重置密码、调整角色或删除账号',
+    icon: PeopleOutline,
+  },
+  vipLeagues: {
+    routeName: 'mine-vip-leagues',
+    title: '热门联赛',
+    hint: '保存自己打开比赛和赛程时默认勾选的联赛',
+    icon: TrophyOutline,
+  },
   vipMembers: {
     routeName: 'mine-vip-members',
     title: '会员管理',
@@ -82,17 +98,19 @@ export const sectionMeta: Record<
   },
 }
 
-/** Admin-only sections: redirect non-admins away from these routes. */
-export const adminOnlySections = new Set<MineSection>([
-  'hotLeagues',
-  'adminOps',
+const STAFF_SECTIONS = new Set<MineSection>(['hotLeagues', 'adminOps', 'users'])
+const SYSTEM_SECTIONS = new Set<MineSection>([
   'adminBackend',
   'vipMembers',
   'vipRecords',
 ])
 
-export function isAdminOnlySection(section: string): boolean {
-  return adminOnlySections.has(section as MineSection)
+export function sectionAllowed(section: string, role: UserRole | null): boolean {
+  const key = section as MineSection
+  if (key === 'vipLeagues') return role === 'vip'
+  if (STAFF_SECTIONS.has(key)) return role === 'system_admin' || role === 'ops_admin'
+  if (SYSTEM_SECTIONS.has(key)) return role === 'system_admin'
+  return true
 }
 
 export function sectionFromRouteName(name: unknown): MineSection {
@@ -118,14 +136,14 @@ export function rememberLastMineRoute(name: unknown): void {
   }
 }
 
-/** PC top-nav restore target; admin-only pages fall back for non-admins. */
-export function restoredMineRouteName(isAdmin: boolean): string {
+/** PC top-nav restore target; restricted pages fall back when the role cannot open them. */
+export function restoredMineRouteName(role: UserRole | null): string {
   try {
     const raw = sessionStorage.getItem(LAST_MINE_ROUTE_KEY)
     if (!raw) return sectionMeta.account.routeName
     const section = sectionFromRouteName(raw)
     if (sectionMeta[section].routeName !== raw) return sectionMeta.account.routeName
-    if (isAdminOnlySection(section) && !isAdmin) return sectionMeta.account.routeName
+    if (!sectionAllowed(section, role)) return sectionMeta.account.routeName
     return raw
   } catch {
     return sectionMeta.account.routeName

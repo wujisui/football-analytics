@@ -545,7 +545,30 @@ class AuthCredentialsRequest(BaseModel):
 class AuthUserResponse(BaseModel):
     id: str
     username: str
-    is_admin: bool = False
+    role: str = "user"
+    # VIP personal default leagues. Null means the account has not saved one.
+    league_default_ids: list[int] | None = None
+
+
+class LeagueDefaultsUpdate(BaseModel):
+    league_ids: list[int] = Field(default_factory=list)
+
+
+class AdminUserRow(BaseModel):
+    id: str
+    username: str
+    role: str
+    created_at: datetime
+    last_login_at: datetime | None = None
+
+
+class AdminUserListResponse(BaseModel):
+    users: list[AdminUserRow] = Field(default_factory=list)
+
+
+class UserAccountUpdate(BaseModel):
+    role: str | None = Field(default=None, description="ops_admin | vip | user")
+    password: str | None = Field(default=None, max_length=64)
 
 
 class AuthClaimResponse(BaseModel):

@@ -2,6 +2,7 @@
 import { useMessage, useModal } from 'naive-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 
+import { useAuthSession } from '@/composables/useAuthSession'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { updateResultsConfiguredLeagueIds } from '@/composables/useResultsLeagues'
 import {
@@ -28,6 +29,7 @@ defineOptions({ name: 'MineHotLeagues' })
 
 const message = useMessage()
 const modal = useModal()
+const { isSystemAdmin } = useAuthSession()
 const isPhone = useIsPhone()
 const cachedSetting = peekHotLeaguesSetting()
 const loading = ref(cachedSetting == null)
@@ -750,7 +752,7 @@ onMounted(() => {
                         </span>
                       </h3>
                       <n-button
-                        v-if="!isPhone && !group.leagues.length"
+                        v-if="isSystemAdmin && !isPhone && !group.leagues.length"
                         size="tiny"
                         tertiary
                         type="error"
@@ -784,7 +786,7 @@ onMounted(() => {
                         {{ item.league_name }}
                       </n-ellipsis>
                       <n-button
-                        v-if="!isPhone && !item.protected"
+                        v-if="isSystemAdmin && !isPhone && !item.protected"
                         size="tiny"
                         tertiary
                         type="error"

@@ -9,6 +9,7 @@ import {
 } from '@/api/leagues'
 import type { FixtureResponse, LeagueSummaryResponse } from '@/api/types'
 import { resolveTrackedSelection } from '@/utils/leagueFilterSelection'
+import { personalLeagueDefaults } from '@/utils/personalLeagueDefaults'
 import { leagueLabel } from '@/utils/leagueNames'
 import { mergeDetailIntoListFixture } from '@/utils/oddsDisplay'
 
@@ -137,7 +138,11 @@ export async function loadResultsFilterOptions(options: {
   resultsFilterOptions.value = list
   resultsFilterOptionsDay.value = options.date
   setResultsTrackedIds(
-    resolveTrackedSelection(list, readStoredResultsTracked(options.date) ?? []),
+    resolveTrackedSelection(
+      list,
+      readStoredResultsTracked(options.date) ?? [],
+      personalLeagueDefaults(),
+    ),
   )
   return list
 }

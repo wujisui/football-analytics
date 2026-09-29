@@ -23,7 +23,7 @@ const props = defineProps<{
   officialSyncBusy?: boolean
 }>()
 const emit = defineEmits<{ 'refresh-odds': [] }>()
-const { isAdmin } = useAuthSession()
+const { isStaff } = useAuthSession()
 
 interface OddsStage {
   key: 'initial' | 'mid' | 'late' | 'current'
@@ -92,7 +92,7 @@ const isFinished = computed(
 )
 const canRefreshOdds = computed(
   () =>
-    isAdmin.value
+    isStaff.value
     && props.fixture.odds_refresh_allowed === true,
 )
 

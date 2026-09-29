@@ -17,6 +17,7 @@ import {
 } from '@/api/admin'
 import HelpTip from '@/components/HelpTip.vue'
 import TextSwitch from '@/components/TextSwitch.vue'
+import { useAuthSession } from '@/composables/useAuthSession'
 import { useHomeFixtures } from '@/composables/useHomeFixtures'
 import { useTrackedLeagues } from '@/composables/useTrackedLeagues'
 import { formatLocalDateMinute } from '@/utils/format'
@@ -26,6 +27,7 @@ import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 
 defineOptions({ name: 'MineAdminOps' })
 
+const { isSystemAdmin } = useAuthSession()
 const message = useMessage()
 const modal = useModal()
 const {
@@ -379,7 +381,7 @@ watch(syncing, (value, previous) => {
           </template>
         </n-list-item>
 
-        <n-list-item>
+        <n-list-item v-if="isSystemAdmin">
           <template #prefix>
             <n-icon :component="FlashOutline" :size="20" />
           </template>
@@ -404,7 +406,7 @@ watch(syncing, (value, previous) => {
           </template>
         </n-list-item>
 
-        <n-list-item>
+        <n-list-item v-if="isSystemAdmin">
           <template #prefix>
             <n-icon :component="SettingsOutline" :size="20" />
           </template>

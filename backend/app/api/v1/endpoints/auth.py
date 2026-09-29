@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps_auth import CurrentUserId, session_token_from_request
+from app.api.deps_auth import CurrentUserId, RequiredUserId, session_token_from_request
 from app.api.v1.http_cache import set_no_store_headers
 from app.core.config import get_settings
 from app.core.database import get_db
@@ -14,6 +14,7 @@ from app.schemas.response import (
     AuthCredentialsRequest,
     AuthSessionResponse,
     AuthUserResponse,
+    LeagueDefaultsUpdate,
 )
 from app.services import auth as auth_service
 
@@ -48,7 +49,8 @@ def _user_response(user) -> AuthUserResponse:
     return AuthUserResponse(
         id=user.id,
         username=user.username,
-        is_admin=bool(user.is_admin),
+        role=user.role,
+        league_default_ids=auth_service.league_default_id_list(user),
     )
 
 
@@ -133,4 +135,26 @@ async def me(
     user = await auth_service.get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="未登录")
+    return _user_response(user)
+
+
+@router.put("/me/league-defaults", response_model=AuthUserResponse)
+async def save_league_defaults(
+    body: LeagueDefaultsUpdate,
+    response: Response,
+    user_id: RequiredUserId,
+    db: AsyncSession = Depends(get_db),
+) -> AuthUserResponse:
+    """VIP personal default league filter. Does not change the site catalog."""
+    set_no_store_headers(response)
+    user = await auth_service.get_user_by_id(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    try:
+        await auth_service.save_vip_league_defaults(db, user, body.league_ids)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await db.commit()
     return _user_response(user)

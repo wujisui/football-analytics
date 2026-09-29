@@ -2,10 +2,13 @@ import { computed, ref } from 'vue'
 
 import {
   fetchAuthMe,
+  isUserRole,
   loginAccount,
   logoutAccount,
   registerAccount,
   type AuthClaim,
+  type AuthUser,
+  type UserRole,
 } from '@/api/auth'
 import { clearAdminSettingsCache } from '@/api/admin'
 import { setOnAuthExpired, type ApiError } from '@/api/client'
@@ -18,6 +21,7 @@ import {
   useFavoriteFixtures,
 } from '@/composables/useFavoriteFixtures'
 import { clearLastMineRoute } from '@/views/Mine/sectionMeta'
+import { setPersonalLeagueDefaults } from '@/utils/personalLeagueDefaults'
 import { clearPrivateCalculator } from '@/views/Predictions/composables/useBetCalculator'
 
 /**
@@ -29,7 +33,8 @@ const STORAGE_KEY = 'fa-auth-user'
 export type AuthUserCache = {
   userId: string
   username: string
-  isAdmin: boolean
+  role: UserRole
+  leagueDefaultIds: number[] | null
 }
 
 function readCachedUser(): AuthUserCache | null {
@@ -38,10 +43,20 @@ function readCachedUser(): AuthUserCache | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<AuthUserCache>
     if (!parsed?.username || typeof parsed.username !== 'string') return null
+    const legacy = parsed as Partial<AuthUserCache> & { isAdmin?: boolean }
+    const role: UserRole = isUserRole(legacy.role)
+      ? legacy.role
+      : legacy.isAdmin
+        ? 'system_admin'
+        : 'user'
+    const ids = Array.isArray(legacy.leagueDefaultIds)
+      ? legacy.leagueDefaultIds.map(Number).filter((id) => Number.isFinite(id))
+      : null
     return {
       userId: typeof parsed.userId === 'string' ? parsed.userId : '',
       username: parsed.username.trim(),
-      isAdmin: !!parsed.isAdmin,
+      role,
+      leagueDefaultIds: ids,
     }
   } catch {
     return null
@@ -58,12 +73,17 @@ function writeCachedUser(user: AuthUserCache | null) {
 }
 
 const user = ref<AuthUserCache | null>(readCachedUser())
+setPersonalLeagueDefaults(
+  user.value?.role ?? null,
+  user.value?.leagueDefaultIds ?? null,
+)
 const loginModalShow = ref(false)
 let logoutPromise: Promise<void> | null = null
 
 function clearLocalUser() {
   user.value = null
   writeCachedUser(null)
+  setPersonalLeagueDefaults(null, null)
 }
 
 /**
@@ -102,7 +122,13 @@ setOnAuthExpired(() => {
 export function useAuthSession() {
   const isLoggedIn = computed(() => !!user.value)
   const username = computed(() => user.value?.username ?? '')
-  const isAdmin = computed(() => !!user.value?.isAdmin)
+  const role = computed(() => user.value?.role ?? null)
+  const isSystemAdmin = computed(() => role.value === 'system_admin')
+  const isOpsAdmin = computed(() => role.value === 'ops_admin')
+  const isStaff = computed(
+    () => role.value === 'system_admin' || role.value === 'ops_admin',
+  )
+  const isVip = computed(() => role.value === 'vip')
 
   function openLogin() {
     loginModalShow.value = true
@@ -119,14 +145,21 @@ export function useAuthSession() {
     return false
   }
 
-  function applyUser(userId: string, name: string, isAdminFlag: boolean) {
+  function applyUser(
+    userId: string,
+    name: string,
+    nextRole: UserRole,
+    leagueDefaultIds: number[] | null,
+  ) {
     const next: AuthUserCache = {
       userId,
       username: name,
-      isAdmin: !!isAdminFlag,
+      role: nextRole,
+      leagueDefaultIds,
     }
     user.value = next
     writeCachedUser(next)
+    setPersonalLeagueDefaults(nextRole, leagueDefaultIds)
   }
 
   async function submit(
@@ -143,7 +176,12 @@ export function useAuthSession() {
         kind === 'register'
           ? await registerAccount(account, password)
           : await loginAccount(account, password)
-      applyUser(data.user.id, data.user.username, data.user.is_admin)
+      applyUser(
+        data.user.id,
+        data.user.username,
+        data.user.role,
+        data.user.league_default_ids,
+      )
       loginModalShow.value = false
       await refreshPrivateCaches('user')
       return { ok: true, claimed: data.claimed }
@@ -182,12 +220,16 @@ export function useAuthSession() {
     }
   }
 
+  function syncAuthUser(me: AuthUser) {
+    applyUser(me.id, me.username, me.role, me.league_default_ids)
+  }
+
   /** Confirm the cookie is still valid once after boot (401 → guest). */
   async function verifySession() {
     if (!user.value) return
     try {
       const me = await fetchAuthMe()
-      applyUser(me.id, me.username, me.is_admin)
+      applyUser(me.id, me.username, me.role, me.league_default_ids)
     } catch (err) {
       // Only an explicit 401 means the session is gone; a network error or a
       // stopped backend must not silently log the user out.
@@ -200,7 +242,11 @@ export function useAuthSession() {
   return {
     user,
     isLoggedIn,
-    isAdmin,
+    role,
+    isSystemAdmin,
+    isOpsAdmin,
+    isStaff,
+    isVip,
     username,
     loginModalShow,
     openLogin,
@@ -209,6 +255,7 @@ export function useAuthSession() {
     login,
     register,
     logout,
+    syncAuthUser,
     verifySession,
   }
 }

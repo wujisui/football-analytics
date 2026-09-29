@@ -13,8 +13,9 @@ import { useAuthSession } from '@/composables/useAuthSession'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import MineSectionBody from '@/views/Mine/components/MineSectionBody.vue'
 import { confirmLogout } from '@/views/Mine/confirmLogout'
+import { USER_ROLE_LABEL } from '@/api/auth'
 import {
-  isAdminOnlySection,
+  sectionAllowed,
   sectionMeta,
   type MineSection,
 } from '@/views/Mine/sectionMeta'
@@ -24,14 +25,14 @@ defineOptions({ name: 'MineAccount' })
 const router = useRouter()
 const modal = useModal()
 const isPhone = useIsPhone()
-const { isLoggedIn, isAdmin, username, openLogin, logout } = useAuthSession()
+const { isLoggedIn, role, isSystemAdmin, isStaff, isVip, username, openLogin, logout } = useAuthSession()
 
 const profileTitle = computed(() =>
   isLoggedIn.value ? username.value : '未登录',
 )
 const roleLabel = computed(() => {
-  if (!isLoggedIn.value) return '游客'
-  return isAdmin.value ? '管理员' : '普通用户'
+  if (!isLoggedIn.value || !role.value) return '游客'
+  return USER_ROLE_LABEL[role.value]
 })
 const inactiveVipTagColor = {
   color: 'rgba(128, 128, 128, 0.14)',
@@ -41,14 +42,10 @@ const inactiveVipTagColor = {
 
 const mobileSections = computed(() => {
   const keys: MineSection[] = ['plans', 'theme']
-  if (isAdmin.value) {
-    keys.push(
-      'adminOps',
-      'adminBackend',
-      'hotLeagues',
-      'vipMembers',
-      'vipRecords',
-    )
+  if (isVip.value) keys.push('vipLeagues')
+  if (isStaff.value) keys.push('hotLeagues', 'adminOps', 'users')
+  if (isSystemAdmin.value) {
+    keys.push('adminBackend', 'vipMembers', 'vipRecords')
   }
   keys.push('about')
   return keys.map((key) => ({
@@ -58,7 +55,7 @@ const mobileSections = computed(() => {
 })
 
 function openSection(section: MineSection) {
-  if (isAdminOnlySection(section) && !isAdmin.value) return
+  if (!sectionAllowed(section, role.value)) return
   void router.push({ name: sectionMeta[section].routeName })
 }
 
@@ -82,7 +79,7 @@ function onLogout() {
         </template>
         <template #description>
           <n-space :size="6">
-            <n-tag size="small" :type="isAdmin ? 'error' : 'info'">
+            <n-tag size="small" :type="isSystemAdmin ? 'error' : 'info'">
               {{ roleLabel }}
             </n-tag>
             <n-tag size="small" :color="inactiveVipTagColor">VIP 未开通</n-tag>
@@ -140,7 +137,7 @@ function onLogout() {
           </template>
           <template #description>
             <n-space :size="6">
-              <n-tag size="small" :type="isAdmin ? 'error' : 'info'">
+              <n-tag size="small" :type="isSystemAdmin ? 'error' : 'info'">
                 {{ roleLabel }}
               </n-tag>
               <n-tag size="small" :color="inactiveVipTagColor">VIP 未开通</n-tag>

@@ -12,6 +12,8 @@ const MineAccount = () => import('@/views/Mine/account/index.vue')
 const MinePlans = () => import('@/views/Mine/plans/index.vue')
 const MineTheme = () => import('@/views/Mine/theme/index.vue')
 const MineHotLeagues = () => import('@/views/Mine/hot-leagues/index.vue')
+const MineVipLeagues = () => import('@/views/Mine/vip-leagues/index.vue')
+const MineUsers = () => import('@/views/Mine/users/index.vue')
 const MineAdminOps = () => import('@/views/Mine/admin/ops/index.vue')
 const MineAdminBackend = () => import('@/views/Mine/admin/backend/index.vue')
 const MineVipMembers = () => import('@/views/Mine/vip/members/index.vue')
@@ -85,6 +87,16 @@ const router = createRouter({
           path: 'hot-leagues',
           name: 'mine-hot-leagues',
           component: MineHotLeagues,
+        },
+        {
+          path: 'vip-leagues',
+          name: 'mine-vip-leagues',
+          component: MineVipLeagues,
+        },
+        {
+          path: 'users',
+          name: 'mine-users',
+          component: MineUsers,
         },
         {
           path: 'session',

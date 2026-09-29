@@ -312,9 +312,13 @@ async def _ensure_sqlite_columns(conn) -> None:
         conn,
         "users",
         {
-            "is_admin": "INTEGER DEFAULT 0",
+            "role": "TEXT DEFAULT 'user'",
+            "league_default_ids": "TEXT",
+            "last_login_at": "DATETIME",
         },
     )
+    await _migrate_user_roles(conn)
+    await _backfill_last_login(conn)
     await conn.execute(
         text("UPDATE bet_plans SET user_id = '' WHERE user_id IS NULL")
     )
@@ -333,6 +337,73 @@ async def _ensure_sqlite_columns(conn) -> None:
     await _drop_table_columns(conn, "pre_match_data", ("reference_adjusted_ev",))
     await _drop_table_columns(conn, "match_features", ("audit_snapshot_json",))
     await _migrate_favorite_fixtures_owner_pk(conn)
+
+
+async def _backfill_last_login(conn) -> None:
+    """Fill a missing last login from the newest remaining session."""
+    from sqlalchemy import text
+
+    try:
+        await conn.execute(
+            text(
+                """
+                UPDATE users
+                SET last_login_at = (
+                    SELECT MAX(created_at)
+                    FROM user_sessions
+                    WHERE user_sessions.user_id = users.id
+                )
+                WHERE last_login_at IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM user_sessions
+                    WHERE user_sessions.user_id = users.id
+                  )
+                """
+            )
+        )
+    except Exception:
+        return
+
+
+async def _migrate_user_roles(conn) -> None:
+    """Copy the single legacy is_admin into role=system_admin, then drop the flag.
+
+    More than one is_admin is left untouched so startup does not pick a winner.
+    """
+    from sqlalchemy import text
+
+    try:
+        result = await conn.execute(text("PRAGMA table_info(users)"))
+        existing = {row[1] for row in result.fetchall()}
+    except Exception:
+        return
+    if "role" not in existing or "is_admin" not in existing:
+        return
+    system_count = int(
+        (
+            await conn.execute(
+                text("SELECT COUNT(*) FROM users WHERE role = 'system_admin'")
+            )
+        ).scalar()
+        or 0
+    )
+    if system_count:
+        await _drop_table_columns(conn, "users", ("is_admin",))
+        return
+    admin_count = int(
+        (
+            await conn.execute(
+                text("SELECT COUNT(*) FROM users WHERE is_admin = 1")
+            )
+        ).scalar()
+        or 0
+    )
+    if admin_count == 1:
+        await conn.execute(
+            text("UPDATE users SET role = 'system_admin' WHERE is_admin = 1")
+        )
+    if admin_count <= 1:
+        await _drop_table_columns(conn, "users", ("is_admin",))
 
 
 async def init_db() -> None:

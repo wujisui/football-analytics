@@ -6,6 +6,7 @@ import {
   type LeagueFilterOptionsResponse,
 } from '@/api/leagues'
 import { resolveTrackedSelection } from '@/utils/leagueFilterSelection'
+import { personalLeagueDefaults } from '@/utils/personalLeagueDefaults'
 
 // v4: prematch options cover backend-local today + tomorrow, not one UTC day.
 // v5: v4 也存了加载时推导的勾选，赛程未同步全时会落下残缺集合并压过默认热门。
@@ -88,7 +89,11 @@ function syncTrackedWithFilterOptions() {
     return
   }
   setTrackedIds(
-    resolveTrackedSelection(options, readStoredIds(activeFilterDate) ?? []),
+    resolveTrackedSelection(
+      options,
+      readStoredIds(activeFilterDate) ?? [],
+      personalLeagueDefaults(),
+    ),
   )
 }
 

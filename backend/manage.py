@@ -617,9 +617,10 @@ async def run_set_admin(account: str, *, revoke: bool = False) -> None:
     await init_db()
     async with AsyncSessionLocal() as db:
         try:
-            user = await auth_service.set_user_admin(
-                db, account, is_admin=not revoke
-            )
+            if revoke:
+                user = await auth_service.revoke_system_admin(db, account)
+            else:
+                user = await auth_service.appoint_system_admin(db, account)
             await db.commit()
         except LookupError as exc:
             print(f"Failed: {exc}")
@@ -765,7 +766,7 @@ def main() -> None:
 
     set_admin_parser = subparsers.add_parser(
         "set-admin",
-        help="Grant is_admin on an existing account",
+        help="Appoint the only system admin; the previous one becomes a normal user",
     )
     set_admin_parser.add_argument(
         "account",
@@ -774,7 +775,7 @@ def main() -> None:
 
     unset_admin_parser = subparsers.add_parser(
         "unset-admin",
-        help="Revoke is_admin on an existing account",
+        help="Revoke system admin; the account becomes a normal user",
     )
     unset_admin_parser.add_argument(
         "account",

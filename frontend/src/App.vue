@@ -39,7 +39,7 @@ const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
 const { naiveTheme, themeOverrides } = useTheme()
-const { verifySession, isAdmin } = useAuthSession()
+const { verifySession, role } = useAuthSession()
 
 onMounted(() => {
   void verifySession()
@@ -104,7 +104,7 @@ function goMine() {
     void router.push({ name: account })
     return
   }
-  const target = restoredMineRouteName(isAdmin.value)
+  const target = restoredMineRouteName(role.value)
   if (route.name === target) return
   void router.push({ name: target })
 }

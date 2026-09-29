@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps_auth import AdminUser, require_admin
+from app.api.deps_auth import SystemAdminUser, require_admin, require_system_admin
 from app.core.database import get_db
 from app.models.league import League, LeagueCategory, LeagueCatalogTombstone
 from app.services import auth as auth_service
@@ -364,7 +364,7 @@ async def get_subscription_setting(
 @router.patch("/settings/subscription", response_model=SubscriptionSetting)
 async def patch_subscription_setting(
     body: SubscriptionUpdate,
-    _: None = Depends(require_admin),
+    _: None = Depends(require_system_admin),
     db: AsyncSession = Depends(get_db),
 ) -> SubscriptionSetting:
     subscribed = await set_subscription_enabled(db, body.subscribed)
@@ -375,7 +375,7 @@ async def patch_subscription_setting(
 @router.patch("/settings/subscription-dense-odds", response_model=SubscriptionSetting)
 async def patch_subscription_dense_odds_setting(
     body: SubscriptionDenseOddsUpdate,
-    _: None = Depends(require_admin),
+    _: None = Depends(require_system_admin),
     db: AsyncSession = Depends(get_db),
 ) -> SubscriptionSetting:
     subscribed, source = await get_subscription_enabled(db)
@@ -471,7 +471,7 @@ async def create_league_category(
 )
 async def delete_league_category(
     category_id: int,
-    _: None = Depends(require_admin),
+    _: None = Depends(require_system_admin),
     db: AsyncSession = Depends(get_db),
 ) -> HotLeaguesSetting:
     category = await _require_category(db, category_id)
@@ -627,7 +627,7 @@ async def update_catalog_league(
 )
 async def preview_catalog_league_delete(
     league_id: int,
-    _: None = Depends(require_admin),
+    _: None = Depends(require_system_admin),
     db: AsyncSession = Depends(get_db),
 ) -> CatalogLeagueDeleteReport:
     try:
@@ -646,7 +646,7 @@ async def preview_catalog_league_delete(
 async def remove_catalog_league(
     league_id: int,
     body: CatalogLeagueDeleteRequest,
-    admin: AdminUser,
+    admin: SystemAdminUser,
     db: AsyncSession = Depends(get_db),
 ) -> CatalogLeagueDeleteReport:
     if not auth_service.verify_password(body.password, admin.password_hash):
@@ -700,7 +700,7 @@ def _api_sports_key_payload(
 
 @router.get("/settings/api-sports-key", response_model=ApiSportsKeySetting)
 async def get_api_sports_key_setting(
-    _: None = Depends(require_admin),
+    _: None = Depends(require_system_admin),
     db: AsyncSession = Depends(get_db),
 ) -> ApiSportsKeySetting:
     blob = await get_api_sports_keys_setting(db)
@@ -710,7 +710,7 @@ async def get_api_sports_key_setting(
 @router.put("/settings/api-sports-key", response_model=ApiSportsKeySetting)
 async def put_api_sports_key_setting(
     body: ApiSportsKeyUpdate,
-    admin: AdminUser,
+    admin: SystemAdminUser,
     db: AsyncSession = Depends(get_db),
 ) -> ApiSportsKeySetting:
     """Save comma-separated official keys to ``app_settings``.
@@ -730,7 +730,7 @@ async def put_api_sports_key_setting(
     response_model=ResetMatchHistoryResponse,
 )
 async def preview_reset_match_history(
-    _: None = Depends(require_admin),
+    _: None = Depends(require_system_admin),
     db: AsyncSession = Depends(get_db),
 ) -> ResetMatchHistoryResponse:
     """Preview how many match/ML rows would be wiped (no password, no delete)."""
@@ -744,12 +744,12 @@ async def preview_reset_match_history(
 )
 async def post_reset_match_history(
     body: ResetMatchHistoryRequest,
-    admin: AdminUser,
+    admin: SystemAdminUser,
     db: AsyncSession = Depends(get_db),
 ) -> ResetMatchHistoryResponse:
     """Wipe match history after verifying the logged-in admin password.
 
-    Requires a logged-in ``is_admin`` session (Admin Key alone is not enough).
+    Requires a logged-in system admin (Admin Key alone is not enough).
     ``apply=false`` counts only; ``apply=true`` deletes.
     """
     if not auth_service.verify_password(body.password, admin.password_hash):

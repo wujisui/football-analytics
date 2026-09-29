@@ -9,7 +9,7 @@ import { useBetPlans } from '@/composables/useBetPlans'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import ShellBreadcrumb from '@/layouts/components/ShellBreadcrumb.vue'
 import {
-  isAdminOnlySection,
+  sectionAllowed,
   sectionFromRouteName,
   sectionMeta,
   type MineSection,
@@ -20,7 +20,7 @@ defineOptions({ name: 'Mine' })
 const route = useRoute()
 const router = useRouter()
 const isPhone = useIsPhone()
-const { isAdmin } = useAuthSession()
+const { role, isSystemAdmin, isStaff, isVip } = useAuthSession()
 const { filterDate, plansForDay } = useBetPlans()
 
 function renderIcon(icon: Component) {
@@ -43,7 +43,16 @@ const menuOptions = computed<MenuOption[]>(() => [
     label: '偏好设置',
     icon: renderIcon(sectionMeta.theme.icon),
   },
-  ...(isAdmin.value
+  ...(isVip.value
+    ? [
+        {
+          key: 'vipLeagues',
+          label: '热门联赛',
+          icon: renderIcon(sectionMeta.vipLeagues.icon),
+        },
+      ]
+    : []),
+  ...(isStaff.value
     ? [
         {
           type: 'group',
@@ -61,12 +70,25 @@ const menuOptions = computed<MenuOption[]>(() => [
               icon: renderIcon(sectionMeta.adminOps.icon),
             },
             {
-              key: 'adminBackend',
-              label: '后台管理',
-              icon: renderIcon(sectionMeta.adminBackend.icon),
+              key: 'users',
+              label: '用户管理',
+              icon: renderIcon(sectionMeta.users.icon),
             },
+            ...(isSystemAdmin.value
+              ? [
+                  {
+                    key: 'adminBackend',
+                    label: '后台管理',
+                    icon: renderIcon(sectionMeta.adminBackend.icon),
+                  },
+                ]
+              : []),
           ],
         } satisfies MenuOption,
+      ]
+    : []),
+  ...(isSystemAdmin.value
+    ? [
         {
           type: 'group',
           key: 'group-vip',
@@ -118,16 +140,16 @@ const showSectionHeader = computed(
 
 function openSection(section: string) {
   if (!(section in sectionMeta)) return
-  if (isAdminOnlySection(section) && !isAdmin.value) return
+  if (!sectionAllowed(section, role.value)) return
   const mineSection = section as MineSection
   const target = sectionMeta[mineSection].routeName
   if (route.name !== target) void router.push({ name: target })
 }
 
 watch(
-  () => [activeSection.value, isAdmin.value] as const,
-  ([section, admin]) => {
-    if (isAdminOnlySection(section) && !admin) {
+  () => [activeSection.value, role.value] as const,
+  ([section]) => {
+    if (!sectionAllowed(section, role.value)) {
       void router.replace({ name: 'mine-account' })
     }
   },

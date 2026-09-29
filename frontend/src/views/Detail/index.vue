@@ -21,7 +21,7 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const isPhone = useIsPhone()
-const { isAdmin } = useAuthSession()
+const { isStaff } = useAuthSession()
 const contentStyle = computed(
   () =>
     `height: 100%; box-sizing: border-box; padding: ${
@@ -92,7 +92,7 @@ function onTabChange(tab: DetailTab) {
 
 onMounted(() => {
   void ensureLoaded()
-  if (!isAdmin.value) {
+  if (!isStaff.value) {
     syncStatusChecking.value = false
     return
   }

@@ -32,23 +32,64 @@ async def _session() -> tuple[AsyncSession, object]:
     return factory(), engine
 
 
-def test_set_user_admin_flag() -> None:
+def test_system_admin_is_singular_and_script_only() -> None:
     async def _run() -> None:
+        from app.services.user_roles import ROLE_SYSTEM_ADMIN, ROLE_USER, ROLE_VIP
+
         db, engine = await _session()
         try:
-            user = await auth_service.register_user(db, "ops@example.com", "secret12")
+            first = await auth_service.register_user(db, "root@example.com", "secret12")
+            second = await auth_service.register_user(db, "ops@example.com", "secret12")
             await db.commit()
-            assert not bool(user.is_admin)
+            assert first.role == ROLE_USER
 
-            promoted = await auth_service.set_user_admin(db, "ops@example.com")
+            appointed = await auth_service.appoint_system_admin(db, "root@example.com")
             await db.commit()
-            assert bool(promoted.is_admin)
+            assert appointed.role == ROLE_SYSTEM_ADMIN
 
-            demoted = await auth_service.set_user_admin(
-                db, "OPS@example.com", is_admin=False
+            replaced = await auth_service.appoint_system_admin(db, "OPS@example.com")
+            await db.commit()
+            await db.refresh(first)
+            assert replaced.role == ROLE_SYSTEM_ADMIN
+            assert first.role == ROLE_USER
+
+            try:
+                await auth_service.set_user_role(db, replaced.id, ROLE_SYSTEM_ADMIN)
+                raise AssertionError("expected ValueError")
+            except ValueError:
+                pass
+            try:
+                await auth_service.set_user_role(db, replaced.id, ROLE_VIP)
+                raise AssertionError("expected PermissionError")
+            except PermissionError:
+                pass
+            try:
+                await auth_service.delete_user_account(db, replaced.id)
+                raise AssertionError("expected PermissionError")
+            except PermissionError:
+                pass
+
+            await auth_service.set_user_role(db, first.id, ROLE_VIP)
+            await auth_service.reset_user_password(db, first.id, "new-secret")
+            await db.commit()
+            assert first.role == ROLE_VIP
+            assert auth_service.verify_password("new-secret", first.password_hash)
+
+            edited = await auth_service.update_user_account(
+                db, first.id, role=ROLE_USER, password="newer-secret"
             )
             await db.commit()
-            assert not bool(demoted.is_admin)
+            assert edited.role == ROLE_USER
+            assert auth_service.verify_password("newer-secret", edited.password_hash)
+            try:
+                await auth_service.update_user_account(db, first.id)
+                raise AssertionError("expected ValueError")
+            except ValueError:
+                pass
+
+            revoked = await auth_service.revoke_system_admin(db, "ops@example.com")
+            await db.commit()
+            assert revoked.role == ROLE_USER
         finally:
             await db.close()
             await engine.dispose()
@@ -141,6 +182,7 @@ def test_session_resolve_and_expire() -> None:
             user = await auth_service.register_user(db, "bob", "secret12")
             session = await auth_service.create_session(db, user.id)
             await db.commit()
+            assert user.last_login_at is not None
 
             assert (
                 await auth_service.resolve_user_id_from_token(db, session.token)

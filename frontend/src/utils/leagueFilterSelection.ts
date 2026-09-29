@@ -1,9 +1,15 @@
 import type { LeagueFilterOption } from '@/api/leagues'
 
-/** Resolve checked league ids from options + stored/tracked preference. */
+/**
+ * Resolve checked league ids from options + stored/tracked preference.
+ * ``personalDefaults`` is a VIP account default: null keeps the site hot
+ * default; an array (including empty) replaces it when this day has no
+ * confirmed selection.
+ */
 export function resolveTrackedSelection(
   options: LeagueFilterOption[],
   trackedIds: number[],
+  personalDefaults: number[] | null = null,
 ): number[] {
   if (!options.length) return []
 
@@ -12,6 +18,9 @@ export function resolveTrackedSelection(
   const preferred = trackedIds.filter((id) => allow.has(id))
 
   if (preferred.length) return preferred
+  if (personalDefaults != null) {
+    return personalDefaults.filter((id) => allow.has(id))
+  }
   if (defaults.length) return defaults
   // 该日一个热门联赛都没有（赛程刚入库、冷门日）：回落到当天全部联赛。
   // 否则勾选为空，列表在 `!leagueIds.length` 处直接发布空数组，

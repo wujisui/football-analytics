@@ -1,3 +1,4 @@
+import type { UserRole } from './auth'
 import { apiClient } from './client'
 
 export type LastSyncRun = {
@@ -195,7 +196,7 @@ export function clearAdminSettingsCache(): void {
   }
 }
 
-/** Admin routes authenticate via the logged-in is_admin session cookie. */
+/** Admin routes authenticate via the logged-in staff or system-admin session cookie. */
 export function fetchSubscriptionSetting(force = false): Promise<SubscriptionSetting> {
   return readAdminSetting<SubscriptionSetting>(
     SUBSCRIPTION_CACHE_KEY,
@@ -406,4 +407,32 @@ export async function resetMatchHistory(params: {
     { timeout: 5 * 60_000 },
   )
   return data
+}
+
+export type AdminUserRow = {
+  id: string
+  username: string
+  role: UserRole
+  created_at: string
+  last_login_at: string | null
+}
+
+export async function fetchAdminUsers(): Promise<AdminUserRow[]> {
+  const { data } = await apiClient.get<{ users: AdminUserRow[] }>('/admin/users')
+  return data.users
+}
+
+export async function updateAdminUser(
+  userId: string,
+  body: { role?: Exclude<UserRole, 'system_admin'>; password?: string },
+): Promise<AdminUserRow> {
+  const { data } = await apiClient.patch<AdminUserRow>(
+    `/admin/users/${userId}`,
+    body,
+  )
+  return data
+}
+
+export async function deleteAdminUser(userId: string): Promise<void> {
+  await apiClient.delete(`/admin/users/${userId}`)
 }

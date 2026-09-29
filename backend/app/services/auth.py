@@ -4,19 +4,26 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bet_plan import BetPlan
 from app.models.favorite_fixture import FAVORITE_SOURCE_AUTO, FavoriteFixture
 from app.models.user import User
 from app.models.user_session import UserSession
+from app.services.user_roles import (
+    ASSIGNABLE_ROLES,
+    ROLE_SYSTEM_ADMIN,
+    ROLE_USER,
+    ROLE_VIP,
+)
 from app.services.user_scope import ANON_OWNER_ID, normalize_owner_id
 
 logger = logging.getLogger(__name__)
@@ -86,17 +93,156 @@ async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
     return await db.get(User, user_id)
 
 
-async def set_user_admin(
-    db: AsyncSession, account: str, *, is_admin: bool = True
-) -> User:
-    """Promote / demote an existing account. Used by manage.py set-admin."""
+async def appoint_system_admin(db: AsyncSession, account: str) -> User:
+    """Make this account the only system admin. The previous one becomes a normal user."""
     name = normalize_account(account)
     user = await get_user_by_username(db, name)
     if user is None:
         raise LookupError(f"账号不存在：{name}")
-    user.is_admin = bool(is_admin)
+    others = (
+        await db.execute(
+            select(User).where(
+                User.role == ROLE_SYSTEM_ADMIN,
+                User.id != user.id,
+            )
+        )
+    ).scalars().all()
+    for other in others:
+        other.role = ROLE_USER
+    user.role = ROLE_SYSTEM_ADMIN
     await db.flush()
     return user
+
+
+async def revoke_system_admin(db: AsyncSession, account: str) -> User:
+    """Drop system admin back to a normal user. Does not appoint a replacement."""
+    name = normalize_account(account)
+    user = await get_user_by_username(db, name)
+    if user is None:
+        raise LookupError(f"账号不存在：{name}")
+    if user.role != ROLE_SYSTEM_ADMIN:
+        raise LookupError(f"该账号不是系统管理员：{name}")
+    user.role = ROLE_USER
+    await db.flush()
+    return user
+
+
+def league_default_id_list(user: User) -> list[int] | None:
+    raw = user.league_default_ids
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list):
+        return None
+    ids: list[int] = []
+    seen: set[int] = set()
+    for item in data:
+        try:
+            league_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if league_id < 1 or league_id in seen:
+            continue
+        seen.add(league_id)
+        ids.append(league_id)
+    return ids
+
+
+async def list_users(db: AsyncSession) -> list[User]:
+    return list(
+        (
+            await db.execute(select(User).order_by(User.created_at, User.username))
+        ).scalars()
+    )
+
+
+async def set_user_role(db: AsyncSession, user_id: str, role: str) -> User:
+    if role not in ASSIGNABLE_ROLES:
+        raise ValueError("不能把账号设成系统管理员")
+    user = await get_user_by_id(db, user_id)
+    if user is None:
+        raise LookupError("账号不存在")
+    if user.role == ROLE_SYSTEM_ADMIN:
+        raise PermissionError("不能修改系统管理员的角色")
+    user.role = role
+    await db.flush()
+    return user
+
+
+async def update_user_account(
+    db: AsyncSession,
+    user_id: str,
+    *,
+    role: str | None = None,
+    password: str | None = None,
+) -> User:
+    """Change role and/or password. An empty password leaves the current one."""
+    user = await get_user_by_id(db, user_id)
+    if user is None:
+        raise LookupError("账号不存在")
+    changed = False
+    next_role = (role or "").strip()
+    if next_role and next_role != user.role:
+        if user.role == ROLE_SYSTEM_ADMIN:
+            raise PermissionError("不能修改系统管理员的角色")
+        if next_role not in ASSIGNABLE_ROLES:
+            raise ValueError("不能把账号设成系统管理员")
+        user.role = next_role
+        changed = True
+    next_password = (password or "").strip()
+    if next_password:
+        user.password_hash = hash_password(validate_password(next_password))
+        changed = True
+    if not changed:
+        raise ValueError("没有要保存的修改")
+    await db.flush()
+    return user
+
+
+async def reset_user_password(db: AsyncSession, user_id: str, password: str) -> User:
+    user = await get_user_by_id(db, user_id)
+    if user is None:
+        raise LookupError("账号不存在")
+    user.password_hash = hash_password(validate_password(password))
+    await db.flush()
+    return user
+
+
+async def delete_user_account(db: AsyncSession, user_id: str) -> None:
+    user = await get_user_by_id(db, user_id)
+    if user is None:
+        raise LookupError("账号不存在")
+    if user.role == ROLE_SYSTEM_ADMIN:
+        raise PermissionError("不能删除系统管理员")
+    await db.execute(delete(UserSession).where(UserSession.user_id == user.id))
+    await db.execute(delete(FavoriteFixture).where(FavoriteFixture.user_id == user.id))
+    await db.execute(delete(BetPlan).where(BetPlan.user_id == user.id))
+    await db.delete(user)
+    await db.flush()
+
+
+async def save_vip_league_defaults(db: AsyncSession, user: User, league_ids: list[int]) -> list[int]:
+    if user.role != ROLE_VIP:
+        raise PermissionError("只有 VIP 可以保存自己的默认联赛")
+    cleaned: list[int] = []
+    seen: set[int] = set()
+    for item in league_ids:
+        try:
+            league_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if league_id < 1 or league_id in seen:
+            continue
+        seen.add(league_id)
+        cleaned.append(league_id)
+    if len(cleaned) > 200:
+        raise ValueError("默认联赛不能超过 200 个")
+    user.league_default_ids = json.dumps(cleaned)
+    await db.flush()
+    return cleaned
 
 
 async def register_user(db: AsyncSession, username: str, password: str) -> User:
@@ -127,12 +273,16 @@ async def authenticate_user(
 
 async def create_session(db: AsyncSession, user_id: str) -> UserSession:
     token = secrets.token_urlsafe(32)
+    now = _utc_now()
     row = UserSession(
         token=token,
         user_id=user_id,
-        expires_at=_utc_now() + timedelta(days=SESSION_DAYS),
+        expires_at=now + timedelta(days=SESSION_DAYS),
     )
     db.add(row)
+    user = await db.get(User, user_id)
+    if user is not None:
+        user.last_login_at = now
     await db.flush()
     return row
 
