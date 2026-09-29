@@ -161,25 +161,27 @@ function renderTwoLines(primary: string, secondary: string, tone = '') {
   ])
 }
 
+function renderDateLeague(row: FormMatch) {
+  const league = competitionLabel(row) || '—'
+  return h('div', { class: 'two-line-cell date-league-cell' }, [
+    h('span', { class: 'primary-line' }, formatDateYyMmDd(row.date || '') || '—'),
+    h('span', { class: 'secondary-line league-name', title: league }, league),
+  ])
+}
+
 const columns = computed<DataTableColumns<FormMatch>>(() => {
   return [
     {
       title: '日期/赛事',
       key: 'date_league',
       align: 'center',
-      width: 70,
-      render(row) {
-        return renderTwoLines(
-          formatDateYyMmDd(row.date || '') || '—',
-          competitionLabel(row) || '—',
-        )
-      },
+      width: 96,
+      render: renderDateLeague,
     },
     {
       title: '对阵',
       key: 'matchup',
       align: 'center',
-      minWidth: 150,
       render(row) {
         // Home / score / away are fixed grid tracks so the halftime score in
         // the second row always sits under the full-time score, whatever the
@@ -248,6 +250,7 @@ function rowKey(row: FormMatch): string | number {
     :bordered="true"
     :single-line="false"
     :pagination="false"
+    table-layout="fixed"
     :columns="columns"
     :data="matches"
     :row-key="rowKey"
@@ -271,6 +274,21 @@ function rowKey(row: FormMatch): string | number {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+:deep(.date-league-cell) {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 0 4px;
+}
+
+:deep(.league-name) {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 主队 / 比分 / 客队 are three tracks shared by both rows, so the halftime
