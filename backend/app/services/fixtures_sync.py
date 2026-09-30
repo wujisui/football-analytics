@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 
 _sync_lock = asyncio.Lock()
 SUBSCRIBED_LIGHT_ODDS_BUDGET = 100
-# 10:55 / 立即同步：当前比赛日刷即时盘，明天补缺盘并冻结为初盘。
-FULL_BATCH_FUTURE_ODDS_DAYS = 1
+# 已订阅本地窗口：今天之后的 7 天。最后一天留给每天 10:55。
+SUBSCRIBED_FUTURE_DAYS = 7
 
 
 async def resolve_odds_today() -> date | None:
@@ -83,18 +83,29 @@ def official_sync_busy() -> bool:
     return _sync_lock.locked()
 
 
+def subscribed_future_dates(today: date, *, last_offset: int) -> list[date]:
+    """Dates after ``today``, through ``last_offset`` and never past day 7."""
+    last = max(0, min(int(last_offset), SUBSCRIBED_FUTURE_DAYS))
+    return [today + timedelta(days=offset) for offset in range(1, last + 1)]
+
+
+def subscribed_tail_date(today: date) -> date:
+    """The furthest day of the subscribed window. Only the 10:55 batch requests it."""
+    return today + timedelta(days=SUBSCRIBED_FUTURE_DAYS)
+
+
 async def missing_subscribed_fixture_days(
     today: date,
     *,
-    lookahead_days: int,
+    last_offset: int,
 ) -> list[date]:
-    """Missing official days in the rolling 8-day local schedule window.
+    """Missing official days through ``last_offset``.
 
     Existing future days are not fetched again. A successful empty-day response
-    is still considered known through its persisted API snapshot.
+    is still considered known through its persisted API snapshot. The furthest
+    day is not included here; the 10:55 batch requests it on its own.
     """
-    window = max(1, min(int(lookahead_days), 14))
-    wanted = [today + timedelta(days=offset) for offset in range(1, window)]
+    wanted = subscribed_future_dates(today, last_offset=last_offset)
     if not wanted:
         return []
 
@@ -159,13 +170,22 @@ async def scheduled_fixtures_sync(
     mode: str = "full",
     fixture_ids: list[int] | None = None,
     result_on_days: list[date] | None = None,
+    future_scope: str = "window",
 ) -> dict:
-    """Run a full, light-odds, results, or explicit prematch odds batch."""
+    """Run a full, light-odds, results, or explicit prematch odds batch.
+
+    ``future_scope="tail"`` is the subscribed 10:55 batch: it requests only the
+    furthest future day's fixtures, then opening odds for that day. ``"window"``
+    fills missing fixtures on the nearer six days. Either way, opening odds are
+    filled for every catalog match already stored inside the next 7 days.
+    """
     if _sync_lock.locked():
         logger.info("Scheduled fixtures sync already running; skipping overlap")
         return {"status": "skipped", "reason": "locked", "mode": mode}
     if mode not in {"full", "odds", "results", "prematch_odds"}:
         raise ValueError(f"Unknown sync mode: {mode}")
+    if future_scope not in {"window", "tail"}:
+        raise ValueError(f"Unknown future scope: {future_scope}")
 
     settings = get_settings()
     today = datetime.now(ZoneInfo(settings.SCHEDULER_TIMEZONE)).date()
@@ -176,10 +196,12 @@ async def scheduled_fixtures_sync(
     odds_today = await resolve_odds_today()
     odds_anchor = odds_today or today
     tomorrow = today + timedelta(days=1)
-    future_odds_days = [
-        odds_anchor + timedelta(days=offset)
-        for offset in range(1, FULL_BATCH_FUTURE_ODDS_DAYS + 1)
-    ]
+    # 初盘跟着未来 7 天里已经入库的比赛走，不按「只到明天」截断。
+    # 10:55 的赛程请求仍只有最后一天，但缺盘补齐覆盖整个窗口。
+    future_odds_days = subscribed_future_dates(
+        odds_anchor,
+        last_offset=SUBSCRIBED_FUTURE_DAYS,
+    )
     result_days = clip_fixture_dates_for_plan(
         result_on_days
         if result_on_days is not None
@@ -248,16 +270,18 @@ async def scheduled_fixtures_sync(
                         today=today,
                     )
 
-                # 2) Free plan refreshes today. Subscription keeps a rolling
-                # 8-day window but only requests future days not already known.
-                fixture_days = (
-                    [today]
-                    if free_quota
-                    else await missing_subscribed_fixture_days(
+                # 2) Free plan refreshes today. Subscription keeps the next 7
+                # days: 10:55 always requests the furthest day, other full
+                # batches only fill nearer days that are not already known.
+                if free_quota:
+                    fixture_days = [today]
+                elif future_scope == "tail":
+                    fixture_days = [subscribed_tail_date(today)]
+                else:
+                    fixture_days = await missing_subscribed_fixture_days(
                         today,
-                        lookahead_days=settings.FIXTURES_LOOKAHEAD_DAYS,
+                        last_offset=SUBSCRIBED_FUTURE_DAYS - 1,
                     )
-                )
                 for fixture_day in fixture_days:
                     if fetcher.quota_exhausted:
                         break
@@ -267,9 +291,10 @@ async def scheduled_fixtures_sync(
                         league_ids=None,
                     )
 
-                # 3) Tomorrow only fills missing boards; the first successful
-                # pull freezes opening. Existing tomorrow boards stay untouched.
-                if subscribed and not fetcher.quota_exhausted:
+                # 3) Any catalog match already stored in the next 7 days fills a
+                # missing board. The first successful pull freezes opening.
+                # Existing future boards stay untouched.
+                if subscribed and future_odds_days and not fetcher.quota_exhausted:
                     odds_updated += await fetcher.sync_odds_for_dates(
                         future_odds_days,
                         refresh_existing=False,
@@ -289,7 +314,7 @@ async def scheduled_fixtures_sync(
                     )
 
                 # 4) Subscription standings only. Details stay today/tomorrow;
-                # odds already covered today and tomorrow above.
+                # future odds already covered the next 7 days above.
                 if subscribed and not fetcher.quota_exhausted:
                     standings_stats = await sync_league_standings_for_dates(
                         fetcher,

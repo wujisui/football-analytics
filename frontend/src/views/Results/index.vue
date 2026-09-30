@@ -13,7 +13,7 @@ import AccuracyMetricsGrid from '@/views/Results/components/AccuracyMetricsGrid.
 import ChartWindowControls, {
   DEFAULT_CHART_WINDOW_DAYS,
 } from '@/views/Results/components/ChartWindowControls.vue'
-import FixtureList from '@/components/FixtureList.vue'
+import PrematchCalcBoard from '@/components/PrematchCalcBoard.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
 import PullToRefresh from '@/components/PullToRefresh.vue'
 import HomeDateStrip from '@/layouts/components/HomeDateStrip.vue'
@@ -727,10 +727,9 @@ onActivated(() => {
       </n-modal>
     </div>
 
-    <!-- Phone / desktop: future schedule — same list chrome as calculator -->
+    <!-- Phone / desktop: future schedule — same play picker and plan bar as 比赛 -->
     <div
         v-else-if="isScheduleFutureDay"
-        ref="desktopListShellRef"
         class="fa-page-list-shell"
     >
       <n-alert
@@ -745,21 +744,17 @@ onActivated(() => {
         </n-space>
       </n-alert>
       <n-spin v-else :show="contentLoading" class="schedule-spin">
-        <FixtureList
+        <PrematchCalcBoard
             :fixtures="scheduleDisplayedFixtures"
             :empty-description="scheduleEmptyText"
-            :group-by-day="false"
-            from="results"
+            :refreshing="localRefreshing"
             :date="selectedDay"
-            :padding-top="12"
-            :padding-bottom="20"
-            markable
+            :group-by-day="false"
+            scroll-key="results-schedule"
+            from="results"
+            @refresh="refreshLocalResults"
         />
       </n-spin>
-      <ListBackTop
-          :shell="desktopListShellRef"
-          :content-key="scheduleDisplayedFixtures.length"
-      />
     </div>
 
     <!-- Desktop: results day — list on the left, stats/chart on the right -->

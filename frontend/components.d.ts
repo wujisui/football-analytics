@@ -73,6 +73,7 @@ declare module 'vue' {
     NVirtualList: typeof import('naive-ui')['NVirtualList']
     PageToolbarSearch: typeof import('./src/components/PageToolbarSearch.vue')['default']
     PredictionRecommendationRow: typeof import('./src/components/PredictionRecommendationRow.vue')['default']
+    PrematchCalcBoard: typeof import('./src/components/PrematchCalcBoard.vue')['default']
     PreMatchOddsModal: typeof import('./src/components/PreMatchOddsModal.vue')['default']
     PreMatchOddsTable: typeof import('./src/components/PreMatchOddsTable.vue')['default']
     PullToRefresh: typeof import('./src/components/PullToRefresh.vue')['default']

@@ -63,6 +63,21 @@ def test_result_days_are_yesterday_and_today() -> None:
     assert result_days_for_batch(today) == [date(2026, 8, 16), today]
 
 
+def test_subscribed_future_window_keeps_the_tail_for_1055() -> None:
+    from app.services.fixtures_sync import (
+        SUBSCRIBED_FUTURE_DAYS,
+        subscribed_future_dates,
+        subscribed_tail_date,
+    )
+
+    today = date(2026, 8, 17)
+    assert SUBSCRIBED_FUTURE_DAYS == 7
+    assert subscribed_tail_date(today) == date(2026, 8, 24)
+    assert subscribed_future_dates(today, last_offset=6) == [
+        date(2026, 8, 17 + offset) for offset in range(1, 7)
+    ]
+
+
 def test_subscribed_window_and_result_lookback() -> None:
     today = date(2026, 8, 17)
     fixture_days, result_days = sync_dates(
@@ -161,16 +176,28 @@ def test_subscribed_full_slot_runs_the_same_full_action_then_dense_odds() -> Non
                 minute=55,
                 include_dense_odds=True,
             )
+            await scheduler_module.run_subscribed_full_sync(
+                task_name="scheduled_fixtures_sync_1055",
+                hour=10,
+                minute=55,
+                include_dense_odds=False,
+            )
 
     asyncio.run(_run())
-    assert run_sync.await_count == 2
+    assert run_sync.await_count == 3
     assert run_sync.await_args_list[0].kwargs == {
         "task_name": "scheduled_fixtures_sync_1655",
         "mode": "full",
+        "future_scope": "window",
     }
     assert run_sync.await_args_list[1].kwargs == {
         "task_name": "scheduled_fixtures_sync_odds_1655",
         "mode": "odds",
+    }
+    assert run_sync.await_args_list[2].kwargs == {
+        "task_name": "scheduled_fixtures_sync_1055",
+        "mode": "full",
+        "future_scope": "tail",
     }
 
 
@@ -260,14 +287,87 @@ def test_subscribed_full_batch_only_fetches_missing_future_days() -> None:
         assert fetcher.sync_odds_for_dates.await_count == 2
         future_call, today_call = fetcher.sync_odds_for_dates.await_args_list
         future_days = future_call.args[0]
-        assert fs.FULL_BATCH_FUTURE_ODDS_DAYS == 1
-        assert future_days == [ODDS_TODAY + timedelta(days=1)]
+        assert future_days == [
+            ODDS_TODAY + timedelta(days=offset) for offset in range(1, 8)
+        ]
         assert future_call.kwargs["refresh_existing"] is False
         assert future_call.kwargs["league_ids"] == [39, 140]
         assert today_call.args[0] == [ODDS_TODAY]
         assert today_call.kwargs["refresh_existing"] is True
         assert today_call.kwargs["league_ids"] == [39, 140]
         detail.assert_awaited_once()
+    finally:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
+def test_subscribed_1055_only_updates_the_furthest_day() -> None:
+    from app.services import fixtures_sync as fs
+
+    fetcher = MagicMock()
+    fetcher.quota_exhausted = False
+    fetcher.capture_finished_results = AsyncMock(return_value=8)
+    fetcher.fetch_fixtures_for_date = AsyncMock(return_value=12)
+    fetcher.sync_odds_for_dates = AsyncMock(side_effect=[3, 5])
+    fetcher.__aenter__ = AsyncMock(return_value=fetcher)
+    fetcher.__aexit__ = AsyncMock(return_value=False)
+    settings = MagicMock(
+        SCHEDULER_TIMEZONE="Asia/Shanghai",
+        FIXTURES_LOOKAHEAD_DAYS=8,
+    )
+    standings = AsyncMock(
+        return_value={"leagues": 1, "fetched": 1, "skipped": 0, "failed": 0}
+    )
+    missing = AsyncMock(return_value=[date(2026, 8, 31)])
+    detail = AsyncMock(return_value={"enriched": 2})
+    tail = ODDS_TODAY + timedelta(days=7)
+
+    async def _run() -> dict:
+        with (
+            patch.object(fs, "FootballFetcher", return_value=fetcher),
+            patch.object(fs, "get_settings", return_value=settings),
+            patch.object(
+                fs, "get_enable_free_quota", AsyncMock(return_value=(False, "db"))
+            ),
+            patch.object(
+                fs, "get_hot_league_ids", AsyncMock(return_value=([39], "db"))
+            ),
+            patch.object(
+                fs, "get_catalog_league_ids", AsyncMock(return_value=([39, 140], "db"))
+            ),
+            patch.object(
+                fs, "resolve_odds_today", AsyncMock(return_value=ODDS_TODAY)
+            ),
+            patch.object(fs, "missing_subscribed_fixture_days", missing),
+            patch.object(fs, "sync_league_standings_for_dates", standings),
+            patch.object(fs, "importlib", MagicMock()),
+            patch(
+                "app.services.scheduled_detail_enrich.run_scheduled_full_detail_enrich",
+                detail,
+            ),
+            patch(
+                "app.services.auto_favorites.sync_daily_auto_favorites",
+                AsyncMock(return_value={"selected": []}),
+            ),
+            patch("app.core.database.AsyncSessionLocal"),
+        ):
+            return await fs.scheduled_fixtures_sync(mode="full", future_scope="tail")
+
+    try:
+        result = asyncio.run(_run())
+        assert result["status"] == "completed"
+        missing.assert_not_awaited()
+        fetcher.fetch_fixtures_for_date.assert_awaited_once_with(
+            tail,
+            force=True,
+            league_ids=None,
+        )
+        future_call, today_call = fetcher.sync_odds_for_dates.await_args_list
+        assert future_call.args[0] == [
+            ODDS_TODAY + timedelta(days=offset) for offset in range(1, 8)
+        ]
+        assert future_call.kwargs["refresh_existing"] is False
+        assert today_call.args[0] == [ODDS_TODAY]
+        assert today_call.kwargs["refresh_existing"] is True
     finally:
         asyncio.set_event_loop(asyncio.new_event_loop())
 

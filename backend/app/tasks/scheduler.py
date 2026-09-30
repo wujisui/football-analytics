@@ -144,6 +144,7 @@ async def run_scheduled_fixtures_sync(
     fixture_ids: list[int] | None = None,
     result_days: list | None = None,
     publish_revision: bool = True,
+    future_scope: str = "window",
 ) -> None:
     """Run the daily full batch or a today's-hot-odds light batch."""
     from app.services.fetcher import ApiAccountBlockedError, ApiKeyNotConfiguredError
@@ -156,6 +157,7 @@ async def run_scheduled_fixtures_sync(
             mode=mode,
             fixture_ids=fixture_ids,
             result_on_days=result_days,
+            future_scope=future_scope,
         )
         if result.get("status") != "completed":
             _set_task_status(
@@ -297,8 +299,21 @@ async def run_subscribed_full_sync(
     minute: int,
     include_dense_odds: bool = False,
 ) -> None:
-    """Run one subscribed full batch and its overlapping dense refresh."""
-    await run_scheduled_fixtures_sync(task_name=task_name, mode="full")
+    """Run one subscribed full batch and its overlapping dense refresh.
+
+    10:55 only fetches the furthest future day's fixtures. The other slots fill
+    missing fixtures on the nearer six days. Every full batch also fills
+    missing opening odds for catalog matches already stored in the next 7 days.
+    """
+    await run_scheduled_fixtures_sync(
+        task_name=task_name,
+        mode="full",
+        future_scope=(
+            "tail"
+            if hour == FULL_SYNC_HOUR and minute == FULL_SYNC_MINUTE
+            else "window"
+        ),
+    )
     if include_dense_odds:
         await run_scheduled_fixtures_sync(
             task_name=odds_job_id(hour, minute),
