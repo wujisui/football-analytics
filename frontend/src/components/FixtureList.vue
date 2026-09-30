@@ -250,6 +250,11 @@ function onExpandedKeys(keys: Array<string | number>) {
 function rowFixture(item: unknown): FixtureResponse {
   return (item as { fixture: FixtureResponse }).fixture
 }
+
+/** Virtual list stacks rows at content height; the extra stride is not painted. */
+const flatCardGapStyle = computed(() =>
+  props.itemSize === 168 ? { paddingBottom: `${CARD_GAP_PX}px` } : undefined,
+)
 </script>
 
 <template>
@@ -277,11 +282,12 @@ function rowFixture(item: unknown): FixtureResponse {
       @update:expanded-row-keys="onExpandedKeys"
     />
 
-    <!-- Flat schedule only: keep virtual list. -->
+    <!-- Flat schedule only: keep virtual list. itemSize is the scroll stride;
+         the gap has to live inside the row or adjacent cards paint flush. -->
     <VirtualCardList
       v-else
       :items="flatVirtualItems"
-      :item-size="itemSize"
+      :item-size="fixtureMinRowHeight"
       :item-resizable="false"
       :padding-top="paddingTop"
       :padding-bottom="paddingBottom"
@@ -290,6 +296,7 @@ function rowFixture(item: unknown): FixtureResponse {
       <template #default="{ item }">
         <div
           :class="fixtureRowClass(rowFixture(item).fixture_id)"
+          :style="flatCardGapStyle"
           @click="onFixtureRowClick($event, rowFixture(item).fixture_id)"
         >
           <slot
