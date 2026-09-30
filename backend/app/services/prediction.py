@@ -1368,13 +1368,15 @@ def score_hint_for_consistent_bundle(
     goal_lean: str | None,
     both_score_lean: str | None,
     declined_handicap_lean: str | None = None,
+    require_handicap_win: bool = False,
 ) -> str | None:
     """Build a score that agrees with the displayed result, handicap and board.
 
     Daily recommendations replace the analyzer's direction, so reusing its old
     score can produce bundles such as ``客胜 · 主+0.25 · 0-1``.  Generate the
     score again for the selected result, then hold two constraints at once:
-    the displayed handicap side must not lose, and the side the AH layer
+    a displayed companion handicap must not lose; when AH is the actual bet it
+    must win or half-win rather than merely push.  The side the AH layer
     **passed on** (``declined_handicap_lean``) must not be shown as covered —
     降级的理由就是它穿盘概率不足五成，再配一个 3-0 等于自己打自己。
     If the constraints cannot coexist, return ``None`` so the pipeline falls
@@ -1422,8 +1424,13 @@ def score_hint_for_consistent_bundle(
             ou_line=ou_line,
             ou_side=ou_side,
         )
+        allowed = (
+            {ASIAN_WIN, ASIAN_HALF_WIN}
+            if require_handicap_win
+            else {ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH}
+        )
         if not _scores_settle_as(
-            scores, handicap, allowed={ASIAN_WIN, ASIAN_HALF_WIN, ASIAN_PUSH}
+            scores, handicap, allowed=allowed
         ):
             return None
 

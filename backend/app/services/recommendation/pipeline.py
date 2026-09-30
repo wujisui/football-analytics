@@ -247,6 +247,7 @@ def _consistent_bundle(
             declined_handicap_lean=_declined_board_lean(
                 decision, candidate, handicap_lean
             ),
+            require_handicap_win=candidate.market == MARKET_AH,
         )
         if score_hint is not None:
             return result_lean, handicap_lean, score_hint

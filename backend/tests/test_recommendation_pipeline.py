@@ -229,6 +229,87 @@ def test_pipeline_falls_from_penalized_ah_to_best_secondary_market(
     assert result["picks"][0].market_lean == "双进:否"
 
 
+def test_integer_ah_whose_reference_score_only_pushes_falls_to_btts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """国民竞技 -1：2-1 只走水，实际投注不能靠「不输」占住 AH 层。"""
+    ah = _candidate(
+        1,
+        market="ah",
+        direction="home",
+        probability=0.5325,
+        odd=1.80,
+        line=-1.0,
+        lean="主-1",
+    )
+    btts = _candidate(
+        1,
+        market="btts",
+        direction="yes",
+        probability=0.5483,
+        odd=1.73,
+    )
+    decision = MatchDecision(
+        fixture_id=1,
+        match_day="2026-09-30",
+        reference=ah,
+        candidates=(ah, btts),
+    )
+    monkeypatch.setattr(pipeline, "build_match_decision", lambda **_: decision)
+    match = MatchPipelineInput(
+        fixture_id=1,
+        league_id=39,
+        kickoff=datetime(2026, 10, 1, 1),
+        match_day="2026-09-30",
+        odds=None,
+        recommendation="主胜",
+        handicap_lean="主-1",
+        score_hint="比分:3-1/2-1",
+        goal_lean="大(2.75)",
+        both_score_lean="双进:是",
+        home_win_prob=0.6267,
+        draw_prob=0.2445,
+        away_win_prob=0.1288,
+    )
+
+    assert (
+        score_hint_for_consistent_bundle(
+            "主胜",
+            "主-1",
+            {
+                "home": 0.6267,
+                "draw": 0.2445,
+                "away": 0.1288,
+            },
+            goal_lean="大(2.75)",
+            both_score_lean="双进:是",
+        )
+        == "比分:2-1"
+    )
+    assert (
+        score_hint_for_consistent_bundle(
+            "主胜",
+            "主-1",
+            {
+                "home": 0.6267,
+                "draw": 0.2445,
+                "away": 0.1288,
+            },
+            goal_lean="大(2.75)",
+            both_score_lean="双进:是",
+            require_handicap_win=True,
+        )
+        is None
+    )
+
+    result = run_pipeline([match], market_artifact={"version": "test"})
+    assert result["selected_count"] == 1
+    assert result["picks"][0].market == "btts"
+    assert result["picks"][0].market_lean == "双进:是"
+    assert result["picks"][0].handicap_lean == "主-1"
+    assert result["picks"][0].score_hint == "比分:2-1"
+
+
 def test_companion_result_row_yields_instead_of_killing_the_best_bet(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
