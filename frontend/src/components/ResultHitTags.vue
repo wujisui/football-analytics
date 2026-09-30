@@ -52,19 +52,19 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       胜平负
     </n-tag>
     <n-tag
-      v-if="fixture.has_prediction"
+      v-if="fixture.handicap_lean"
       class="hit-tag"
       :class="{
-        clickable: filterable && fixture.score_hit === true,
-        'fa-tag-missed': hitTagMissed(fixture.score_hit),
-        active: activeHitKey === 'score',
+        clickable: filterable && fixture.handicap_hit === true,
+        'fa-tag-missed': hitTagMissed(fixture.handicap_hit),
+        active: activeHitKey === 'handicap',
       }"
       size="small"
-      :type="hitTagType(fixture.score_hit)"
+      :type="hitTagType(fixture.handicap_hit)"
       :bordered="false"
-      @click.stop="onTagClick('score', fixture.score_hit)"
+      @click.stop="onTagClick('handicap', fixture.handicap_hit)"
     >
-      比分
+      {{ handicapTagLabel }}
     </n-tag>
     <n-tag
       v-if="fixture.has_prediction"
@@ -97,19 +97,19 @@ function onTagClick(key: ResultsHitKey, hit: boolean | null | undefined) {
       双进
     </n-tag>
     <n-tag
-      v-if="fixture.handicap_lean"
+      v-if="fixture.has_prediction"
       class="hit-tag"
       :class="{
-        clickable: filterable && fixture.handicap_hit === true,
-        'fa-tag-missed': hitTagMissed(fixture.handicap_hit),
-        active: activeHitKey === 'handicap',
+        clickable: filterable && fixture.score_hit === true,
+        'fa-tag-missed': hitTagMissed(fixture.score_hit),
+        active: activeHitKey === 'score',
       }"
       size="small"
-      :type="hitTagType(fixture.handicap_hit)"
+      :type="hitTagType(fixture.score_hit)"
       :bordered="false"
-      @click.stop="onTagClick('handicap', fixture.handicap_hit)"
+      @click.stop="onTagClick('score', fixture.score_hit)"
     >
-      {{ handicapTagLabel }}
+      比分
     </n-tag>
   </n-flex>
 </template>

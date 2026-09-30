@@ -63,9 +63,9 @@ const probabilities = computed(() => {
     <n-text depth="3" class="pred-line">
       {{ fixture.recommendation || '—' }}
       · {{ fixture.handicap_lean || '—' }}
-      · {{ fixture.score_hint || '—' }}
       · {{ fixture.goal_lean || '—' }}
       · {{ fixture.both_score_lean || '—' }}
+      · {{ fixture.score_hint || '—' }}
     </n-text>
     <WdlProbabilityBars v-if="probabilities.length" :items="probabilities" />
     <ResultHitTags
