@@ -27,15 +27,17 @@ def test_percentile_deadzone_uses_p25_not_median() -> None:
 
 
 def test_near_even_board_still_shows_the_cheaper_side() -> None:
-    """死区只挡下注：赛前卡片照样给出让球方向，且让球与比分同向。"""
+    """死区只挡下注：赛前卡片照样给出让球方向，且让球与胜负、比分同向。"""
     odds = _odds("+0.25", 1.94, 1.96)
     stance = classify_ah_board(odds)
     assert stance is not None and stance.even
+    assert handicap_bundle_from_markets(odds, None)[0] == "主+0.25"
     leans = derive_prediction_leans(
         {"home": 0.29, "draw": 0.28, "away": 0.43},
         odds,
     )
-    assert leans["handicap_lean"] == "主+0.25"
+    assert leans["recommendation"] == "客胜"
+    assert leans["handicap_lean"] == "客-0.25"
     assert "待分析" not in leans["score_hint"]
 
 
@@ -81,8 +83,9 @@ def test_ah_board_never_overrides_the_1x2_board() -> None:
     stance = classify_ah_board(odds)
     assert stance is not None and stance.result_choice == "away"
 
-    # 让球行照旧跟水位买受让方，但胜平负必须回到去水 1X2 盘面。
-    assert handicap_bundle_from_markets(odds, "主胜")[0] == "客+0.5"
+    # 胜平负回到去水 1X2 盘面；让球行再跟胜负同侧，不写成「主胜 · 客+0.5」。
+    assert handicap_bundle_from_markets(odds, "主胜/和局")[0] == "客+0.5"
+    assert handicap_bundle_from_markets(odds, "主胜")[0] == "主-0.5"
     assert get_recommendation(
         {"home": 0.47, "draw": 0.31, "away": 0.22}, odds=odds
     ) == "主胜"
@@ -114,6 +117,22 @@ def test_deep_board_handicap_takes_the_giving_side() -> None:
 
     shallow = _odds("-0.5", 2.08, 1.85)
     assert handicap_bundle_from_markets(shallow, "客胜")[0] == "客+0.5"
+
+
+def test_handicap_row_never_bets_against_the_single_result() -> None:
+    """复现哥伦甲麦德林独立 vs 百万富翁：主胜 · 客+0.25 · 比分 3-2/2-1。
+
+    主队一赢，客+0.25 就全输，任何主胜比分都配不上，比分只是把矛盾摆到台面上。
+    单选胜负时让球行取该结果保证不输盘的一侧，比分随之自洽。
+    """
+    odds = _odds("-0.25", 1.99, 1.85)
+    odds["match_winner"] = {"home": 2.32, "draw": 3.21, "away": 3.22}
+    leans = derive_prediction_leans({"home": 0.41, "draw": 0.30, "away": 0.29}, odds)
+    assert leans["recommendation"] == "主胜"
+    assert leans["handicap_lean"] == "主-0.25"
+    assert "同侧" in leans["handicap_market_note"]
+    home, away = (int(x) for x in leans["score_hint"].split(":")[1].split("/")[0].split("-"))
+    assert home > away
 
 
 def test_one_depth_rule_serves_both_the_bet_and_the_companion_row() -> None:

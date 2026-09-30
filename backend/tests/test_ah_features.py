@@ -162,16 +162,15 @@ class AhFeaturesTests(unittest.TestCase):
             )
         )
 
-    def test_handicap_direction_is_independent_of_1x2_and_score(self) -> None:
-        """让球只读盘口：比分已不是入参，反过来由比分迁就让球。"""
+    def test_handicap_row_sits_beside_a_single_result(self) -> None:
+        """双选时让球只读盘口；单选时让球行与胜负同侧，不两头下注。"""
         home_give = {
             "available": True,
             "asian_handicap": {"line": "-0.25", "home": 1.88, "away": 1.98},
         }
-        first, _ = handicap_bundle_from_markets(home_give, "胜/平")
-        second, _ = handicap_bundle_from_markets(home_give, "负")
-        self.assertEqual(first, "主-0.25")
-        self.assertEqual(second, first)
+        self.assertEqual(handicap_bundle_from_markets(home_give, "胜/平")[0], "主-0.25")
+        self.assertEqual(handicap_bundle_from_markets(home_give, "主胜")[0], "主-0.25")
+        self.assertEqual(handicap_bundle_from_markets(home_give, "负")[0], "客+0.25")
 
     def test_level_ball_uses_its_own_main_prices(self) -> None:
         home_leaning = {

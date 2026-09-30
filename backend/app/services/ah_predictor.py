@@ -311,10 +311,12 @@ def handicap_bundle_from_markets(
 ) -> tuple[str, str]:
     """Return (handicap_lean, handicap_market_note) for product + detail.
 
-    ``recommendation`` 只用于表明调用点，让球方向不抄 1X2，也不抄比分：比分是
-    推导值，反过来由 ``prediction._align_score_with_handicap`` 迁就让球。
+    让球行与单选胜负方向同侧：「主胜 · 客+0.25」是两头下注，主队一赢让球行就全输，
+    任何比分都圆不回来。所以单选结果下，让球行取 ``companion_side_for_result`` 给出
+    的那一侧（该结果保证不输盘的一侧）；深盘让球方赢球也未必穿盘时返回 ``None``，
+    仍按盘口取边。双选或无胜负结论时照旧只读盘口。比分反过来由
+    ``prediction._align_score_with_handicap`` 迁就让球。
     """
-    del recommendation
     if not isinstance(odds, dict) or not odds.get("available", True):
         ah = (odds or {}).get("asian_handicap") if isinstance(odds, dict) else None
         if not isinstance(ah, dict):
@@ -340,7 +342,28 @@ def handicap_bundle_from_markets(
     )
     if not pred:
         return "缺少盘口数据分析", ""
-    return format_handicap_lean(pred), (pred.market_note or "").strip()
+    lean = format_handicap_lean(pred)
+    note = (pred.market_note or "").strip()
+    aligned = _lean_beside_result(recommendation, line_f)
+    if aligned is None or aligned == lean:
+        return lean, note
+    return aligned, (
+        f"让球行跟胜平负「{recommendation}」同侧，不与胜负方向两头下注；"
+        f"单看让球主盘是{lean}更低水（主 {home_f:.2f}、客 {away_f:.2f}）"
+    )
+
+
+def _lean_beside_result(recommendation: str | None, line_f: float) -> str | None:
+    from app.services.ah_market_structure import companion_side_for_result
+    from app.services.prediction import recommendation_outcomes
+
+    outcomes = recommendation_outcomes(recommendation or "")
+    if not outcomes or len(outcomes) != 1:
+        return None
+    side = companion_side_for_result(line_f, next(iter(outcomes)))
+    if side is None:
+        return None
+    return format_handicap_lean_text("让胜" if side == "home" else "让负", line_f)
 
 
 def train_from_rows(rows: list[tuple[dict[str, float], str]]) -> dict[str, Any]:
