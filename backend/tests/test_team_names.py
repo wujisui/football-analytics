@@ -92,6 +92,18 @@ def test_prematch_window_ids_match_official_clubs() -> None:
         assert BY_ID[team_id] == zh, f"team {team_id} mistranslated"
 
 
+def test_newly_hot_clubs_match_official_ids() -> None:
+    expected = {
+        37: "哈德斯菲尔德",
+        2283: "阿特拉斯",
+        2286: "普马斯",
+        607: "科尼亚体育",
+        10336: "德国U19",
+    }
+    for team_id, zh in expected.items():
+        assert BY_ID[team_id] == zh, f"team {team_id} mistranslated"
+
+
 def test_hot_league_missing_names_match_official_clubs() -> None:
     """Pin representative ids from the 2026-09-21 hot-league backfill."""
     expected = {
