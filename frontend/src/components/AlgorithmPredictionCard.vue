@@ -46,6 +46,11 @@ const props = withDefaults(
     oddsClickable?: boolean
     from?: DetailFrom
     date?: string | null
+    /**
+     * When set (including null), the league tag filters this page instead of
+     * navigating to 【比赛】/【赛果】. Undefined keeps the route-query behavior.
+     */
+    activeLeagueId?: number | null
   }>(),
   {
     standalone: false,
@@ -59,6 +64,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   openOdds: []
+  selectLeague: [leagueId: number | null]
 }>()
 
 const router = useRouter()
@@ -101,9 +107,13 @@ const awayName = computed(() => props.fixture?.away_team_name || '—')
 const matchupText = computed(() => `${homeName.value} vs ${awayName.value}`)
 const leagueName = computed(() => leagueLabel(props.fixture?.league_name))
 const leagueId = computed(() => props.fixture?.league_id ?? null)
-const leagueActive = computed(
-  () => leagueId.value != null && selectedLeagueId.value === leagueId.value,
-)
+const filtersLeagueHere = computed(() => props.activeLeagueId !== undefined)
+const leagueActive = computed(() => {
+  const current = filtersLeagueHere.value
+    ? props.activeLeagueId
+    : selectedLeagueId.value
+  return leagueId.value != null && current === leagueId.value
+})
 const leagueColor = computed(() =>
   leagueId.value != null ? leagueTagColor(leagueId.value) : undefined,
 )
@@ -187,7 +197,11 @@ function onLeagueClick(e: Event) {
   e.stopPropagation()
   const id = leagueId.value
   if (id == null || !Number.isFinite(id)) return
-  const next = selectedLeagueId.value === id ? null : id
+  const next = leagueActive.value ? null : id
+  if (filtersLeagueHere.value) {
+    emit('selectLeague', next)
+    return
+  }
   const target = props.from === 'results' ? 'results' : 'predictions'
   const routeName = FIXTURES_ROUTES.has(String(route.name))
     ? String(route.name)

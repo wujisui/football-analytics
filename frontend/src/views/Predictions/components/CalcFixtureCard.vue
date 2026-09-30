@@ -12,13 +12,17 @@ import { useIsPhone } from '@/composables/useMediaQuery'
 import { snapshotFromAnalysis } from '@/utils/opinionAdjust'
 import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import { buildMarketRows, type CalcCell } from '@/utils/betCalculator'
-import { fixtureDetailRoute } from '@/utils/detailNav'
+import { fixtureDetailRoute, type DetailFrom } from '@/utils/detailNav'
 import { formatTime, leagueTagColor } from '@/utils/format'
 import { leagueLabel } from '@/utils/leagueNames'
 
-const props = defineProps<{
-  fixture: FixtureResponse
-}>()
+const props = withDefaults(
+  defineProps<{
+    fixture: FixtureResponse
+    from?: DetailFrom
+  }>(),
+  { from: 'predictions' },
+)
 
 const message = useMessage()
 const router = useRouter()
@@ -49,7 +53,7 @@ function goDetail() {
   void router
     .push(
       fixtureDetailRoute(props.fixture.fixture_id, {
-        from: 'predictions',
+        from: props.from,
         tab: 'record',
       }),
     )
@@ -144,7 +148,7 @@ function goDetail() {
     v-model:show="showOddsModal"
     :odds="fixture.odds_snippet"
     :fixture-id="fixture.fixture_id"
-    from="predictions"
+    :from="from"
   />
 </template>
 

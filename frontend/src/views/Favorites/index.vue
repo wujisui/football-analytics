@@ -5,6 +5,8 @@ import { useRouter } from 'vue-router'
 import FavoriteDatesPicker from '@/views/Favorites/components/FavoriteDatesPicker.vue'
 import FavoriteFixtureCard from '@/views/Favorites/components/FavoriteFixtureCard.vue'
 import ListBackTop from '@/components/ListBackTop.vue'
+import BetDetailsPanel from '@/views/Predictions/components/BetDetailsPanel.vue'
+import { useBetCalculator } from '@/views/Predictions/composables/useBetCalculator'
 import LeagueMenu from '@/layouts/components/LeagueMenu.vue'
 import ShellBreadcrumb from '@/layouts/components/ShellBreadcrumb.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
@@ -51,6 +53,8 @@ const filterDate = ref<string>(readSavedFilterDate())
 const selectedLeagueId = ref<number | null>(null)
 const siderCollapsed = ref(false)
 const favoritesShellRef = ref<HTMLElement | null>(null)
+const calcBodyRef = ref<HTMLElement | null>(null)
+const { matchCount } = useBetCalculator()
 const { markedFixtureId, toggleMarked, clearMarked, retainIfPresent } =
   useMarkedFixture()
 
@@ -205,7 +209,10 @@ onActivated(() => {
         </div>
 
         <div class="favorites-body">
-          <section class="fa-section favorites-list-section">
+          <section
+            class="fa-section favorites-list-section"
+            :class="{ phone: isPhone }"
+          >
             <div v-if="isPhone" class="favorites-list-head">
               <h2 class="fa-section-title">{{ dayCountLabel }}</h2>
               <FavoriteDatesPicker
@@ -214,6 +221,7 @@ onActivated(() => {
                 legend="当天有关注（比赛日）"
               />
             </div>
+            <div ref="calcBodyRef" class="favorites-calc-body">
             <div ref="favoritesShellRef" class="favorites-list-shell">
               <n-scrollbar class="favorites-scroll" trigger="hover">
                 <div class="favorites-scroll-pad">
@@ -229,8 +237,10 @@ onActivated(() => {
                       :item="item"
                       selectable
                       :selected="markedFixtureId === item.fixture_id"
+                      :active-league-id="selectedLeagueId"
                       @open-detail="goDetail"
                       @toggle-select="toggleMarked"
+                      @select-league="selectedLeagueId = $event"
                     />
                   </div>
                 </div>
@@ -239,8 +249,12 @@ onActivated(() => {
                 :shell="favoritesShellRef"
                 :content-key="filteredFavorites.length"
                 :right="12"
-                :bottom="12"
+                :bottom="isPhone && matchCount ? 100 : 12"
               />
+            </div>
+            </div>
+            <div v-if="matchCount" class="calc-footer">
+              <BetDetailsPanel :drawer-target="calcBodyRef" />
             </div>
           </section>
         </div>
@@ -287,12 +301,40 @@ onActivated(() => {
 }
 
 .favorites-list-section {
+  --calc-panel-width: 400px;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
   padding-top: var(--fa-content-block-start);
-  padding-bottom: var(--fa-content-block-end);
+  padding-bottom: 0;
+}
+
+.favorites-list-section.phone {
+  --calc-panel-width: 100%;
+}
+
+.favorites-list-section.phone .calc-footer {
+  margin-right: calc(-1 * var(--fa-content-inline));
+  margin-left: calc(-1 * var(--fa-content-inline));
+}
+
+.favorites-calc-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.calc-footer {
+  align-self: stretch;
+  width: 100%;
+  flex-shrink: 0;
+  z-index: 2;
+  background-color: var(--fa-bg-elevated);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.22);
 }
 
 .favorites-list-head {

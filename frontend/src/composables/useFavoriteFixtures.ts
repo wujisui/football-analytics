@@ -205,6 +205,55 @@ export function favoriteHasPredictSnapshot(item: FavoriteFixtureRecord): boolean
   )
 }
 
+/** Enough of a list row for the match-page cards and the bet slip. */
+export function favoriteToListFixture(item: FavoriteFixtureRecord): FixtureResponse {
+  const ready = !!item.probabilities_available
+  return {
+    fixture_id: item.fixture_id,
+    league_id: item.league_id,
+    league_name: item.league_name,
+    home_team_id: 0,
+    away_team_id: 0,
+    home_team_name: item.home_team_name,
+    away_team_name: item.away_team_name,
+    fixture_date: item.fixture_date,
+    match_day: item.match_day,
+    match_timezone: '',
+    match_day_source: 'utc',
+    status: item.status || 'pending',
+    home_goals: item.home_goals,
+    away_goals: item.away_goals,
+    league_country: item.league_country,
+    home_rank: item.home_rank,
+    away_rank: item.away_rank,
+    odds_snippet: item.odds_snippet,
+    odds_opening_snippet: item.odds_opening_snippet,
+    analysis: {
+      fixture_id: item.fixture_id,
+      home_team_name: item.home_team_name,
+      away_team_name: item.away_team_name,
+      league_name: item.league_name,
+      fixture_date: item.fixture_date,
+      status: item.status || 'pending',
+      probabilities: {
+        available: ready,
+        home_win_prob: item.home_win_prob,
+        draw_prob: item.draw_prob,
+        away_win_prob: item.away_win_prob,
+      },
+      confidence: '',
+      recommendation: item.recommendation || '待分析',
+      goal_lean: item.goal_lean,
+      both_score_lean: item.both_score_lean,
+      score_hint: item.score_hint,
+      handicap_lean: item.handicap_lean,
+      data_source: 'favorite',
+      analyzed_at: item.saved_at,
+      cache_status: 'hit',
+    },
+  }
+}
+
 /** Map favorite row → prediction card snapshot. */
 export function snapshotFromFavorite(item: FavoriteFixtureRecord): PredictionSnapshot {
   const ready = !!item.probabilities_available

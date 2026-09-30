@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import AlgorithmPredictionCard from '@/components/AlgorithmPredictionCard.vue'
 import PreMatchOddsModal from '@/components/PreMatchOddsModal.vue'
 import PreMatchOddsTable from '@/components/PreMatchOddsTable.vue'
 import ResultFixtureCard from '@/components/ResultFixtureCard.vue'
 import {
-  favoriteHasPredictSnapshot,
-  snapshotFromFavorite,
+  favoriteToListFixture,
   type FavoriteFixtureRecord,
 } from '@/composables/useFavoriteFixtures'
+import CalcFixtureCard from '@/views/Predictions/components/CalcFixtureCard.vue'
 import { useIsPhone } from '@/composables/useMediaQuery'
 import { isFixtureCardMarkClickIgnored } from '@/utils/fixtureCardMark'
 
@@ -17,23 +18,25 @@ const props = withDefaults(
     item: FavoriteFixtureRecord
     selectable?: boolean
     selected?: boolean
+    activeLeagueId?: number | null
   }>(),
   {
     selectable: false,
     selected: false,
+    activeLeagueId: undefined,
   },
 )
 
 const emit = defineEmits<{
   openDetail: [fixtureId: number]
   toggleSelect: [fixtureId: number]
+  selectLeague: [leagueId: number | null]
 }>()
 
 const isPhone = useIsPhone()
 const showOddsModal = ref(false)
 
-const hasPredict = computed(() => favoriteHasPredictSnapshot(props.item))
-const predictionSnapshot = computed(() => snapshotFromFavorite(props.item))
+const listFixture = computed(() => favoriteToListFixture(props.item))
 
 /** Any settled fixture uses the same card as the results list. */
 const isFinished = computed(() => {
@@ -96,38 +99,30 @@ function onDesktopMarkClick(e: MouseEvent) {
     </div>
   </div>
 
-  <ResultFixtureCard
-    v-else-if="isPhone"
-    :fixture="item"
-    prematch
-    odds-clickable
-    :prediction-snapshot="hasPredict ? predictionSnapshot : undefined"
-    from="favorites"
-    :selectable="selectable"
-    :selected="selected"
-    @open-odds="openOddsModal"
-    @toggle-select="emit('toggleSelect', $event)"
-  />
-
   <div
     v-else
-    class="favorite-fixture-card"
-    :class="desktopMarkClass"
+    class="favorite-prematch"
+    :class="[desktopMarkClass, { phone: isPhone }]"
     @click="onDesktopMarkClick"
   >
-    <div class="summary-grid">
-      <PreMatchOddsTable
-        :odds="item.odds_snippet"
-        link-middle-to-detail
-        :fixture-id="item.fixture_id"
-        from="favorites"
-      />
-      <ResultFixtureCard
-        :fixture="item"
-        prematch
-        :prediction-snapshot="hasPredict ? predictionSnapshot : undefined"
-        from="favorites"
-      />
+    <CalcFixtureCard
+      v-if="isPhone"
+      :fixture="listFixture"
+      from="favorites"
+    />
+    <div v-else class="fixture-row">
+      <div class="fixture-row-pred">
+        <AlgorithmPredictionCard
+          :fixture="listFixture"
+          standalone
+          from="favorites"
+          :active-league-id="activeLeagueId"
+          @select-league="emit('selectLeague', $event)"
+        />
+      </div>
+      <div class="fixture-row-calc">
+        <CalcFixtureCard :fixture="listFixture" from="favorites" />
+      </div>
     </div>
   </div>
 
@@ -161,6 +156,42 @@ function onDesktopMarkClick(e: MouseEvent) {
 }
 
 .summary-grid :deep(.result-fixture-card) {
+  height: 100%;
+}
+
+.favorite-prematch {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.favorite-prematch.phone {
+  height: 184px;
+  overflow: hidden;
+}
+
+.favorite-prematch.phone > :deep(*) {
+  height: 100%;
+}
+
+.fixture-row {
+  display: grid;
+  grid-template-columns: minmax(0, 5.5fr) minmax(0, 4.5fr);
+  gap: 5px;
+  height: 147px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fixture-row-pred,
+.fixture-row-calc {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.fixture-row-pred > :deep(*),
+.fixture-row-calc > :deep(*) {
   height: 100%;
 }
 </style>
