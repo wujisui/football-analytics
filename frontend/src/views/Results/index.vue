@@ -173,6 +173,7 @@ const scheduleDisplayedFixtures = computed(() => {
       filterByTeamQuery(list, teamSearch.value),
       favoriteIds.value,
       autoFavoriteIds.value,
+      { demoteWithoutOdds: true },
   )
 })
 
